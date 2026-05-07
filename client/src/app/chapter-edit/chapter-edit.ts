@@ -220,14 +220,18 @@ export class ChapterEditComponent implements OnInit, OnDestroy {
   }
 
   onEditorPendingSuggestionsChange(suggestions: SuggestedEntityCard[]): void {
-    const newOnes = suggestions.filter(s =>
+    const existingNames = new Set(this.entities().map(e => e.name.toLowerCase()));
+    const filtered = suggestions.filter(s =>
+      s.created || s.creating || !existingNames.has(s.name.toLowerCase()),
+    );
+    const newOnes = filtered.filter(s =>
       !s.created && !s.creating && !this.suggestedEntityNames.has(s.name.toLowerCase()),
     );
     if (newOnes.length > 0) {
       this.activateSidebarTab(1);
       newOnes.forEach(s => this.suggestedEntityNames.add(s.name.toLowerCase()));
     }
-    this.pendingSuggestions.set(suggestions);
+    this.pendingSuggestions.set(filtered);
   }
 
   onEditorCtxMenuAction(event: { id: string; captureText: string; narratorCaptureText: string; surroundingText: string }): void {
