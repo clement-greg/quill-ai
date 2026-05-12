@@ -117,6 +117,11 @@ export class ChapterEditComponent implements OnInit, OnDestroy {
   sidebarTabIndex = signal(0);
   sidebarWidth = signal(350);
 
+  // Track emails whose avatar endpoint returned an error so we fall back to the placeholder icon
+  private _avatarErrors = signal<ReadonlySet<string>>(new Set());
+  avatarFailed(email: string): boolean { return this._avatarErrors().has(email); }
+  onAvatarError(email: string): void { this._avatarErrors.update(s => new Set([...s, email])); }
+
   private resizerDrag: {
     startX: number; startWidth: number;
     moveHandler: (e: MouseEvent) => void; upHandler: () => void;
@@ -314,7 +319,6 @@ export class ChapterEditComponent implements OnInit, OnDestroy {
         this.chapterVersionService.create(
           chapter.id, content,
           this.userSettings.displayName() || this.authService.currentUser()?.name || undefined,
-          this.userSettings.avatarUrl() || this.authService.currentUser()?.picture || undefined,
         ).subscribe();
 
         if (this.historyVersions().length > 0) this.loadHistory(chapter.id);
@@ -371,8 +375,8 @@ export class ChapterEditComponent implements OnInit, OnDestroy {
       noteText: text,
       selectedText,
       createdAt: new Date().toISOString(),
+      createdBy: this.authService.currentUser()?.email || undefined,
       createdByName: this.userSettings.displayName() || undefined,
-      createdByAvatar: this.userSettings.avatarUrl() || undefined,
     };
     this.notes.update(ns => [...ns, note]);
 

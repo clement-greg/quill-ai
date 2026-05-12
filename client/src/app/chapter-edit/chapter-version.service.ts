@@ -11,7 +11,7 @@ export class ChapterVersionService {
     return this.http.get<ChapterVersion[]>(`/api/chapter-versions/chapter/${encodeURIComponent(chapterId)}`);
   }
 
-  create(chapterId: string, content: string, createdByName?: string, createdByAvatar?: string): Observable<ChapterVersion> {
-    return this.http.post<ChapterVersion>('/api/chapter-versions', { chapterId, content, createdByName, createdByAvatar });
+  create(chapterId: string, content: string, createdByName?: string): Observable<ChapterVersion> {
+    return this.http.post<ChapterVersion>('/api/chapter-versions', { chapterId, content, createdByName });
   }
 }

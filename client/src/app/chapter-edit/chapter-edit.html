@@ -79,9 +79,11 @@
                     @for (note of notes(); track note.id) {
                       <div class="note-item" [class.note-item-highlighted]="highlightedNoteId() === note.id"
                         (click)="scrollToNote(note.id)">
-                        @if (note.createdByName || note.createdByAvatar) {
+                        @if (note.createdByName || note.createdBy || note.createdByAvatar) {
                           <div class="note-author">
-                            @if (note.createdByAvatar) {
+                            @if (note.createdBy && !avatarFailed(note.createdBy)) {
+                              <img class="note-author-avatar" [src]="'/api/avatar/' + note.createdBy" (error)="onAvatarError(note.createdBy!)" [alt]="note.createdByName || 'Author'" />
+                            } @else if (note.createdByAvatar) {
                               <img class="note-author-avatar" [src]="note.createdByAvatar" [alt]="note.createdByName || 'Author'" />
                             } @else {
                               <span class="note-author-avatar-placeholder">
@@ -187,7 +189,9 @@
                         <button class="history-version-item"
                           [class.selected]="selectedVersion()?.id === version.id"
                           (click)="selectVersion(version)">
-                          @if (version.createdByAvatar) {
+                          @if (version.createdBy && !avatarFailed(version.createdBy)) {
+                            <img class="version-author-avatar" [src]="'/api/avatar/' + version.createdBy" (error)="onAvatarError(version.createdBy!)" [alt]="version.createdByName || 'Author'" />
+                          } @else if (version.createdByAvatar) {
                             <img class="version-author-avatar" [src]="version.createdByAvatar" [alt]="version.createdByName || 'Author'" />
                           } @else {
                             <span class="version-author-avatar-placeholder">

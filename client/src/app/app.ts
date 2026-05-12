@@ -31,6 +31,12 @@ export class App implements OnInit, OnDestroy {
     document.body.classList.toggle('dark-theme', this.settings.darkMode());
   });
 
+  private userLoadEffect = effect(() => {
+    if (this.auth.currentUser()) {
+      this.settings.loadFromServer();
+    }
+  });
+
   backLink = computed(() => {
     const crumbs = this.header.breadcrumbs().filter(c => c.link);
     return crumbs.length > 0 ? crumbs[crumbs.length - 1].link! : null;

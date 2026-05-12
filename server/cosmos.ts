@@ -9,6 +9,7 @@ const client = new CosmosClient({
 const database: Database = client.database(config.cosmosDatabase);
 
 const standardContainerDefs = [
+  { id: 'user-settings', partitionKey: { paths: ['/id'] } },
   { id: 'series', partitionKey: { paths: ['/id'] } },
   { id: 'books', partitionKey: { paths: ['/id'] } },
   { id: 'book-notes', partitionKey: { paths: ['/id'] } },

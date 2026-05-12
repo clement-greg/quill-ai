@@ -22,6 +22,8 @@ import grammarRoutes from './routes/grammar.routes';
 import entityQuotesRoutes from './routes/entity-quotes.routes';
 import backfillRoutes from './routes/backfill.routes';
 import folderNotesRoutes from './routes/folder-notes.routes';
+import userSettingsRoutes from './routes/user-settings.routes';
+import avatarRoutes from './routes/avatar.routes';
 
 const app = express();
 const PORT = process.env['PORT'] || 3200;
@@ -49,6 +51,9 @@ app.use('/api/auth', authRoutes);
 // Public image proxy — no auth required (UUID filenames are unguessable)
 app.use('/api/image', imageRoutes);
 
+// Public avatar endpoint — profile pictures are served by user email with ETag caching
+app.use('/api/avatar', avatarRoutes);
+
 // All remaining API routes require a valid Google ID token
 app.use('/api', requireAuth);
 
@@ -69,6 +74,7 @@ app.use('/api/grammar', grammarRoutes);
 app.use('/api/entity-quotes', entityQuotesRoutes);
 app.use('/api/backfill', backfillRoutes);
 app.use('/api/folder-notes', folderNotesRoutes);
+app.use('/api/user-settings', userSettingsRoutes);
 
 // Serve Angular static files
 app.use(express.static(path.join(__dirname, '../../client/dist/client/browser')));

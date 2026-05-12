@@ -3,8 +3,9 @@ export interface ChapterNote {
     noteText: string;
     selectedText: string;
     createdAt: string;
+    createdBy?: string;
     createdByName?: string;
-    createdByAvatar?: string;
+    createdByAvatar?: string;  // legacy: base64 data URL; prefer createdBy for new records
 }
 
 import { AuditedRecord } from './audited-record';
@@ -27,5 +28,5 @@ export interface ChapterVersion {
     owner?: string;
     createdBy?: string;
     createdByName?: string;
-    createdByAvatar?: string;
+    createdByAvatar?: string;  // legacy: base64 data URL; prefer createdBy for new records
 }
