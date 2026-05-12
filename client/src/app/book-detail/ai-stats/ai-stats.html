@@ -1,0 +1,56 @@
+<div class="ai-stats-panel">
+  <h3 class="panel-title">
+    <mat-icon>auto_awesome</mat-icon>
+    AI Writing Insights
+  </h3>
+
+  @if (loading()) {
+    <div class="loading-state">
+      <mat-spinner diameter="36" />
+      <span>Analysing chapters…</span>
+    </div>
+  } @else {
+    <div class="totals">
+      <div class="total-pill ai">
+        <span class="pill-value">{{ stats().ai.toLocaleString() }}</span>
+        <span class="pill-label">AI words</span>
+        <span class="pill-pct">{{ pct(stats().ai) }}</span>
+      </div>
+      <div class="total-pill modified">
+        <span class="pill-value">{{ stats().modified.toLocaleString() }}</span>
+        <span class="pill-label">AI + edited</span>
+        <span class="pill-pct">{{ pct(stats().modified) }}</span>
+      </div>
+      <div class="total-pill human">
+        <span class="pill-value">{{ stats().human.toLocaleString() }}</span>
+        <span class="pill-label">Human words</span>
+        <span class="pill-pct">{{ pct(stats().human) }}</span>
+      </div>
+    </div>
+
+    <div class="chart-section">
+      <p class="chart-label">Overall word breakdown</p>
+      <div class="donut-wrap">
+        <canvas #donutCanvas></canvas>
+        <div class="donut-center">
+          <span class="donut-total">{{ stats().total.toLocaleString() }}</span>
+          <span class="donut-total-label">total words</span>
+        </div>
+      </div>
+    </div>
+
+    @if (stats().chapters.length > 1) {
+      <div class="chart-section">
+        <p class="chart-label">Words per chapter</p>
+        <div class="bar-legend">
+          <span class="legend-item ai-dot">AI Generated</span>
+          <span class="legend-item mod-dot">AI + Human</span>
+          <span class="legend-item human-dot">Human Written</span>
+        </div>
+        <div class="bar-wrap" [style.height.px]="Math.max(140, stats().chapters.length * 36)">
+          <canvas #barCanvas></canvas>
+        </div>
+      </div>
+    }
+  }
+</div>

@@ -30,6 +30,9 @@
           <button mat-stroked-button (click)="openNotes()">
             <mat-icon>notes</mat-icon> Notes
           </button>
+          <button mat-stroked-button (click)="openAiStats()">
+            <mat-icon>auto_awesome</mat-icon> AI Insights
+          </button>
           <button mat-stroked-button [matMenuTriggerFor]="exportMenu" [disabled]="exporting()">
             <mat-icon>download</mat-icon>
             {{ exporting() ? 'Exporting...' : 'Export' }}
@@ -73,6 +76,9 @@
   </div>
 
   <div right-panel>
+    @if (panelMode() === 'ai-stats') {
+      <app-ai-stats [chapters]="aiStatsChapters()" [loading]="aiStatsLoading()" />
+    }
     @if (panelMode() === 'notes') {
       <div class="editor-content notes-panel-content">
         <div class="notes-panel-header">

@@ -21,6 +21,7 @@ import { EntityPanelService } from '../services/entity-panel.service';
 import { SeriesContextService } from '../services/series-context.service';
 import { SlideOutPanelContainer } from '../shared/slide-out-panel-container/slide-out-panel-container';
 import { BookNotesComponent } from '../book-notes/book-notes';
+import { AiStatsComponent } from './ai-stats/ai-stats';
 
 @Component({
   selector: 'app-book-detail',
@@ -36,6 +37,7 @@ import { BookNotesComponent } from '../book-notes/book-notes';
     MatMenuModule,
     SlideOutPanelContainer,
     BookNotesComponent,
+    AiStatsComponent,
   ],
   templateUrl: './book-detail.html',
   styleUrl: './book-detail.scss',
@@ -60,13 +62,15 @@ export class BookDetailComponent implements OnInit, OnDestroy {
   uploading = signal(false);
   thumbnailPreview = signal<string | null>(null);
   exporting = signal(false);
-  panelMode = signal<'edit' | 'notes' | null>(null);
+  panelMode = signal<'edit' | 'notes' | 'ai-stats' | null>(null);
   notesContent = signal<string>('');
   savingNotes = signal(false);
   seriesId = signal<string>('');
+  aiStatsChapters = signal<Chapter[]>([]);
+  aiStatsLoading = signal(false);
 
   get rightPanelWidth(): number {
-    return 420;
+    return this.panelMode() === 'ai-stats' ? 520 : 420;
   }
 
   ngOnInit(): void {
@@ -122,12 +126,29 @@ export class BookDetailComponent implements OnInit, OnDestroy {
     this.showPanel.set(true);
   }
 
+  openAiStats(): void {
+    this.panelMode.set('ai-stats');
+    this.showPanel.set(true);
+    const book = this.book();
+    if (!book) return;
+    this.aiStatsLoading.set(true);
+    this.chapterService.getByBook(book.id).subscribe({
+      next: (chapters) => {
+        const sorted = [...chapters].sort((a, b) => (a.sortOrder ?? Infinity) - (b.sortOrder ?? Infinity));
+        this.aiStatsChapters.set(sorted);
+        this.aiStatsLoading.set(false);
+      },
+      error: () => this.aiStatsLoading.set(false),
+    });
+  }
+
   onPanelChanged(open: boolean): void {
     this.showPanel.set(open);
     if (!open) {
       this.editingBook.set(null);
       this.thumbnailPreview.set(null);
       this.panelMode.set(null);
+      this.aiStatsChapters.set([]);
     }
   }
 
@@ -136,6 +157,7 @@ export class BookDetailComponent implements OnInit, OnDestroy {
     this.editingBook.set(null);
     this.thumbnailPreview.set(null);
     this.panelMode.set(null);
+    this.aiStatsChapters.set([]);
   }
 
   updateTitle(value: string): void {

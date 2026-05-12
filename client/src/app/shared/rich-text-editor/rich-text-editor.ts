@@ -379,6 +379,18 @@ export class RichTextEditorComponent implements OnInit, AfterViewInit, OnDestroy
     const el = event.target as HTMLDivElement;
     this.editorContent = el.innerHTML;
 
+    // Mark AI-generated spans as modified when the user edits text inside them
+    const sel = window.getSelection();
+    if (sel && sel.rangeCount > 0) {
+      const node = sel.getRangeAt(0).startContainer;
+      const aiSpan = (node.nodeType === Node.ELEMENT_NODE ? node as Element : node.parentElement)
+        ?.closest<HTMLElement>('[data-ai-generated="true"]');
+      if (aiSpan) {
+        aiSpan.setAttribute('data-ai-generated', 'modified');
+        this.editorContent = el.innerHTML;
+      }
+    }
+
     // Strip trailing \u00A0 after entity-reference when punctuation typed
     const inputData = (event as InputEvent).data;
     if (inputData && /^[.,!?;:)'""\u2019\u201d]$/.test(inputData)) {
@@ -1033,11 +1045,12 @@ export class RichTextEditorComponent implements OnInit, AfterViewInit, OnDestroy
     if (sel) { sel.removeAllRanges(); sel.addRange(range); }
     range.deleteContents();
     const fragment = this.buildEntityAnnotatedFragment(text);
-    const lastInserted = fragment.lastChild;
-    range.insertNode(fragment);
+    const wrapper = document.createElement('span');
+    wrapper.setAttribute('data-ai-generated', 'true');
+    wrapper.appendChild(fragment);
+    range.insertNode(wrapper);
     const ar = document.createRange();
-    if (lastInserted) ar.setStartAfter(lastInserted);
-    else ar.setStart(range.startContainer, range.startOffset);
+    ar.setStartAfter(wrapper);
     ar.collapse(true);
     if (sel) { sel.removeAllRanges(); sel.addRange(ar); }
     this.scrollCursorIntoView();
