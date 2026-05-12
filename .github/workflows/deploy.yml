@@ -17,6 +17,7 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: 20
+          cache: 'npm'
 
       - name: Install root dependencies
         run: npm ci
@@ -30,9 +31,15 @@ jobs:
       - name: Build application
         run: npm run build
 
+      - name: Prune dev dependencies
+        run: npm prune --omit=dev
+
+      - name: Create deployment zip
+        run: zip -r deploy.zip dist/ node_modules/ package.json package-lock.json
+
       - name: Deploy to Azure Web App
         uses: azure/webapps-deploy@v3
         with:
           app-name: quill-ai
           publish-profile: ${{ secrets.AZURE_WEBAPP_PUBLISH_PROFILE }}
-          package: .
+          package: deploy.zip
