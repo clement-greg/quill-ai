@@ -1,4 +1,4 @@
-import { Component, inject, signal, computed, ElementRef, ViewChild } from '@angular/core';
+import { Component, inject, signal, effect, ElementRef, ViewChild } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { MatButtonModule } from '@angular/material/button';
 import { MatIconModule } from '@angular/material/icon';
@@ -34,10 +34,26 @@ export class UserSettingsComponent {
   readonly avatarUrl = this.settingsService.avatarUrl;
 
   // Profile
-  displayNameDraft = signal(this.settingsService.displayName());
+  displayNameDraft = signal('');
+  private displayNameDraftDirty = false;
+
+  constructor() {
+    this.headerService.set([{ label: 'Settings' }]);
+    // Keep the draft in sync with the server value until the user edits it
+    effect(() => {
+      if (!this.displayNameDraftDirty) {
+        this.displayNameDraft.set(this.settingsService.displayName());
+      }
+    });
+  }
+
+  onDisplayNameInput(): void {
+    this.displayNameDraftDirty = true;
+  }
 
   saveProfile(): void {
     this.settingsService.setDisplayName(this.displayNameDraft().trim());
+    this.displayNameDraftDirty = false;
     this.snackBar.open('Profile saved.', undefined, { duration: 2000 });
   }
 
@@ -82,10 +98,6 @@ export class UserSettingsComponent {
   editingId = signal<string | null>(null);
   editLabel = signal('');
   editPrompt = signal('');
-
-  constructor() {
-    this.headerService.set([{ label: 'Settings' }]);
-  }
 
   addItem(): void {
     const label = this.newLabel().trim();

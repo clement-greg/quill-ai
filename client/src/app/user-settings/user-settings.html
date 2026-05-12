@@ -30,7 +30,7 @@
         <mat-form-field appearance="outline" class="profile-name-field">
           <mat-label>Display name</mat-label>
           <input matInput placeholder="Your name" [value]="displayNameDraft()"
-            (input)="displayNameDraft.set($any($event.target).value)" />
+            (input)="displayNameDraft.set($any($event.target).value); onDisplayNameInput()" />
         </mat-form-field>
         <button mat-flat-button (click)="saveProfile()">Save</button>
       </div>
