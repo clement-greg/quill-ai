@@ -35,9 +35,18 @@ body {
   // Reset the user agent margin.
   margin: 0;
   height: 100%;
+
+  // Default toolbar gradient (Classic — azure/blue)
+  --toolbar-bg: linear-gradient(135deg, #1760C0 0%, #0277BD 100%);
+  --toolbar-text: var(--mat-sys-on-primary);
+  --toolbar-border-bottom: none;
+  --toolbar-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
 }
 
-// Dark theme overrides — toggled via the .dark-theme class on <body>
+// ── Color themes — applied via a theme-* class on <body> ────────────────────
+
+// Dark (azure, dark) — also aliased as .dark-theme for backward compat
+body.theme-dark,
 body.dark-theme {
   @include mat.theme(
     (
@@ -49,4 +58,164 @@ body.dark-theme {
     )
   );
   color-scheme: dark;
+  --toolbar-bg: linear-gradient(135deg, #0D1B2A 0%, #0D3057 100%);
+}
+
+// Rose — warm pinks and reds, light background (traditionally feminine)
+body.theme-rose {
+  @include mat.theme(
+    (
+      color: (
+        primary: mat.$rose-palette,
+        tertiary: mat.$violet-palette,
+      ),
+    )
+  );
+  color-scheme: light;
+  --toolbar-bg: linear-gradient(135deg, #A51B50 0%, #6A1B9A 100%);
+}
+
+// Lavender — soft violets and purples, light background (traditionally feminine)
+body.theme-lavender {
+  @include mat.theme(
+    (
+      color: (
+        primary: mat.$violet-palette,
+        tertiary: mat.$blue-palette,
+      ),
+    )
+  );
+  color-scheme: light;
+  --toolbar-bg: linear-gradient(135deg, #5E35B1 0%, #283593 100%);
+}
+
+// Forest — deep greens, light background (nature-inspired, neutral)
+body.theme-forest {
+  @include mat.theme(
+    (
+      color: (
+        primary: mat.$green-palette,
+        tertiary: mat.$cyan-palette,
+      ),
+    )
+  );
+  color-scheme: light;
+  --toolbar-bg: linear-gradient(135deg, #2E7D32 0%, #00695C 100%);
+}
+
+// Midnight — deep blue, dark background (traditionally masculine)
+body.theme-midnight {
+  @include mat.theme(
+    (
+      color: (
+        primary: mat.$blue-palette,
+        tertiary: mat.$cyan-palette,
+        theme-type: dark,
+      ),
+    )
+  );
+  color-scheme: dark;
+  --toolbar-bg: linear-gradient(135deg, #0A1628 0%, #0D3349 100%);
+}
+
+// Amber — warm oranges and yellows, light background (warm, neutral)
+body.theme-amber {
+  @include mat.theme(
+    (
+      color: (
+        primary: mat.$orange-palette,
+        tertiary: mat.$yellow-palette,
+      ),
+    )
+  );
+  color-scheme: light;
+  --toolbar-bg: linear-gradient(135deg, #D84315 0%, #EF6C00 100%);
+}
+
+// Ocean — cool cyan and blue, light background (calm, neutral)
+body.theme-ocean {
+  @include mat.theme(
+    (
+      color: (
+        primary: mat.$cyan-palette,
+        tertiary: mat.$blue-palette,
+      ),
+    )
+  );
+  color-scheme: light;
+  --toolbar-bg: linear-gradient(135deg, #00696F 0%, #01579B 100%);
+}
+
+// Fuchsia — vivid magenta and violet, light background (bold, feminine)
+body.theme-fuchsia {
+  @include mat.theme(
+    (
+      color: (
+        primary: mat.$magenta-palette,
+        tertiary: mat.$violet-palette,
+      ),
+    )
+  );
+  color-scheme: light;
+  --toolbar-bg: linear-gradient(135deg, #880E4F 0%, #7B1FA2 100%);
+}
+
+// Crimson — deep red, dark background (dramatic, intense)
+body.theme-crimson {
+  @include mat.theme(
+    (
+      color: (
+        primary: mat.$red-palette,
+        tertiary: mat.$magenta-palette,
+        theme-type: dark,
+      ),
+    )
+  );
+  color-scheme: dark;
+  --toolbar-bg: linear-gradient(135deg, #3E0000 0%, #660033 100%);
+}
+
+// Spring — bright chartreuse/lime, light background (fresh, nature)
+body.theme-spring {
+  @include mat.theme(
+    (
+      color: (
+        primary: mat.$chartreuse-palette,
+        tertiary: mat.$spring-green-palette,
+      ),
+    )
+  );
+  color-scheme: light;
+  --toolbar-bg: linear-gradient(135deg, #558B2F 0%, #2E7D32 100%);
+}
+
+// Sunset — warm reds and oranges, light background (vibrant, energetic)
+body.theme-sunset {
+  @include mat.theme(
+    (
+      color: (
+        primary: mat.$red-palette,
+        tertiary: mat.$orange-palette,
+      ),
+    )
+  );
+  color-scheme: light;
+  --toolbar-bg: linear-gradient(135deg, #B71C1C 0%, #D84315 100%);
+}
+
+// Minimalist — clean surface header, no dramatic color (neutral, editorial)
+body.theme-minimalist {
+  @include mat.theme(
+    (
+      color: (
+        primary: mat.$azure-palette,
+        tertiary: mat.$blue-palette,
+      ),
+    )
+  );
+  color-scheme: light;
+  --toolbar-bg: var(--mat-sys-surface);
+  --toolbar-text: var(--mat-sys-on-surface);
+  --toolbar-border-bottom: 1px solid var(--mat-sys-outline-variant);
+  --toolbar-shadow: none;
 }

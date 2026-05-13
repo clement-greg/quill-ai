@@ -54,7 +54,9 @@
         "serve": {
           "builder": "@angular/build:dev-server",
           "options": {
-            "port": 5412
+            "port": 5412,
+            "poll": 500,
+            "hmr": false
           },
           "configurations": {
             "production": {

@@ -9,6 +9,7 @@ interface UserSettings {
   displayName?: string;
   avatarUrl?: string;
   darkMode?: boolean;
+  colorTheme?: string;
   ghostCompleteItems?: { id: string; label: string; prompt: string }[];
 }
 
@@ -45,6 +46,7 @@ router.put('/', async (req: Request, res: Response): Promise<void> => {
       displayName: req.body.displayName,
       avatarUrl: req.body.avatarUrl,
       darkMode: req.body.darkMode,
+      colorTheme: req.body.colorTheme,
       ghostCompleteItems: req.body.ghostCompleteItems,
     };
     await container.items.upsert(settings);

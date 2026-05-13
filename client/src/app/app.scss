@@ -52,7 +52,8 @@ main {
   height: 28px;
   border-radius: 50%;
   object-fit: cover;
-  border: 2px solid rgba(255, 255, 255, 0.7);
+  border: 2px solid var(--toolbar-text);
+  opacity: 1;
   flex-shrink: 0;
 }
 
@@ -64,15 +65,17 @@ main {
 .app-toolbar a,
 .app-toolbar span,
 .app-toolbar mat-icon {
-  color: white !important;
+  color: var(--toolbar-text) !important;
 }
 
 .app-toolbar {
-  background-color: #1565c0 !important;
+  background: var(--toolbar-bg) !important;
+  border-bottom: var(--toolbar-border-bottom) !important;
+  box-shadow: var(--toolbar-shadow) !important;
 }
 
 .toolbar-brand {
-  color: var(--mat-toolbar-container-text-color, white);
+  color: var(--mat-sys-on-primary);
   text-decoration: none;
   font-size: 1.1rem;
   font-weight: 500;
@@ -84,13 +87,13 @@ main {
   width: 18px;
   height: 18px;
   line-height: 18px;
-  color: var(--mat-toolbar-container-text-color, white);
+  color: var(--mat-sys-on-primary);
   opacity: 0.6;
   margin: 0 2px;
 }
 
 .breadcrumb-link {
-  color: var(--mat-toolbar-container-text-color, white);
+  color: var(--mat-sys-on-primary);
   opacity: 0.85;
   text-decoration: none;
   font-size: 0.95rem;
@@ -104,7 +107,7 @@ main {
 }
 
 .breadcrumb-current {
-  color: var(--mat-toolbar-container-text-color, white);
+  color: var(--mat-sys-on-primary);
   font-size: 0.95rem;
   font-weight: 600;
   white-space: nowrap;
@@ -124,7 +127,7 @@ main {
 
 .mobile-back-btn {
   display: none;
-  color: white !important;
+  color: var(--mat-sys-on-primary) !important;
   margin-right: 4px;
 }
 

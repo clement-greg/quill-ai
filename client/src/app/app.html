@@ -9,7 +9,7 @@
 
   <!-- Logo -->
   <a routerLink="/series" class="toolbar-brand">
-    <img src="/quill-ai-logo-white.svg" style="height: 53px;">
+    <img [src]="logoSrc()" style="height: 53px;">
   </a>
 
   <!-- Desktop breadcrumbs -->
@@ -26,26 +26,12 @@
 
   <span class="toolbar-spacer"></span>
 
-  <!-- AI Assistant toggle (shown when logged in) -->
-  @if (auth.currentUser()) {
-    <button mat-icon-button
-            (click)="aiAssistant.togglePanel()"
-            title="AI Assistant"
-            [style.color]="'#fff'"
-            [class.ai-btn-active]="aiAssistant.isOpen()">
-      <mat-icon>smart_toy</mat-icon>
-    </button>
-  }
   @if (auth.currentUser(); as user) {
-    <button mat-button [matMenuTriggerFor]="desktopMenu" class="desktop-only toolbar-user-btn" style="color: #fff;">
-      @if (settings.avatarUrl()) {
-        <img class="toolbar-user-avatar" [src]="settings.avatarUrl()" alt="Profile" />
-      } @else {
-        <mat-icon>account_circle</mat-icon>
-      }
-      {{ settings.displayName() || user.name }}
+    <!-- App navigation menu (desktop) -->
+    <button mat-icon-button [matMenuTriggerFor]="appNavMenu" class="desktop-only" title="Navigation">
+      <mat-icon>apps</mat-icon>
     </button>
-    <mat-menu #desktopMenu="matMenu">
+    <mat-menu #appNavMenu="matMenu">
       @if (header.menuActions().length > 0) {
         @for (item of header.menuActions(); track item.label) {
           <button mat-menu-item (click)="item.action()">
@@ -55,10 +41,26 @@
         }
         <mat-divider></mat-divider>
       }
+      <button mat-menu-item (click)="aiAssistant.togglePanel()">
+        <mat-icon>smart_toy</mat-icon>
+        Resource Manager
+      </button>
       <button mat-menu-item routerLink="/archived">
         <mat-icon>archive</mat-icon>
         Archived Items
       </button>
+    </mat-menu>
+
+    <!-- User menu (desktop) -->
+    <button mat-button [matMenuTriggerFor]="userMenu" class="desktop-only toolbar-user-btn" style="color: #fff;">
+      @if (settings.avatarUrl()) {
+        <img class="toolbar-user-avatar" [src]="settings.avatarUrl()" alt="Profile" />
+      } @else {
+        <mat-icon>account_circle</mat-icon>
+      }
+      {{ settings.displayName() || user.name }}
+    </button>
+    <mat-menu #userMenu="matMenu">
       <button mat-menu-item routerLink="/settings">
         <mat-icon>settings</mat-icon>
         Settings
@@ -69,25 +71,35 @@
       </button>
     </mat-menu>
 
-    <!-- Mobile: single combined menu -->
-    <button mat-icon-button [matMenuTriggerFor]="mobileMenu" class="mobile-only" style="color: #fff;">
-      <mat-icon>more_vert</mat-icon>
+    <!-- App navigation menu (mobile) -->
+    <button mat-icon-button [matMenuTriggerFor]="mobileNavMenu" class="mobile-only" style="color: #fff;">
+      <mat-icon>apps</mat-icon>
     </button>
-    <mat-menu #mobileMenu="matMenu">
-      @for (item of header.menuActions(); track item.label) {
-        <button mat-menu-item (click)="item.action()">
-          <mat-icon>{{ item.icon }}</mat-icon>
-          <span>{{ item.label }}</span>
-        </button>
-      }
+    <mat-menu #mobileNavMenu="matMenu">
       @if (header.menuActions().length > 0) {
+        @for (item of header.menuActions(); track item.label) {
+          <button mat-menu-item (click)="item.action()">
+            <mat-icon>{{ item.icon }}</mat-icon>
+            <span>{{ item.label }}</span>
+          </button>
+        }
         <mat-divider></mat-divider>
       }
-
+      <button mat-menu-item (click)="aiAssistant.togglePanel()">
+        <mat-icon>smart_toy</mat-icon>
+        Resource Manager
+      </button>
       <button mat-menu-item routerLink="/archived">
         <mat-icon>archive</mat-icon>
         Archived Items
       </button>
+    </mat-menu>
+
+    <!-- User menu (mobile) -->
+    <button mat-icon-button [matMenuTriggerFor]="mobileUserMenu" class="mobile-only" style="color: #fff;">
+      <mat-icon>more_vert</mat-icon>
+    </button>
+    <mat-menu #mobileUserMenu="matMenu">
       <button mat-menu-item routerLink="/settings">
         <mat-icon>settings</mat-icon>
         Settings

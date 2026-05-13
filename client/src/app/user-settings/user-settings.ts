@@ -4,10 +4,32 @@ import { MatButtonModule } from '@angular/material/button';
 import { MatIconModule } from '@angular/material/icon';
 import { MatInputModule } from '@angular/material/input';
 import { MatFormFieldModule } from '@angular/material/form-field';
-import { MatSlideToggleModule } from '@angular/material/slide-toggle';
 import { MatSnackBar } from '@angular/material/snack-bar';
 import { UserSettingsService, GhostCompleteItem } from '../services/user-settings.service';
 import { HeaderService } from '../services/header.service';
+
+export interface ColorThemeOption {
+  id: string;
+  label: string;
+  primaryColor: string;
+  surfaceColor: string;
+}
+
+export const COLOR_THEMES: ColorThemeOption[] = [
+  { id: 'default',  label: 'Classic',   primaryColor: '#4A86C8', surfaceColor: '#F3F7FB' },
+  { id: 'dark',     label: 'Dark',      primaryColor: '#90C4F5', surfaceColor: '#111318' },
+  { id: 'rose',     label: 'Rose',      primaryColor: '#B52155', surfaceColor: '#FFF8F9' },
+  { id: 'lavender', label: 'Lavender',  primaryColor: '#6B4C9A', surfaceColor: '#FDFAFF' },
+  { id: 'forest',   label: 'Forest',    primaryColor: '#2E7D32', surfaceColor: '#F5FDF6' },
+  { id: 'midnight', label: 'Midnight',  primaryColor: '#5B8CE8', surfaceColor: '#0E1520' },
+  { id: 'amber',    label: 'Amber',     primaryColor: '#E07000', surfaceColor: '#FFFBF0' },
+  { id: 'ocean',    label: 'Ocean',     primaryColor: '#0097A7', surfaceColor: '#F0FBFC' },
+  { id: 'fuchsia',  label: 'Fuchsia',   primaryColor: '#B800B8', surfaceColor: '#FDF5FF' },
+  { id: 'crimson',  label: 'Crimson',   primaryColor: '#EF7070', surfaceColor: '#1A0808' },
+  { id: 'spring',      label: 'Spring',     primaryColor: '#7CB800', surfaceColor: '#FAFFF0' },
+  { id: 'sunset',      label: 'Sunset',     primaryColor: '#C62828', surfaceColor: '#FFF5F0' },
+  { id: 'minimalist',  label: 'Minimalist', primaryColor: '#E0E0E0', surfaceColor: '#FFFFFF' },
+];
 
 @Component({
   selector: 'app-user-settings',
@@ -17,7 +39,6 @@ import { HeaderService } from '../services/header.service';
     MatIconModule,
     MatInputModule,
     MatFormFieldModule,
-    MatSlideToggleModule,
   ],
   templateUrl: './user-settings.html',
   styleUrl: './user-settings.scss',
@@ -30,7 +51,8 @@ export class UserSettingsComponent {
   @ViewChild('avatarFileInput') avatarFileInput!: ElementRef<HTMLInputElement>;
 
   readonly items = this.settingsService.ghostCompleteItems;
-  readonly darkMode = this.settingsService.darkMode;
+  readonly colorTheme = this.settingsService.colorTheme;
+  readonly colorThemes = COLOR_THEMES;
   readonly avatarUrl = this.settingsService.avatarUrl;
 
   // Profile
@@ -141,7 +163,7 @@ export class UserSettingsComponent {
     this.snackBar.open('Item removed.', undefined, { duration: 2000 });
   }
 
-  toggleDarkMode(value: boolean): void {
-    this.settingsService.setDarkMode(value);
+  selectTheme(id: string): void {
+    this.settingsService.setColorTheme(id);
   }
 }

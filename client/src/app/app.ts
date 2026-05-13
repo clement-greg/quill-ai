@@ -28,7 +28,16 @@ export class App implements OnInit, OnDestroy {
   settings = inject(UserSettingsService);
 
   private darkModeEffect = effect(() => {
-    document.body.classList.toggle('dark-theme', this.settings.darkMode());
+    const theme = this.settings.colorTheme();
+    // Remove any previously applied theme class
+    document.body.classList.forEach(cls => {
+      if (cls.startsWith('theme-') || cls === 'dark-theme') {
+        document.body.classList.remove(cls);
+      }
+    });
+    if (theme && theme !== 'default') {
+      document.body.classList.add(`theme-${theme}`);
+    }
   });
 
   private userLoadEffect = effect(() => {
@@ -41,6 +50,12 @@ export class App implements OnInit, OnDestroy {
     const crumbs = this.header.breadcrumbs().filter(c => c.link);
     return crumbs.length > 0 ? crumbs[crumbs.length - 1].link! : null;
   });
+
+  logoSrc = computed(() =>
+    this.settings.colorTheme() === 'minimalist'
+      ? '/quill-ai-logo.svg'
+      : '/quill-ai-logo-white.svg'
+  );
 
   ngOnInit(): void {
     this.updateCheck.start();

@@ -41,13 +41,23 @@
   <section class="settings-section">
     <div class="section-header">
       <h3>Appearance</h3>
+      <p class="section-desc">Choose a color theme for the app.</p>
     </div>
-    <div class="appearance-row">
-      <div class="appearance-label">
-        <span>Dark Mode</span>
-        <span class="section-desc">Switch between light and dark theme</span>
-      </div>
-      <mat-slide-toggle [checked]="darkMode()" (change)="toggleDarkMode($event.checked)"></mat-slide-toggle>
+    <div class="theme-grid">
+      @for (theme of colorThemes; track theme.id) {
+        <button class="theme-card"
+                [class.selected]="colorTheme() === theme.id"
+                (click)="selectTheme(theme.id)"
+                [title]="theme.label">
+          <div class="theme-preview" [style.background-color]="theme.surfaceColor">
+            <div class="theme-preview-dot" [style.background-color]="theme.primaryColor"></div>
+          </div>
+          <span class="theme-card-label">{{ theme.label }}</span>
+          @if (colorTheme() === theme.id) {
+            <mat-icon class="theme-card-check">check_circle</mat-icon>
+          }
+        </button>
+      }
     </div>
   </section>
 

@@ -1,4 +1,4 @@
-import { Injectable, signal, inject } from '@angular/core';
+import { Injectable, signal, computed, inject } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
 import { firstValueFrom } from 'rxjs';
 
@@ -12,6 +12,7 @@ export interface UserSettingsData {
   displayName?: string;
   avatarUrl?: string;
   darkMode?: boolean;
+  colorTheme?: string;
   ghostCompleteItems?: GhostCompleteItem[];
 }
 
@@ -19,10 +20,14 @@ export interface UserSettingsData {
 export class UserSettingsService {
   private http = inject(HttpClient);
   private _ghostCompleteItems = signal<GhostCompleteItem[]>([]);
-  private _darkMode = signal<boolean>(false);
+  private _colorTheme = signal<string>('default');
   private _displayName = signal<string>('');
   private _avatarUrl = signal<string>('');
-  readonly darkMode = this._darkMode.asReadonly();
+  /** True when the active theme is a dark variant (for backward compat). */
+  readonly darkMode = computed(() =>
+    this._colorTheme() === 'dark' || this._colorTheme() === 'midnight'
+  );
+  readonly colorTheme = this._colorTheme.asReadonly();
   readonly displayName = this._displayName.asReadonly();
   readonly avatarUrl = this._avatarUrl.asReadonly();
   readonly ghostCompleteItems = this._ghostCompleteItems.asReadonly();
@@ -33,7 +38,8 @@ export class UserSettingsService {
       const settings = await firstValueFrom(this.http.get<UserSettingsData>('/api/user-settings'));
       this._displayName.set(settings.displayName ?? '');
       this._avatarUrl.set(settings.avatarUrl ?? '');
-      this._darkMode.set(settings.darkMode ?? false);
+      // Migrate: if no colorTheme yet, fall back to the legacy darkMode flag
+      this._colorTheme.set(settings.colorTheme ?? (settings.darkMode ? 'dark' : 'default'));
       this._ghostCompleteItems.set(settings.ghostCompleteItems ?? []);
     } catch {
       // Server unavailable — signals keep their default values
@@ -45,7 +51,8 @@ export class UserSettingsService {
       this.http.put<UserSettingsData>('/api/user-settings', {
         displayName: this._displayName(),
         avatarUrl: this._avatarUrl(),
-        darkMode: this._darkMode(),
+        colorTheme: this._colorTheme(),
+        darkMode: this.darkMode(),
         ghostCompleteItems: this._ghostCompleteItems(),
       })
     ).catch(() => {});
@@ -75,8 +82,14 @@ export class UserSettingsService {
     this.saveItems(items);
   }
 
+  setColorTheme(value: string): void {
+    this._colorTheme.set(value);
+    this.saveToServer();
+  }
+
+  /** @deprecated Use setColorTheme instead. Kept for backward compatibility. */
   setDarkMode(value: boolean): void {
-    this._darkMode.set(value);
+    this._colorTheme.set(value ? 'dark' : 'default');
     this.saveToServer();
   }
 
