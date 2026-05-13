@@ -584,12 +584,31 @@ export class RichTextEditorComponent implements OnInit, AfterViewInit, OnDestroy
       if (this.ejectFromAiSpan() && this.editorRef) {
         this.lastEjectedSpan = null; // new block element always lands outside the span
         this.editorContent = this.editorRef.nativeElement.innerHTML;
-        // Chrome may inject <font color> into the new block asynchronously.
-        // Strip any font tags after the browser finishes creating the paragraph.
+        // Chrome clones the inline formatting context (including the ai-generated span
+        // and any <font color>) into the new block asynchronously after Enter.
+        // Run cleanup once the browser has finished building the new paragraph.
         setTimeout(() => {
           if (!this.editorRef) return;
           const editor = this.editorRef.nativeElement;
-          editor.querySelectorAll('font').forEach((font: HTMLElement) => {
+          // Find the block that now contains the cursor — that is the new paragraph.
+          const sel = window.getSelection();
+          const cursorNode = sel && sel.rangeCount > 0 ? sel.getRangeAt(0).startContainer : null;
+          const newBlock = cursorNode
+            ? (cursorNode.nodeType === Node.TEXT_NODE
+                ? (cursorNode as Text).parentElement
+                : cursorNode as HTMLElement)?.closest<HTMLElement>(
+                    'div, p, li, blockquote, h1, h2, h3, h4, h5, h6')
+            : null;
+          // Unwrap every data-ai-generated span inside the new block.
+          // These were copied in by the browser, not typed by the user.
+          const scope: Element = newBlock ?? editor;
+          scope.querySelectorAll<HTMLElement>('[data-ai-generated]').forEach(span => {
+            const parent = span.parentNode!;
+            while (span.firstChild) parent.insertBefore(span.firstChild, span);
+            parent.removeChild(span);
+          });
+          // Also strip any <font color> Chrome injected.
+          scope.querySelectorAll('font').forEach((font: HTMLElement) => {
             const parent = font.parentNode!;
             while (font.firstChild) parent.insertBefore(font.firstChild, font);
             parent.removeChild(font);
@@ -651,6 +670,16 @@ export class RichTextEditorComponent implements OnInit, AfterViewInit, OnDestroy
 
   onEditorMouseUp(): void {
     setTimeout(() => this.updateFormattingToolbar());
+  }
+
+  onEditorKeyUp(event: KeyboardEvent): void {
+    // Show/update the formatting toolbar when the selection changes via keyboard.
+    // Covers Shift+arrows, releasing Shift after a selection, and Ctrl+A.
+    const isSelectionKey = event.shiftKey || event.key === 'Shift'
+      || (event.key === 'a' && (event.ctrlKey || event.metaKey));
+    if (isSelectionKey) {
+      setTimeout(() => this.updateFormattingToolbar());
+    }
   }
 
   onEditorMouseMove(event: MouseEvent): void {

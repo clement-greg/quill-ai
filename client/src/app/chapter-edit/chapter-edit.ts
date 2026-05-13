@@ -284,7 +284,9 @@ export class ChapterEditComponent implements OnInit, OnDestroy {
     this.noteSelectionRange = sel.getRangeAt(0).cloneRange();
 
     const PANEL_WIDTH = 320;
-    const top = rect.bottom + 10;
+    const PANEL_HEIGHT = 240; // estimated max height of the popup
+    const rawTop = rect.bottom + 10;
+    const top = Math.min(rawTop, window.innerHeight - PANEL_HEIGHT - 8);
     const left = Math.max(8, Math.min(rect.left + rect.width / 2 - PANEL_WIDTH / 2, window.innerWidth - PANEL_WIDTH - 8));
     this.noteInputTop.set(top);
     this.noteInputLeft.set(left);
@@ -533,7 +535,14 @@ export class ChapterEditComponent implements OnInit, OnDestroy {
 
   cancelEntityEdit(): void { this.editingEntity.set(null); }
 
-  openAiStats(): void { this.editingEntity.set(null); this.showAiStats.set(true); }
+  openAiStats(): void {
+    this.editingEntity.set(null);
+    const current = this.chapter();
+    if (current && this.editorRef) {
+      this.chapter.set({ ...current, content: this.editorRef.getContent() });
+    }
+    this.showAiStats.set(true);
+  }
   closeAiStats(): void { this.showAiStats.set(false); }
 
   onRightPanelChange(open: boolean): void {
