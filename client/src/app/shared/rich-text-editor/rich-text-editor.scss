@@ -94,7 +94,9 @@
   overflow: hidden;
   cursor: ns-resize;
   z-index: 5;
-  background: color-mix(in srgb, var(--mat-sys-surface, #fff) 97%, var(--mat-sys-on-surface, #000) 3%);
+  /* surface-container-low sits one step above the base surface — visible in
+     both light and dark themes without needing a separate dark-mode override */
+  background: var(--mat-sys-surface-container-low, #f3f3f3);
   user-select: none;
 }
 

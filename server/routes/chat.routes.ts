@@ -64,6 +64,7 @@ router.post('/general', async (req: Request, res: Response) => {
         { role: 'system', content: systemPrompt },
         ...messages,
       ],
+      max_tokens: 2048,
       stream: true,
     });
 
@@ -145,7 +146,8 @@ router.post('/:chapterId', async (req: Request, res: Response) => {
     const container = getContainer('chapters');
     const { resource } = await container.item(chapterId, chapterId).read<Chapter>();
     if (resource) {
-      const plainText = (resource.content ?? '').replace(/<[^>]+>/g, '').trim();
+      const rawText = (resource.content ?? '').replace(/<[^>]+>/g, '').trim();
+      const plainText = rawText.length > 12000 ? rawText.slice(0, 12000) + '\n[...chapter truncated for context...]' : rawText;
       systemPrompt =
         `You are a helpful writing assistant helping an author with their story chapter titled "${resource.title}". Provide only the requested content in plain text. Do not use markdown, HTML, or any formatting. Do not include conversational filler, preamble, or meta-commentary such as "Sure, here you go" or "Let me generate that for you."` +
         (plainText
@@ -195,6 +197,7 @@ router.post('/:chapterId', async (req: Request, res: Response) => {
         { role: 'system', content: systemPrompt },
         ...messages,
       ],
+      max_tokens: 2048,
       stream: true,
     });
 

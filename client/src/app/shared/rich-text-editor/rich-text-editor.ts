@@ -1855,10 +1855,15 @@ export class RichTextEditorComponent implements OnInit, AfterViewInit, OnDestroy
     if (totalH <= 0) return;
     const scale = H / totalH;
 
-    // Background: match editor surface
+    // Background: match editor surface; fall back to themed surface for transparent backgrounds
     const editorBg = getComputedStyle(editor).backgroundColor;
     const bgIsTransparent = !editorBg || editorBg === 'transparent' || editorBg === 'rgba(0, 0, 0, 0)';
-    ctx.fillStyle = bgIsTransparent ? '#ffffff' : editorBg;
+    if (bgIsTransparent) {
+      const surfaceColor = getComputedStyle(document.documentElement).getPropertyValue('--mat-sys-surface-container-low').trim();
+      ctx.fillStyle = surfaceColor || '#ffffff';
+    } else {
+      ctx.fillStyle = editorBg;
+    }
     ctx.fillRect(0, 0, W, H);
 
     // Derive text color components for drawing bars
@@ -1892,25 +1897,84 @@ export class RichTextEditorComponent implements OnInit, AfterViewInit, OnDestroy
       const yH = blockH * scale;
 
       const isHeading = /^H[1-6]$/.test(block.tagName);
+      const indent = isHeading ? 2 : 4;
+      const maxLineW = W - indent * 2;
+      const opacity = isHeading ? 0.78 : 0.55;
+      ctx.fillStyle = `rgba(${tr},${tg},${tb},${opacity})`;
 
       if (hasImg) {
         ctx.fillStyle = `rgba(${tr},${tg},${tb},0.2)`;
-        ctx.fillRect(4, yTop, W - 8, Math.max(2, yH));
+        ctx.fillRect(indent, yTop, maxLineW, Math.max(2, yH));
       } else {
-        const lineH = parseFloat(getComputedStyle(block).lineHeight) || 20;
-        const miniLineH = Math.max(1.5, lineH * scale);
-        const numLines = Math.max(1, Math.round(blockH / lineH));
-        const indent = isHeading ? 2 : 4;
-        const maxLineW = W - indent * 2;
-        const opacity = isHeading ? 0.75 : 0.5;
-        ctx.fillStyle = `rgba(${tr},${tg},${tb},${opacity})`;
-        for (let i = 0; i < numLines; i++) {
-          const lineY = yTop + i * miniLineH;
-          if (lineY > H) break;
-          // Last line in a paragraph is typically shorter
-          const isLastLine = i === numLines - 1 && numLines > 1;
-          const lineW = isLastLine ? maxLineW * 0.45 : maxLineW;
-          ctx.fillRect(indent, lineY, lineW, Math.max(1, miniLineH - 0.5));
+        // Use the browser's actual line layout via Range.getClientRects().
+        // This gives exact Y positions and text widths for every wrapped line.
+        const range = document.createRange();
+        range.selectNodeContents(block);
+        const rawRects = Array.from(range.getClientRects());
+
+        // Merge rects that share the same visual line (within 2 px tolerance).
+        const lineGroups: { top: number; minLeft: number; maxRight: number; height: number }[] = [];
+        for (const r of rawRects) {
+          if (r.width < 1 || r.height < 1) continue;
+          const existing = lineGroups.find(l => Math.abs(l.top - r.top) < 2);
+          if (existing) {
+            existing.minLeft = Math.min(existing.minLeft, r.left);
+            existing.maxRight = Math.max(existing.maxRight, r.right);
+          } else {
+            lineGroups.push({ top: r.top, minLeft: r.left, maxRight: r.right, height: r.height });
+          }
+        }
+        lineGroups.sort((a, b) => a.top - b.top);
+
+        if (lineGroups.length === 0) continue;
+
+        const blockLeft = blockRect.left;
+        const blockWidth = blockRect.width || 1;
+
+        // A leading \t with white-space:pre-wrap renders as dead space, but
+        // getClientRects() starts the line rect AT the tab character (blockLeft),
+        // not after it — so minLeft always equals blockLeft for indented first lines.
+        // Fix: walk to the first non-whitespace character and measure its exact
+        // viewport left with a targeted single-char Range.
+        let firstVisibleLeft = blockLeft;
+        const wsWalker = document.createTreeWalker(block, NodeFilter.SHOW_TEXT);
+        let wsNode: Text | null;
+        wsLoop: while ((wsNode = wsWalker.nextNode() as Text | null)) {
+          const txt = wsNode.textContent ?? '';
+          for (let ci = 0; ci < txt.length; ci++) {
+            if (!/\s/.test(txt[ci])) {
+              const cr = document.createRange();
+              cr.setStart(wsNode, ci);
+              cr.setEnd(wsNode, ci + 1);
+              const crRect = cr.getClientRects()[0];
+              if (crRect) firstVisibleLeft = crRect.left;
+              break wsLoop;
+            }
+          }
+        }
+
+        for (const line of lineGroups) {
+          // Map viewport Y → document-absolute Y → minimap Y
+          const lineDocTop = offsetTop + (line.top - blockRect.top);
+          const miniY = lineDocTop * scale;
+          if (miniY < 0 || miniY > H) continue;
+
+          // First line uses the measured first-visible-char position so that
+          // leading tabs produce a real indent; continuation lines use minLeft.
+          const effectiveLeft = (line === lineGroups[0]) ? firstVisibleLeft : line.minLeft;
+          const rawRelLeft = Math.max(0, effectiveLeft - blockLeft);
+          // A tab in a wide editor column scales to only ~2–3 px in the minimap.
+          // Amplify the indent 4× so it reads clearly; cap in block pixel space
+          // (same units as rawRelLeft) to avoid the value being divided away.
+          const relLeft = (line === lineGroups[0] && rawRelLeft > 0)
+            ? Math.min(rawRelLeft * 4, blockWidth * 0.22)
+            : rawRelLeft;
+          const relRight = Math.min(blockWidth, line.maxRight - blockLeft);
+          const lineX = indent + (relLeft / blockWidth) * maxLineW;
+          const lineW = Math.max(2, ((relRight - relLeft) / blockWidth) * maxLineW);
+          const miniH = Math.max(1, line.height * scale - 0.5);
+
+          ctx.fillRect(lineX, miniY, lineW, miniH);
         }
       }
     }
@@ -1928,20 +1992,32 @@ export class RichTextEditorComponent implements OnInit, AfterViewInit, OnDestroy
       }
     }
 
-    // Viewport indicator (the "slider")
+    // Viewport indicator (the "slider") — colored with the theme's primary
+    const primaryStr = getComputedStyle(document.documentElement).getPropertyValue('--mat-sys-primary').trim();
+    const [pr, pg, pb] = this.minimapParseRgb(primaryStr);
     const vpTop = (editor.scrollTop / totalH) * H;
     const vpH = Math.max(12, (editor.clientHeight / totalH) * H);
-    ctx.fillStyle = 'rgba(100, 100, 128, 0.13)';
+    ctx.fillStyle = `rgba(${pr},${pg},${pb},0.15)`;
     ctx.fillRect(0, vpTop, W, vpH);
-    ctx.strokeStyle = 'rgba(100, 100, 128, 0.45)';
+    ctx.strokeStyle = `rgba(${pr},${pg},${pb},0.5)`;
     ctx.lineWidth = 1;
     ctx.strokeRect(0.5, vpTop + 0.5, W - 1, vpH - 1);
   }
 
   private minimapParseRgb(color: string): [number, number, number] {
+    // Handle hex shorthand (#rgb) and full hex (#rrggbb / #rrggbbaa)
+    const hexMatch = color.trim().match(/^#([0-9a-f]{3,8})$/i);
+    if (hexMatch) {
+      const h = hexMatch[1];
+      if (h.length === 3 || h.length === 4) {
+        return [parseInt(h[0] + h[0], 16), parseInt(h[1] + h[1], 16), parseInt(h[2] + h[2], 16)];
+      }
+      return [parseInt(h.slice(0, 2), 16), parseInt(h.slice(2, 4), 16), parseInt(h.slice(4, 6), 16)];
+    }
+    // Handle rgb/rgba (comma or space-separated)
     const m = color.match(/\d+/g);
     if (m && m.length >= 3) return [+m[0], +m[1], +m[2]];
-    return [0, 0, 0];
+    return [100, 100, 180]; // fallback blue-ish
   }
 
   private scheduleEmit(): void {
