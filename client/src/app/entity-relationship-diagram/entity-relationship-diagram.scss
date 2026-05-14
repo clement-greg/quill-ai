@@ -8,8 +8,8 @@
 .diagram-sidebar {
   width: 260px;
   min-width: 260px;
-  border-right: 1px solid #e0e0e0;
-  background: #fafafa;
+  border-right: 1px solid var(--mat-sys-outline-variant);
+  background: var(--mat-sys-surface-container-low);
   display: flex;
   flex-direction: column;
   padding: 16px;
@@ -23,7 +23,7 @@
 
 .sidebar-hint {
   font-size: 12px;
-  color: #888;
+  color: var(--mat-sys-on-surface-variant);
   margin: 0 0 12px;
 }
 
@@ -39,8 +39,8 @@
   gap: 10px;
   padding: 8px;
   border-radius: 8px;
-  background: #fff;
-  border: 1px solid #e0e0e0;
+  background: var(--mat-sys-surface);
+  border: 1px solid var(--mat-sys-outline-variant);
   cursor: grab;
   transition: box-shadow 0.15s;
 }
@@ -57,7 +57,7 @@
   width: 36px;
   height: 36px;
   border-radius: 50%;
-  background: #e8e8e8;
+  background: var(--mat-sys-surface-container-high);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -72,7 +72,7 @@
 }
 
 .palette-avatar mat-icon {
-  color: #999;
+  color: var(--mat-sys-on-surface-variant);
 }
 
 .palette-info {
@@ -91,12 +91,12 @@
 
 .palette-type {
   font-size: 11px;
-  color: #888;
+  color: var(--mat-sys-on-surface-variant);
 }
 
 .empty-message {
   font-size: 12px;
-  color: #aaa;
+  color: var(--mat-sys-on-surface-variant);
   text-align: center;
   padding: 12px 0;
 }
@@ -107,8 +107,8 @@
   position: relative;
   overflow: auto;
   background:
-    linear-gradient(to right, #f0f0f0 1px, transparent 1px),
-    linear-gradient(to bottom, #f0f0f0 1px, transparent 1px);
+    linear-gradient(to right, var(--mat-sys-outline-variant) 1px, transparent 1px),
+    linear-gradient(to bottom, var(--mat-sys-outline-variant) 1px, transparent 1px);
   background-size: 24px 24px;
   min-height: 100%;
 }
@@ -135,19 +135,19 @@
 }
 
 .connection-line {
-  stroke: #78909c;
+  stroke: var(--mat-sys-outline);
   stroke-width: 2;
   fill: none;
   transition: stroke 0.15s;
 }
 
 .connection-line.connection-selected {
-  stroke: #1976d2;
+  stroke: var(--mat-sys-primary);
   stroke-width: 3;
 }
 
 .connection-line-temp {
-  stroke: #1976d2;
+  stroke: var(--mat-sys-primary);
   stroke-width: 2;
   stroke-dasharray: 6 4;
   fill: none;
@@ -155,7 +155,7 @@
 
 .connection-label {
   font-size: 11px;
-  fill: #555;
+  fill: var(--mat-sys-on-surface-variant);
   pointer-events: none;
   user-select: none;
 }
@@ -164,8 +164,8 @@
 .diagram-node {
   position: absolute;
   width: 120px;
-  background: #fff;
-  border: 2px solid #ccc;
+  background: var(--mat-sys-surface);
+  border: 2px solid var(--mat-sys-outline-variant);
   border-radius: 10px;
   padding: 12px 8px 8px;
   display: flex;
@@ -179,17 +179,17 @@
 }
 
 .diagram-node:hover {
-  border-color: #90a4ae;
+  border-color: var(--mat-sys-outline);
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.12);
 }
 
 .diagram-node.node-selected {
-  border-color: #1976d2;
-  box-shadow: 0 0 0 3px rgba(25, 118, 210, 0.2);
+  border-color: var(--mat-sys-primary);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--mat-sys-primary) 20%, transparent);
 }
 
 .diagram-node.node-connecting {
-  border-color: #ff9800;
+  border-color: var(--mat-sys-tertiary);
   box-shadow: 0 0 0 3px rgba(255, 152, 0, 0.25);
 }
 
@@ -197,7 +197,7 @@
   width: 48px;
   height: 48px;
   border-radius: 50%;
-  background: #e8e8e8;
+  background: var(--mat-sys-surface-container-high);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -214,7 +214,7 @@
   font-size: 28px;
   width: 28px;
   height: 28px;
-  color: #999;
+  color: var(--mat-sys-on-surface-variant);
 }
 
 .node-name {
@@ -235,8 +235,8 @@
   height: 20px;
   border-radius: 50%;
   border: none;
-  background: #e53935;
-  color: #fff;
+  background: var(--mat-sys-error);
+  color: var(--mat-sys-on-error);
   display: none;
   align-items: center;
   justify-content: center;
@@ -261,7 +261,7 @@
   left: 50%;
   transform: translate(-50%, -50%);
   text-align: center;
-  color: #aaa;
+  color: var(--mat-sys-on-surface-variant);
 }
 
 .canvas-empty mat-icon {
@@ -285,8 +285,8 @@
   display: flex;
   align-items: center;
   gap: 4px;
-  background: #fff;
-  border: 1px solid #e0e0e0;
+  background: var(--mat-sys-surface);
+  border: 1px solid var(--mat-sys-outline-variant);
   border-radius: 12px;
   padding: 4px 12px;
   box-shadow: 0 2px 12px rgba(0, 0, 0, 0.1);
@@ -294,7 +294,7 @@
 }
 
 .diagram-toolbar .active {
-  color: #ff9800;
+  color: var(--mat-sys-tertiary);
 }
 
 .toolbar-spacer {
@@ -303,6 +303,6 @@
 
 .toolbar-hint {
   font-size: 12px;
-  color: #888;
+  color: var(--mat-sys-on-surface-variant);
   margin: 0 8px;
 }
