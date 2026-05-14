@@ -1,11 +1,14 @@
-import { Injectable, signal, computed } from '@angular/core';
+import { Injectable, inject, signal, computed } from '@angular/core';
 import { ChatFolder, ChatMessageHighlight, ChatSession, ChatSessionMessage, ChatSessionSummary, FolderFile, FolderNote } from '@shared/models';
 import { Series } from '@shared/models/series.model';
+import { SeriesContextService } from './series-context.service';
 
 const PENDING_ID = '__pending__';
 
 @Injectable({ providedIn: 'root' })
 export class AiAssistantService {
+  private readonly seriesContext = inject(SeriesContextService);
+
   // Panel open/closed state
   readonly isOpen = signal(false);
 
@@ -60,10 +63,28 @@ export class AiAssistantService {
   togglePanel(): void {
     const opening = !this.isOpen();
     this.isOpen.set(opening);
-    if (opening && this.allSeries().length === 0) {
-      this.loadAllSeries();
+    if (opening) {
+      this._applyContextSeriesOnOpen();
     }
-    if (opening && this.selectedSeriesId() && this.sessions().length === 0) {
+  }
+
+  private _applyContextSeriesOnOpen(): void {
+    const contextId = this.seriesContext.currentSeriesId();
+    const loadSeriesFirst = this.allSeries().length === 0;
+    const seriesChanged = contextId && contextId !== this.selectedSeriesId();
+
+    if (loadSeriesFirst) {
+      this.loadAllSeries().then(() => {
+        if (contextId && contextId !== this.selectedSeriesId()) {
+          this.setSeriesId(contextId);
+        } else if (this.selectedSeriesId() && this.sessions().length === 0) {
+          this.loadSessions();
+          this.loadFolders();
+        }
+      });
+    } else if (seriesChanged) {
+      this.setSeriesId(contextId);
+    } else if (this.selectedSeriesId() && this.sessions().length === 0) {
       this.loadSessions();
       this.loadFolders();
     }
@@ -71,13 +92,7 @@ export class AiAssistantService {
 
   openPanel(): void {
     this.isOpen.set(true);
-    if (this.allSeries().length === 0) {
-      this.loadAllSeries();
-    }
-    if (this.selectedSeriesId() && this.sessions().length === 0) {
-      this.loadSessions();
-      this.loadFolders();
-    }
+    this._applyContextSeriesOnOpen();
   }
 
   closePanel(): void {

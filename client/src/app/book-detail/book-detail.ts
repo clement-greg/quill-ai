@@ -2,6 +2,7 @@ import { Component, inject, signal, OnInit, OnDestroy } from '@angular/core';
 import { ActivatedRoute, Router } from '@angular/router';
 import { HttpClient } from '@angular/common/http';
 import { FormsModule } from '@angular/forms';
+import { forkJoin, Subscription } from 'rxjs';
 import { MatButtonModule } from '@angular/material/button';
 import { MatIconModule } from '@angular/material/icon';
 import { MatListModule } from '@angular/material/list';
@@ -68,32 +69,46 @@ export class BookDetailComponent implements OnInit, OnDestroy {
   seriesId = signal<string>('');
   aiStatsChapters = signal<Chapter[]>([]);
   aiStatsLoading = signal(false);
+  private routeSub?: Subscription;
 
   get rightPanelWidth(): number {
     return this.panelMode() === 'ai-stats' ? 520 : 420;
   }
 
   ngOnInit(): void {
-    const id = this.route.snapshot.paramMap.get('id')!;
-    this.loadBook(id);
-    this.loadChapters(id);
+    this.routeSub = this.route.paramMap.subscribe(params => {
+      const id = params.get('id')!;
+      this.loadBook(id);
+      this.loadChapters(id);
+    });
   }
 
   loadBook(id: string): void {
     this.bookService.getById(id).subscribe({
       next: (data) => {
         this.book.set(data);
-        this.seriesService.getById(data.seriesId).subscribe({
-          next: (series) => {
+        forkJoin({
+          series: this.seriesService.getById(data.seriesId),
+          allSeries: this.seriesService.getAll(),
+          booksInSeries: this.bookService.getBySeries(data.seriesId),
+        }).subscribe({
+          next: ({ series, allSeries, booksInSeries }) => {
             this.seriesId.set(series.id);
             this.seriesContext.set(series.id);
-            this.headerService.set(
-              [{ label: series.title, link: '/series/' + series.id }, { label: data.title }],
-              [
-                { icon: 'people', label: 'Entities', action: () => this.entityPanel.open(series.id) },
-                { icon: 'account_tree', label: 'Relationships', action: () => this.router.navigate(['/series', series.id, 'relationships']) },
-              ]
-            );
+            const filteredSeries = allSeries.filter(s => !s.archived && !s.deleted);
+            const filteredBooks = booksInSeries.filter(b => !b.archived && !b.deleted)
+              .sort((a, b) => (a.sortOrder ?? Infinity) - (b.sortOrder ?? Infinity));
+            this.headerService.set([
+              {
+                label: series.title,
+                link: '/series/' + series.id,
+                dropdownItems: filteredSeries.map(s => ({ label: s.title, link: '/series/' + s.id, isCurrent: s.id === series.id })),
+              },
+              {
+                label: data.title,
+                dropdownItems: filteredBooks.map(b => ({ label: b.title, link: '/books/' + b.id, isCurrent: b.id === data.id })),
+              },
+            ]);
           },
         });
       },
@@ -234,6 +249,7 @@ export class BookDetailComponent implements OnInit, OnDestroy {
   }
 
   ngOnDestroy(): void {
+    this.routeSub?.unsubscribe();
     this.headerService.clear();
   }
 

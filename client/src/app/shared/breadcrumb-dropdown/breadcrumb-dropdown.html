@@ -1,0 +1,18 @@
+@if (crumb().dropdownItems?.length) {
+  <button class="breadcrumb-btn" [class.breadcrumb-btn--current]="!crumb().link" [matMenuTriggerFor]="bcMenu">
+    <span>{{ crumb().label }}</span>
+    <mat-icon class="bc-arrow">arrow_drop_down</mat-icon>
+  </button>
+  <mat-menu #bcMenu="matMenu">
+    @for (item of crumb().dropdownItems; track item.link) {
+      <a mat-menu-item [routerLink]="item.link" [class.bc-item-current]="item.isCurrent">
+        <mat-icon class="bc-check-icon">{{ item.isCurrent ? 'check' : '' }}</mat-icon>
+        {{ item.label }}
+      </a>
+    }
+  </mat-menu>
+} @else if (crumb().link) {
+  <a [routerLink]="crumb().link" class="breadcrumb-link">{{ crumb().label }}</a>
+} @else {
+  <span class="breadcrumb-current">{{ crumb().label }}</span>
+}

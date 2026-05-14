@@ -1,12 +1,15 @@
 import { Component, inject, signal, computed, OnInit, OnDestroy, ElementRef, viewChild } from '@angular/core';
 import { ActivatedRoute, Router } from '@angular/router';
+import { FormsModule } from '@angular/forms';
 import { MatButtonModule } from '@angular/material/button';
 import { MatIconModule } from '@angular/material/icon';
+import { MatSelectModule } from '@angular/material/select';
 import { MatDialog } from '@angular/material/dialog';
-import { forkJoin } from 'rxjs';
+import { forkJoin, Subscription } from 'rxjs';
 import { v4 as uuidv4 } from 'uuid';
 import { Entity } from '@shared/models/entity.model';
 import { EntityRelationship, DiagramLayout, DiagramNodePosition, RELATIONSHIP_TYPES } from '@shared/models/entity-relationship.model';
+import { Series } from '@shared/models/series.model';
 import { EntityService } from '../services/entity.service';
 import { EntityRelationshipService } from '../services/entity-relationship.service';
 import { HeaderService } from '../services/header.service';
@@ -27,7 +30,7 @@ const NODE_HEIGHT = 100;
 
 @Component({
   selector: 'app-entity-relationship-diagram',
-  imports: [MatButtonModule, MatIconModule],
+  imports: [FormsModule, MatButtonModule, MatIconModule, MatSelectModule],
   templateUrl: './entity-relationship-diagram.html',
   styleUrl: './entity-relationship-diagram.scss',
 })
@@ -42,10 +45,12 @@ export class EntityRelationshipDiagramComponent implements OnInit, OnDestroy {
 
   canvas = viewChild<ElementRef<HTMLDivElement>>('canvas');
 
-  private seriesId = '';
+  allSeries = signal<Series[]>([]);
+  currentSeriesId = signal<string | null>(null);
   private allEntities = signal<Entity[]>([]);
   private relationships = signal<EntityRelationship[]>([]);
   private layout = signal<DiagramLayout | null>(null);
+  private routeSub?: Subscription;
 
   diagramNodes = signal<DiagramNodePosition[]>([]);
   selectedNodeId = signal<string | null>(null);
@@ -89,30 +94,56 @@ export class EntityRelationshipDiagramComponent implements OnInit, OnDestroy {
   private boundOnMouseUp = this.onMouseUp.bind(this);
 
   ngOnInit(): void {
-    this.seriesId = this.route.snapshot.params['seriesId'];
-    this.loadData();
-    this.seriesService.getById(this.seriesId).subscribe({
-      next: (series) => {
-        this.headerService.set(
-          [{ label: series.title, link: '/series/' + series.id }, { label: 'Relationships' }]
+    this.seriesService.getAll().subscribe({
+      next: (data) => {
+        this.allSeries.set(
+          data.filter((s: any) => !s.deleted && !s.archived)
+               .sort((a, b) => (a.title ?? '').localeCompare(b.title ?? ''))
         );
       },
     });
+
+    this.routeSub = this.route.paramMap.subscribe(params => {
+      const id = params.get('seriesId');
+      this.currentSeriesId.set(id);
+      this.allEntities.set([]);
+      this.relationships.set([]);
+      this.diagramNodes.set([]);
+      this.layout.set(null);
+      if (id) {
+        this.loadData(id);
+        this.seriesService.getById(id).subscribe({
+          next: (series) => {
+            this.headerService.set(
+              [{ label: series.title, link: '/series/' + series.id }, { label: 'Relationships' }]
+            );
+          },
+        });
+      } else {
+        this.headerService.set([{ label: 'Relationships' }]);
+      }
+    });
+
     document.addEventListener('mousemove', this.boundOnMouseMove);
     document.addEventListener('mouseup', this.boundOnMouseUp);
   }
 
   ngOnDestroy(): void {
+    this.routeSub?.unsubscribe();
     this.headerService.clear();
     document.removeEventListener('mousemove', this.boundOnMouseMove);
     document.removeEventListener('mouseup', this.boundOnMouseUp);
   }
 
-  private loadData(): void {
+  selectSeries(id: string): void {
+    this.router.navigate(['/series', id, 'relationships']);
+  }
+
+  private loadData(seriesId: string): void {
     forkJoin({
-      entities: this.entityService.getBySeries(this.seriesId),
-      relationships: this.relationshipService.getBySeries(this.seriesId),
-      layout: this.relationshipService.getLayout(this.seriesId),
+      entities: this.entityService.getBySeries(seriesId),
+      relationships: this.relationshipService.getBySeries(seriesId),
+      layout: this.relationshipService.getLayout(seriesId),
     }).subscribe(({ entities, relationships, layout }) => {
       this.allEntities.set(entities);
       this.relationships.set(relationships);
@@ -236,7 +267,8 @@ export class EntityRelationshipDiagramComponent implements OnInit, OnDestroy {
   private createRelationship(sourceId: string, targetId: string): void {
     const source = this.getEntity(sourceId);
     const target = this.getEntity(targetId);
-    if (!source || !target) return;
+    const seriesId = this.currentSeriesId();
+    if (!source || !target || !seriesId) return;
 
     const dialogRef = this.dialog.open(RelationshipDialogComponent, {
       width: '440px',
@@ -248,7 +280,7 @@ export class EntityRelationshipDiagramComponent implements OnInit, OnDestroy {
 
       const rel: EntityRelationship = {
         id: uuidv4(),
-        seriesId: this.seriesId,
+        seriesId: seriesId,
         sourceEntityId: sourceId,
         targetEntityId: targetId,
         relationshipType: result.relationshipType,
@@ -330,15 +362,17 @@ export class EntityRelationshipDiagramComponent implements OnInit, OnDestroy {
   }
 
   private saveLayout(): void {
+    const seriesId = this.currentSeriesId();
+    if (!seriesId) return;
     const existing = this.layout();
     const layout: DiagramLayout = {
       id: existing?.id ?? uuidv4(),
-      seriesId: this.seriesId,
+      seriesId: seriesId,
       positions: this.diagramNodes(),
       createdBy: existing?.createdBy,
       createdAt: existing?.createdAt,
     };
-    this.relationshipService.saveLayout(this.seriesId, layout).subscribe({
+    this.relationshipService.saveLayout(seriesId, layout).subscribe({
       next: (saved) => this.layout.set(saved),
     });
   }

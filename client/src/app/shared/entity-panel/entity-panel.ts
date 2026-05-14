@@ -1,6 +1,8 @@
 import { Component, inject } from '@angular/core';
+import { FormsModule } from '@angular/forms';
 import { MatButtonModule } from '@angular/material/button';
 import { MatIconModule } from '@angular/material/icon';
+import { MatSelectModule } from '@angular/material/select';
 import { MatTooltipModule } from '@angular/material/tooltip';
 import { CdkDrag, CdkDragDrop, CdkDragHandle, CdkDropList } from '@angular/cdk/drag-drop';
 import { EntityPanelService } from '../../services/entity-panel.service';
@@ -9,8 +11,10 @@ import { EntityEditComponent } from '../../entity-edit/entity-edit';
 @Component({
   selector: 'app-entity-panel',
   imports: [
+    FormsModule,
     MatButtonModule,
     MatIconModule,
+    MatSelectModule,
     MatTooltipModule,
     EntityEditComponent,
     CdkDropList,

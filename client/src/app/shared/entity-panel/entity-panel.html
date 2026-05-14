@@ -1,7 +1,10 @@
 @if (panel.isOpen()) {
   <div class="entity-panel-backdrop" (click)="panel.close()"></div>
+}
 
-  <div class="entity-panel-container" [style.width.px]="panel.panelWidth">
+<div class="entity-panel-container"
+     [class.entity-panel-open]="panel.isOpen()"
+     [style.width.px]="panel.panelWidth">
     <button mat-icon-button class="entity-panel-close" (click)="panel.close()">
       <mat-icon>close</mat-icon>
     </button>
@@ -15,11 +18,26 @@
             <h3>{{ panel.showingArchived() ? 'Archived' : 'Entities' }}</h3>
           }
           @if (!panel.showingArchived()) {
-            <button mat-icon-button (click)="panel.addEntity()" matTooltip="Add entity">
+            <button mat-icon-button (click)="panel.addEntity()" [disabled]="!panel.seriesId()" matTooltip="Add entity">
               <mat-icon>add</mat-icon>
             </button>
           }
         </div>
+
+        <!-- Series selector -->
+        @if (!panel.editingEntity()) {
+          <div class="entity-series-selector">
+            <mat-icon class="entity-series-icon">auto_stories</mat-icon>
+            <mat-select class="entity-series-select"
+                        [value]="panel.seriesId()"
+                        (valueChange)="panel.selectSeries($event)"
+                        placeholder="Select a series">
+              @for (s of panel.allSeries(); track s.id) {
+                <mat-option [value]="s.id">{{ s.title }}</mat-option>
+              }
+            </mat-select>
+          </div>
+        }
 
         @if (panel.entityLoading()) {
           <p class="loading">Loading...</p>
@@ -124,4 +142,3 @@
 
     </div>
   </div>
-}

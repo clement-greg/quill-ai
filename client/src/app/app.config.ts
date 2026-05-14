@@ -25,6 +25,7 @@ const routes: Routes = [
   { path: 'chapters', component: ChapterComponent, canActivate: [authGuard] },
   { path: 'chapters/:id/edit', component: ChapterEditComponent, canActivate: [authGuard] },
   { path: 'series/:seriesId/relationships', component: EntityRelationshipDiagramComponent, canActivate: [authGuard] },
+  { path: 'relationships', component: EntityRelationshipDiagramComponent, canActivate: [authGuard] },
   { path: 'archived', component: ArchivedComponent, canActivate: [authGuard] },
   { path: 'settings', component: UserSettingsComponent, canActivate: [authGuard] },
   { path: 'home', component: Home, canActivate: [authGuard] },

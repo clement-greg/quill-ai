@@ -33,6 +33,7 @@ import { UserSettingsService } from '../services/user-settings.service';
 import { AuthService } from '../auth/auth.service';
 import { SeriesContextService } from '../services/series-context.service';
 import { diffWords } from 'diff';
+import { forkJoin, Subscription } from 'rxjs';
 
 interface DiffWord { type: 'same' | 'add' | 'remove'; text: string; }
 interface DiffParagraph { hasChanges: boolean; segments: DiffWord[]; }
@@ -68,6 +69,7 @@ export class ChapterEditComponent implements OnInit, OnDestroy {
   private userSettings = inject(UserSettingsService);
   private authService = inject(AuthService);
   private seriesContext = inject(SeriesContextService);
+  private routeSub?: Subscription;
 
   // ── Chapter state ────────────────────────────────────────────────────────
   chapter = signal<Chapter | null>(null);
@@ -171,9 +173,14 @@ export class ChapterEditComponent implements OnInit, OnDestroy {
   ngOnInit(): void {
     this.loadSidebarWidth();
     this.loadHistoryListHeight();
-    const id = this.route.snapshot.paramMap.get('id')!;
 
-    this.chapterService.getById(id).subscribe({
+    this.routeSub = this.route.paramMap.subscribe(params => {
+      const id = params.get('id')!;
+      this.chapter.set(null);
+      this.hasDraft.set(false);
+      this.notes.set([]);
+
+      this.chapterService.getById(id).subscribe({
       next: async (data) => {
         const draft = await this.draftService.getDraft(data.id);
         const hasDraft = draft !== null && draft.content !== (data.content ?? '');
@@ -193,19 +200,34 @@ export class ChapterEditComponent implements OnInit, OnDestroy {
             this.seriesId.set(book.seriesId);
             this.seriesContext.set(book.seriesId);
 
-            this.seriesService.getById(book.seriesId).subscribe({
-              next: (series) => {
-                this.headerService.set(
-                  [
-                    { label: series.title, link: '/series/' + series.id },
-                    { label: book.title, link: '/books/' + book.id },
-                    { label: data.title || 'Chapter' },
-                  ],
-                  [
-                    { icon: 'people', label: 'Entities', action: () => this.entityPanel.open(series.id) },
-                    { icon: 'account_tree', label: 'Relationships', action: () => this.router.navigate(['/series', series.id, 'relationships']) },
-                  ],
-                );
+            forkJoin({
+              series: this.seriesService.getById(book.seriesId),
+              allSeries: this.seriesService.getAll(),
+              booksInSeries: this.bookService.getBySeries(book.seriesId),
+              chaptersInBook: this.chapterService.getByBook(data.bookId),
+            }).subscribe({
+              next: ({ series, allSeries, booksInSeries, chaptersInBook }) => {
+                const filteredSeries = allSeries.filter(s => !s.archived && !s.deleted);
+                const filteredBooks = booksInSeries.filter(b => !b.archived && !b.deleted)
+                  .sort((a, b) => (a.sortOrder ?? Infinity) - (b.sortOrder ?? Infinity));
+                const sortedChapters = [...chaptersInBook]
+                  .sort((a, b) => (a.sortOrder ?? Infinity) - (b.sortOrder ?? Infinity));
+                this.headerService.set([
+                  {
+                    label: series.title,
+                    link: '/series/' + series.id,
+                    dropdownItems: filteredSeries.map(s => ({ label: s.title, link: '/series/' + s.id, isCurrent: s.id === series.id })),
+                  },
+                  {
+                    label: book.title,
+                    link: '/books/' + book.id,
+                    dropdownItems: filteredBooks.map(b => ({ label: b.title, link: '/books/' + b.id, isCurrent: b.id === book.id })),
+                  },
+                  {
+                    label: data.title || 'Chapter',
+                    dropdownItems: sortedChapters.map(c => ({ label: c.title || 'Chapter', link: '/chapters/' + c.id + '/edit', isCurrent: c.id === data.id })),
+                  },
+                ]);
               },
             });
 
@@ -218,9 +240,11 @@ export class ChapterEditComponent implements OnInit, OnDestroy {
         });
       },
     });
+    });
   }
 
   ngOnDestroy(): void {
+    this.routeSub?.unsubscribe();
     this.headerService.clear();
     if (this.autoSaveTimer) clearTimeout(this.autoSaveTimer);
     if (this.resizerDrag) {

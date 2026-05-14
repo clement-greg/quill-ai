@@ -1,8 +1,15 @@
 import { Injectable, signal } from '@angular/core';
 
+export interface BreadcrumbDropdownItem {
+  label: string;
+  link: string;
+  isCurrent?: boolean;
+}
+
 export interface BreadcrumbItem {
   label: string;
   link?: string;
+  dropdownItems?: BreadcrumbDropdownItem[];
 }
 
 export interface HeaderMenuAction {

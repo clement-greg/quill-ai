@@ -1,13 +1,17 @@
 import { Injectable, computed, inject, signal } from '@angular/core';
 import { EntityService } from './entity.service';
+import { SeriesService } from '../series/series.service';
 import { Entity } from '@shared/models/entity.model';
+import { Series } from '@shared/models/series.model';
 import { v4 as uuidv4 } from 'uuid';
 
 @Injectable({ providedIn: 'root' })
 export class EntityPanelService {
   private entityService = inject(EntityService);
+  private seriesService = inject(SeriesService);
 
   isOpen = signal(false);
+  allSeries = signal<Series[]>([]);
   seriesId = signal<string | null>(null);
   narrator = signal<Entity | null>(null);
   entityList = signal<Entity[]>([]);
@@ -47,14 +51,52 @@ export class EntityPanelService {
     return this.editingEntity() ? 572 : 340;
   }
 
+  openPanel(seriesId?: string | null): void {
+    this.isOpen.set(true);
+    if (this.allSeries().length === 0) {
+      this.loadAllSeries(seriesId ?? null);
+    } else if (seriesId) {
+      this.selectSeries(seriesId);
+    }
+  }
+
   open(seriesId: string): void {
     this.seriesId.set(seriesId);
     this.editingEntity.set(null);
     this.isNewEntity.set(false);
     this.showingArchived.set(false);
     this.isOpen.set(true);
-    this.loadEntities(seriesId);
-    this.loadNarrator(seriesId);
+    if (this.allSeries().length === 0) {
+      this.loadAllSeries(seriesId);
+    } else {
+      this.loadEntities(seriesId);
+      this.loadNarrator(seriesId);
+    }
+  }
+
+  loadAllSeries(autoSelectId: string | null = null): void {
+    this.seriesService.getAll().subscribe({
+      next: (data) => {
+        const active = data
+          .filter((s: any) => !s.deleted && !s.archived)
+          .sort((a, b) => (a.title ?? '').localeCompare(b.title ?? ''));
+        this.allSeries.set(active);
+        const targetId = autoSelectId ?? (active.length === 1 ? active[0].id : null);
+        if (targetId) {
+          this.selectSeries(targetId);
+        }
+      },
+    });
+  }
+
+  selectSeries(id: string): void {
+    if (this.seriesId() === id) return;
+    this.seriesId.set(id);
+    this.editingEntity.set(null);
+    this.isNewEntity.set(false);
+    this.showingArchived.set(false);
+    this.loadEntities(id);
+    this.loadNarrator(id);
   }
 
   close(): void {

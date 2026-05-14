@@ -1,5 +1,6 @@
 import { Component, inject, signal, OnInit, OnDestroy } from '@angular/core';
 import { ActivatedRoute, Router } from '@angular/router';
+import { Subscription } from 'rxjs';
 import { FormsModule } from '@angular/forms';
 import { MatButtonModule } from '@angular/material/button';
 import { MatIconModule } from '@angular/material/icon';
@@ -73,27 +74,35 @@ export class SeriesDetailComponent implements OnInit, OnDestroy {
 
   newCollaboratorEmail = signal('');
   collaboratorError = signal<string | null>(null);
+  private routeSub?: Subscription;
 
   ngOnInit(): void {
-    const id = this.route.snapshot.paramMap.get('id')!;
-    this.loadSeries(id);
-    this.loadBooks(id);
+    this.routeSub = this.route.paramMap.subscribe(params => {
+      const id = params.get('id')!;
+      this.loadSeries(id);
+      this.loadBooks(id);
+    });
   }
 
   ngOnDestroy(): void {
+    this.routeSub?.unsubscribe();
     this.headerService.clear();
   }
 
   loadSeries(id: string): void {
-    this.seriesService.getById(id).subscribe({
-      next: (data) => {
-        this.series.set(data);
-        this.seriesContext.set(data.id);
+    this.seriesService.getAll().subscribe({
+      next: (allSeries) => {
+        const filtered = allSeries.filter(s => !s.archived && !s.deleted);
+        const current = filtered.find(s => s.id === id);
+        if (!current) return;
+        this.series.set(current);
+        this.seriesContext.set(current.id);
         this.headerService.set(
-          [{ label: data.title }],
+          [{
+            label: current.title,
+            dropdownItems: filtered.map(s => ({ label: s.title, link: '/series/' + s.id, isCurrent: s.id === id })),
+          }],
           [
-            { icon: 'people', label: 'Entities', action: () => this.entityPanel.open(data.id) },
-            { icon: 'account_tree', label: 'Relationships', action: () => this.router.navigate(['/series', data.id, 'relationships']) },
             { icon: 'settings', label: 'Series Settings', action: () => this.openSeriesSettings() },
           ]
         );

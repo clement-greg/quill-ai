@@ -1,3 +1,13 @@
+:host {
+  display: block;
+  height: 100%;
+}
+
+[main-content] {
+  height: 100%;
+  overflow-y: auto;
+}
+
 .series-header {
   display: flex;
   align-items: center;
@@ -28,7 +38,7 @@
 
 .series-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(200px, 240px));
   gap: 16px;
   padding: 16px 0;
 }
@@ -37,13 +47,18 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  height: 120px;
+  height: 200px;
   background-color: #e0e0e0;
   color: #9e9e9e;
 }
 
 .series-card {
   cursor: pointer;
+}
+
+.series-card img[mat-card-image] {
+  height: 200px;
+  object-fit: cover;
 }
 
 .series-card-placeholder mat-icon {

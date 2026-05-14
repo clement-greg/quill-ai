@@ -8,14 +8,17 @@ import { MatDividerModule } from '@angular/material/divider';
 import { AuthService } from './auth/auth.service';
 import { HeaderService } from './services/header.service';
 import { EntityPanelComponent } from './shared/entity-panel/entity-panel';
+import { EntityPanelService } from './services/entity-panel.service';
 import { UpdateCheckService } from './services/update-check.service';
 import { AiAssistantComponent } from './ai-assistant/ai-assistant';
 import { AiAssistantService } from './services/ai-assistant.service';
 import { UserSettingsService } from './services/user-settings.service';
+import { SeriesContextService } from './services/series-context.service';
+import { BreadcrumbDropdownComponent } from './shared/breadcrumb-dropdown/breadcrumb-dropdown';
 
 @Component({
   selector: 'app-root',
-  imports: [RouterOutlet, RouterLink, MatToolbarModule, MatButtonModule, MatIconModule, MatMenuModule, MatDividerModule, EntityPanelComponent, AiAssistantComponent],
+  imports: [RouterOutlet, RouterLink, MatToolbarModule, MatButtonModule, MatIconModule, MatMenuModule, MatDividerModule, EntityPanelComponent, AiAssistantComponent, BreadcrumbDropdownComponent],
   templateUrl: './app.html',
   styleUrl: './app.scss'
 })
@@ -24,8 +27,19 @@ export class App implements OnInit, OnDestroy {
   header = inject(HeaderService);
   updateCheck = inject(UpdateCheckService);
   aiAssistant = inject(AiAssistantService);
+  entityPanel = inject(EntityPanelService);
+  seriesContext = inject(SeriesContextService);
   private router = inject(Router);
   settings = inject(UserSettingsService);
+
+  navigateToRelationships(): void {
+    const id = this.seriesContext.currentSeriesId();
+    if (id) {
+      this.router.navigate(['/series', id, 'relationships']);
+    } else {
+      this.router.navigate(['/relationships']);
+    }
+  }
 
   private darkModeEffect = effect(() => {
     const theme = this.settings.colorTheme();
