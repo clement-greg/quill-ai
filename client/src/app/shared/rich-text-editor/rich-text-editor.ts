@@ -33,6 +33,7 @@ export class RichTextEditorComponent implements OnInit, AfterViewInit, OnDestroy
   @ViewChild('editorEl') editorRef!: ElementRef<HTMLDivElement>;
   @ViewChild('inlineAiInputEl') inlineAiInputEl?: ElementRef<HTMLInputElement>;
   @ViewChild('inlineAiPanelEl') inlineAiPanelRef?: ElementRef<HTMLElement>;
+  @ViewChild('minimapCanvas') minimapCanvasRef?: ElementRef<HTMLCanvasElement>;
 
   // ── Inputs ──────────────────────────────────────────────────────────────
   seriesId = input<string>('');
@@ -155,6 +156,12 @@ export class RichTextEditorComponent implements OnInit, AfterViewInit, OnDestroy
   private grammarLastCheckedText = '';
 
   // ── Internal editor state ────────────────────────────────────────────────
+  // ── Minimap ──────────────────────────────────────────────────────────────
+  private readonly MINIMAP_WIDTH = 80;
+  private minimapDragging = false;
+  private minimapRenderTimer: ReturnType<typeof setTimeout> | null = null;
+  private minimapResizeObserver: ResizeObserver | null = null;
+
   private _editorContent = '';
   get editorContent(): string { return this._editorContent; }
   set editorContent(value: string) {
@@ -266,6 +273,9 @@ export class RichTextEditorComponent implements OnInit, AfterViewInit, OnDestroy
   ngAfterViewInit(): void {
     const content = this.initialContent();
     if (content) this.setContent(content);
+    this.minimapResizeObserver = new ResizeObserver(() => this.scheduleMinimap());
+    this.minimapResizeObserver.observe(this.editorRef.nativeElement);
+    this.scheduleMinimap();
   }
 
   ngOnDestroy(): void {
@@ -274,9 +284,11 @@ export class RichTextEditorComponent implements OnInit, AfterViewInit, OnDestroy
     if (this.longPressTimer) clearTimeout(this.longPressTimer);
     if (this.popupHideTimer) clearTimeout(this.popupHideTimer);
     if (this.popupShowTimer) clearTimeout(this.popupShowTimer);
+    if (this.minimapRenderTimer) clearTimeout(this.minimapRenderTimer);
     this.grammarAbortController?.abort();
     this.inlineAiAbortController?.abort();
     this.inlineAiResizeObserver?.disconnect();
+    this.minimapResizeObserver?.disconnect();
     if (this.resizeDrag) {
       document.removeEventListener('mousemove', this.resizeDrag.moveHandler);
       document.removeEventListener('mouseup', this.resizeDrag.upHandler);
@@ -289,6 +301,7 @@ export class RichTextEditorComponent implements OnInit, AfterViewInit, OnDestroy
     this.contentInitialized = true;
     this.editorContent = html;
     if (this.editorRef) this.editorRef.nativeElement.innerHTML = html;
+    setTimeout(() => this.scheduleMinimap());
   }
 
   getContent(): string {
@@ -485,6 +498,7 @@ export class RichTextEditorComponent implements OnInit, AfterViewInit, OnDestroy
     }
 
     this.checkAutocomplete();
+    this.scheduleMinimap();
     this.scheduleEmit();
     this.scheduleGrammarCheck();
   }
@@ -719,6 +733,7 @@ export class RichTextEditorComponent implements OnInit, AfterViewInit, OnDestroy
   onEditorScroll(): void {
     const img = this.selectedImage();
     if (img) this.positionImageToolbar(img);
+    this.scheduleMinimap();
   }
 
   onEditorTouchStart(event: TouchEvent): void {
@@ -741,6 +756,11 @@ export class RichTextEditorComponent implements OnInit, AfterViewInit, OnDestroy
     if (this.grammarPopoverVisible() && !target.closest('.rte-grammar-popover')) this.dismissGrammarPopover();
     if (this.ctxMenuVisible() && !target.closest('.rte-ctx-menu')) this.closeCtxMenu();
     if (this.selectedImage() && target.tagName !== 'IMG' && !target.closest('.rte-image-resize-overlay')) this.clearImageSelection();
+  }
+
+  @HostListener('document:mouseup')
+  onDocumentMouseUp(): void {
+    this.minimapDragging = false;
   }
 
   // ── Formatting toolbar ───────────────────────────────────────────────────
@@ -1778,8 +1798,153 @@ export class RichTextEditorComponent implements OnInit, AfterViewInit, OnDestroy
            /\b(image|draw|illustrate|paint)\s*:/i.test(text);
   }
 
+  // ── Minimap ───────────────────────────────────────────────────────────────
+
+  onMinimapMouseDown(event: MouseEvent): void {
+    event.preventDefault();
+    this.minimapDragging = true;
+    this.minimapScrollTo(event.offsetY);
+  }
+
+  onMinimapMouseMove(event: MouseEvent): void {
+    if (!this.minimapDragging) return;
+    this.minimapScrollTo(event.offsetY);
+  }
+
+  private minimapScrollTo(minimapY: number): void {
+    const editor = this.editorRef?.nativeElement;
+    if (!editor) return;
+    const H = editor.clientHeight;
+    if (H <= 0) return;
+    const fraction = Math.max(0, Math.min(1, minimapY / H));
+    editor.scrollTop = fraction * editor.scrollHeight - editor.clientHeight / 2;
+    this.renderMinimap();
+  }
+
+  private scheduleMinimap(): void {
+    if (this.minimapRenderTimer) clearTimeout(this.minimapRenderTimer);
+    this.minimapRenderTimer = setTimeout(() => {
+      this.minimapRenderTimer = null;
+      this.renderMinimap();
+    }, 40);
+  }
+
+  private renderMinimap(): void {
+    if (!this.minimapCanvasRef?.nativeElement || !this.editorRef?.nativeElement) return;
+    const canvas = this.minimapCanvasRef.nativeElement;
+    const editor = this.editorRef.nativeElement;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+
+    const W = this.MINIMAP_WIDTH;
+    const H = editor.clientHeight;
+    if (H <= 0) return;
+
+    const dpr = window.devicePixelRatio || 1;
+    const targetW = Math.round(W * dpr);
+    const targetH = Math.round(H * dpr);
+    if (canvas.width !== targetW || canvas.height !== targetH) {
+      canvas.width = targetW;
+      canvas.height = targetH;
+      canvas.style.width = W + 'px';
+      canvas.style.height = H + 'px';
+    }
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+
+    const totalH = editor.scrollHeight;
+    if (totalH <= 0) return;
+    const scale = H / totalH;
+
+    // Background: match editor surface
+    const editorBg = getComputedStyle(editor).backgroundColor;
+    const bgIsTransparent = !editorBg || editorBg === 'transparent' || editorBg === 'rgba(0, 0, 0, 0)';
+    ctx.fillStyle = bgIsTransparent ? '#ffffff' : editorBg;
+    ctx.fillRect(0, 0, W, H);
+
+    // Derive text color components for drawing bars
+    const [tr, tg, tb] = this.minimapParseRgb(getComputedStyle(editor).color);
+
+    // Use getBoundingClientRect for reliable positions within the scroll container.
+    // offsetParent skips statically-positioned elements so it cannot be used here.
+    const editorRect = editor.getBoundingClientRect();
+
+    // Collect block-level rows: direct children cover <div>/<p>/<h*>/etc.
+    // Chrome contenteditable produces <div> on Enter; stored HTML may use <p> or <h*>.
+    // For lists, expand the <ul>/<ol> into its <li> children.
+    const rawChildren = Array.from(editor.children) as HTMLElement[];
+    const blocks: HTMLElement[] = rawChildren.flatMap(child =>
+      (child.tagName === 'UL' || child.tagName === 'OL')
+        ? Array.from(child.children) as HTMLElement[]
+        : [child],
+    );
+
+    for (const block of blocks) {
+      const hasImg = !!block.querySelector('img');
+      if (!block.textContent?.trim() && !hasImg) continue;
+
+      const blockRect = block.getBoundingClientRect();
+      const offsetTop = blockRect.top - editorRect.top + editor.scrollTop;
+      const blockH = block.offsetHeight;
+      if (blockH <= 0) continue;
+
+      const yTop = offsetTop * scale;
+      if (yTop > H) continue;
+      const yH = blockH * scale;
+
+      const isHeading = /^H[1-6]$/.test(block.tagName);
+
+      if (hasImg) {
+        ctx.fillStyle = `rgba(${tr},${tg},${tb},0.2)`;
+        ctx.fillRect(4, yTop, W - 8, Math.max(2, yH));
+      } else {
+        const lineH = parseFloat(getComputedStyle(block).lineHeight) || 20;
+        const miniLineH = Math.max(1.5, lineH * scale);
+        const numLines = Math.max(1, Math.round(blockH / lineH));
+        const indent = isHeading ? 2 : 4;
+        const maxLineW = W - indent * 2;
+        const opacity = isHeading ? 0.75 : 0.5;
+        ctx.fillStyle = `rgba(${tr},${tg},${tb},${opacity})`;
+        for (let i = 0; i < numLines; i++) {
+          const lineY = yTop + i * miniLineH;
+          if (lineY > H) break;
+          // Last line in a paragraph is typically shorter
+          const isLastLine = i === numLines - 1 && numLines > 1;
+          const lineW = isLastLine ? maxLineW * 0.45 : maxLineW;
+          ctx.fillRect(indent, lineY, lineW, Math.max(1, miniLineH - 0.5));
+        }
+      }
+    }
+
+    // Fallback: editor has raw text not wrapped in any child elements
+    if (blocks.length === 0 && editor.textContent?.trim()) {
+      const lineH = parseFloat(getComputedStyle(editor).lineHeight) || 20;
+      const numLines = Math.round(totalH / lineH);
+      const miniLineH = Math.max(1, lineH * scale);
+      ctx.fillStyle = `rgba(${tr},${tg},${tb},0.5)`;
+      for (let i = 0; i < numLines; i++) {
+        const lineY = i * miniLineH;
+        if (lineY > H) break;
+        ctx.fillRect(4, lineY, W - 12, Math.max(1, miniLineH - 0.5));
+      }
+    }
+
+    // Viewport indicator (the "slider")
+    const vpTop = (editor.scrollTop / totalH) * H;
+    const vpH = Math.max(12, (editor.clientHeight / totalH) * H);
+    ctx.fillStyle = 'rgba(100, 100, 128, 0.13)';
+    ctx.fillRect(0, vpTop, W, vpH);
+    ctx.strokeStyle = 'rgba(100, 100, 128, 0.45)';
+    ctx.lineWidth = 1;
+    ctx.strokeRect(0.5, vpTop + 0.5, W - 1, vpH - 1);
+  }
+
+  private minimapParseRgb(color: string): [number, number, number] {
+    const m = color.match(/\d+/g);
+    if (m && m.length >= 3) return [+m[0], +m[1], +m[2]];
+    return [0, 0, 0];
+  }
+
   private scheduleEmit(): void {
-    if (this.emitTimer) clearTimeout(this.emitTimer);
     this.emitTimer = setTimeout(() => {
       this.emitTimer = null;
       this.contentChange.emit(this.editorContent);

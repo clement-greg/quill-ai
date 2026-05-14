@@ -17,6 +17,13 @@
     (touchmove)="onEditorTouchMove()">
   </div>
 
+  <!-- VS Code-style minimap -->
+  <div class="rte-minimap"
+    (mousedown)="onMinimapMouseDown($event)"
+    (mousemove)="onMinimapMouseMove($event)">
+    <canvas #minimapCanvas class="rte-minimap-canvas"></canvas>
+  </div>
+
   <!-- Image resize overlay -->
   @if (imageOverlayRect()) {
     <div class="rte-image-resize-overlay"

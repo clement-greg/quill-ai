@@ -21,7 +21,9 @@
   overflow-y: auto;
   border: 1px solid var(--mat-sys-outline, #bdbdbd);
   border-radius: 8px;
-  padding: 24px;
+  padding: 24px 108px 24px 24px; /* right side leaves room for minimap */
+  scrollbar-width: none; /* hide native scrollbar — minimap replaces it */
+  &::-webkit-scrollbar { display: none; }
   font-size: var(--editor-font-size, 1rem);
   line-height: 1.75;
   font-family: var(--editor-font-family, Georgia, 'Times New Roman', serif);
@@ -77,6 +79,28 @@
   border-radius: 0;
   cursor: pointer;
   padding: 0;
+}
+
+/* ── VS Code-style minimap ──────────────────────────── */
+.rte-minimap {
+  position: absolute;
+  right: 1px;
+  top: 1px;
+  bottom: 1px;
+  width: 80px;
+  border-left: 1px solid var(--mat-sys-outline-variant, #e0e0e0);
+  border-top-right-radius: 7px;
+  border-bottom-right-radius: 7px;
+  overflow: hidden;
+  cursor: ns-resize;
+  z-index: 5;
+  background: color-mix(in srgb, var(--mat-sys-surface, #fff) 97%, var(--mat-sys-on-surface, #000) 3%);
+  user-select: none;
+}
+
+.rte-minimap-canvas {
+  display: block;
+  pointer-events: none;
 }
 
 /* ── Image resize overlay ────────────────────────────── */
