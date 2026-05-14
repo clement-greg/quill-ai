@@ -10,6 +10,8 @@ interface UserSettings {
   avatarUrl?: string;
   darkMode?: boolean;
   colorTheme?: string;
+  editorFontSize?: string;
+  editorFontFamily?: string;
   ghostCompleteItems?: { id: string; label: string; prompt: string }[];
 }
 
@@ -47,6 +49,8 @@ router.put('/', async (req: Request, res: Response): Promise<void> => {
       avatarUrl: req.body.avatarUrl,
       darkMode: req.body.darkMode,
       colorTheme: req.body.colorTheme,
+      editorFontSize: req.body.editorFontSize,
+      editorFontFamily: req.body.editorFontFamily,
       ghostCompleteItems: req.body.ghostCompleteItems,
     };
     await container.items.upsert(settings);

@@ -13,6 +13,8 @@ export interface UserSettingsData {
   avatarUrl?: string;
   darkMode?: boolean;
   colorTheme?: string;
+  editorFontSize?: string;
+  editorFontFamily?: string;
   ghostCompleteItems?: GhostCompleteItem[];
 }
 
@@ -21,6 +23,8 @@ export class UserSettingsService {
   private http = inject(HttpClient);
   private _ghostCompleteItems = signal<GhostCompleteItem[]>([]);
   private _colorTheme = signal<string>('default');
+  private _editorFontSize = signal<string>('normal');
+  private _editorFontFamily = signal<string>('serif');
   private _displayName = signal<string>('');
   private _avatarUrl = signal<string>('');
   /** True when the active theme is a dark variant (for backward compat). */
@@ -28,6 +32,8 @@ export class UserSettingsService {
     this._colorTheme() === 'dark' || this._colorTheme() === 'midnight'
   );
   readonly colorTheme = this._colorTheme.asReadonly();
+  readonly editorFontSize = this._editorFontSize.asReadonly();
+  readonly editorFontFamily = this._editorFontFamily.asReadonly();
   readonly displayName = this._displayName.asReadonly();
   readonly avatarUrl = this._avatarUrl.asReadonly();
   readonly ghostCompleteItems = this._ghostCompleteItems.asReadonly();
@@ -40,6 +46,8 @@ export class UserSettingsService {
       this._avatarUrl.set(settings.avatarUrl ?? '');
       // Migrate: if no colorTheme yet, fall back to the legacy darkMode flag
       this._colorTheme.set(settings.colorTheme ?? (settings.darkMode ? 'dark' : 'default'));
+      this._editorFontSize.set(settings.editorFontSize ?? 'normal');
+      this._editorFontFamily.set(settings.editorFontFamily ?? 'serif');
       this._ghostCompleteItems.set(settings.ghostCompleteItems ?? []);
     } catch {
       // Server unavailable — signals keep their default values
@@ -53,6 +61,8 @@ export class UserSettingsService {
         avatarUrl: this._avatarUrl(),
         colorTheme: this._colorTheme(),
         darkMode: this.darkMode(),
+        editorFontSize: this._editorFontSize(),
+        editorFontFamily: this._editorFontFamily(),
         ghostCompleteItems: this._ghostCompleteItems(),
       })
     ).catch(() => {});
@@ -84,6 +94,16 @@ export class UserSettingsService {
 
   setColorTheme(value: string): void {
     this._colorTheme.set(value);
+    this.saveToServer();
+  }
+
+  setEditorFontSize(value: string): void {
+    this._editorFontSize.set(value);
+    this.saveToServer();
+  }
+
+  setEditorFontFamily(value: string): void {
+    this._editorFontFamily.set(value);
     this.saveToServer();
   }
 

@@ -52,7 +52,7 @@
     </mat-menu>
 
     <!-- User menu (desktop) -->
-    <button mat-button [matMenuTriggerFor]="userMenu" class="desktop-only toolbar-user-btn" style="color: #fff;">
+    <button mat-button [matMenuTriggerFor]="userMenu" class="desktop-only toolbar-user-btn">
       @if (settings.avatarUrl()) {
         <img class="toolbar-user-avatar" [src]="settings.avatarUrl()" alt="Profile" />
       } @else {
@@ -72,7 +72,7 @@
     </mat-menu>
 
     <!-- App navigation menu (mobile) -->
-    <button mat-icon-button [matMenuTriggerFor]="mobileNavMenu" class="mobile-only" style="color: #fff;">
+    <button mat-icon-button [matMenuTriggerFor]="mobileNavMenu" class="mobile-only">
       <mat-icon>apps</mat-icon>
     </button>
     <mat-menu #mobileNavMenu="matMenu">

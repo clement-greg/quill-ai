@@ -1,9 +1,10 @@
-import { Component, inject, signal, effect, ElementRef, ViewChild } from '@angular/core';
+import { Component, inject, signal, effect, computed, ElementRef, ViewChild } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { MatButtonModule } from '@angular/material/button';
 import { MatIconModule } from '@angular/material/icon';
 import { MatInputModule } from '@angular/material/input';
 import { MatFormFieldModule } from '@angular/material/form-field';
+import { MatButtonToggleModule } from '@angular/material/button-toggle';
 import { MatSnackBar } from '@angular/material/snack-bar';
 import { UserSettingsService, GhostCompleteItem } from '../services/user-settings.service';
 import { HeaderService } from '../services/header.service';
@@ -39,6 +40,7 @@ export const COLOR_THEMES: ColorThemeOption[] = [
     MatIconModule,
     MatInputModule,
     MatFormFieldModule,
+    MatButtonToggleModule,
   ],
   templateUrl: './user-settings.html',
   styleUrl: './user-settings.scss',
@@ -54,6 +56,21 @@ export class UserSettingsComponent {
   readonly colorTheme = this.settingsService.colorTheme;
   readonly colorThemes = COLOR_THEMES;
   readonly avatarUrl = this.settingsService.avatarUrl;
+  readonly editorFontSize = this.settingsService.editorFontSize;
+  readonly editorFontFamily = this.settingsService.editorFontFamily;
+
+  readonly fontSizePreviewValue = computed(() => ({
+    xs:     '0.75rem',
+    small:  '0.875rem',
+    normal: '1rem',
+    large:  '1.125rem',
+    xl:     '1.3rem',
+  }[this.editorFontSize()] ?? '1rem'));
+
+  readonly fontFamilyPreviewValue = computed(() => ({
+    'serif':      "Georgia, 'Times New Roman', serif",
+    'sans-serif': "system-ui, 'Roboto', Arial, sans-serif",
+  }[this.editorFontFamily()] ?? "Georgia, 'Times New Roman', serif"));
 
   // Profile
   displayNameDraft = signal('');
@@ -165,5 +182,13 @@ export class UserSettingsComponent {
 
   selectTheme(id: string): void {
     this.settingsService.setColorTheme(id);
+  }
+
+  setEditorFontSize(value: string): void {
+    this.settingsService.setEditorFontSize(value);
+  }
+
+  setEditorFontFamily(value: string): void {
+    this.settingsService.setEditorFontFamily(value);
   }
 }

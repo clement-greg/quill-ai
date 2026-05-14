@@ -40,6 +40,28 @@ export class App implements OnInit, OnDestroy {
     }
   });
 
+  private editorFontEffect = effect(() => {
+    const sizeMap: Record<string, string> = {
+      xs:     '0.75rem',
+      small:  '0.875rem',
+      normal: '1rem',
+      large:  '1.125rem',
+      xl:     '1.3rem',
+    };
+    const familyMap: Record<string, string> = {
+      'serif':      "Georgia, 'Times New Roman', serif",
+      'sans-serif': "system-ui, 'Roboto', Arial, sans-serif",
+    };
+    document.body.style.setProperty(
+      '--editor-font-size',
+      sizeMap[this.settings.editorFontSize()] ?? '1rem'
+    );
+    document.body.style.setProperty(
+      '--editor-font-family',
+      familyMap[this.settings.editorFontFamily()] ?? "Georgia, 'Times New Roman', serif"
+    );
+  });
+
   private userLoadEffect = effect(() => {
     if (this.auth.currentUser()) {
       this.settings.loadFromServer();

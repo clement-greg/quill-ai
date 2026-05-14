@@ -38,7 +38,7 @@ body {
 
   // Default toolbar gradient (Classic — azure/blue)
   --toolbar-bg: linear-gradient(135deg, #1760C0 0%, #0277BD 100%);
-  --toolbar-text: var(--mat-sys-on-primary);
+  --toolbar-text: white;
   --toolbar-border-bottom: none;
   --toolbar-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
 }

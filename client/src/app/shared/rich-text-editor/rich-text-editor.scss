@@ -22,9 +22,9 @@
   border: 1px solid var(--mat-sys-outline, #bdbdbd);
   border-radius: 8px;
   padding: 24px;
-  font-size: 1rem;
+  font-size: var(--editor-font-size, 1rem);
   line-height: 1.75;
-  font-family: Georgia, 'Times New Roman', serif;
+  font-family: var(--editor-font-family, Georgia, 'Times New Roman', serif);
   outline: none;
   white-space: pre-wrap;
   box-sizing: border-box;

@@ -59,6 +59,36 @@
         </button>
       }
     </div>
+
+    <div class="editor-prefs">
+      <div class="editor-pref-row">
+        <span class="editor-pref-label">Reading size</span>
+        <mat-button-toggle-group [value]="editorFontSize()"
+          (change)="setEditorFontSize($event.value)"
+          hideSingleSelectionIndicator>
+          <mat-button-toggle value="xs">XS</mat-button-toggle>
+          <mat-button-toggle value="small">S</mat-button-toggle>
+          <mat-button-toggle value="normal">M</mat-button-toggle>
+          <mat-button-toggle value="large">L</mat-button-toggle>
+          <mat-button-toggle value="xl">XL</mat-button-toggle>
+        </mat-button-toggle-group>
+      </div>
+      <div class="editor-pref-row">
+        <span class="editor-pref-label">Font style</span>
+        <mat-button-toggle-group [value]="editorFontFamily()"
+          (change)="setEditorFontFamily($event.value)"
+          hideSingleSelectionIndicator>
+          <mat-button-toggle value="serif" class="font-preview-serif">Serif</mat-button-toggle>
+          <mat-button-toggle value="sans-serif" class="font-preview-sans">Sans-serif</mat-button-toggle>
+        </mat-button-toggle-group>
+      </div>
+
+      <div class="editor-font-preview"
+        [style.font-size]="fontSizePreviewValue()"
+        [style.font-family]="fontFamilyPreviewValue()">
+        <p>The lantern cast long shadows across the stone floor as she pushed open the door. Outside, the wind had picked up — carrying with it the smell of rain and something older, something she couldn't name.</p>
+      </div>
+    </div>
   </section>
 
   <!-- Ghost Complete Section -->

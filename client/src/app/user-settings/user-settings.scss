@@ -278,3 +278,50 @@
   line-height: 16px !important;
   color: var(--mat-sys-primary, #4A86C8);
 }
+
+// ── Editor font preferences ───────────────────────────────────────────────────
+
+.editor-prefs {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  margin-top: 20px;
+  padding-top: 20px;
+  border-top: 1px solid var(--mat-sys-outline-variant, #ddd);
+}
+
+.editor-pref-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+.editor-pref-label {
+  font-size: 0.9rem;
+  font-weight: 500;
+  color: var(--mat-sys-on-surface, #1c1b1f);
+}
+
+.font-preview-serif {
+  font-family: Georgia, 'Times New Roman', serif !important;
+}
+
+.font-preview-sans {
+  font-family: system-ui, 'Roboto', Arial, sans-serif !important;
+}
+
+.editor-font-preview {
+  border: 1px solid var(--mat-sys-outline-variant, #ddd);
+  border-radius: 8px;
+  padding: 16px 20px;
+  background: var(--mat-sys-surface, #fff);
+  color: var(--mat-sys-on-surface, #1c1b1f);
+  line-height: 1.75;
+  transition: font-size 0.15s, font-family 0.15s;
+
+  p {
+    margin: 0;
+  }
+}
