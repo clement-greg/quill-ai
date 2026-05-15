@@ -1850,6 +1850,7 @@ export class RichTextEditorComponent implements OnInit, AfterViewInit, OnDestroy
       canvas.style.height = H + 'px';
     }
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.clearRect(0, 0, W, H);
 
     const totalH = editor.scrollHeight;
     if (totalH <= 0) return;
