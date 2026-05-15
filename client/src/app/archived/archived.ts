@@ -8,10 +8,12 @@ import { MatTooltipModule } from '@angular/material/tooltip';
 import { SeriesService } from '../series/series.service';
 import { BookService } from '../book/book.service';
 import { EntityService } from '../services/entity.service';
+import { ChapterService } from '../chapter/chapter.service';
 import { HeaderService } from '../services/header.service';
 import { AiAssistantService } from '../services/ai-assistant.service';
 import { Series } from '@shared/models/series.model';
 import { Book } from '@shared/models/book.model';
+import { Chapter } from '@shared/models/chapter.model';
 import { Entity } from '@shared/models/entity.model';
 import { ChatSessionSummary } from '@shared/models';
 import { forkJoin } from 'rxjs';
@@ -32,6 +34,7 @@ export class ArchivedComponent implements OnInit {
   private seriesService = inject(SeriesService);
   private bookService = inject(BookService);
   private entityService = inject(EntityService);
+  private chapterService = inject(ChapterService);
   private headerService = inject(HeaderService);
   private aiAssistantService = inject(AiAssistantService);
   private snackBar = inject(MatSnackBar);
@@ -40,6 +43,7 @@ export class ArchivedComponent implements OnInit {
   loading = signal(false);
   archivedSeries = signal<Series[]>([]);
   archivedBooks = signal<Book[]>([]);
+  archivedChapters = signal<Chapter[]>([]);
   archivedEntities = signal<Entity[]>([]);
   archivedChatSessions = signal<ChatSessionSummary[]>([]);
 
@@ -53,11 +57,13 @@ export class ArchivedComponent implements OnInit {
     forkJoin({
       series: this.seriesService.getArchived(),
       books: this.bookService.getArchived(),
+      chapters: this.chapterService.getArchived(),
       entities: this.entityService.getAllArchived(),
     }).subscribe({
-      next: ({ series, books, entities }) => {
+      next: ({ series, books, chapters, entities }) => {
         this.archivedSeries.set(series);
         this.archivedBooks.set(books);
+        this.archivedChapters.set(chapters);
         this.archivedEntities.set(entities);
         this.loading.set(false);
       },
@@ -77,6 +83,21 @@ export class ArchivedComponent implements OnInit {
   unarchiveBook(id: string): void {
     this.bookService.unarchive(id).subscribe({
       next: () => this.archivedBooks.update(list => list.filter(b => b.id !== id)),
+    });
+  }
+
+  unarchiveChapter(id: string): void {
+    this.chapterService.unarchive(id).subscribe({
+      next: () => this.archivedChapters.update(list => list.filter(c => c.id !== id)),
+    });
+  }
+
+  deleteChapter(chapter: Chapter): void {
+    this.chapterService.delete(chapter.id).subscribe({
+      next: () => {
+        this.archivedChapters.update(list => list.filter(c => c.id !== chapter.id));
+        this.snackBar.open(`"${chapter.title}" deleted`, undefined, { duration: 3000 });
+      },
     });
   }
 

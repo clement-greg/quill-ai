@@ -44,6 +44,14 @@
           <button mat-icon-button (click)="openAiStats()" title="AI Writing Insights" [disabled]="!chapter()">
             <mat-icon>auto_awesome</mat-icon>
           </button>
+          <button mat-icon-button [matMenuTriggerFor]="chapterMenu" title="More options" [disabled]="!chapter()">
+            <mat-icon>more_vert</mat-icon>
+          </button>
+          <mat-menu #chapterMenu="matMenu">
+            <button mat-menu-item (click)="archiveChapter()">
+              <mat-icon>archive</mat-icon> Archive chapter
+            </button>
+          </mat-menu>
         </div>
       </div>
 

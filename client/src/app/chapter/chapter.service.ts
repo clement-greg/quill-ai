@@ -32,6 +32,18 @@ export class ChapterService {
     return this.http.delete<void>(`${this.apiUrl}/${id}`);
   }
 
+  archive(id: string): Observable<Chapter> {
+    return this.http.patch<Chapter>(`${this.apiUrl}/${id}/archive`, {});
+  }
+
+  unarchive(id: string): Observable<Chapter> {
+    return this.http.patch<Chapter>(`${this.apiUrl}/${id}/unarchive`, {});
+  }
+
+  getArchived(): Observable<Chapter[]> {
+    return this.http.get<Chapter[]>(`${this.apiUrl}/archived`);
+  }
+
   reorder(items: { id: string; sortOrder: number }[]): Observable<void> {
     return this.http.patch<void>(`${this.apiUrl}/reorder`, items);
   }

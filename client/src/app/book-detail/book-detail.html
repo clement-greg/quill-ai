@@ -63,6 +63,13 @@
         @for (chapter of chapterList(); track chapter.id) {
           <div class="chapter-item" cdkDrag (click)="openChapter(chapter)">
             <mat-icon class="drag-handle" cdkDragHandle>drag_indicator</mat-icon>
+            <div class="chapter-thumb">
+              @if (chapter.imageThumbnailUrl || chapter.imageUrl) {
+                <img [src]="proxyUrl(chapter.imageThumbnailUrl || chapter.imageUrl)!" [alt]="chapter.title" />
+              } @else {
+                <mat-icon>article</mat-icon>
+              }
+            </div>
             <span class="chapter-title">{{ chapter.title }}</span>
             <mat-icon class="chevron">chevron_right</mat-icon>
             <div class="chapter-drag-placeholder" *cdkDragPlaceholder></div>

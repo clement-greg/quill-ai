@@ -20,6 +20,7 @@ export interface Chapter extends AuditedRecord {
     sortOrder?: number;
     imageUrl?: string;
     imageThumbnailUrl?: string;
+    archived?: boolean;
 }
 
 export interface ChapterVersion {

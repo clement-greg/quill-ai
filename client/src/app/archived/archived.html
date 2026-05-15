@@ -77,6 +77,41 @@
     </div>
   </section>
 
+  <!-- Archived Chapters -->
+  <section class="archived-section">
+    <h3 class="section-title">Chapters</h3>
+    @if (!loading() && archivedChapters().length === 0) {
+      <p class="empty">No archived chapters.</p>
+    }
+    <div class="archived-list">
+      @for (chapter of archivedChapters(); track chapter.id) {
+        <div class="archived-item">
+          <div class="item-thumb">
+            @if (chapter.imageThumbnailUrl || chapter.imageUrl) {
+              <img [src]="proxyUrl(chapter.imageThumbnailUrl || chapter.imageUrl)!" [alt]="chapter.title" />
+            } @else {
+              <mat-icon>article</mat-icon>
+            }
+          </div>
+          <div class="item-info">
+            <span class="item-title">{{ chapter.title }}</span>
+            <span class="item-type">Chapter</span>
+          </div>
+          <div class="item-actions">
+            <button mat-stroked-button (click)="unarchiveChapter(chapter.id)" matTooltip="Restore this chapter">
+              <mat-icon>unarchive</mat-icon>
+              Restore
+            </button>
+            <button mat-stroked-button color="warn" (click)="deleteChapter(chapter)" matTooltip="Delete this chapter">
+              <mat-icon>delete</mat-icon>
+              Delete
+            </button>
+          </div>
+        </div>
+      }
+    </div>
+  </section>
+
   <!-- Archived Entities -->
   <section class="archived-section">
     <h3 class="section-title">Entities</h3>

@@ -416,6 +416,21 @@ export class ChapterEditComponent implements OnInit, OnDestroy {
     });
   }
 
+  archiveChapter(): void {
+    const chapter = this.chapter();
+    if (!chapter) return;
+    const dialogRef = this.dialog.open(ConfirmDialogComponent, {
+      data: { title: 'Archive chapter?', message: 'This chapter will be moved to the archive and removed from the book. You can restore it later.', confirm: 'Archive' },
+      width: '360px',
+    });
+    dialogRef.afterClosed().subscribe(confirmed => {
+      if (!confirmed) return;
+      this.chapterService.archive(chapter.id).subscribe({
+        next: () => this.router.navigate(['/books', chapter.bookId]),
+      });
+    });
+  }
+
   discardDraft(): void {
     const chapter = this.chapter();
     if (!chapter) return;
