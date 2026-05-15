@@ -1503,7 +1503,7 @@ export class RichTextEditorComponent implements OnInit, AfterViewInit, OnDestroy
   }
 
   private resolvedRefs(entity: Entity): { title?: string; firstName?: string; lastName?: string; nickname?: string } {
-    if (entity.type !== 'PERSON') return {};
+    if (entity.type !== 'PERSON') return { nickname: entity.nickname };
     const parts = entity.name.trim().split(/\s+/);
     return {
       title: entity.title,

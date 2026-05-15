@@ -75,6 +75,7 @@
 /* ── Grammar error mark ──────────────────────────────── */
 :host ::ng-deep mark.grammar-error {
   background: none;
+  color: inherit;
   border-bottom: 2px dotted #d32f2f;
   border-radius: 0;
   cursor: pointer;

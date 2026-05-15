@@ -65,6 +65,9 @@
             <input matInput [ngModel]="draft()!.lastName" (ngModelChange)="update('lastName', $event)" />
           </mat-form-field>
 
+        }
+
+        @if (!isNarrator()) {
           <mat-form-field appearance="outline">
             <mat-label>Nickname</mat-label>
             <input matInput [ngModel]="draft()!.nickname" (ngModelChange)="update('nickname', $event)" />
@@ -73,14 +76,13 @@
           <mat-form-field appearance="outline" style="max-width: 250px;">
             <mat-label>Preferred Reference</mat-label>
             <mat-select [ngModel]="draft()!.preferredReference" (ngModelChange)="update('preferredReference', $event)">
-              @for (opt of referenceOptions; track opt.value) {
+              @for (opt of referenceOptionsForCurrentType(); track opt.value) {
                 @if (!opt.requiresTitle || draft()!.title) {
                   <mat-option [value]="opt.value">{{ opt.label }}</mat-option>
                 }
               }
             </mat-select>
           </mat-form-field>
-
         }
 
         @if (draft()!.type === 'PERSON') {

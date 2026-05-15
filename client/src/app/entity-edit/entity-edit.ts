@@ -57,6 +57,14 @@ export class EntityEditComponent {
     { value: 'title-last-name', label: 'Title + Last Name (e.g. Dr Williams)', requiresTitle: true },
   ];
 
+  referenceOptionsForCurrentType = computed(() => {
+    const type = this.draft()?.type;
+    if (type !== 'PERSON') {
+      return this.referenceOptions.filter(o => o.value === 'full-name' || o.value === 'nickname');
+    }
+    return this.referenceOptions;
+  });
+
   draft = signal<Entity | null>(null);
   thumbnailPreview = signal<string | null>(null);
   uploading = signal(false);
@@ -88,6 +96,8 @@ export class EntityEditComponent {
       const draft = { ...e };
       if (e.type === 'PERSON' && !e.preferredReference) {
         draft.preferredReference = 'first-name';
+      } else if (e.type !== 'PERSON' && !e.preferredReference) {
+        draft.preferredReference = 'full-name';
       }
       this.draft.set(draft);
       this.thumbnailPreview.set(this.proxyUrl(e.thumbnailUrl));
@@ -100,8 +110,13 @@ export class EntityEditComponent {
     const current = this.draft();
     if (current) {
       const updated = { ...current, [field]: value };
-      if (field === 'type' && value === 'PERSON' && !current.preferredReference) {
-        updated.preferredReference = 'first-name';
+      if (field === 'type') {
+        const personOnlyRefs: EntityReference[] = ['first-name', 'last-name', 'title-full-name', 'title-last-name'];
+        if (value === 'PERSON' && !current.preferredReference) {
+          updated.preferredReference = 'first-name';
+        } else if (value !== 'PERSON' && personOnlyRefs.includes(current.preferredReference as EntityReference)) {
+          updated.preferredReference = 'full-name';
+        }
       }
       this.draft.set(updated);
     }
