@@ -5,10 +5,21 @@
 
       <div class="greeting-banner">
         <p class="greeting-text">{{ greeting() }}, {{ firstName() }}.</p>
-        <blockquote class="writing-quote">
-          <p class="quote-text">"{{ quote().text }}"</p>
-          <footer class="quote-author">— {{ quote().author }}</footer>
-        </blockquote>
+        <div class="quote-row">
+          <blockquote class="writing-quote" [class.is-hidden]="!quoteVisible()">
+            <p class="quote-text">"{{ quote().text }}"</p>
+            <footer class="quote-author">— {{ quote().author }}</footer>
+          </blockquote>
+          <div class="quote-nav">
+            <button mat-icon-button (click)="prevQuote()" aria-label="Previous quote">
+              <mat-icon>chevron_left</mat-icon>
+            </button>
+            <span class="quote-counter">{{ quoteIndex() + 1 }}&thinsp;/&thinsp;{{ quoteCount }}</span>
+            <button mat-icon-button (click)="nextQuote()" aria-label="Next quote">
+              <mat-icon>chevron_right</mat-icon>
+            </button>
+          </div>
+        </div>
       </div>
 
       <div class="series-header">
