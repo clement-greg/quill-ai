@@ -111,6 +111,16 @@
         (change)="setEntityDetectionEnabled($event.checked)">
       </mat-slide-toggle>
     </div>
+    <div class="editor-pref-row">
+      <div class="editor-pref-label-group">
+        <span class="editor-pref-label">Auto-save chapter</span>
+        <span class="editor-pref-sublabel">Automatically saves the working draft to the server every 2 minutes, creating a version history entry.</span>
+      </div>
+      <mat-slide-toggle
+        [checked]="autoSaveEnabled()"
+        (change)="setAutoSaveEnabled($event.checked)">
+      </mat-slide-toggle>
+    </div>
   </section>
 
   <!-- Ghost Complete Section -->

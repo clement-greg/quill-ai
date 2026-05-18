@@ -144,6 +144,10 @@ export class ChapterEditComponent implements OnInit, OnDestroy {
   private static readonly HISTORY_LIST_MAX = 400;
 
   private autoSaveTimer: ReturnType<typeof setTimeout> | null = null;
+  private periodicSaveTimer: ReturnType<typeof setInterval> | null = null;
+  private static readonly PERIODIC_SAVE_INTERVAL_MS = 2 * 60 * 1000; // 2 minutes
+  /** Content as of the last successful server save — used to skip auto-saves when nothing changed. */
+  private lastSavedContent: string | null = null;
 
   // ── Extra ctx menu items passed to the editor ────────────────────────────
   readonly ctxMenuExtraItems: { id: string; label: string; icon: string }[] = [
@@ -173,6 +177,18 @@ export class ChapterEditComponent implements OnInit, OnDestroy {
         });
       }
     });
+
+    // Start/stop the periodic server auto-save based on the user setting
+    effect(() => {
+      const enabled = this.userSettings.autoSaveEnabled();
+      const chapter = this.chapter();
+      untracked(() => {
+        this.stopPeriodicSave();
+        if (enabled && chapter) {
+          this.startPeriodicSave();
+        }
+      });
+    });
   }
 
   ngOnInit(): void {
@@ -184,6 +200,7 @@ export class ChapterEditComponent implements OnInit, OnDestroy {
       this.chapter.set(null);
       this.hasDraft.set(false);
       this.notes.set([]);
+      this.lastSavedContent = null;
 
       this.chapterService.getById(id).subscribe({
       next: async (data) => {
@@ -196,6 +213,7 @@ export class ChapterEditComponent implements OnInit, OnDestroy {
         this.notes.set(notes);
         this.imageUrl.set(data.imageUrl ?? null);
         this.imageThumbnailUrl.set(data.imageThumbnailUrl ?? null);
+        this.lastSavedContent = data.content ?? '';
 
         // Set editor content after view init (setTimeout ensures ViewChild is ready)
         setTimeout(() => {
@@ -254,6 +272,7 @@ export class ChapterEditComponent implements OnInit, OnDestroy {
     this.routeSub?.unsubscribe();
     this.headerService.clear();
     if (this.autoSaveTimer) clearTimeout(this.autoSaveTimer);
+    this.stopPeriodicSave();
     if (this.resizerDrag) {
       document.removeEventListener('mousemove', this.resizerDrag.moveHandler);
       document.removeEventListener('mouseup', this.resizerDrag.upHandler);
@@ -265,6 +284,23 @@ export class ChapterEditComponent implements OnInit, OnDestroy {
   }
 
   // ── Editor event handlers ────────────────────────────────────────────────
+
+  private startPeriodicSave(): void {
+    if (this.periodicSaveTimer) return;
+    this.periodicSaveTimer = setInterval(() => {
+      const currentContent = this.editorRef?.getContent() ?? '';
+      if (!this.saving() && this.lastSavedContent !== null && currentContent !== this.lastSavedContent) {
+        this.save();
+      }
+    }, ChapterEditComponent.PERIODIC_SAVE_INTERVAL_MS);
+  }
+
+  private stopPeriodicSave(): void {
+    if (this.periodicSaveTimer) {
+      clearInterval(this.periodicSaveTimer);
+      this.periodicSaveTimer = null;
+    }
+  }
 
   onEditorContentChange(html: string): void {
     const current = this.chapter();
@@ -409,6 +445,7 @@ export class ChapterEditComponent implements OnInit, OnDestroy {
         if (this.historyVersions().length > 0) this.loadHistory(chapter.id);
         await this.draftService.clearDraft(chapter.id);
         this.hasDraft.set(false);
+        this.lastSavedContent = content;
         this.saving.set(false);
         this.snackBar.open('Chapter saved', undefined, { duration: 3000 });
       },

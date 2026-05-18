@@ -62,6 +62,7 @@ export class UserSettingsComponent {
   readonly editorFontFamily = this.settingsService.editorFontFamily;
   readonly grammarCheckEnabled = this.settingsService.grammarCheckEnabled;
   readonly entityDetectionEnabled = this.settingsService.entityDetectionEnabled;
+  readonly autoSaveEnabled = this.settingsService.autoSaveEnabled;
 
   readonly fontSizePreviewValue = computed(() => ({
     xs:     '0.75rem',
@@ -202,5 +203,9 @@ export class UserSettingsComponent {
 
   setEntityDetectionEnabled(value: boolean): void {
     this.settingsService.setEntityDetectionEnabled(value);
+  }
+
+  setAutoSaveEnabled(value: boolean): void {
+    this.settingsService.setAutoSaveEnabled(value);
   }
 }

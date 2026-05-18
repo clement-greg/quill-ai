@@ -18,6 +18,7 @@ export interface UserSettingsData {
   ghostCompleteItems?: GhostCompleteItem[];
   grammarCheckEnabled?: boolean;
   entityDetectionEnabled?: boolean;
+  autoSaveEnabled?: boolean;
 }
 
 @Injectable({ providedIn: 'root' })
@@ -31,6 +32,7 @@ export class UserSettingsService {
   private _avatarUrl = signal<string>('');
   private _grammarCheckEnabled = signal<boolean>(true);
   private _entityDetectionEnabled = signal<boolean>(true);
+  private _autoSaveEnabled = signal<boolean>(false);
   /** True when the active theme is a dark variant (for backward compat). */
   readonly darkMode = computed(() =>
     this._colorTheme() === 'dark' || this._colorTheme() === 'midnight'
@@ -43,6 +45,7 @@ export class UserSettingsService {
   readonly ghostCompleteItems = this._ghostCompleteItems.asReadonly();
   readonly grammarCheckEnabled = this._grammarCheckEnabled.asReadonly();
   readonly entityDetectionEnabled = this._entityDetectionEnabled.asReadonly();
+  readonly autoSaveEnabled = this._autoSaveEnabled.asReadonly();
 
   /** Loads all settings from the server. Call after authentication. */
   async loadFromServer(): Promise<void> {
@@ -57,6 +60,7 @@ export class UserSettingsService {
       this._ghostCompleteItems.set(settings.ghostCompleteItems ?? []);
       this._grammarCheckEnabled.set(settings.grammarCheckEnabled ?? true);
       this._entityDetectionEnabled.set(settings.entityDetectionEnabled ?? true);
+      this._autoSaveEnabled.set(settings.autoSaveEnabled ?? false);
     } catch {
       // Server unavailable — signals keep their default values
     }
@@ -74,6 +78,7 @@ export class UserSettingsService {
         ghostCompleteItems: this._ghostCompleteItems(),
         grammarCheckEnabled: this._grammarCheckEnabled(),
         entityDetectionEnabled: this._entityDetectionEnabled(),
+        autoSaveEnabled: this._autoSaveEnabled(),
       })
     ).catch(() => {});
   }
@@ -140,6 +145,11 @@ export class UserSettingsService {
 
   setEntityDetectionEnabled(value: boolean): void {
     this._entityDetectionEnabled.set(value);
+    this.saveToServer();
+  }
+
+  setAutoSaveEnabled(value: boolean): void {
+    this._autoSaveEnabled.set(value);
     this.saveToServer();
   }
 
