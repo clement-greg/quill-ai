@@ -1,5 +1,12 @@
 /* You can add global styles to this file, and also import other style files */
 
+/* Prevent iOS Safari from zooming on input focus (requires font-size >= 16px) */
+@media (max-width: 768px) {
+  input, textarea, select {
+    font-size: 16px !important;
+  }
+}
+
 /* Fix mat-icon-button icon centering (MDC renders icons off-center without this) */
 .mat-mdc-icon-button {
   display: inline-flex !important;

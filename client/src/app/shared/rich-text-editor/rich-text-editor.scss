@@ -493,6 +493,19 @@
   border-top: 1px solid var(--mat-sys-outline-variant, #e0e0e0);
 }
 
+/* ── Mobile: hide minimap, show native scrollbar ────── */
+@media (max-width: 768px) {
+  .rte-minimap {
+    display: none;
+  }
+
+  .rte-content-editor {
+    padding-right: 24px;
+    scrollbar-width: auto;
+    &::-webkit-scrollbar { display: revert; }
+  }
+}
+
 .rte-inline-ai-generated-image {
   max-width: 100%;
   border-radius: 6px;
