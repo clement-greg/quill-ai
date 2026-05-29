@@ -318,6 +318,7 @@
 .editor-font-preview {
   border: 1px solid var(--mat-sys-outline-variant, #ddd);
   border-radius: 8px;
+
   padding: 16px 20px;
   background: var(--mat-sys-surface, #fff);
   color: var(--mat-sys-on-surface, #1c1b1f);
@@ -326,5 +327,75 @@
 
   p {
     margin: 0;
+  }
+}
+
+// ── Character attribute options ───────────────────────────────────────────────
+
+.attribute-options-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 32px;
+
+  @media (max-width: 600px) {
+    grid-template-columns: 1fr;
+  }
+}
+
+.attribute-options-col {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.attribute-options-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+
+  h4 {
+    margin: 0;
+    font-size: 0.9rem;
+    font-weight: 600;
+  }
+}
+
+.attribute-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.attribute-chip {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 2px 4px 2px 12px;
+  border-radius: 20px;
+  border: 1px solid var(--mat-sys-outline-variant, #ddd);
+  background: var(--mat-sys-surface-container, #f3f3f3);
+  font-size: 0.85rem;
+
+  button.mat-mdc-icon-button {
+    width: 24px;
+    height: 24px;
+    line-height: 24px;
+    --mdc-icon-button-state-layer-size: 24px;
+
+    mat-icon {
+      font-size: 16px;
+      width: 16px;
+      height: 16px;
+    }
+  }
+}
+
+.attribute-add-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+
+  .attribute-add-field {
+    flex: 1;
   }
 }

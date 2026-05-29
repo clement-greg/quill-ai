@@ -195,4 +195,81 @@
       </button>
     </div>
   </section>
+
+  <!-- Character Attributes Section -->
+  <section class="settings-section">
+    <div class="section-header">
+      <h3>Character Attributes</h3>
+      <p class="section-desc">
+        Customize the dropdown options available when editing a character's gender and race / ethnicity.
+      </p>
+    </div>
+
+    <div class="attribute-options-grid">
+
+      <!-- Gender options -->
+      <div class="attribute-options-col">
+        <div class="attribute-options-header">
+          <h4>Gender</h4>
+          <button mat-button (click)="resetGenderOptions()" title="Restore defaults">
+            <mat-icon>restart_alt</mat-icon> Restore defaults
+          </button>
+        </div>
+        <div class="attribute-chips">
+          @for (opt of genderOptions(); track opt) {
+            <div class="attribute-chip">
+              <span>{{ opt }}</span>
+              <button mat-icon-button (click)="removeGenderOption(opt)" title="Remove">
+                <mat-icon>close</mat-icon>
+              </button>
+            </div>
+          }
+        </div>
+        <div class="attribute-add-row">
+          <mat-form-field appearance="outline" class="attribute-add-field">
+            <mat-label>New option</mat-label>
+            <input matInput [value]="newGenderOption()"
+              (input)="newGenderOption.set($any($event.target).value)"
+              (keyup.enter)="addGenderOption()" />
+          </mat-form-field>
+          <button mat-flat-button (click)="addGenderOption()">
+            <mat-icon>add</mat-icon> Add
+          </button>
+        </div>
+      </div>
+
+      <!-- Race / Ethnicity options -->
+      <div class="attribute-options-col">
+        <div class="attribute-options-header">
+          <h4>Race / Ethnicity</h4>
+          <button mat-button (click)="resetRaceOptions()" title="Restore defaults">
+            <mat-icon>restart_alt</mat-icon> Restore defaults
+          </button>
+        </div>
+        <div class="attribute-chips">
+          @for (opt of raceOptions(); track opt) {
+            <div class="attribute-chip">
+              <span>{{ opt }}</span>
+              <button mat-icon-button (click)="removeRaceOption(opt)" title="Remove">
+                <mat-icon>close</mat-icon>
+              </button>
+            </div>
+          }
+        </div>
+        <div class="attribute-add-row">
+          <mat-form-field appearance="outline" class="attribute-add-field">
+            <mat-label>New option</mat-label>
+            <input matInput [value]="newRaceOption()"
+              (input)="newRaceOption.set($any($event.target).value)"
+              (keyup.enter)="addRaceOption()" />
+          </mat-form-field>
+          <button mat-flat-button (click)="addRaceOption()">
+            <mat-icon>add</mat-icon> Add
+          </button>
+        </div>
+      </div>
+
+    </div>
+  </section>
+
 </div>

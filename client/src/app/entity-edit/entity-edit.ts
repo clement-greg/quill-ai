@@ -16,6 +16,7 @@ import { EntityQuote } from '@shared/models/entity-quote.model';
 import { EntityService } from '../services/entity.service';
 import { EntityQuoteService } from '../services/entity-quote.service';
 import { ImageGenDialogComponent, ImageGenResult } from './image-gen-dialog';
+import { UserSettingsService } from '../services/user-settings.service';
 
 @Component({
   selector: 'app-entity-edit',
@@ -39,6 +40,10 @@ export class EntityEditComponent {
   private entityQuoteService = inject(EntityQuoteService);
   private dialog = inject(MatDialog);
   private router = inject(Router);
+  private settingsService = inject(UserSettingsService);
+
+  readonly genderOptions = this.settingsService.genderOptions;
+  readonly raceOptions = this.settingsService.raceOptions;
 
   entity = input.required<Entity>();
   isNew = input(false);

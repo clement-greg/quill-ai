@@ -13,6 +13,8 @@ interface UserSettings {
   editorFontSize?: string;
   editorFontFamily?: string;
   ghostCompleteItems?: { id: string; label: string; prompt: string }[];
+  genderOptions?: string[];
+  raceOptions?: string[];
 }
 
 // GET /api/user-settings
@@ -52,6 +54,8 @@ router.put('/', async (req: Request, res: Response): Promise<void> => {
       editorFontSize: req.body.editorFontSize,
       editorFontFamily: req.body.editorFontFamily,
       ghostCompleteItems: req.body.ghostCompleteItems,
+      genderOptions: req.body.genderOptions,
+      raceOptions: req.body.raceOptions,
     };
     await container.items.upsert(settings);
     const { id: _id, ...result } = settings;

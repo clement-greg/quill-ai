@@ -2,6 +2,16 @@ import { Injectable, signal, computed, inject } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
 import { firstValueFrom } from 'rxjs';
 
+export const DEFAULT_GENDER_OPTIONS = [
+  'Female', 'Male', 'Non-binary', 'Genderfluid', 'Agender', 'Other',
+];
+
+export const DEFAULT_RACE_OPTIONS = [
+  'Asian', 'Black / African', 'East Asian', 'Hispanic / Latino',
+  'Indigenous / Native', 'Middle Eastern', 'Mixed / Multiracial',
+  'Pacific Islander', 'South Asian', 'White / European', 'Other',
+];
+
 export interface GhostCompleteItem {
   id: string;
   label: string;
@@ -19,6 +29,8 @@ export interface UserSettingsData {
   grammarCheckEnabled?: boolean;
   entityDetectionEnabled?: boolean;
   autoSaveEnabled?: boolean;
+  genderOptions?: string[];
+  raceOptions?: string[];
 }
 
 @Injectable({ providedIn: 'root' })
@@ -33,6 +45,8 @@ export class UserSettingsService {
   private _grammarCheckEnabled = signal<boolean>(true);
   private _entityDetectionEnabled = signal<boolean>(true);
   private _autoSaveEnabled = signal<boolean>(false);
+  private _genderOptions = signal<string[]>(DEFAULT_GENDER_OPTIONS);
+  private _raceOptions = signal<string[]>(DEFAULT_RACE_OPTIONS);
   /** True when the active theme is a dark variant (for backward compat). */
   readonly darkMode = computed(() =>
     this._colorTheme() === 'dark' || this._colorTheme() === 'midnight'
@@ -46,6 +60,8 @@ export class UserSettingsService {
   readonly grammarCheckEnabled = this._grammarCheckEnabled.asReadonly();
   readonly entityDetectionEnabled = this._entityDetectionEnabled.asReadonly();
   readonly autoSaveEnabled = this._autoSaveEnabled.asReadonly();
+  readonly genderOptions = this._genderOptions.asReadonly();
+  readonly raceOptions = this._raceOptions.asReadonly();
 
   /** Loads all settings from the server. Call after authentication. */
   async loadFromServer(): Promise<void> {
@@ -61,6 +77,8 @@ export class UserSettingsService {
       this._grammarCheckEnabled.set(settings.grammarCheckEnabled ?? true);
       this._entityDetectionEnabled.set(settings.entityDetectionEnabled ?? true);
       this._autoSaveEnabled.set(settings.autoSaveEnabled ?? false);
+      this._genderOptions.set(settings.genderOptions ?? DEFAULT_GENDER_OPTIONS);
+      this._raceOptions.set(settings.raceOptions ?? DEFAULT_RACE_OPTIONS);
     } catch {
       // Server unavailable — signals keep their default values
     }
@@ -79,6 +97,8 @@ export class UserSettingsService {
         grammarCheckEnabled: this._grammarCheckEnabled(),
         entityDetectionEnabled: this._entityDetectionEnabled(),
         autoSaveEnabled: this._autoSaveEnabled(),
+        genderOptions: this._genderOptions(),
+        raceOptions: this._raceOptions(),
       })
     ).catch(() => {});
   }
@@ -155,6 +175,16 @@ export class UserSettingsService {
 
   clearAvatarUrl(): void {
     this._avatarUrl.set('');
+    this.saveToServer();
+  }
+
+  setGenderOptions(values: string[]): void {
+    this._genderOptions.set(values);
+    this.saveToServer();
+  }
+
+  setRaceOptions(values: string[]): void {
+    this._raceOptions.set(values);
     this.saveToServer();
   }
 

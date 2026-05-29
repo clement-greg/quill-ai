@@ -7,7 +7,7 @@ import { MatFormFieldModule } from '@angular/material/form-field';
 import { MatButtonToggleModule } from '@angular/material/button-toggle';
 import { MatSlideToggleModule } from '@angular/material/slide-toggle';
 import { MatSnackBar } from '@angular/material/snack-bar';
-import { UserSettingsService, GhostCompleteItem } from '../services/user-settings.service';
+import { UserSettingsService, GhostCompleteItem, DEFAULT_GENDER_OPTIONS, DEFAULT_RACE_OPTIONS } from '../services/user-settings.service';
 import { HeaderService } from '../services/header.service';
 
 export interface ColorThemeOption {
@@ -207,5 +207,50 @@ export class UserSettingsComponent {
 
   setAutoSaveEnabled(value: boolean): void {
     this.settingsService.setAutoSaveEnabled(value);
+  }
+
+  // ── Character Attribute Options ────────────────────
+  readonly genderOptions = this.settingsService.genderOptions;
+  readonly raceOptions = this.settingsService.raceOptions;
+
+  newGenderOption = signal('');
+  newRaceOption = signal('');
+
+  addGenderOption(): void {
+    const val = this.newGenderOption().trim();
+    if (!val) return;
+    if (this.genderOptions().includes(val)) {
+      this.snackBar.open('That value already exists.', undefined, { duration: 2000 });
+      return;
+    }
+    this.settingsService.setGenderOptions([...this.genderOptions(), val]);
+    this.newGenderOption.set('');
+  }
+
+  removeGenderOption(val: string): void {
+    this.settingsService.setGenderOptions(this.genderOptions().filter(v => v !== val));
+  }
+
+  resetGenderOptions(): void {
+    this.settingsService.setGenderOptions([...DEFAULT_GENDER_OPTIONS]);
+  }
+
+  addRaceOption(): void {
+    const val = this.newRaceOption().trim();
+    if (!val) return;
+    if (this.raceOptions().includes(val)) {
+      this.snackBar.open('That value already exists.', undefined, { duration: 2000 });
+      return;
+    }
+    this.settingsService.setRaceOptions([...this.raceOptions(), val]);
+    this.newRaceOption.set('');
+  }
+
+  removeRaceOption(val: string): void {
+    this.settingsService.setRaceOptions(this.raceOptions().filter(v => v !== val));
+  }
+
+  resetRaceOptions(): void {
+    this.settingsService.setRaceOptions([...DEFAULT_RACE_OPTIONS]);
   }
 }
