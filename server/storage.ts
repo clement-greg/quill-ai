@@ -62,3 +62,11 @@ export async function getBlobUrl(filename: string): Promise<string> {
   const blockBlobClient = containerClient.getBlockBlobClient(filename);
   return blockBlobClient.url;
 }
+
+export async function listBlobs(): Promise<string[]> {
+  const names: string[] = [];
+  for await (const blob of containerClient.listBlobsFlat()) {
+    names.push(blob.name);
+  }
+  return names;
+}

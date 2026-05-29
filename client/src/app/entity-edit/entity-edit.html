@@ -274,6 +274,15 @@
   <div class="entity-edit-actions">
     <button mat-flat-button color="primary" (click)="onSave()" [disabled]="uploading() || generatingImage()">Save</button>
     <button mat-button (click)="onCancel()">Cancel</button>
+    @if (entity().id && !isNew()) {
+      <button mat-icon-button (click)="onRefresh()" [disabled]="refreshing()" matTooltip="Refresh">
+        @if (refreshing()) {
+          <mat-spinner diameter="18" />
+        } @else {
+          <mat-icon>refresh</mat-icon>
+        }
+      </button>
+    }
     <span class="action-spacer"></span>
     @if (entity().id && !isNew()) {
       @if (!isNarrator()) {

@@ -22,7 +22,11 @@
     <div class="entity-panel-inner">
 
       <!-- Icon rail / full list -->
-      <div class="entity-list-col" [class.entity-list-col-narrow]="panel.editingEntity()">
+      <div class="entity-list-col"
+           [class.entity-list-col-narrow]="panel.editingEntity()"
+           (dragover)="onListDragOver($event)"
+           (dragleave)="onListDragLeave($event)"
+           (drop)="onListDrop($event)">
         <div class="entity-col-header">
           @if (!panel.editingEntity()) {
             <h3>{{ panel.showingArchived() ? 'Archived' : 'Entities' }}</h3>
@@ -57,7 +61,9 @@
         @if (!panel.showingArchived() && panel.narrator()) {
           <div class="narrator-section">
             <div class="entity-list-item narrator-item"
+                 [attr.data-entity-id]="panel.narrator()!.id"
                  [class.entity-selected]="panel.editingEntity()?.id === panel.narrator()!.id"
+                 [class.entity-drop-target]="dragOverEntityId() === panel.narrator()!.id"
                  (click)="panel.startEditEntity(panel.narrator()!)"
                  [matTooltip]="panel.editingEntity() ? 'Narrator' : ''"
                  matTooltipPosition="right">
@@ -71,6 +77,9 @@
               @if (!panel.editingEntity()) {
                 <span class="narrator-badge">NARRATOR</span>
                 <span class="entity-name">Narrator</span>
+              }
+              @if (uploadingEntityId() === panel.narrator()!.id) {
+                <div class="entity-upload-overlay"><mat-spinner diameter="18" /></div>
               }
             </div>
           </div>
@@ -93,7 +102,9 @@
                   @for (entity of group.entities; track entity.id) {
                     <div class="entity-list-item"
                          cdkDrag
+                         [attr.data-entity-id]="entity.id"
                          [class.entity-selected]="panel.editingEntity()?.id === entity.id"
+                         [class.entity-drop-target]="dragOverEntityId() === entity.id"
                          (click)="panel.startEditEntity(entity)">
                       <mat-icon class="drag-handle" cdkDragHandle (click)="$event.stopPropagation()">drag_indicator</mat-icon>
                       <div class="entity-avatar">
@@ -104,6 +115,9 @@
                         }
                       </div>
                       <span class="entity-name">{{ entity.name || '(unnamed)' }}</span>
+                      @if (uploadingEntityId() === entity.id) {
+                        <div class="entity-upload-overlay"><mat-spinner diameter="18" /></div>
+                      }
                     </div>
                   }
                 </div>
@@ -117,7 +131,9 @@
           <div class="entity-list">
             @for (entity of panel.entityList(); track entity.id) {
               <div class="entity-list-item"
+                   [attr.data-entity-id]="entity.id"
                    [class.entity-selected]="panel.editingEntity()?.id === entity.id"
+                   [class.entity-drop-target]="dragOverEntityId() === entity.id"
                    (click)="panel.startEditEntity(entity)"
                    [matTooltip]="panel.editingEntity() ? (entity.name || '(unnamed)') : ''"
                    matTooltipPosition="right">
@@ -131,6 +147,9 @@
                 @if (!panel.editingEntity()) {
                   <span class="entity-type-badge">{{ entity.type }}</span>
                   <span class="entity-name">{{ entity.name || '(unnamed)' }}</span>
+                }
+                @if (uploadingEntityId() === entity.id) {
+                  <div class="entity-upload-overlay"><mat-spinner diameter="18" /></div>
                 }
               </div>
             }
@@ -146,7 +165,8 @@
             (save)="panel.saveEntityEdit($event)"
             (cancel)="panel.cancelEditEntity()"
             (archive)="panel.archiveEntity($event)"
-            (unarchive)="panel.unarchiveEntity($event)" />
+            (unarchive)="panel.unarchiveEntity($event)"
+            (refresh)="panel.refreshEditingEntity()" />
         </div>
       }
 

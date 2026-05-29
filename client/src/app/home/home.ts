@@ -1,5 +1,6 @@
-import { Component } from '@angular/core';
-import { RouterLink } from '@angular/router';
+import { Component, inject, OnInit } from '@angular/core';
+import { Router, RouterLink } from '@angular/router';
+import { AuthService } from '../auth/auth.service';
 
 @Component({
   selector: 'app-home',
@@ -7,4 +8,13 @@ import { RouterLink } from '@angular/router';
   templateUrl: './home.html',
   styleUrl: './home.scss',
 })
-export class Home {}
+export class Home implements OnInit {
+  private auth = inject(AuthService);
+  private router = inject(Router);
+
+  ngOnInit(): void {
+    if (this.auth.isLoggedIn) {
+      this.router.navigateByUrl('/series');
+    }
+  }
+}

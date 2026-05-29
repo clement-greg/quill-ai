@@ -2,6 +2,7 @@ import { Router, Request, Response } from 'express';
 import { AzureOpenAI } from 'openai';
 import config from '../config';
 import { getContainer } from '../cosmos';
+import { deleteBlob } from '../storage';
 import { Entity } from '../../shared/models/entity.model';
 import { withOwnerFilter, readOwnedItem } from '../owner-guard';
 
@@ -342,9 +343,18 @@ router.delete('/:id/photos/:index', async (req: Request, res: Response) => {
       res.status(404).json({ error: 'Entity not found' });
       return;
     }
-    const photos = (existing.photos ?? []).filter((_, i) => i !== index);
+    const allPhotos = existing.photos ?? [];
+    const photo = allPhotos[index];
+    const photos = allPhotos.filter((_, i) => i !== index);
     const updated: Entity = { ...existing, photos, modifiedBy: req.user!.email, modifiedAt: new Date().toISOString() };
     const { resource } = await container.item(id, id).replace<Entity>(updated);
+    if (photo) {
+      const blobNameFromUrl = (url: string) => new URL(url).pathname.split('/').pop()!;
+      await Promise.allSettled([
+        deleteBlob(blobNameFromUrl(photo.url)),
+        deleteBlob(blobNameFromUrl(photo.thumbnailUrl)),
+      ]);
+    }
     res.json(resource);
   } catch (err) {
     console.error('Error removing photo:', err);

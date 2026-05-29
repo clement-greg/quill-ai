@@ -186,6 +186,31 @@
   box-sizing: border-box;
   user-select: none;
   border: 1px solid transparent;
+  position: relative;
+}
+
+.entity-drop-target {
+  background-color: color-mix(in srgb, var(--mat-sys-primary) 15%, transparent) !important;
+  border-color: var(--mat-sys-primary) !important;
+  border-style: dashed !important;
+  border-width: 2px !important;
+  outline: none;
+
+  .entity-avatar {
+    box-shadow: 0 0 0 2px var(--mat-sys-primary);
+    border-radius: 50%;
+  }
+}
+
+.entity-upload-overlay {
+  position: absolute;
+  inset: 0;
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--mat-sys-surface) 70%, transparent);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
 }
 
 .drag-handle {

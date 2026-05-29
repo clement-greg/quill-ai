@@ -52,6 +52,7 @@ export class EntityEditComponent {
   cancel = output<void>();
   archive = output<string>();
   unarchive = output<string>();
+  refresh = output<void>();
 
   readonly entityTypes: Entity['type'][] = ['PERSON', 'PLACE', 'THING'];
   readonly referenceOptions: { value: EntityReference; label: string; requiresTitle?: boolean }[] = [
@@ -76,6 +77,7 @@ export class EntityEditComponent {
   uploading = signal(false);
   generatingImage = signal(false);
   generatingPersonality = signal(false);
+  refreshing = signal(false);
   quotes = signal<EntityQuote[]>([]);
   quotesLoading = signal(false);
   quoteSaving = signal(false);
@@ -267,6 +269,10 @@ export class EntityEditComponent {
 
   onCancel(): void {
     this.cancel.emit();
+  }
+
+  onRefresh(): void {
+    this.refresh.emit();
   }
 
   onArchive(): void {

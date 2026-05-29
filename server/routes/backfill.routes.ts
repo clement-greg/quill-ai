@@ -1,5 +1,7 @@
 import { Router, Request, Response } from 'express';
 import { getContainer } from '../cosmos';
+import { listBlobs, deleteBlob } from '../storage';
+import { Entity } from '../../shared/models/entity.model';
 
 const router = Router();
 
@@ -86,6 +88,60 @@ router.post('/series', async (req: Request, res: Response) => {
   } catch (err) {
     console.error('Backfill error:', err);
     res.status(500).json({ error: 'Backfill failed' });
+  }
+});
+
+/**
+ * POST /api/backfill/cleanup-entity-photos
+ *
+ * Deletes any blobs in Azure storage that were once entity photos but are no
+ * longer referenced by any entity document in Cosmos DB.
+ *
+ * Only targets UUID-named image blobs (no "folder-files/" prefix). Blobs used
+ * for folder file attachments are left untouched.
+ *
+ * Returns { deleted: string[], kept: number } so the caller can audit what was removed.
+ */
+router.post('/cleanup-entity-photos', async (req: Request, res: Response) => {
+  try {
+    // Build the set of all blob names currently referenced by any entity
+    const entityContainer = getContainer('entities');
+    const { resources: entities } = await entityContainer.items
+      .query<Entity>('SELECT * FROM c WHERE NOT IS_DEFINED(c.deleted) OR c.deleted = false')
+      .fetchAll();
+
+    const referencedBlobNames = new Set<string>();
+    const blobNameFromUrl = (url: string) => {
+      try { return new URL(url).pathname.split('/').pop()!; } catch { return null; }
+    };
+
+    for (const entity of entities) {
+      for (const urlField of [entity.thumbnailUrl, entity.originalUrl]) {
+        if (urlField) {
+          const name = blobNameFromUrl(urlField);
+          if (name) referencedBlobNames.add(name);
+        }
+      }
+      for (const photo of entity.photos ?? []) {
+        const orig = blobNameFromUrl(photo.url);
+        const thumb = blobNameFromUrl(photo.thumbnailUrl);
+        if (orig) referencedBlobNames.add(orig);
+        if (thumb) referencedBlobNames.add(thumb);
+      }
+    }
+
+    // List all blobs and delete any entity-image blobs that are no longer referenced
+    const allBlobs = await listBlobs();
+    const toDelete = allBlobs.filter(
+      name => !name.startsWith('folder-files/') && !referencedBlobNames.has(name)
+    );
+
+    await Promise.allSettled(toDelete.map(name => deleteBlob(name)));
+
+    res.json({ deleted: toDelete, kept: allBlobs.length - toDelete.length });
+  } catch (err) {
+    console.error('Cleanup error:', err);
+    res.status(500).json({ error: 'Cleanup failed' });
   }
 });
 

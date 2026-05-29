@@ -225,6 +225,21 @@ export class EntityPanelService {
     });
   }
 
+  refreshEditingEntity(): void {
+    const entity = this.editingEntity();
+    if (!entity?.id) return;
+    this.entityService.getById(entity.id).subscribe({
+      next: (fresh) => {
+        this.editingEntity.set({ ...fresh });
+        if (fresh.isNarrator) {
+          this.narrator.set(fresh);
+        } else {
+          this.entityList.update(list => list.map(e => e.id === fresh.id ? fresh : e));
+        }
+      },
+    });
+  }
+
   toggleGroup(type: string): void {
     this.collapsedGroups.update(set => {
       const next = new Set(set);
