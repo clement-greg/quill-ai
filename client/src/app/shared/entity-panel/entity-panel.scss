@@ -418,6 +418,8 @@
     overflow-x: auto;
     overflow-y: hidden;
     padding: 8px 12px;
+    -webkit-overflow-scrolling: touch;
+    touch-action: pan-x;
   }
 
   .entity-list-col-narrow .entity-col-header {
