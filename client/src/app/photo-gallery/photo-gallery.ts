@@ -47,6 +47,8 @@ export class PhotoGalleryComponent implements OnInit, OnDestroy {
 
   lightboxOpen = signal(false);
   lightboxIndex = signal(0);
+  lightboxKey = signal(0);
+  slideDir = signal<'next' | 'prev'>('next');
   slideshowActive = signal(false);
   private slideshowInterval: ReturnType<typeof setInterval> | null = null;
   private routeSub?: Subscription;
@@ -173,13 +175,17 @@ export class PhotoGalleryComponent implements OnInit, OnDestroy {
   prevPhoto(): void {
     const photos = this.galleryPhotos();
     if (photos.length === 0) return;
+    this.slideDir.set('prev');
     this.lightboxIndex.update(i => (i - 1 + photos.length) % photos.length);
+    this.lightboxKey.update(k => k + 1);
   }
 
   nextPhoto(): void {
     const photos = this.galleryPhotos();
     if (photos.length === 0) return;
+    this.slideDir.set('next');
     this.lightboxIndex.update(i => (i + 1) % photos.length);
+    this.lightboxKey.update(k => k + 1);
   }
 
   // ── Slideshow ─────────────────────────────────────────────────────────────

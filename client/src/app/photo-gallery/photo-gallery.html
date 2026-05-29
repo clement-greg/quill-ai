@@ -93,9 +93,11 @@
         <mat-icon>chevron_left</mat-icon>
       </button>
 
-      <div class="lightbox-image-wrap">
-        <img [src]="proxyUrl(item.photo.url)" [alt]="item.photo.caption || item.entity.name" class="lightbox-image" />
-      </div>
+      @for (_ of [lightboxKey()]; track _) {
+        <div class="lightbox-image-wrap" [class]="'lightbox-image-wrap slide-' + slideDir()">
+          <img [src]="proxyUrl(item.photo.url)" [alt]="item.photo.caption || item.entity.name" class="lightbox-image" />
+        </div>
+      }
 
       <button mat-icon-button class="lightbox-next" (click)="nextPhoto()" matTooltip="Next">
         <mat-icon>chevron_right</mat-icon>

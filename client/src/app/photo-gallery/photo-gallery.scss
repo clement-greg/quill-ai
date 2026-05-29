@@ -179,6 +179,25 @@
   display: flex;
   align-items: center;
   justify-content: center;
+  overflow: hidden;
+}
+
+.lightbox-image-wrap.slide-next {
+  animation: slide-in-from-right 0.3s cubic-bezier(0.25, 0.46, 0.45, 0.94) both;
+}
+
+.lightbox-image-wrap.slide-prev {
+  animation: slide-in-from-left 0.3s cubic-bezier(0.25, 0.46, 0.45, 0.94) both;
+}
+
+@keyframes slide-in-from-right {
+  from { transform: translateX(60px); opacity: 0; }
+  to   { transform: translateX(0);    opacity: 1; }
+}
+
+@keyframes slide-in-from-left {
+  from { transform: translateX(-60px); opacity: 0; }
+  to   { transform: translateX(0);     opacity: 1; }
 }
 
 .lightbox-image {
