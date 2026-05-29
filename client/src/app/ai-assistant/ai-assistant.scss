@@ -1202,12 +1202,7 @@ mark.chat-highlight.highlight-flash {
 
   /* Show mobile-only controls */
   .mobile-sessions-btn {
-    display: inline-flex !important;
-    align-items: center !important;
-    justify-content: center !important;
-    color: var(--mat-sys-on-surface) !important;
-    flex-shrink: 0;
-    margin-right: 2px;
+    display: none !important; /* mobile-panel-header provides the hamburger instead */
   }
 
   .mobile-sidebar-close {

@@ -133,7 +133,7 @@
 
     @if (aiAssistant.activeSession() || allHighlights().length > 0) {
       <div class="ai-chat-header">
-        <!-- Mobile: sessions drawer toggle (desktop fallback) -->
+        <!-- Desktop: sessions drawer toggle -->
         <button mat-icon-button class="mobile-sessions-btn" (click)="mobileSidebarOpen.set(true)" matTooltip="Sessions">
           <mat-icon>menu</mat-icon>
         </button>
