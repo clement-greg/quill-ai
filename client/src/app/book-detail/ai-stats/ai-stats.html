@@ -52,5 +52,60 @@
         </div>
       </div>
     }
+
+    @if (representationStats().hasData) {
+      <div class="repr-section">
+        <h4 class="repr-title">
+          <mat-icon>people</mat-icon>
+          Character Representation
+        </h4>
+        <p class="repr-subtitle">Mentions of person characters across all chapters, grouped by attribute.</p>
+
+        @if (representationStats().byGender.length > 0) {
+          <p class="chart-label">By Gender</p>
+          <div class="repr-bars">
+            @for (row of representationStats().byGender; track row.label) {
+              <div class="repr-row">
+                <span class="repr-label" [title]="row.label">{{ row.label }}</span>
+                <div class="repr-track">
+                  <div class="repr-fill repr-fill-gender" [style.width.%]="row.pct"></div>
+                </div>
+                <span class="repr-count">{{ row.mentions }}</span>
+              </div>
+            }
+          </div>
+        }
+
+        @if (representationStats().byRace.length > 0) {
+          <p class="chart-label" style="margin-top: 16px;">By Race / Ethnicity</p>
+          <div class="repr-bars">
+            @for (row of representationStats().byRace; track row.label) {
+              <div class="repr-row">
+                <span class="repr-label" [title]="row.label">{{ row.label }}</span>
+                <div class="repr-track">
+                  <div class="repr-fill repr-fill-race" [style.width.%]="row.pct"></div>
+                </div>
+                <span class="repr-count">{{ row.mentions }}</span>
+              </div>
+            }
+          </div>
+        }
+
+        @if (representationStats().byOrientation.length > 0) {
+          <p class="chart-label" style="margin-top: 16px;">By Sexual Orientation</p>
+          <div class="repr-bars">
+            @for (row of representationStats().byOrientation; track row.label) {
+              <div class="repr-row">
+                <span class="repr-label" [title]="row.label">{{ row.label }}</span>
+                <div class="repr-track">
+                  <div class="repr-fill repr-fill-orientation" [style.width.%]="row.pct"></div>
+                </div>
+                <span class="repr-count">{{ row.mentions }}</span>
+              </div>
+            }
+          </div>
+        }
+      </div>
+    }
   }
 </div>

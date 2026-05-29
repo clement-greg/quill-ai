@@ -334,10 +334,14 @@
 
 .attribute-options-grid {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: 1fr 1fr 1fr;
   gap: 32px;
 
-  @media (max-width: 600px) {
+  @media (max-width: 700px) {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  @media (max-width: 480px) {
     grid-template-columns: 1fr;
   }
 }

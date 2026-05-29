@@ -12,6 +12,11 @@ export const DEFAULT_RACE_OPTIONS = [
   'Pacific Islander', 'South Asian', 'White / European', 'Other',
 ];
 
+export const DEFAULT_ORIENTATION_OPTIONS = [
+  'Asexual', 'Bisexual', 'Gay', 'Heterosexual', 'Lesbian',
+  'Pansexual', 'Queer', 'Other',
+];
+
 export interface GhostCompleteItem {
   id: string;
   label: string;
@@ -31,6 +36,7 @@ export interface UserSettingsData {
   autoSaveEnabled?: boolean;
   genderOptions?: string[];
   raceOptions?: string[];
+  orientationOptions?: string[];
 }
 
 @Injectable({ providedIn: 'root' })
@@ -47,6 +53,7 @@ export class UserSettingsService {
   private _autoSaveEnabled = signal<boolean>(false);
   private _genderOptions = signal<string[]>(DEFAULT_GENDER_OPTIONS);
   private _raceOptions = signal<string[]>(DEFAULT_RACE_OPTIONS);
+  private _orientationOptions = signal<string[]>(DEFAULT_ORIENTATION_OPTIONS);
   /** True when the active theme is a dark variant (for backward compat). */
   readonly darkMode = computed(() =>
     this._colorTheme() === 'dark' || this._colorTheme() === 'midnight'
@@ -62,6 +69,7 @@ export class UserSettingsService {
   readonly autoSaveEnabled = this._autoSaveEnabled.asReadonly();
   readonly genderOptions = this._genderOptions.asReadonly();
   readonly raceOptions = this._raceOptions.asReadonly();
+  readonly orientationOptions = this._orientationOptions.asReadonly();
 
   /** Loads all settings from the server. Call after authentication. */
   async loadFromServer(): Promise<void> {
@@ -79,6 +87,7 @@ export class UserSettingsService {
       this._autoSaveEnabled.set(settings.autoSaveEnabled ?? false);
       this._genderOptions.set(settings.genderOptions ?? DEFAULT_GENDER_OPTIONS);
       this._raceOptions.set(settings.raceOptions ?? DEFAULT_RACE_OPTIONS);
+      this._orientationOptions.set(settings.orientationOptions ?? DEFAULT_ORIENTATION_OPTIONS);
     } catch {
       // Server unavailable — signals keep their default values
     }
@@ -99,6 +108,7 @@ export class UserSettingsService {
         autoSaveEnabled: this._autoSaveEnabled(),
         genderOptions: this._genderOptions(),
         raceOptions: this._raceOptions(),
+        orientationOptions: this._orientationOptions(),
       })
     ).catch(() => {});
   }
@@ -185,6 +195,11 @@ export class UserSettingsService {
 
   setRaceOptions(values: string[]): void {
     this._raceOptions.set(values);
+    this.saveToServer();
+  }
+
+  setOrientationOptions(values: string[]): void {
+    this._orientationOptions.set(values);
     this.saveToServer();
   }
 

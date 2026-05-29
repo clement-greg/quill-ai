@@ -14,8 +14,10 @@ import { CdkDragDrop, DragDropModule, moveItemInArray } from '@angular/cdk/drag-
 import { BookService } from '../book/book.service';
 import { ChapterService } from '../chapter/chapter.service';
 import { SeriesService } from '../series/series.service';
+import { EntityService } from '../services/entity.service';
 import { Book } from '@shared/models/book.model';
 import { Chapter } from '@shared/models/chapter.model';
+import { Entity } from '@shared/models/entity.model';
 import { v4 as uuidv4 } from 'uuid';
 import { HeaderService } from '../services/header.service';
 import { EntityPanelService } from '../services/entity-panel.service';
@@ -52,6 +54,7 @@ export class BookDetailComponent implements OnInit, OnDestroy {
   private headerService = inject(HeaderService);
   private entityPanel = inject(EntityPanelService);
   private seriesContext = inject(SeriesContextService);
+  private entityService = inject(EntityService);
 
   private http = inject(HttpClient);
 
@@ -69,6 +72,7 @@ export class BookDetailComponent implements OnInit, OnDestroy {
   seriesId = signal<string>('');
   aiStatsChapters = signal<Chapter[]>([]);
   aiStatsLoading = signal(false);
+  aiStatsEntities = signal<Entity[]>([]);
   private routeSub?: Subscription;
 
   get rightPanelWidth(): number {
@@ -147,10 +151,14 @@ export class BookDetailComponent implements OnInit, OnDestroy {
     const book = this.book();
     if (!book) return;
     this.aiStatsLoading.set(true);
-    this.chapterService.getByBook(book.id).subscribe({
-      next: (chapters) => {
+    forkJoin({
+      chapters: this.chapterService.getByBook(book.id),
+      entities: this.entityService.getBySeries(this.seriesId()),
+    }).subscribe({
+      next: ({ chapters, entities }) => {
         const sorted = [...chapters].sort((a, b) => (a.sortOrder ?? Infinity) - (b.sortOrder ?? Infinity));
         this.aiStatsChapters.set(sorted);
+        this.aiStatsEntities.set(entities.filter(e => !e.archived && !e.deleted));
         this.aiStatsLoading.set(false);
       },
       error: () => this.aiStatsLoading.set(false),
@@ -164,6 +172,7 @@ export class BookDetailComponent implements OnInit, OnDestroy {
       this.thumbnailPreview.set(null);
       this.panelMode.set(null);
       this.aiStatsChapters.set([]);
+      this.aiStatsEntities.set([]);
     }
   }
 
@@ -173,6 +182,7 @@ export class BookDetailComponent implements OnInit, OnDestroy {
     this.thumbnailPreview.set(null);
     this.panelMode.set(null);
     this.aiStatsChapters.set([]);
+    this.aiStatsEntities.set([]);
   }
 
   updateTitle(value: string): void {

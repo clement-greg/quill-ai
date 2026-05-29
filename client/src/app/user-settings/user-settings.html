@@ -269,6 +269,37 @@
         </div>
       </div>
 
+      <!-- Sexual Orientation options -->
+      <div class="attribute-options-col">
+        <div class="attribute-options-header">
+          <h4>Sexual Orientation</h4>
+          <button mat-button (click)="resetOrientationOptions()" title="Restore defaults">
+            <mat-icon>restart_alt</mat-icon> Restore defaults
+          </button>
+        </div>
+        <div class="attribute-chips">
+          @for (opt of orientationOptions(); track opt) {
+            <div class="attribute-chip">
+              <span>{{ opt }}</span>
+              <button mat-icon-button (click)="removeOrientationOption(opt)" title="Remove">
+                <mat-icon>close</mat-icon>
+              </button>
+            </div>
+          }
+        </div>
+        <div class="attribute-add-row">
+          <mat-form-field appearance="outline" class="attribute-add-field">
+            <mat-label>New option</mat-label>
+            <input matInput [value]="newOrientationOption()"
+              (input)="newOrientationOption.set($any($event.target).value)"
+              (keyup.enter)="addOrientationOption()" />
+          </mat-form-field>
+          <button mat-flat-button (click)="addOrientationOption()">
+            <mat-icon>add</mat-icon> Add
+          </button>
+        </div>
+      </div>
+
     </div>
   </section>
 

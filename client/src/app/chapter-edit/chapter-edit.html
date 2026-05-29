@@ -302,7 +302,7 @@
       </div>
     }
     @if (showAiStats() && chapter()) {
-      <app-ai-stats [chapters]="[chapter()!]" [loading]="false" />
+      <app-ai-stats [chapters]="[chapter()!]" [loading]="false" [entities]="entities()" />
     }
   </div>
 

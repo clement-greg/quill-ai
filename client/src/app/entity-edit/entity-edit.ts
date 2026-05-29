@@ -44,6 +44,7 @@ export class EntityEditComponent {
 
   readonly genderOptions = this.settingsService.genderOptions;
   readonly raceOptions = this.settingsService.raceOptions;
+  readonly orientationOptions = this.settingsService.orientationOptions;
 
   entity = input.required<Entity>();
   isNew = input(false);

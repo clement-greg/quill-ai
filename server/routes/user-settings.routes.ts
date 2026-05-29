@@ -15,6 +15,7 @@ interface UserSettings {
   ghostCompleteItems?: { id: string; label: string; prompt: string }[];
   genderOptions?: string[];
   raceOptions?: string[];
+  orientationOptions?: string[];
 }
 
 // GET /api/user-settings
@@ -56,6 +57,7 @@ router.put('/', async (req: Request, res: Response): Promise<void> => {
       ghostCompleteItems: req.body.ghostCompleteItems,
       genderOptions: req.body.genderOptions,
       raceOptions: req.body.raceOptions,
+      orientationOptions: req.body.orientationOptions,
     };
     await container.items.upsert(settings);
     const { id: _id, ...result } = settings;

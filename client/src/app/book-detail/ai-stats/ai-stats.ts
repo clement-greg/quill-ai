@@ -6,6 +6,7 @@ import { CommonModule } from '@angular/common';
 import { MatIconModule } from '@angular/material/icon';
 import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
 import { Chapter } from '@shared/models/chapter.model';
+import { Entity } from '@shared/models/entity.model';
 import {
   Chart,
   DoughnutController,
@@ -47,6 +48,59 @@ export interface BookWordStats {
 
 function countWords(text: string): number {
   return text.trim() ? text.trim().split(/\s+/).length : 0;
+}
+
+export interface RepresentationRow {
+  label: string;
+  entityCount: number;
+  mentions: number;
+  pct: number;
+}
+
+export interface RepresentationStats {
+  byGender: RepresentationRow[];
+  byRace: RepresentationRow[];
+  byOrientation: RepresentationRow[];
+  hasData: boolean;
+}
+
+function countEntityReferences(chapterHtmls: string[], entityId: string): number {
+  let total = 0;
+  const div = document.createElement('div');
+  for (const html of chapterHtmls) {
+    div.innerHTML = html;
+    total += div.querySelectorAll(`.entity-reference[data-id="${CSS.escape(entityId)}"]`).length;
+  }
+  return total;
+}
+
+function buildRepresentationRows(
+  entities: Entity[],
+  chapterHtmls: string[],
+  attr: 'gender' | 'race' | 'orientation',
+): RepresentationRow[] {
+  const groupMap = new Map<string, { entityCount: number; mentions: number }>();
+
+  for (const e of entities) {
+    if (e.type !== 'PERSON' || e.isNarrator) continue;
+    const key = (e[attr] as string | undefined)?.trim() || 'Not specified';
+    const mentions = countEntityReferences(chapterHtmls, e.id);
+    const existing = groupMap.get(key) ?? { entityCount: 0, mentions: 0 };
+    groupMap.set(key, { entityCount: existing.entityCount + 1, mentions: existing.mentions + mentions });
+  }
+
+  if (groupMap.size === 0) return [];
+
+  const maxMentions = Math.max(...[...groupMap.values()].map(v => v.mentions), 1);
+  return [...groupMap.entries()]
+    .filter(([, v]) => v.mentions > 0)
+    .sort((a, b) => b[1].mentions - a[1].mentions)
+    .map(([label, v]) => ({
+      label,
+      entityCount: v.entityCount,
+      mentions: v.mentions,
+      pct: Math.round((v.mentions / maxMentions) * 100),
+    }));
 }
 
 function parseChapterStats(html: string): ChapterWordStats {
@@ -93,6 +147,7 @@ const COLORS = {
 export class AiStatsComponent implements AfterViewInit, OnDestroy {
   chapters = input<Chapter[]>([]);
   loading = input<boolean>(false);
+  entities = input<Entity[]>([]);
 
   protected readonly Math = Math;
 
@@ -121,6 +176,20 @@ export class AiStatsComponent implements AfterViewInit, OnDestroy {
     if (!total) return '0%';
     return `${Math.round((value / total) * 100)}%`;
   }
+
+  representationStats = computed<RepresentationStats>(() => {
+    const chapters = this.chapters();
+    const entities = this.entities();
+    if (!entities.length || !chapters.length) {
+      return { byGender: [], byRace: [], byOrientation: [], hasData: false };
+    }
+    const chapterHtmls = chapters.map(c => c.content ?? '');
+    const byGender = buildRepresentationRows(entities, chapterHtmls, 'gender');
+    const byRace = buildRepresentationRows(entities, chapterHtmls, 'race');
+    const byOrientation = buildRepresentationRows(entities, chapterHtmls, 'orientation');
+    const hasData = byGender.length > 0 || byRace.length > 0 || byOrientation.length > 0;
+    return { byGender, byRace, byOrientation, hasData };
+  });
 
   constructor() {
     effect(() => {

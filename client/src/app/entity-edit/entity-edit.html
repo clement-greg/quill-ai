@@ -85,6 +85,16 @@
             </mat-select>
           </mat-form-field>
 
+          <mat-form-field appearance="outline" style="max-width: 220px;">
+            <mat-label>Sexual Orientation</mat-label>
+            <mat-select [ngModel]="draft()!.orientation" (ngModelChange)="update('orientation', $event)">
+              <mat-option [value]="undefined"><em>Not specified</em></mat-option>
+              @for (opt of orientationOptions(); track opt) {
+                <mat-option [value]="opt">{{ opt }}</mat-option>
+              }
+            </mat-select>
+          </mat-form-field>
+
         }
 
         @if (!isNarrator()) {

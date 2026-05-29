@@ -7,7 +7,7 @@ import { MatFormFieldModule } from '@angular/material/form-field';
 import { MatButtonToggleModule } from '@angular/material/button-toggle';
 import { MatSlideToggleModule } from '@angular/material/slide-toggle';
 import { MatSnackBar } from '@angular/material/snack-bar';
-import { UserSettingsService, GhostCompleteItem, DEFAULT_GENDER_OPTIONS, DEFAULT_RACE_OPTIONS } from '../services/user-settings.service';
+import { UserSettingsService, GhostCompleteItem, DEFAULT_GENDER_OPTIONS, DEFAULT_RACE_OPTIONS, DEFAULT_ORIENTATION_OPTIONS } from '../services/user-settings.service';
 import { HeaderService } from '../services/header.service';
 
 export interface ColorThemeOption {
@@ -212,9 +212,11 @@ export class UserSettingsComponent {
   // ── Character Attribute Options ────────────────────
   readonly genderOptions = this.settingsService.genderOptions;
   readonly raceOptions = this.settingsService.raceOptions;
+  readonly orientationOptions = this.settingsService.orientationOptions;
 
   newGenderOption = signal('');
   newRaceOption = signal('');
+  newOrientationOption = signal('');
 
   addGenderOption(): void {
     const val = this.newGenderOption().trim();
@@ -252,5 +254,24 @@ export class UserSettingsComponent {
 
   resetRaceOptions(): void {
     this.settingsService.setRaceOptions([...DEFAULT_RACE_OPTIONS]);
+  }
+
+  addOrientationOption(): void {
+    const val = this.newOrientationOption().trim();
+    if (!val) return;
+    if (this.orientationOptions().includes(val)) {
+      this.snackBar.open('That value already exists.', undefined, { duration: 2000 });
+      return;
+    }
+    this.settingsService.setOrientationOptions([...this.orientationOptions(), val]);
+    this.newOrientationOption.set('');
+  }
+
+  removeOrientationOption(val: string): void {
+    this.settingsService.setOrientationOptions(this.orientationOptions().filter(v => v !== val));
+  }
+
+  resetOrientationOptions(): void {
+    this.settingsService.setOrientationOptions([...DEFAULT_ORIENTATION_OPTIONS]);
   }
 }

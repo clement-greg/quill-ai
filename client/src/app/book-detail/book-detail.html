@@ -84,7 +84,7 @@
 
   <div right-panel>
     @if (panelMode() === 'ai-stats') {
-      <app-ai-stats [chapters]="aiStatsChapters()" [loading]="aiStatsLoading()" />
+      <app-ai-stats [chapters]="aiStatsChapters()" [loading]="aiStatsLoading()" [entities]="aiStatsEntities()" />
     }
     @if (panelMode() === 'notes') {
       <div class="editor-content notes-panel-content">
