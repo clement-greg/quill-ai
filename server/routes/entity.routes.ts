@@ -168,7 +168,16 @@ router.put('/:id', async (req: Request, res: Response) => {
       res.status(404).json({ error: 'Entity not found' });
       return;
     }
-    const updates: Entity = { ...req.body, id, owner: existing.owner, modifiedBy: req.user!.email, modifiedAt: new Date().toISOString() };
+    const updates: Entity = {
+      ...req.body,
+      id,
+      owner: existing.owner,
+      // Photos are managed exclusively through POST/DELETE /photos endpoints;
+      // always preserve them so a stale client draft cannot clobber them.
+      photos: existing.photos,
+      modifiedBy: req.user!.email,
+      modifiedAt: new Date().toISOString(),
+    };
     // Narrator name is immutable
     if (existing.isNarrator) {
       updates.name = 'Narrator';

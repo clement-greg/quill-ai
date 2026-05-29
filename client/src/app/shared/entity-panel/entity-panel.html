@@ -9,6 +9,16 @@
       <mat-icon>close</mat-icon>
     </button>
 
+    <!-- Mobile-only header -->
+    <div class="entity-mobile-header">
+      <span class="entity-mobile-title">
+        {{ panel.editingEntity() ? panel.editingEntity()!.name : (panel.showingArchived() ? 'Archived Entities' : 'Entities') }}
+      </span>
+      <button mat-icon-button (click)="panel.close()">
+        <mat-icon>close</mat-icon>
+      </button>
+    </div>
+
     <div class="entity-panel-inner">
 
       <!-- Icon rail / full list -->

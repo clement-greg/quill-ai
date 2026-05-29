@@ -518,6 +518,94 @@ export class RichTextEditorComponent implements OnInit, AfterViewInit, OnDestroy
     this.scheduleGrammarCheck();
   }
 
+  // ── Paste handler ──────────────────────────────────────────────────────
+
+  onEditorPaste(event: ClipboardEvent): void {
+    event.preventDefault();
+    const clipboard = event.clipboardData;
+    if (!clipboard) return;
+
+    const html = clipboard.getData('text/html');
+    const text = clipboard.getData('text/plain');
+
+    let cleanHtml: string;
+    if (html) {
+      cleanHtml = this.cleanPastedHtml(html);
+    } else {
+      cleanHtml = text
+        .split('\n')
+        .map(line => `<p>${line.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;') || '<br>'}</p>`)
+        .join('');
+    }
+
+    // execCommand keeps the operation on the browser's native undo stack so
+    // Ctrl+Z works as expected.
+    document.execCommand('insertHTML', false, cleanHtml);
+
+    if (this.editorRef) { this.editorContent = this.editorRef.nativeElement.innerHTML; this.scheduleEmit(); }
+    this.scheduleMinimap();
+  }
+
+  private cleanPastedHtml(html: string): string {
+    const parser = new DOMParser();
+    const doc = parser.parseFromString(html, 'text/html');
+    const body = doc.body;
+
+    // Inline formatting tags to unwrap (replace with their children)
+    const UNWRAP_TAGS = new Set([
+      'FONT', 'SPAN', 'U', 'S', 'STRIKE', 'SUB', 'SUP',
+      'B', 'STRONG', 'I', 'EM', 'INS', 'DEL', 'MARK',
+    ]);
+
+    const processNode = (node: Node): void => {
+      // Remove HTML comment nodes (e.g. <!--StartFragment-->)
+      if (node.nodeType === Node.COMMENT_NODE) {
+        node.parentNode?.removeChild(node);
+        return;
+      }
+      if (node.nodeType !== Node.ELEMENT_NODE) return;
+      const el = node as Element;
+
+      // Strip all presentation attributes
+      el.removeAttribute('style');
+      el.removeAttribute('class');
+      el.removeAttribute('id');
+      el.removeAttribute('color');
+      el.removeAttribute('face');
+      el.removeAttribute('size');
+      el.removeAttribute('bgcolor');
+      el.removeAttribute('align');
+      el.removeAttribute('valign');
+      el.removeAttribute('width');
+      el.removeAttribute('height');
+      el.removeAttribute('dir');
+
+      // Process children depth-first so unwrapping works bottom-up
+      Array.from(el.childNodes).forEach(child => processNode(child));
+
+      const tag = el.tagName;
+
+      if (UNWRAP_TAGS.has(tag)) {
+        const parent = el.parentNode;
+        if (parent) {
+          while (el.firstChild) parent.insertBefore(el.firstChild, el);
+          parent.removeChild(el);
+        }
+      } else if (tag === 'H1' || tag === 'H2' || tag === 'H3' ||
+                 tag === 'H4' || tag === 'H5' || tag === 'H6') {
+        // Convert heading to a plain text node wrapped in a <br> — headings may
+        // contain block children (p, div) that produce nested-p invalid HTML.
+        // Instead extract just the text content and insert as a text node.
+        const textContent = el.textContent ?? '';
+        const textNode = doc.createTextNode(textContent);
+        el.parentNode?.replaceChild(textNode, el);
+      }
+    };
+
+    Array.from(body.childNodes).forEach(node => processNode(node));
+    return body.innerHTML;
+  }
+
   // ── Keyboard handler ─────────────────────────────────────────────────────
 
   onEditorKeyDown(event: KeyboardEvent): void {

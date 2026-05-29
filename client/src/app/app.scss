@@ -153,7 +153,7 @@ main.full-height {
   }
 
   .mobile-only {
-    display: inline-flex;
+    display: inline-flex !important;
   }
 
   .mobile-back-btn {

@@ -120,9 +120,20 @@
 
   <!-- Chat area -->
   <div class="ai-chat-area">
+    <!-- Mobile-only persistent header: always visible for close + sessions access -->
+    <div class="mobile-panel-header">
+      <button mat-icon-button (click)="mobileSidebarOpen.set(true)" matTooltip="Sessions">
+        <mat-icon>menu</mat-icon>
+      </button>
+      <span class="mobile-panel-title">Resource Manager</span>
+      <button mat-icon-button (click)="aiAssistant.closePanel()" matTooltip="Close">
+        <mat-icon>close</mat-icon>
+      </button>
+    </div>
+
     @if (aiAssistant.activeSession() || allHighlights().length > 0) {
       <div class="ai-chat-header">
-        <!-- Mobile: sessions drawer toggle -->
+        <!-- Mobile: sessions drawer toggle (desktop fallback) -->
         <button mat-icon-button class="mobile-sessions-btn" (click)="mobileSidebarOpen.set(true)" matTooltip="Sessions">
           <mat-icon>menu</mat-icon>
         </button>
