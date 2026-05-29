@@ -1,7 +1,8 @@
-import { ApplicationConfig, provideBrowserGlobalErrorListeners, provideEnvironmentInitializer, inject } from '@angular/core';
+import { ApplicationConfig, provideBrowserGlobalErrorListeners, provideEnvironmentInitializer, inject, isDevMode } from '@angular/core';
 import { provideHttpClient, withInterceptors } from '@angular/common/http';
 import { provideRouter, Routes } from '@angular/router';
 import { MatIconRegistry } from '@angular/material/icon';
+import { provideServiceWorker } from '@angular/service-worker';
 import { SeriesComponent } from './series/series';
 import { SeriesDetailComponent } from './series-detail/series-detail';
 import { BookComponent } from './book/book';
@@ -41,6 +42,10 @@ export const appConfig: ApplicationConfig = {
     provideRouter(routes),
     provideEnvironmentInitializer(() => {
       inject(MatIconRegistry).setDefaultFontSetClass('material-symbols-outlined');
+    }),
+    provideServiceWorker('ngsw-worker.js', {
+      enabled: !isDevMode(),
+      registrationStrategy: 'registerWhenStable:30000'
     }),
   ]
 };
