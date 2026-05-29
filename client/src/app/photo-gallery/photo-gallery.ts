@@ -1,0 +1,194 @@
+import { Component, inject, signal, computed, OnInit, OnDestroy } from '@angular/core';
+import { FormsModule } from '@angular/forms';
+import { MatButtonModule } from '@angular/material/button';
+import { MatIconModule } from '@angular/material/icon';
+import { MatSelectModule } from '@angular/material/select';
+import { MatFormFieldModule } from '@angular/material/form-field';
+import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
+import { MatTooltipModule } from '@angular/material/tooltip';
+import { forkJoin, Subscription } from 'rxjs';
+import { Entity, EntityPhoto } from '@shared/models/entity.model';
+import { Series } from '@shared/models/series.model';
+import { EntityService } from '../services/entity.service';
+import { SeriesService } from '../series/series.service';
+import { HeaderService } from '../services/header.service';
+import { SeriesContextService } from '../services/series-context.service';
+
+interface GalleryPhoto {
+  entity: Entity;
+  photo: EntityPhoto;
+}
+
+@Component({
+  selector: 'app-photo-gallery',
+  imports: [
+    FormsModule,
+    MatButtonModule,
+    MatIconModule,
+    MatSelectModule,
+    MatFormFieldModule,
+    MatProgressSpinnerModule,
+    MatTooltipModule,
+  ],
+  templateUrl: './photo-gallery.html',
+  styleUrl: './photo-gallery.scss',
+})
+export class PhotoGalleryComponent implements OnInit, OnDestroy {
+  private entityService = inject(EntityService);
+  private seriesService = inject(SeriesService);
+  private headerService = inject(HeaderService);
+  private seriesContext = inject(SeriesContextService);
+
+  loading = signal(false);
+  allSeries = signal<Series[]>([]);
+  allEntities = signal<Entity[]>([]);
+  selectedSeriesId = signal<string | null>(null);
+  selectedEntityIds = signal<string[]>([]);
+
+  lightboxOpen = signal(false);
+  lightboxIndex = signal(0);
+  slideshowActive = signal(false);
+  private slideshowInterval: ReturnType<typeof setInterval> | null = null;
+  private routeSub?: Subscription;
+
+  /** Entities that have at least one photo (includes thumbnailUrl as a photo) */
+  entitiesWithPhotos = computed(() => {
+    const seriesId = this.selectedSeriesId();
+    const entities = this.allEntities();
+    return entities
+      .filter(e => !e.archived && !e.deleted)
+      .filter(e => seriesId == null || e.seriesId === seriesId)
+      .filter(e => (e.photos && e.photos.length > 0) || e.thumbnailUrl);
+  });
+
+  /** Flat list of all gallery photos after entity filter */
+  galleryPhotos = computed<GalleryPhoto[]>(() => {
+    const entityFilter = this.selectedEntityIds();
+    const entities = this.entitiesWithPhotos();
+    const source = entityFilter.length > 0
+      ? entities.filter(e => entityFilter.includes(e.id))
+      : entities;
+
+    const photos: GalleryPhoto[] = [];
+    for (const entity of source) {
+      if (entity.photos && entity.photos.length > 0) {
+        for (const photo of entity.photos) {
+          photos.push({ entity, photo });
+        }
+      } else if (entity.thumbnailUrl) {
+        photos.push({
+          entity,
+          photo: { url: entity.originalUrl ?? entity.thumbnailUrl, thumbnailUrl: entity.thumbnailUrl },
+        });
+      }
+    }
+    return photos;
+  });
+
+  currentLightboxPhoto = computed(() => {
+    const photos = this.galleryPhotos();
+    const idx = this.lightboxIndex();
+    return photos[idx] ?? null;
+  });
+
+  ngOnInit(): void {
+    this.headerService.set([{ label: 'Photo Gallery' }], []);
+    this.load();
+  }
+
+  ngOnDestroy(): void {
+    this.stopSlideshow();
+    this.routeSub?.unsubscribe();
+  }
+
+  load(): void {
+    this.loading.set(true);
+    forkJoin({
+      series: this.seriesService.getAll(),
+      entities: this.entityService.getAll(),
+    }).subscribe({
+      next: ({ series, entities }) => {
+        this.allSeries.set(series);
+        this.allEntities.set(entities);
+
+        // Pre-select series from context if available
+        const contextId = this.seriesContext.currentSeriesId();
+        if (contextId && series.some(s => s.id === contextId)) {
+          this.selectedSeriesId.set(contextId);
+        }
+
+        this.loading.set(false);
+      },
+      error: () => this.loading.set(false),
+    });
+  }
+
+  onSeriesChange(seriesId: string | null): void {
+    this.selectedSeriesId.set(seriesId ?? null);
+    this.selectedEntityIds.set([]);
+    this.closeLightbox();
+  }
+
+  onEntityFilterChange(ids: string[]): void {
+    this.selectedEntityIds.set(ids ?? []);
+    this.lightboxIndex.set(0);
+  }
+
+  // ── Lightbox ──────────────────────────────────────────────────────────────
+
+  openLightbox(index: number): void {
+    this.lightboxIndex.set(index);
+    this.lightboxOpen.set(true);
+  }
+
+  closeLightbox(): void {
+    this.lightboxOpen.set(false);
+    this.stopSlideshow();
+  }
+
+  prevPhoto(): void {
+    const photos = this.galleryPhotos();
+    if (photos.length === 0) return;
+    this.lightboxIndex.update(i => (i - 1 + photos.length) % photos.length);
+  }
+
+  nextPhoto(): void {
+    const photos = this.galleryPhotos();
+    if (photos.length === 0) return;
+    this.lightboxIndex.update(i => (i + 1) % photos.length);
+  }
+
+  // ── Slideshow ─────────────────────────────────────────────────────────────
+
+  toggleSlideshow(): void {
+    if (this.slideshowActive()) {
+      this.stopSlideshow();
+    } else {
+      this.startSlideshow();
+    }
+  }
+
+  private startSlideshow(): void {
+    if (!this.lightboxOpen()) {
+      this.openLightbox(0);
+    }
+    this.slideshowActive.set(true);
+    this.slideshowInterval = setInterval(() => {
+      this.nextPhoto();
+    }, 3000);
+  }
+
+  private stopSlideshow(): void {
+    this.slideshowActive.set(false);
+    if (this.slideshowInterval !== null) {
+      clearInterval(this.slideshowInterval);
+      this.slideshowInterval = null;
+    }
+  }
+
+  proxyUrl(url: string | undefined | null): string | null {
+    if (!url) return null;
+    const filename = url.split('/').pop();
+    return filename ? `/api/image/${filename}` : null;
+  }
+}

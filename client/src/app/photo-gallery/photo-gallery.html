@@ -1,0 +1,111 @@
+<div class="gallery-page">
+
+  <!-- Filters toolbar -->
+  <div class="gallery-filters">
+    <mat-form-field appearance="outline" class="series-select">
+      <mat-label>Series</mat-label>
+      <mat-select [value]="selectedSeriesId()" (valueChange)="onSeriesChange($event)">
+        <mat-option [value]="null">All Series</mat-option>
+        @for (s of allSeries(); track s.id) {
+          <mat-option [value]="s.id">{{ s.title }}</mat-option>
+        }
+      </mat-select>
+    </mat-form-field>
+
+    @if (entitiesWithPhotos().length > 0) {
+      <mat-form-field appearance="outline" class="entity-select">
+        <mat-label>Filter by entity</mat-label>
+        <mat-select multiple [value]="selectedEntityIds()" (valueChange)="onEntityFilterChange($event)">
+          @for (entity of entitiesWithPhotos(); track entity.id) {
+            <mat-option [value]="entity.id">
+              <div class="entity-option">
+                @if (entity.thumbnailUrl) {
+                  <img [src]="proxyUrl(entity.thumbnailUrl)" class="option-avatar" alt="" />
+                } @else {
+                  <div class="option-avatar option-avatar-placeholder">
+                    <mat-icon>person</mat-icon>
+                  </div>
+                }
+                {{ entity.name }}
+              </div>
+            </mat-option>
+          }
+        </mat-select>
+      </mat-form-field>
+    }
+  </div>
+
+  @if (loading()) {
+    <div class="loading-state">
+      <mat-spinner diameter="48"></mat-spinner>
+    </div>
+  } @else if (galleryPhotos().length === 0) {
+    <div class="empty-state">
+      <mat-icon>photo_library</mat-icon>
+      <p>No photos found. Add photos to entities to see them here.</p>
+    </div>
+  } @else {
+    <!-- Slideshow button -->
+    <div class="gallery-actions">
+      <button mat-stroked-button (click)="toggleSlideshow()">
+        <mat-icon>{{ slideshowActive() ? 'stop' : 'slideshow' }}</mat-icon>
+        {{ slideshowActive() ? 'Stop Slideshow' : 'Start Slideshow' }}
+      </button>
+      <span class="photo-count">{{ galleryPhotos().length }} photo{{ galleryPhotos().length === 1 ? '' : 's' }}</span>
+    </div>
+
+    <!-- Grid -->
+    <div class="photo-grid">
+      @for (item of galleryPhotos(); track $index) {
+        <div class="photo-card" (click)="openLightbox($index)">
+          <div class="photo-thumb">
+            <img [src]="proxyUrl(item.photo.thumbnailUrl) || proxyUrl(item.photo.url)" [alt]="item.photo.caption || item.entity.name" />
+          </div>
+          <div class="photo-caption">
+            <span class="entity-name">{{ item.entity.name }}</span>
+            @if (item.photo.caption) {
+              <span class="caption-text">{{ item.photo.caption }}</span>
+            }
+          </div>
+        </div>
+      }
+    </div>
+  }
+
+</div>
+
+<!-- Lightbox overlay -->
+@if (lightboxOpen() && currentLightboxPhoto(); as item) {
+  <div class="lightbox-overlay" (click)="closeLightbox()">
+    <div class="lightbox-content" (click)="$event.stopPropagation()">
+
+      <button mat-icon-button class="lightbox-close" (click)="closeLightbox()" matTooltip="Close">
+        <mat-icon>close</mat-icon>
+      </button>
+
+      <button mat-icon-button class="lightbox-prev" (click)="prevPhoto()" matTooltip="Previous">
+        <mat-icon>chevron_left</mat-icon>
+      </button>
+
+      <div class="lightbox-image-wrap">
+        <img [src]="proxyUrl(item.photo.url)" [alt]="item.photo.caption || item.entity.name" class="lightbox-image" />
+      </div>
+
+      <button mat-icon-button class="lightbox-next" (click)="nextPhoto()" matTooltip="Next">
+        <mat-icon>chevron_right</mat-icon>
+      </button>
+
+      <div class="lightbox-footer">
+        <span class="lightbox-entity">{{ item.entity.name }}</span>
+        @if (item.photo.caption) {
+          <span class="lightbox-caption">{{ item.photo.caption }}</span>
+        }
+        <span class="lightbox-counter">{{ lightboxIndex() + 1 }} / {{ galleryPhotos().length }}</span>
+        <button mat-icon-button (click)="toggleSlideshow()" [matTooltip]="slideshowActive() ? 'Stop slideshow' : 'Start slideshow'">
+          <mat-icon>{{ slideshowActive() ? 'stop' : 'play_arrow' }}</mat-icon>
+        </button>
+      </div>
+
+    </div>
+  </div>
+}
