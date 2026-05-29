@@ -1,5 +1,9 @@
 <div class="gallery-page">
 
+  @if (pinLock.hasPin() && pinLock.isLocked()) {
+    <app-pin-entry-overlay />
+  } @else {
+
   <!-- Filters toolbar -->
   <div class="gallery-filters">
     <mat-form-field appearance="outline" class="series-select">
@@ -71,6 +75,8 @@
       }
     </div>
   }
+
+  } <!-- end @else (unlocked) -->
 
 </div>
 

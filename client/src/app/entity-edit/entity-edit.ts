@@ -17,6 +17,8 @@ import { EntityService } from '../services/entity.service';
 import { EntityQuoteService } from '../services/entity-quote.service';
 import { ImageGenDialogComponent, ImageGenResult } from './image-gen-dialog';
 import { UserSettingsService } from '../services/user-settings.service';
+import { PinLockService } from '../services/pin-lock.service';
+import { PinEntryOverlayComponent } from '../pin-entry-overlay/pin-entry-overlay';
 
 @Component({
   selector: 'app-entity-edit',
@@ -31,6 +33,7 @@ import { UserSettingsService } from '../services/user-settings.service';
     MatTooltipModule,
     MatTabsModule,
     TextFieldModule,
+    PinEntryOverlayComponent,
   ],
   templateUrl: './entity-edit.html',
   styleUrl: './entity-edit.scss',
@@ -41,6 +44,7 @@ export class EntityEditComponent {
   private dialog = inject(MatDialog);
   private router = inject(Router);
   private settingsService = inject(UserSettingsService);
+  readonly pinLock = inject(PinLockService);
 
   readonly genderOptions = this.settingsService.genderOptions;
   readonly raceOptions = this.settingsService.raceOptions;
@@ -399,6 +403,13 @@ export class EntityEditComponent {
     const d = this.draft();
     if (d?.seriesId) {
       this.router.navigate(['/series', d.seriesId, 'relationships']);
+    }
+  }
+
+  /** Lock photos whenever the user switches tabs, so returning to the Photos tab requires re-entry. */
+  onPhotosTabChange(_index: number): void {
+    if (this.pinLock.hasPin()) {
+      this.pinLock.lock();
     }
   }
 }

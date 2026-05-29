@@ -255,6 +255,8 @@
 /* ── Photos tab ──────────────────────────────────────── */
 .photos-tab {
   gap: 12px;
+  position: relative;
+  min-height: 200px;
 }
 
 .photos-toolbar {

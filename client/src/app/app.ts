@@ -15,6 +15,7 @@ import { UpdateCheckService } from './services/update-check.service';
 import { AiAssistantComponent } from './ai-assistant/ai-assistant';
 import { AiAssistantService } from './services/ai-assistant.service';
 import { UserSettingsService } from './services/user-settings.service';
+import { PinLockService } from './services/pin-lock.service';
 import { SeriesContextService } from './services/series-context.service';
 import { BreadcrumbDropdownComponent } from './shared/breadcrumb-dropdown/breadcrumb-dropdown';
 
@@ -33,6 +34,9 @@ export class App implements OnInit, OnDestroy {
   seriesContext = inject(SeriesContextService);
   private router = inject(Router);
   settings = inject(UserSettingsService);
+  // Eagerly initialise PinLockService so the visibilitychange listener is
+  // registered as soon as the app boots, not lazily on first photo view.
+  private _pinLock = inject(PinLockService);
 
   private currentUrl = toSignal(
     this.router.events.pipe(

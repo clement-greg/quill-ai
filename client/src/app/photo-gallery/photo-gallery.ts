@@ -13,6 +13,8 @@ import { EntityService } from '../services/entity.service';
 import { SeriesService } from '../series/series.service';
 import { HeaderService } from '../services/header.service';
 import { SeriesContextService } from '../services/series-context.service';
+import { PinLockService } from '../services/pin-lock.service';
+import { PinEntryOverlayComponent } from '../pin-entry-overlay/pin-entry-overlay';
 
 interface GalleryPhoto {
   entity: Entity;
@@ -29,6 +31,7 @@ interface GalleryPhoto {
     MatFormFieldModule,
     MatProgressSpinnerModule,
     MatTooltipModule,
+    PinEntryOverlayComponent,
   ],
   templateUrl: './photo-gallery.html',
   styleUrl: './photo-gallery.scss',
@@ -38,6 +41,7 @@ export class PhotoGalleryComponent implements OnInit, OnDestroy {
   private seriesService = inject(SeriesService);
   private headerService = inject(HeaderService);
   private seriesContext = inject(SeriesContextService);
+  readonly pinLock = inject(PinLockService);
 
   loading = signal(false);
   allSeries = signal<Series[]>([]);
@@ -102,6 +106,10 @@ export class PhotoGalleryComponent implements OnInit, OnDestroy {
   ngOnDestroy(): void {
     this.stopSlideshow();
     this.routeSub?.unsubscribe();
+    // Re-lock when the user navigates away so returning requires PIN again
+    if (this.pinLock.hasPin()) {
+      this.pinLock.lock();
+    }
   }
 
   load(): void {

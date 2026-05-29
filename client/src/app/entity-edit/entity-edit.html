@@ -1,6 +1,6 @@
 <div class="entity-edit-form">
 
-  <mat-tab-group animationDuration="150ms" class="entity-tabs">
+  <mat-tab-group animationDuration="150ms" class="entity-tabs" (selectedTabChange)="onPhotosTabChange($event.index)">
 
     <!-- ── Details tab ─────────────────────────────── -->
     <mat-tab label="Details">
@@ -238,6 +238,9 @@
         </ng-template>
 
         <div class="tab-content photos-tab">
+          @if (pinLock.hasPin() && pinLock.isLocked()) {
+            <app-pin-entry-overlay />
+          } @else {
           <div class="photos-toolbar">
             <button mat-stroked-button type="button" (click)="photoFileInput.click()" [disabled]="photoUploading()">
               @if (photoUploading()) {
@@ -264,6 +267,7 @@
               }
             </div>
           }
+          } <!-- end @else (unlocked) -->
         </div>
       </mat-tab>
     }

@@ -303,4 +303,94 @@
     </div>
   </section>
 
+  <!-- Photo PIN Section -->
+  <section class="settings-section">
+    <div class="section-header">
+      <h3>Photo PIN Lock</h3>
+      <p class="section-desc">
+        Protect the Photo Gallery and entity photo tabs with a numeric PIN.
+        The lock engages whenever the app is backgrounded or you switch away.
+      </p>
+    </div>
+
+    @if (!hasPin()) {
+      <!-- No PIN set -->
+      <p class="pin-status-text">
+        <mat-icon class="pin-status-icon pin-status-off">lock_open</mat-icon>
+        Photos are not locked.
+      </p>
+      <button mat-stroked-button (click)="startSetPin()">
+        <mat-icon>lock</mat-icon>
+        Set up PIN
+      </button>
+    } @else {
+      <!-- PIN is set -->
+      <p class="pin-status-text">
+        <mat-icon class="pin-status-icon pin-status-on">lock</mat-icon>
+        Photos are protected with a PIN.
+      </p>
+      <div class="pin-action-row">
+        <button mat-stroked-button (click)="startChangePin()">
+          <mat-icon>edit</mat-icon>
+          Change PIN
+        </button>
+        <button mat-button color="warn" (click)="startRemovePin()">
+          <mat-icon>lock_open</mat-icon>
+          Remove PIN
+        </button>
+      </div>
+    }
+
+    <!-- Inline PIN setup form -->
+    @if (pinFormMode() !== 'hidden') {
+      <div class="pin-setup-form">
+        <h4 class="pin-form-title">
+          @if (pinFormMode() === 'set') { Set a new PIN }
+          @if (pinFormMode() === 'change') { Change PIN }
+          @if (pinFormMode() === 'remove') { Remove PIN }
+        </h4>
+
+        @if (pinFormMode() === 'change' || pinFormMode() === 'remove') {
+          <mat-form-field appearance="outline" class="pin-form-field">
+            <mat-label>Current PIN</mat-label>
+            <input matInput type="password" inputmode="numeric" autocomplete="off"
+              [value]="pinCurrentDraft()"
+              (input)="pinCurrentDraft.set($any($event.target).value); pinFormError.set('')" />
+          </mat-form-field>
+        }
+
+        @if (pinFormMode() === 'set' || pinFormMode() === 'change') {
+          <mat-form-field appearance="outline" class="pin-form-field">
+            <mat-label>New PIN</mat-label>
+            <input matInput type="password" inputmode="numeric" autocomplete="new-password"
+              [value]="pinNewDraft()"
+              (input)="pinNewDraft.set($any($event.target).value); pinFormError.set('')" />
+          </mat-form-field>
+          <mat-form-field appearance="outline" class="pin-form-field">
+            <mat-label>Confirm PIN</mat-label>
+            <input matInput type="password" inputmode="numeric" autocomplete="new-password"
+              [value]="pinConfirmDraft()"
+              (input)="pinConfirmDraft.set($any($event.target).value); pinFormError.set('')"
+              (keydown.enter)="submitPinForm()" />
+          </mat-form-field>
+        }
+
+        @if (pinFormError()) {
+          <p class="pin-form-error">
+            <mat-icon>error_outline</mat-icon>
+            {{ pinFormError() }}
+          </p>
+        }
+
+        <div class="pin-form-actions">
+          <button mat-flat-button (click)="submitPinForm()" [disabled]="pinFormWorking()">
+            @if (pinFormMode() === 'remove') { Remove PIN }
+            @else { Save PIN }
+          </button>
+          <button mat-button (click)="cancelPinForm()">Cancel</button>
+        </div>
+      </div>
+    }
+  </section>
+
 </div>

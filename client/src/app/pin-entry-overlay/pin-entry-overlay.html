@@ -1,0 +1,38 @@
+<div class="pin-overlay">
+  <div class="pin-card">
+    <mat-icon class="lock-icon">lock</mat-icon>
+    <h3 class="pin-title">Photos Locked</h3>
+    <p class="pin-desc">Enter your PIN to view photos.</p>
+
+    <mat-form-field appearance="outline" class="pin-field">
+      <mat-label>PIN</mat-label>
+      <input
+        #pinInput
+        matInput
+        type="password"
+        inputmode="numeric"
+        autocomplete="off"
+        [value]="pinValue()"
+        (input)="pinValue.set($any($event.target).value); error.set(false)"
+        (keydown.enter)="submit()"
+      />
+    </mat-form-field>
+
+    @if (error()) {
+      <p class="pin-error">
+        <mat-icon>error_outline</mat-icon>
+        Incorrect PIN. Please try again.
+      </p>
+    }
+
+    <button
+      mat-flat-button
+      class="pin-submit-btn"
+      (click)="submit()"
+      [disabled]="!pinValue().trim() || checking()"
+    >
+      <mat-icon>lock_open</mat-icon>
+      Unlock
+    </button>
+  </div>
+</div>

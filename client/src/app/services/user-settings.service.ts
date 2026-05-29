@@ -37,6 +37,7 @@ export interface UserSettingsData {
   genderOptions?: string[];
   raceOptions?: string[];
   orientationOptions?: string[];
+  pinHash?: string;
 }
 
 @Injectable({ providedIn: 'root' })
@@ -54,6 +55,7 @@ export class UserSettingsService {
   private _genderOptions = signal<string[]>(DEFAULT_GENDER_OPTIONS);
   private _raceOptions = signal<string[]>(DEFAULT_RACE_OPTIONS);
   private _orientationOptions = signal<string[]>(DEFAULT_ORIENTATION_OPTIONS);
+  private _pinHash = signal<string>('');
   /** True when the active theme is a dark variant (for backward compat). */
   readonly darkMode = computed(() =>
     this._colorTheme() === 'dark' || this._colorTheme() === 'midnight'
@@ -70,6 +72,8 @@ export class UserSettingsService {
   readonly genderOptions = this._genderOptions.asReadonly();
   readonly raceOptions = this._raceOptions.asReadonly();
   readonly orientationOptions = this._orientationOptions.asReadonly();
+  readonly pinHash = this._pinHash.asReadonly();
+  readonly hasPin = computed(() => !!this._pinHash());
 
   /** Loads all settings from the server. Call after authentication. */
   async loadFromServer(): Promise<void> {
@@ -88,6 +92,7 @@ export class UserSettingsService {
       this._genderOptions.set(settings.genderOptions ?? DEFAULT_GENDER_OPTIONS);
       this._raceOptions.set(settings.raceOptions ?? DEFAULT_RACE_OPTIONS);
       this._orientationOptions.set(settings.orientationOptions ?? DEFAULT_ORIENTATION_OPTIONS);
+      this._pinHash.set(settings.pinHash ?? '');
     } catch {
       // Server unavailable — signals keep their default values
     }
@@ -109,6 +114,7 @@ export class UserSettingsService {
         genderOptions: this._genderOptions(),
         raceOptions: this._raceOptions(),
         orientationOptions: this._orientationOptions(),
+        pinHash: this._pinHash(),
       })
     ).catch(() => {});
   }
@@ -200,6 +206,16 @@ export class UserSettingsService {
 
   setOrientationOptions(values: string[]): void {
     this._orientationOptions.set(values);
+    this.saveToServer();
+  }
+
+  setPinHash(hash: string): void {
+    this._pinHash.set(hash);
+    this.saveToServer();
+  }
+
+  clearPinHash(): void {
+    this._pinHash.set('');
     this.saveToServer();
   }
 

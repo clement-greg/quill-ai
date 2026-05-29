@@ -333,29 +333,29 @@
 // ── Character attribute options ───────────────────────────────────────────────
 
 .attribute-options-grid {
-  display: grid;
-  grid-template-columns: 1fr 1fr 1fr;
-  gap: 32px;
-
-  @media (max-width: 700px) {
-    grid-template-columns: 1fr 1fr;
-  }
-
-  @media (max-width: 480px) {
-    grid-template-columns: 1fr;
-  }
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
 }
 
 .attribute-options-col {
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 10px;
+  padding-bottom: 24px;
+  border-bottom: 1px solid var(--mat-sys-outline-variant, #ddd);
+
+  &:last-child {
+    padding-bottom: 0;
+    border-bottom: none;
+  }
 }
 
 .attribute-options-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  gap: 12px;
 
   h4 {
     margin: 0;
@@ -398,8 +398,92 @@
   display: flex;
   align-items: center;
   gap: 8px;
+  max-width: 380px;
 
   .attribute-add-field {
     flex: 1;
   }
 }
+
+// ── Photo PIN lock ────────────────────────────────────────────────────────────
+
+.pin-status-text {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.95rem;
+  margin: 0 0 16px;
+}
+
+.pin-status-icon {
+  font-size: 20px;
+  width: 20px;
+  height: 20px;
+}
+
+.pin-status-on {
+  color: var(--mat-sys-primary, #4a86c8);
+}
+
+.pin-status-off {
+  color: var(--mat-sys-on-surface-variant, #888);
+}
+
+.pin-action-row {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.pin-setup-form {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 20px;
+  padding-top: 20px;
+  border-top: 1px solid var(--mat-sys-outline-variant, #ddd);
+  max-width: 320px;
+}
+
+.pin-form-title {
+  font-size: 0.9rem;
+  font-weight: 600;
+  margin: 0 0 4px;
+}
+
+.pin-form-field {
+  width: 100%;
+}
+
+.pin-form-error {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+  font-size: 0.875rem;
+  color: var(--mat-sys-error, #ba1a1a);
+
+  mat-icon {
+    font-size: 18px;
+    width: 18px;
+    height: 18px;
+  }
+}
+
+.pin-form-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 4px;
+}
+
+.editor-pref-label-group {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.editor-pref-sublabel {
+  font-size: 0.8rem;
+  color: var(--mat-sys-on-surface-variant, #666);
+}
+
