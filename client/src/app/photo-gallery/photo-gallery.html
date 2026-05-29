@@ -77,7 +77,13 @@
 <!-- Lightbox overlay -->
 @if (lightboxOpen() && currentLightboxPhoto(); as item) {
   <div class="lightbox-overlay" (click)="closeLightbox()">
-    <div class="lightbox-content" (click)="$event.stopPropagation()">
+    <div class="lightbox-content"
+         (click)="$event.stopPropagation()"
+         (touchstart)="onTouchStart($event)"
+         (touchend)="onTouchEnd($event)"
+         (keydown)="onLightboxKey($event)"
+         tabindex="0"
+         #lightboxContent>
 
       <button mat-icon-button class="lightbox-close" (click)="closeLightbox()" matTooltip="Close">
         <mat-icon>close</mat-icon>

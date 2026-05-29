@@ -1,4 +1,4 @@
-import { Component, inject, signal, computed, OnInit, OnDestroy } from '@angular/core';
+import { Component, inject, signal, computed, OnInit, OnDestroy, HostListener } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { MatButtonModule } from '@angular/material/button';
 import { MatIconModule } from '@angular/material/icon';
@@ -50,6 +50,7 @@ export class PhotoGalleryComponent implements OnInit, OnDestroy {
   slideshowActive = signal(false);
   private slideshowInterval: ReturnType<typeof setInterval> | null = null;
   private routeSub?: Subscription;
+  private touchStartX = 0;
 
   /** Entities that have at least one photo (includes thumbnailUrl as a photo) */
   entitiesWithPhotos = computed(() => {
@@ -135,6 +136,29 @@ export class PhotoGalleryComponent implements OnInit, OnDestroy {
   }
 
   // ── Lightbox ──────────────────────────────────────────────────────────────
+
+  @HostListener('document:keydown', ['$event'])
+  onDocumentKey(event: KeyboardEvent): void {
+    if (!this.lightboxOpen()) return;
+    if (event.key === 'ArrowLeft')  { this.prevPhoto(); event.preventDefault(); }
+    if (event.key === 'ArrowRight') { this.nextPhoto(); event.preventDefault(); }
+    if (event.key === 'Escape')     { this.closeLightbox(); event.preventDefault(); }
+  }
+
+  onLightboxKey(event: KeyboardEvent): void {
+    // handled by document listener above
+  }
+
+  onTouchStart(event: TouchEvent): void {
+    this.touchStartX = event.changedTouches[0].clientX;
+  }
+
+  onTouchEnd(event: TouchEvent): void {
+    const delta = event.changedTouches[0].clientX - this.touchStartX;
+    if (Math.abs(delta) < 40) return; // ignore taps
+    if (delta < 0) this.nextPhoto();
+    else           this.prevPhoto();
+  }
 
   openLightbox(index: number): void {
     this.lightboxIndex.set(index);

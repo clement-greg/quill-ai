@@ -502,6 +502,8 @@
   .rte-content-editor {
     padding-right: 24px;
     scrollbar-width: auto;
+    /* Clamp to 16px so iOS Safari doesn't zoom on focus */
+    font-size: max(16px, var(--editor-font-size, 1rem));
     &::-webkit-scrollbar { display: revert; }
   }
 }
