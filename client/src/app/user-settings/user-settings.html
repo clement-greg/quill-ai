@@ -358,7 +358,7 @@
         @if (pinFormMode() === 'change' || pinFormMode() === 'remove') {
           <mat-form-field appearance="outline" class="pin-form-field">
             <mat-label>Current PIN</mat-label>
-            <input matInput type="password" inputmode="numeric" autocomplete="off"
+            <input matInput type="text" class="pin-masked-input" inputmode="numeric" autocomplete="off"
               [value]="pinCurrentDraft()"
               (input)="pinCurrentDraft.set($any($event.target).value); pinFormError.set('')" />
           </mat-form-field>
@@ -367,13 +367,13 @@
         @if (pinFormMode() === 'set' || pinFormMode() === 'change') {
           <mat-form-field appearance="outline" class="pin-form-field">
             <mat-label>New PIN</mat-label>
-            <input matInput type="password" inputmode="numeric" autocomplete="new-password"
+            <input matInput type="text" class="pin-masked-input" inputmode="numeric" autocomplete="off"
               [value]="pinNewDraft()"
               (input)="pinNewDraft.set($any($event.target).value); pinFormError.set('')" />
           </mat-form-field>
           <mat-form-field appearance="outline" class="pin-form-field">
             <mat-label>Confirm PIN</mat-label>
-            <input matInput type="password" inputmode="numeric" autocomplete="new-password"
+            <input matInput type="text" class="pin-masked-input" inputmode="numeric" autocomplete="off"
               [value]="pinConfirmDraft()"
               (input)="pinConfirmDraft.set($any($event.target).value); pinFormError.set('')"
               (keydown.enter)="submitPinForm()" />
