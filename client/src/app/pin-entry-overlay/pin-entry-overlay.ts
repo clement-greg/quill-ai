@@ -2,34 +2,52 @@ import {
   Component,
   inject,
   signal,
+  computed,
   ElementRef,
   AfterViewInit,
   ViewChild,
+  OnDestroy,
 } from '@angular/core';
 import { MatButtonModule } from '@angular/material/button';
 import { MatIconModule } from '@angular/material/icon';
-import { MatInputModule } from '@angular/material/input';
-import { MatFormFieldModule } from '@angular/material/form-field';
 import { PinLockService } from '../services/pin-lock.service';
 
 @Component({
   selector: 'app-pin-entry-overlay',
-  imports: [MatButtonModule, MatIconModule, MatInputModule, MatFormFieldModule],
+  imports: [MatButtonModule, MatIconModule],
   templateUrl: './pin-entry-overlay.html',
   styleUrl: './pin-entry-overlay.scss',
 })
-export class PinEntryOverlayComponent implements AfterViewInit {
+export class PinEntryOverlayComponent implements AfterViewInit, OnDestroy {
   private pinLock = inject(PinLockService);
 
-  @ViewChild('pinInput') pinInputRef!: ElementRef<HTMLInputElement>;
+  @ViewChild('pinCapture') pinCaptureRef!: ElementRef<HTMLInputElement>;
 
   pinValue = signal('');
   checking = signal(false);
   error = signal(false);
 
+  /** Each entered digit shown as a filled dot */
+  pinDisplay = computed<boolean[]>(() =>
+    this.pinValue().split('').map(() => true)
+  );
+
   ngAfterViewInit(): void {
-    // Auto-focus the PIN field when the overlay appears
-    setTimeout(() => this.pinInputRef?.nativeElement?.focus(), 50);
+    setTimeout(() => this.pinCaptureRef?.nativeElement?.focus(), 50);
+  }
+
+  ngOnDestroy(): void {}
+
+  focusInput(): void {
+    this.pinCaptureRef?.nativeElement?.focus();
+  }
+
+  onInput(event: Event): void {
+    // Strip non-digits so type="tel" doesn't sneak in +, -, etc.
+    const raw = (event.target as HTMLInputElement).value.replace(/\D/g, '');
+    this.pinValue.set(raw);
+    (event.target as HTMLInputElement).value = raw;
+    this.error.set(false);
   }
 
   async submit(): Promise<void> {
@@ -42,7 +60,8 @@ export class PinEntryOverlayComponent implements AfterViewInit {
     if (!ok) {
       this.error.set(true);
       this.pinValue.set('');
-      setTimeout(() => this.pinInputRef?.nativeElement?.focus(), 50);
+      this.pinCaptureRef.nativeElement.value = '';
+      setTimeout(() => this.pinCaptureRef?.nativeElement?.focus(), 50);
     }
   }
 }

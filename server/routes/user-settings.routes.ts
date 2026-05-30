@@ -16,6 +16,7 @@ interface UserSettings {
   genderOptions?: string[];
   raceOptions?: string[];
   orientationOptions?: string[];
+  pinHash?: string;
 }
 
 // GET /api/user-settings
@@ -58,6 +59,7 @@ router.put('/', async (req: Request, res: Response): Promise<void> => {
       genderOptions: req.body.genderOptions,
       raceOptions: req.body.raceOptions,
       orientationOptions: req.body.orientationOptions,
+      pinHash: req.body.pinHash,
     };
     await container.items.upsert(settings);
     const { id: _id, ...result } = settings;

@@ -56,6 +56,53 @@
   width: 100%;
 }
 
+/* ── Dot display ─────────────────────────────────── */
+.pin-dots-wrap {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  min-height: 44px;
+  padding: 8px 16px;
+  border-radius: 10px;
+  border: 2px solid var(--mat-sys-outline-variant, #ddd);
+  background: var(--mat-sys-surface, #fff);
+  cursor: text;
+  width: 100%;
+  box-sizing: border-box;
+  transition: border-color 0.15s;
+
+  &:focus-within {
+    border-color: var(--mat-sys-primary, #4a86c8);
+  }
+}
+
+.pin-dot {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: var(--mat-sys-on-surface, #222);
+  flex-shrink: 0;
+}
+
+.pin-dots-placeholder {
+  font-size: 0.875rem;
+  color: var(--mat-sys-on-surface-variant, #999);
+}
+
+/* Capture input is invisible but focusable so the OS keyboard opens */
+.pin-capture {
+  position: absolute;
+  opacity: 0;
+  pointer-events: none;
+  width: 1px;
+  height: 1px;
+  border: none;
+  padding: 0;
+  margin: 0;
+  overflow: hidden;
+}
+
 .pin-error {
   display: flex;
   align-items: center;
