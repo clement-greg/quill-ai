@@ -279,6 +279,7 @@ export class UserSettingsComponent {
 
   // ── PIN Lock ─────────────────────────────────────────
   readonly hasPin = this.settingsService.hasPin;
+  readonly settingsLoaded = this.settingsService.settingsLoaded;
 
   pinFormMode = signal<'hidden' | 'set' | 'change' | 'remove'>('hidden');
   pinCurrentDraft = signal('');

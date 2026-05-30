@@ -56,6 +56,7 @@ export class UserSettingsService {
   private _raceOptions = signal<string[]>(DEFAULT_RACE_OPTIONS);
   private _orientationOptions = signal<string[]>(DEFAULT_ORIENTATION_OPTIONS);
   private _pinHash = signal<string>('');
+  private _settingsLoaded = signal(false);
   /** True when the active theme is a dark variant (for backward compat). */
   readonly darkMode = computed(() =>
     this._colorTheme() === 'dark' || this._colorTheme() === 'midnight'
@@ -74,6 +75,7 @@ export class UserSettingsService {
   readonly orientationOptions = this._orientationOptions.asReadonly();
   readonly pinHash = this._pinHash.asReadonly();
   readonly hasPin = computed(() => !!this._pinHash());
+  readonly settingsLoaded = this._settingsLoaded.asReadonly();
 
   /** Loads all settings from the server. Call after authentication. */
   async loadFromServer(): Promise<void> {
@@ -96,6 +98,7 @@ export class UserSettingsService {
     } catch {
       // Server unavailable — signals keep their default values
     }
+    this._settingsLoaded.set(true);
   }
 
   private saveToServer(): void {

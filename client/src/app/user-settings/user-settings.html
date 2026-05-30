@@ -313,7 +313,12 @@
       </p>
     </div>
 
-    @if (!hasPin()) {
+    @if (!settingsLoaded()) {
+      <p class="pin-status-text">
+        <mat-icon class="pin-status-icon pin-status-off">hourglass_empty</mat-icon>
+        Loading…
+      </p>
+    } @else if (!hasPin()) {
       <!-- No PIN set -->
       <p class="pin-status-text">
         <mat-icon class="pin-status-icon pin-status-off">lock_open</mat-icon>
