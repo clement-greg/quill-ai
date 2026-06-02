@@ -25,6 +25,8 @@ declare const google: {
 
 const TOKEN_KEY = 'app_auth_token';
 const USER_KEY = 'google_user';
+const COOKIE_NAME = 'quill_auth';
+const COOKIE_MAX_AGE_S = 48 * 60 * 60; // 48 hours, matching TOKEN_EXPIRY
 
 @Injectable({ providedIn: 'root' })
 export class AuthService {
@@ -54,6 +56,7 @@ export class AuthService {
     };
     localStorage.setItem(TOKEN_KEY, token);
     localStorage.setItem(USER_KEY, JSON.stringify({ email: user.email, name: user.name, picture: user.picture }));
+    this.setCookieToken(token);
     this.currentUser.set(user);
   }
 
@@ -65,14 +68,35 @@ export class AuthService {
     }
     localStorage.removeItem(TOKEN_KEY);
     localStorage.removeItem(USER_KEY);
+    this.clearCookieToken();
     this.currentUser.set(null);
   }
 
   private loadStoredUser(): GoogleUser | null {
     try {
-      const token = localStorage.getItem(TOKEN_KEY);
-      const raw = localStorage.getItem(USER_KEY);
-      if (!token || !raw) return null;
+      let token = localStorage.getItem(TOKEN_KEY);
+      let raw = localStorage.getItem(USER_KEY);
+
+      // iOS PWA: localStorage is isolated from Safari. Recover session from the
+      // cookie that was written when auth completed (possibly in Safari).
+      if (!token) {
+        token = this.getCookieToken();
+        if (token) {
+          // Re-populate localStorage so subsequent reads are fast.
+          localStorage.setItem(TOKEN_KEY, token);
+        }
+      }
+
+      if (!token) return null;
+
+      // If user JSON is missing (e.g. recovered from cookie after iOS PWA/Safari
+      // context switch), derive it from the JWT payload and repopulate storage.
+      if (!raw) {
+        const p = this.parseJwtPayload(token);
+        const derived = { email: p['email'] as string, name: p['name'] as string, picture: p['picture'] as string };
+        localStorage.setItem(USER_KEY, JSON.stringify(derived));
+        raw = JSON.stringify(derived);
+      }
 
       // Check token expiry before trusting the stored session
       const payload = this.parseJwtPayload(token);
@@ -88,6 +112,31 @@ export class AuthService {
     } catch {
       return null;
     }
+  }
+
+  private setCookieToken(token: string): void {
+    try {
+      const secure = location.protocol === 'https:' ? '; Secure' : '';
+      document.cookie =
+        `${COOKIE_NAME}=${encodeURIComponent(token)}; Max-Age=${COOKIE_MAX_AGE_S}; Path=/; SameSite=Lax${secure}`;
+    } catch { /* non-browser environment */ }
+  }
+
+  private getCookieToken(): string | null {
+    try {
+      const match = document.cookie
+        .split('; ')
+        .find(row => row.startsWith(`${COOKIE_NAME}=`));
+      return match ? decodeURIComponent(match.split('=').slice(1).join('=')) : null;
+    } catch {
+      return null;
+    }
+  }
+
+  private clearCookieToken(): void {
+    try {
+      document.cookie = `${COOKIE_NAME}=; Max-Age=0; Path=/; SameSite=Lax`;
+    } catch { /* non-browser environment */ }
   }
 
   private parseJwtPayload(token: string): Record<string, unknown> {

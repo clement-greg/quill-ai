@@ -1,4 +1,4 @@
-import { Component, OnInit, ElementRef, ViewChild, AfterViewInit, inject, PLATFORM_ID } from '@angular/core';
+import { Component, OnInit, ElementRef, ViewChild, AfterViewInit, inject, PLATFORM_ID, NgZone } from '@angular/core';
 import { isPlatformBrowser } from '@angular/common';
 import { Router } from '@angular/router';
 import { MatCardModule } from '@angular/material/card';
@@ -27,6 +27,7 @@ export class LoginComponent implements AfterViewInit {
   private auth = inject(AuthService);
   private router = inject(Router);
   private platformId = inject(PLATFORM_ID);
+  private ngZone = inject(NgZone);
 
   ngAfterViewInit(): void {
     if (!isPlatformBrowser(this.platformId)) return;
@@ -35,9 +36,13 @@ export class LoginComponent implements AfterViewInit {
       if (typeof google !== 'undefined') {
         google.accounts.id.initialize({
           client_id: environment.googleClientId,
-          callback: async (response: { credential: string }) => {
-            await this.auth.handleCredentialResponse(response.credential);
-            this.router.navigate(['/series']);
+          callback: (response: { credential: string }) => {
+            // Google's callback runs outside Angular's NgZone; re-enter it so
+            // the signal update and router navigation are processed correctly.
+            this.ngZone.run(async () => {
+              await this.auth.handleCredentialResponse(response.credential);
+              this.router.navigate(['/series']);
+            });
           },
           auto_select: false,
           cancel_on_tap_outside: true,

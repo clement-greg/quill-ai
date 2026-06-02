@@ -12,6 +12,9 @@ export class AiAssistantService {
   // Panel open/closed state
   readonly isOpen = signal(false);
 
+  // Panel width (px) – only used in widescreen side-by-side mode (≥1800px)
+  readonly panelWidth = signal(700);
+
   // All session summaries (used for the sidebar list)
   readonly sessions = signal<ChatSessionSummary[]>([]);
 

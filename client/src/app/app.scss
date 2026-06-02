@@ -4,6 +4,56 @@ main {
   overflow: hidden;
 }
 
+@media (min-width: 1800px) {
+  main {
+    transition: margin-right 0.28s cubic-bezier(0.4, 0, 0.2, 1);
+  }
+  main.resource-manager-open {
+    margin-right: var(--ai-panel-width, 700px);
+  }
+  main.resizing {
+    transition: none;
+    user-select: none;
+  }
+}
+
+.panel-resizer {
+  display: none;
+}
+
+@media (min-width: 1800px) {
+  .panel-resizer {
+    display: block;
+    position: fixed;
+    top: 64px;
+    bottom: 0;
+    right: var(--ai-panel-width, 700px);
+    width: 6px;
+    cursor: col-resize;
+    z-index: 301;
+    background: transparent;
+    transition: background 0.15s;
+
+    &::after {
+      content: '';
+      position: absolute;
+      top: 0;
+      bottom: 0;
+      left: 2px;
+      width: 2px;
+      background: var(--mat-sys-outline-variant);
+      transition: background 0.15s, width 0.15s, left 0.15s;
+    }
+
+    &:hover::after,
+    &:active::after {
+      left: 1px;
+      width: 4px;
+      background: var(--mat-sys-primary);
+    }
+  }
+}
+
 main.full-height {
   height: 100vh;
   height: 100dvh;

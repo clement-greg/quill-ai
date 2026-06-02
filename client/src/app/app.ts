@@ -1,4 +1,4 @@
-import { Component, inject, computed, OnInit, OnDestroy, effect } from '@angular/core';
+import { Component, inject, computed, OnInit, OnDestroy, effect, signal } from '@angular/core';
 import { toSignal } from '@angular/core/rxjs-interop';
 import { RouterOutlet, RouterLink, Router, NavigationEnd } from '@angular/router';
 import { filter, map, startWith } from 'rxjs';
@@ -37,6 +37,37 @@ export class App implements OnInit, OnDestroy {
   // Eagerly initialise PinLockService so the visibilitychange listener is
   // registered as soon as the app boots, not lazily on first photo view.
   private _pinLock = inject(PinLockService);
+
+  readonly isResizing = signal(false);
+
+  private panelWidthEffect = effect(() => {
+    document.documentElement.style.setProperty(
+      '--ai-panel-width',
+      this.aiAssistant.panelWidth() + 'px'
+    );
+  });
+
+  onResizerPointerDown(event: PointerEvent): void {
+    event.preventDefault();
+    const startX = event.clientX;
+    const startWidth = this.aiAssistant.panelWidth();
+    this.isResizing.set(true);
+
+    const onMove = (e: PointerEvent) => {
+      const delta = startX - e.clientX;
+      const newWidth = Math.min(Math.max(startWidth + delta, 280), window.innerWidth - 300);
+      this.aiAssistant.panelWidth.set(newWidth);
+    };
+
+    const onUp = () => {
+      this.isResizing.set(false);
+      document.removeEventListener('pointermove', onMove);
+      document.removeEventListener('pointerup', onUp);
+    };
+
+    document.addEventListener('pointermove', onMove);
+    document.addEventListener('pointerup', onUp);
+  }
 
   private currentUrl = toSignal(
     this.router.events.pipe(

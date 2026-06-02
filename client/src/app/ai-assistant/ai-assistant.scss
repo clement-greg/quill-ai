@@ -1295,3 +1295,26 @@ mark.chat-highlight {
 mark.chat-highlight:hover {
   filter: brightness(0.88);
 }
+
+/* ── Widescreen side-by-side layout (≥1800px) ────────────────────────────── */
+
+@media (min-width: 1800px) {
+  /* Sit below the toolbar rather than covering it */
+  .ai-panel {
+    top: 64px;
+    box-shadow: -2px 0 12px rgba(0, 0, 0, 0.1);
+    border-left: 1px solid var(--mat-sys-outline-variant);
+  }
+
+  /* Use the JS-driven width in widescreen side-by-side mode */
+  .ai-panel.ai-panel-open {
+    width: var(--ai-panel-width, 700px);
+    transition: transform 0.28s cubic-bezier(0.4, 0, 0.2, 1),
+                visibility 0s linear 0s;
+  }
+
+  /* No dark backdrop — the panel shares the screen instead of overlaying */
+  .ai-backdrop {
+    display: none;
+  }
+}

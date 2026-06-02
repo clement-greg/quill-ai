@@ -135,9 +135,13 @@
 </mat-toolbar>
 }
 
-<main [class.full-height]="isUnthemed()">
+<main [class.full-height]="isUnthemed()" [class.resource-manager-open]="aiAssistant.isOpen()" [class.resizing]="isResizing()">
   <router-outlet />
 </main>
+
+@if (aiAssistant.isOpen()) {
+  <div class="panel-resizer" (pointerdown)="onResizerPointerDown($event)"></div>
+}
 
 <app-entity-panel />
 
