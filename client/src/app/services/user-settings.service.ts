@@ -38,6 +38,7 @@ export interface UserSettingsData {
   raceOptions?: string[];
   orientationOptions?: string[];
   pinHash?: string;
+  showHiddenPhotos?: boolean;
 }
 
 @Injectable({ providedIn: 'root' })
@@ -56,6 +57,7 @@ export class UserSettingsService {
   private _raceOptions = signal<string[]>(DEFAULT_RACE_OPTIONS);
   private _orientationOptions = signal<string[]>(DEFAULT_ORIENTATION_OPTIONS);
   private _pinHash = signal<string>('');
+  private _showHiddenPhotos = signal<boolean>(false);
   private _settingsLoaded = signal(false);
   /** True when the active theme is a dark variant (for backward compat). */
   readonly darkMode = computed(() =>
@@ -75,6 +77,7 @@ export class UserSettingsService {
   readonly orientationOptions = this._orientationOptions.asReadonly();
   readonly pinHash = this._pinHash.asReadonly();
   readonly hasPin = computed(() => !!this._pinHash());
+  readonly showHiddenPhotos = this._showHiddenPhotos.asReadonly();
   readonly settingsLoaded = this._settingsLoaded.asReadonly();
 
   /** Loads all settings from the server. Call after authentication. */
@@ -95,6 +98,7 @@ export class UserSettingsService {
       this._raceOptions.set(settings.raceOptions ?? DEFAULT_RACE_OPTIONS);
       this._orientationOptions.set(settings.orientationOptions ?? DEFAULT_ORIENTATION_OPTIONS);
       this._pinHash.set(settings.pinHash ?? '');
+      this._showHiddenPhotos.set(settings.showHiddenPhotos ?? false);
     } catch {
       // Server unavailable — signals keep their default values
     }
@@ -118,6 +122,7 @@ export class UserSettingsService {
         raceOptions: this._raceOptions(),
         orientationOptions: this._orientationOptions(),
         pinHash: this._pinHash(),
+        showHiddenPhotos: this._showHiddenPhotos(),
       })
     ).catch(() => {});
   }
@@ -219,6 +224,11 @@ export class UserSettingsService {
 
   clearPinHash(): void {
     this._pinHash.set('');
+    this.saveToServer();
+  }
+
+  setShowHiddenPhotos(value: boolean): void {
+    this._showHiddenPhotos.set(value);
     this.saveToServer();
   }
 

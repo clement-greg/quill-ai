@@ -362,6 +362,32 @@ router.delete('/:id/photos/:index', async (req: Request, res: Response) => {
   }
 });
 
+// PATCH set hidden flag on one or more photos by index
+router.patch('/:id/photos/visibility', async (req: Request, res: Response) => {
+  try {
+    const id = req.params['id'] as string;
+    const { indices, hidden } = req.body as { indices: number[]; hidden: boolean };
+    if (!Array.isArray(indices) || typeof hidden !== 'boolean') {
+      res.status(400).json({ error: 'indices (array) and hidden (boolean) are required' });
+      return;
+    }
+    const existing = await readOwnedItem<Entity>(container, id, id, req);
+    if (!existing) {
+      res.status(404).json({ error: 'Entity not found' });
+      return;
+    }
+    const photos = (existing.photos ?? []).map((p, i) =>
+      indices.includes(i) ? { ...p, hidden } : p
+    );
+    const updated: Entity = { ...existing, photos, modifiedBy: req.user!.email, modifiedAt: new Date().toISOString() };
+    const { resource } = await container.item(id, id).replace<Entity>(updated);
+    res.json(resource);
+  } catch (err) {
+    console.error('Error updating photo visibility:', err);
+    res.status(500).json({ error: 'Failed to update photo visibility' });
+  }
+});
+
 // POST generate a personality prompt from basic entity info
 router.post('/:id/generate-personality', async (req: Request, res: Response) => {
   try {

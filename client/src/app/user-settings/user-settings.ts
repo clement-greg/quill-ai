@@ -277,6 +277,13 @@ export class UserSettingsComponent {
     this.settingsService.setOrientationOptions([...DEFAULT_ORIENTATION_OPTIONS]);
   }
 
+  // ── Photos ───────────────────────────────────────────
+  readonly showHiddenPhotos = this.settingsService.showHiddenPhotos;
+
+  setShowHiddenPhotos(value: boolean): void {
+    this.settingsService.setShowHiddenPhotos(value);
+  }
+
   // ── PIN Lock ─────────────────────────────────────────
   readonly hasPin = this.settingsService.hasPin;
   readonly settingsLoaded = this.settingsService.settingsLoaded;

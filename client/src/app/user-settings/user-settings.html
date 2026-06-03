@@ -303,6 +303,24 @@
     </div>
   </section>
 
+  <!-- Photos Section -->
+  <section class="settings-section">
+    <div class="section-header">
+      <h3>Photos</h3>
+      <p class="section-desc">Control visibility of hidden photos.</p>
+    </div>
+    <div class="editor-pref-row">
+      <div class="editor-pref-label-group">
+        <span class="editor-pref-label">Show hidden photos</span>
+        <span class="editor-pref-sublabel">When on, photos you've marked as hidden will be visible in galleries and entity photo tabs.</span>
+      </div>
+      <mat-slide-toggle
+        [checked]="showHiddenPhotos()"
+        (change)="setShowHiddenPhotos($event.checked)">
+      </mat-slide-toggle>
+    </div>
+  </section>
+
   <!-- Photo PIN Section -->
   <section class="settings-section">
     <div class="section-header">

@@ -232,8 +232,8 @@
       <mat-tab>
         <ng-template mat-tab-label>
           Photos
-          @if (photos().length > 0) {
-            <span class="tab-badge">{{ photos().length }}</span>
+          @if (visiblePhotoItems().length > 0) {
+            <span class="tab-badge">{{ visiblePhotoItems().length }}</span>
           }
         </ng-template>
 
@@ -242,27 +242,53 @@
             <app-pin-entry-overlay />
           } @else {
           <div class="photos-toolbar">
-            <button mat-stroked-button type="button" (click)="photoFileInput.click()" [disabled]="photoUploading()">
-              @if (photoUploading()) {
-                <mat-spinner diameter="18" />
-              } @else {
-                <mat-icon>add_photo_alternate</mat-icon>
+            @if (!selectMode()) {
+              <button mat-stroked-button type="button" (click)="photoFileInput.click()" [disabled]="photoUploading()">
+                @if (photoUploading()) {
+                  <mat-spinner diameter="18" />
+                } @else {
+                  <mat-icon>add_photo_alternate</mat-icon>
+                }
+                {{ photoUploading() ? 'Uploading…' : 'Add photo' }}
+              </button>
+              @if (visiblePhotoItems().length > 0) {
+                <button mat-stroked-button type="button" (click)="toggleSelectMode()">
+                  <mat-icon>checklist</mat-icon>
+                  Select
+                </button>
               }
-              {{ photoUploading() ? 'Uploading…' : 'Add photo' }}
-            </button>
+            } @else {
+              <button mat-stroked-button type="button" color="warn"
+                      [disabled]="selectedActualIndices().size === 0"
+                      (click)="hideSelectedPhotos()">
+                <mat-icon>visibility_off</mat-icon>
+                Hide selected ({{ selectedActualIndices().size }})
+              </button>
+              <button mat-button type="button" (click)="toggleSelectMode()">Cancel</button>
+            }
             <input #photoFileInput type="file" accept="image/*" hidden (change)="onPhotoFileSelected($event)" />
           </div>
 
-          @if (photos().length === 0) {
+          @if (visiblePhotoItems().length === 0) {
             <p class="photos-empty">No photos yet. Add photos to build a gallery for this character.</p>
           } @else {
-            <div class="photos-grid">
-              @for (photo of photos(); track photo.url; let i = $index) {
-                <div class="photo-tile" (click)="openLightbox(i)">
-                  <img [src]="proxyUrl(photo.thumbnailUrl)" [alt]="photo.caption || 'Photo ' + (i + 1)" />
-                  <button mat-icon-button class="photo-delete-btn" (click)="$event.stopPropagation(); deletePhoto(i)" matTooltip="Remove photo">
-                    <mat-icon>close</mat-icon>
-                  </button>
+            <div class="photos-grid" [class.photos-select-mode]="selectMode()">
+              @for (item of visiblePhotoItems(); track item.photo.url; let i = $index) {
+                <div class="photo-tile"
+                     [class.photo-tile-selected]="selectedActualIndices().has(item.actualIndex)"
+                     (click)="selectMode() ? togglePhotoSelection(item.actualIndex) : openLightbox(i)">
+                  <img [src]="proxyUrl(item.photo.thumbnailUrl)" [alt]="item.photo.caption || 'Photo ' + (i + 1)" />
+                  @if (selectMode()) {
+                    <div class="photo-select-overlay">
+                      <mat-icon class="photo-select-check">
+                        {{ selectedActualIndices().has(item.actualIndex) ? 'check_circle' : 'radio_button_unchecked' }}
+                      </mat-icon>
+                    </div>
+                  } @else {
+                    <button mat-icon-button class="photo-delete-btn" (click)="$event.stopPropagation(); deletePhoto(item.actualIndex)" matTooltip="Remove photo">
+                      <mat-icon>close</mat-icon>
+                    </button>
+                  }
                 </div>
               }
             </div>
@@ -314,23 +340,23 @@
       <mat-icon>close</mat-icon>
     </button>
 
-    @if (photos().length > 1) {
+    @if (visiblePhotoItems().length > 1) {
       <button mat-icon-button class="lightbox-nav lightbox-prev" (click)="$event.stopPropagation(); lightboxPrev()" matTooltip="Previous">
         <mat-icon>chevron_left</mat-icon>
       </button>
     }
 
     <div class="lightbox-image-wrap" (click)="$event.stopPropagation()">
-      @for (photo of photos(); track photo.url; let i = $index) {
+      @for (item of visiblePhotoItems(); track item.photo.url; let i = $index) {
         @if (i === lightboxIndex()) {
-          <img [src]="proxyUrl(photo.url)" [alt]="photo.caption || 'Photo ' + (i + 1)"
+          <img [src]="proxyUrl(item.photo.url)" [alt]="item.photo.caption || 'Photo ' + (i + 1)"
                class="lightbox-image" [class.lightbox-anim-next]="lightboxAnim() === 'next'" [class.lightbox-anim-prev]="lightboxAnim() === 'prev'" />
         }
       }
-      <span class="lightbox-counter">{{ lightboxIndex()! + 1 }} / {{ photos().length }}</span>
+      <span class="lightbox-counter">{{ lightboxIndex()! + 1 }} / {{ visiblePhotoItems().length }}</span>
     </div>
 
-    @if (photos().length > 1) {
+    @if (visiblePhotoItems().length > 1) {
       <button mat-icon-button class="lightbox-nav lightbox-next" (click)="$event.stopPropagation(); lightboxNext()" matTooltip="Next">
         <mat-icon>chevron_right</mat-icon>
       </button>

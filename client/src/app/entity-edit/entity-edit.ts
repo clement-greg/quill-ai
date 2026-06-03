@@ -92,11 +92,24 @@ export class EntityEditComponent {
   addingQuote = signal(false);
   newQuoteText = signal('');
 
+  readonly showHiddenPhotos = this.settingsService.showHiddenPhotos;
+
   // Photos tab
   photos = signal<EntityPhoto[]>([]);
   photoUploading = signal(false);
   lightboxIndex = signal<number | null>(null);
   lightboxAnim = signal<'next' | 'prev' | ''>('');
+
+  // Multi-select / hide
+  selectMode = signal(false);
+  selectedActualIndices = signal<Set<number>>(new Set());
+
+  /** Visible photos with their original array index, for rendering and lightbox nav. */
+  visiblePhotoItems = computed(() =>
+    this.photos()
+      .map((photo, actualIndex) => ({ photo, actualIndex }))
+      .filter(item => this.showHiddenPhotos() || !item.photo.hidden)
+  );
 
   // Per-quote inline edit state: maps quote id → draft text (null = not editing)
   editingQuoteId = signal<string | null>(null);
@@ -162,14 +175,14 @@ export class EntityEditComponent {
     const idx = this.lightboxIndex();
     if (idx === null) return;
     this.lightboxAnim.set('next');
-    this.lightboxIndex.set((idx + 1) % this.photos().length);
+    this.lightboxIndex.set((idx + 1) % this.visiblePhotoItems().length);
   }
 
   lightboxPrev(): void {
     const idx = this.lightboxIndex();
     if (idx === null) return;
     this.lightboxAnim.set('prev');
-    this.lightboxIndex.set((idx - 1 + this.photos().length) % this.photos().length);
+    this.lightboxIndex.set((idx - 1 + this.visiblePhotoItems().length) % this.visiblePhotoItems().length);
   }
 
   @HostListener('paste', ['$event'])
@@ -388,6 +401,34 @@ export class EntityEditComponent {
         });
       },
       error: () => this.photoUploading.set(false),
+    });
+  }
+
+  toggleSelectMode(): void {
+    this.selectMode.update(v => !v);
+    this.selectedActualIndices.set(new Set());
+  }
+
+  togglePhotoSelection(actualIndex: number): void {
+    this.selectedActualIndices.update(s => {
+      const next = new Set(s);
+      if (next.has(actualIndex)) next.delete(actualIndex);
+      else next.add(actualIndex);
+      return next;
+    });
+  }
+
+  hideSelectedPhotos(): void {
+    const entityId = this.entity().id;
+    if (!entityId) return;
+    const indices = Array.from(this.selectedActualIndices());
+    if (indices.length === 0) return;
+    this.entityService.setPhotosHidden(entityId, indices, true).subscribe({
+      next: updated => {
+        this.photos.set(updated.photos ?? []);
+        this.selectedActualIndices.set(new Set());
+        this.selectMode.set(false);
+      },
     });
   }
 

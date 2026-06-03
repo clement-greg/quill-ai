@@ -6,6 +6,7 @@ export interface EntityPhoto {
     url: string;
     thumbnailUrl: string;
     caption?: string;
+    hidden?: boolean;
 }
 
 export interface Entity extends AuditedRecord {

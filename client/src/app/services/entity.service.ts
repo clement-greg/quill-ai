@@ -85,4 +85,8 @@ export class EntityService {
   removePhoto(entityId: string, index: number): Observable<Entity> {
     return this.http.delete<Entity>(`${this.apiUrl}/${entityId}/photos/${index}`);
   }
+
+  setPhotosHidden(entityId: string, indices: number[], hidden: boolean): Observable<Entity> {
+    return this.http.patch<Entity>(`${this.apiUrl}/${entityId}/photos/visibility`, { indices, hidden });
+  }
 }

@@ -15,6 +15,7 @@ import { HeaderService } from '../services/header.service';
 import { SeriesContextService } from '../services/series-context.service';
 import { PinLockService } from '../services/pin-lock.service';
 import { PinEntryOverlayComponent } from '../pin-entry-overlay/pin-entry-overlay';
+import { UserSettingsService } from '../services/user-settings.service';
 
 interface GalleryPhoto {
   entity: Entity;
@@ -42,6 +43,7 @@ export class PhotoGalleryComponent implements OnInit, OnDestroy {
   private headerService = inject(HeaderService);
   private seriesContext = inject(SeriesContextService);
   readonly pinLock = inject(PinLockService);
+  private settingsService = inject(UserSettingsService);
 
   loading = signal(false);
   allSeries = signal<Series[]>([]);
@@ -58,20 +60,25 @@ export class PhotoGalleryComponent implements OnInit, OnDestroy {
   private routeSub?: Subscription;
   private touchStartX = 0;
 
-  /** Entities that have at least one photo (includes thumbnailUrl as a photo) */
+  /** Entities that have at least one visible photo */
   entitiesWithPhotos = computed(() => {
     const seriesId = this.selectedSeriesId();
     const entities = this.allEntities();
+    const showHidden = this.settingsService.showHiddenPhotos();
     return entities
       .filter(e => !e.archived && !e.deleted)
       .filter(e => seriesId == null || e.seriesId === seriesId)
-      .filter(e => (e.photos && e.photos.length > 0) || e.thumbnailUrl);
+      .filter(e => {
+        const visiblePhotos = (e.photos ?? []).filter(p => showHidden || !p.hidden);
+        return visiblePhotos.length > 0 || e.thumbnailUrl;
+      });
   });
 
-  /** Flat list of all gallery photos after entity filter */
+  /** Flat list of all gallery photos after entity filter, excluding hidden photos when setting is off */
   galleryPhotos = computed<GalleryPhoto[]>(() => {
     const entityFilter = this.selectedEntityIds();
     const entities = this.entitiesWithPhotos();
+    const showHidden = this.settingsService.showHiddenPhotos();
     const source = entityFilter.length > 0
       ? entities.filter(e => entityFilter.includes(e.id))
       : entities;
@@ -80,6 +87,7 @@ export class PhotoGalleryComponent implements OnInit, OnDestroy {
     for (const entity of source) {
       if (entity.photos && entity.photos.length > 0) {
         for (const photo of entity.photos) {
+          if (!showHidden && photo.hidden) continue;
           photos.push({ entity, photo });
         }
       } else if (entity.thumbnailUrl) {
