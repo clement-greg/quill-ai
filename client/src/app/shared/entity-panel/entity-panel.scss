@@ -335,7 +335,10 @@
 /* ── Edit column ── */
 .entity-edit-col {
   flex: 1;
-  overflow-y: auto;
+  min-height: 0;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
   padding: 16px 20px;
   box-sizing: border-box;
 }

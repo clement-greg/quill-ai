@@ -1,4 +1,4 @@
-import { Component, input, output, signal, inject, effect, computed, HostListener } from '@angular/core';
+import { Component, input, output, signal, inject, effect, computed, HostListener, DestroyRef } from '@angular/core';
 import { Router } from '@angular/router';
 import { FormsModule } from '@angular/forms';
 import { MatButtonModule } from '@angular/material/button';
@@ -45,6 +45,7 @@ export class EntityEditComponent {
   private router = inject(Router);
   private settingsService = inject(UserSettingsService);
   readonly pinLock = inject(PinLockService);
+  private destroyRef = inject(DestroyRef);
 
   readonly genderOptions = this.settingsService.genderOptions;
   readonly raceOptions = this.settingsService.raceOptions;
@@ -104,6 +105,9 @@ export class EntityEditComponent {
   selectMode = signal(false);
   selectedActualIndices = signal<Set<number>>(new Set());
 
+  private longPressTimer: ReturnType<typeof setTimeout> | null = null;
+  private longPressActivated = false;
+
   /** Visible photos with their original array index, for rendering and lightbox nav. */
   visiblePhotoItems = computed(() =>
     this.photos()
@@ -116,6 +120,8 @@ export class EntityEditComponent {
   editingQuoteText = signal('');
 
   constructor() {
+    this.destroyRef.onDestroy(() => this.cancelLongPress());
+
     effect(() => {
       const e = this.entity();
       const draft = { ...e };
@@ -402,6 +408,37 @@ export class EntityEditComponent {
       },
       error: () => this.photoUploading.set(false),
     });
+  }
+
+  onPhotoClick(actualIndex: number, visibleIndex: number): void {
+    if (this.longPressActivated) {
+      this.longPressActivated = false;
+      return;
+    }
+    if (this.selectMode()) {
+      this.togglePhotoSelection(actualIndex);
+    } else {
+      this.openLightbox(visibleIndex);
+    }
+  }
+
+  startLongPress(actualIndex: number): void {
+    this.cancelLongPress();
+    this.longPressActivated = false;
+    this.longPressTimer = setTimeout(() => {
+      this.longPressActivated = true;
+      if (!this.selectMode()) {
+        this.selectMode.set(true);
+        this.selectedActualIndices.set(new Set([actualIndex]));
+      }
+    }, 500);
+  }
+
+  cancelLongPress(): void {
+    if (this.longPressTimer !== null) {
+      clearTimeout(this.longPressTimer);
+      this.longPressTimer = null;
+    }
   }
 
   toggleSelectMode(): void {

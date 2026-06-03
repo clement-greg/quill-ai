@@ -26,6 +26,23 @@ html, body {
   overflow-x: hidden;
 }
 
+/* Portrait lock for iOS PWA — iOS ignores the manifest orientation field,
+   so show a fullscreen overlay whenever a touch device goes landscape. */
+@media (orientation: landscape) and (hover: none) and (pointer: coarse) {
+  body::before {
+    content: '↺  Please rotate to portrait';
+    display: block;
+    position: fixed;
+    inset: 0;
+    z-index: 9999;
+    background: #fff;
+    color: #333;
+    font-size: 18px;
+    text-align: center;
+    padding-top: 45vh;
+  }
+}
+
 /* Prevent iOS Safari from auto-zooming when an input is focused.
    iOS zooms whenever the focused input's font-size is below 16px. */
 @media screen and (-webkit-min-device-pixel-ratio: 0) {

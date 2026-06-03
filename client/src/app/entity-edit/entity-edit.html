@@ -275,26 +275,34 @@
             <input #photoFileInput type="file" accept="image/*" hidden (change)="onPhotoFileSelected($event)" />
           </div>
 
-          @if (visiblePhotoItems().length === 0) {
-            <p class="photos-empty">No photos yet. Add photos to build a gallery for this character.</p>
-          } @else {
-            <div class="photos-grid" [class.photos-select-mode]="selectMode()">
-              @for (item of visiblePhotoItems(); track item.photo.url; let i = $index) {
-                <div class="photo-tile"
-                     [class.photo-tile-selected]="selectedActualIndices().has(item.actualIndex)"
-                     (click)="selectMode() ? togglePhotoSelection(item.actualIndex) : openLightbox(i)">
-                  <img [src]="proxyUrl(item.photo.thumbnailUrl)" [alt]="item.photo.caption || 'Photo ' + (i + 1)" />
-                  @if (selectMode()) {
-                    <div class="photo-select-overlay">
-                      <mat-icon class="photo-select-check">
-                        {{ selectedActualIndices().has(item.actualIndex) ? 'check_circle' : 'radio_button_unchecked' }}
-                      </mat-icon>
-                    </div>
-                  }
-                </div>
-              }
-            </div>
-          }
+          <div class="photos-scroll">
+            @if (visiblePhotoItems().length === 0) {
+              <p class="photos-empty">No photos yet. Add photos to build a gallery for this character.</p>
+            } @else {
+              <div class="photos-grid" [class.photos-select-mode]="selectMode()">
+                @for (item of visiblePhotoItems(); track item.photo.url; let i = $index) {
+                  <div class="photo-tile"
+                       [class.photo-tile-selected]="selectedActualIndices().has(item.actualIndex)"
+                       (click)="onPhotoClick(item.actualIndex, i)"
+                       (mousedown)="startLongPress(item.actualIndex)"
+                       (touchstart)="startLongPress(item.actualIndex)"
+                       (mouseup)="cancelLongPress()"
+                       (mouseleave)="cancelLongPress()"
+                       (touchend)="cancelLongPress()"
+                       (touchmove)="cancelLongPress()">
+                    <img [src]="proxyUrl(item.photo.thumbnailUrl)" [alt]="item.photo.caption || 'Photo ' + (i + 1)" />
+                    @if (selectMode()) {
+                      <div class="photo-select-overlay">
+                        <mat-icon class="photo-select-check">
+                          {{ selectedActualIndices().has(item.actualIndex) ? 'check_circle' : 'radio_button_unchecked' }}
+                        </mat-icon>
+                      </div>
+                    }
+                  </div>
+                }
+              </div>
+            }
+          </div>
           } <!-- end @else (unlocked) -->
         </div>
       </mat-tab>
