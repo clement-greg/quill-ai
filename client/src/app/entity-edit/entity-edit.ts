@@ -177,6 +177,44 @@ export class EntityEditComponent {
     this.lightboxIndex.set(null);
   }
 
+  lightboxHide(): void {
+    const idx = this.lightboxIndex();
+    if (idx === null) return;
+    const item = this.visiblePhotoItems()[idx];
+    const entityId = this.entity().id;
+    if (!item || !entityId) return;
+    this.entityService.setPhotosHidden(entityId, [item.actualIndex], true).subscribe({
+      next: updated => {
+        this.photos.set(updated.photos ?? []);
+        this.advanceLightboxAfterRemoval(idx);
+      },
+    });
+  }
+
+  lightboxDelete(): void {
+    const idx = this.lightboxIndex();
+    if (idx === null) return;
+    const item = this.visiblePhotoItems()[idx];
+    const entityId = this.entity().id;
+    if (!item || !entityId) return;
+    this.entityService.removePhoto(entityId, item.actualIndex).subscribe({
+      next: updated => {
+        this.photos.set(updated.photos ?? []);
+        this.advanceLightboxAfterRemoval(idx);
+      },
+    });
+  }
+
+  private advanceLightboxAfterRemoval(removedIndex: number): void {
+    const newCount = this.visiblePhotoItems().length;
+    if (newCount === 0) {
+      this.closeLightbox();
+      return;
+    }
+    this.lightboxAnim.set('');
+    this.lightboxIndex.set(Math.min(removedIndex, newCount - 1));
+  }
+
   lightboxNext(): void {
     const idx = this.lightboxIndex();
     if (idx === null) return;

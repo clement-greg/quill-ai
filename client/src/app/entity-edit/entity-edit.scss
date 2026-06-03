@@ -489,3 +489,24 @@
     height: 32px;
   }
 }
+
+.lightbox-actions {
+  position: fixed;
+  bottom: 24px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  gap: 12px;
+  z-index: 1001;
+}
+
+.lightbox-action-btn {
+  color: #fff;
+  border-color: rgba(255, 255, 255, 0.4);
+  background: rgba(0, 0, 0, 0.55);
+}
+
+.lightbox-action-delete {
+  color: #ff8a80;
+  border-color: rgba(255, 138, 128, 0.5);
+}
