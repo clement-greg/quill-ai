@@ -258,11 +258,17 @@
                 </button>
               }
             } @else {
-              <button mat-stroked-button type="button" color="warn"
+              <button mat-stroked-button type="button"
                       [disabled]="selectedActualIndices().size === 0"
                       (click)="hideSelectedPhotos()">
                 <mat-icon>visibility_off</mat-icon>
-                Hide selected ({{ selectedActualIndices().size }})
+                Hide ({{ selectedActualIndices().size }})
+              </button>
+              <button mat-stroked-button type="button" color="warn"
+                      [disabled]="selectedActualIndices().size === 0"
+                      (click)="deleteSelectedPhotos()">
+                <mat-icon>delete</mat-icon>
+                Delete ({{ selectedActualIndices().size }})
               </button>
               <button mat-button type="button" (click)="toggleSelectMode()">Cancel</button>
             }
@@ -284,10 +290,6 @@
                         {{ selectedActualIndices().has(item.actualIndex) ? 'check_circle' : 'radio_button_unchecked' }}
                       </mat-icon>
                     </div>
-                  } @else {
-                    <button mat-icon-button class="photo-delete-btn" (click)="$event.stopPropagation(); deletePhoto(item.actualIndex)" matTooltip="Remove photo">
-                      <mat-icon>close</mat-icon>
-                    </button>
                   }
                 </div>
               }

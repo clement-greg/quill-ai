@@ -432,6 +432,29 @@ export class EntityEditComponent {
     });
   }
 
+  deleteSelectedPhotos(): void {
+    const entityId = this.entity().id;
+    if (!entityId) return;
+    // Delete in descending index order so earlier indices stay stable
+    const indices = Array.from(this.selectedActualIndices()).sort((a, b) => b - a);
+    if (indices.length === 0) return;
+    const deleteNext = (remaining: number[]): void => {
+      if (remaining.length === 0) {
+        this.selectedActualIndices.set(new Set());
+        this.selectMode.set(false);
+        return;
+      }
+      const [head, ...tail] = remaining;
+      this.entityService.removePhoto(entityId, head).subscribe({
+        next: updated => {
+          this.photos.set(updated.photos ?? []);
+          deleteNext(tail);
+        },
+      });
+    };
+    deleteNext(indices);
+  }
+
   deletePhoto(index: number): void {
     const entityId = this.entity().id;
     if (!entityId) return;
