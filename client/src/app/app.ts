@@ -47,6 +47,13 @@ export class App implements OnInit, OnDestroy {
     );
   });
 
+  private panelNarrowClassEffect = effect(() => {
+    const shouldCompact = this.aiAssistant.isOpen()
+      && window.matchMedia('(min-width: 1800px)').matches
+      && this.aiAssistant.panelWidth() <= 700;
+    document.body.classList.toggle('ai-panel-narrow-actions', shouldCompact);
+  });
+
   onResizerPointerDown(event: PointerEvent): void {
     event.preventDefault();
     const startX = event.clientX;
@@ -150,6 +157,7 @@ export class App implements OnInit, OnDestroy {
 
   ngOnDestroy(): void {
     this.updateCheck.stop();
+    document.body.classList.remove('ai-panel-narrow-actions');
   }
 
   reload(): void {

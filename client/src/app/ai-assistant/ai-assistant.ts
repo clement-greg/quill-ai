@@ -11,6 +11,7 @@ import { MatTooltipModule } from '@angular/material/tooltip';
 import { MatSelectModule } from '@angular/material/select';
 import { AiAssistantService } from '../services/ai-assistant.service';
 import { SeriesContextService } from '../services/series-context.service';
+import { EditorBridgeService } from '../services/editor-bridge.service';
 import { ChatFolder, ChatMessageHighlight, ChatSessionMessage, ChatSessionSummary, FolderFile, FolderNote } from '@shared/models';
 import { RichTextEditorComponent } from '../shared/rich-text-editor/rich-text-editor';
 
@@ -29,6 +30,7 @@ export class AiAssistantComponent implements OnInit, AfterViewChecked, OnDestroy
   readonly aiAssistant = inject(AiAssistantService);
   private sanitizer = inject(DomSanitizer);
   readonly seriesContext = inject(SeriesContextService);
+  readonly editorBridge = inject(EditorBridgeService);
 
   readonly input = signal('');
   readonly renamingSessionId = signal<string | null>(null);
@@ -1003,6 +1005,15 @@ export class AiAssistantComponent implements OnInit, AfterViewChecked, OnDestroy
     this.pendingSelection = null;
     window.getSelection()?.removeAllRanges();
     await this.aiAssistant.removeHighlightsInRange(messageIndex, startOffset, endOffset);
+  }
+
+  copyToEditor(): void {
+    const text = window.getSelection()?.toString().trim();
+    if (!text) return;
+    this.editorBridge.insertText(text);
+    this.highlightToolbar.set(null);
+    this.pendingSelection = null;
+    window.getSelection()?.removeAllRanges();
   }
 
   renderMessageHtml(msg: ChatSessionMessage, absoluteIndex: number): SafeHtml {

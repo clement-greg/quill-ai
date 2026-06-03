@@ -32,6 +32,7 @@ import { EntityPanelService } from '../services/entity-panel.service';
 import { UserSettingsService } from '../services/user-settings.service';
 import { AuthService } from '../auth/auth.service';
 import { SeriesContextService } from '../services/series-context.service';
+import { EditorBridgeService } from '../services/editor-bridge.service';
 import { diffWords } from 'diff';
 import { forkJoin, Subscription } from 'rxjs';
 
@@ -69,6 +70,7 @@ export class ChapterEditComponent implements OnInit, OnDestroy {
   private userSettings = inject(UserSettingsService);
   private authService = inject(AuthService);
   private seriesContext = inject(SeriesContextService);
+  private editorBridge = inject(EditorBridgeService);
   private routeSub?: Subscription;
 
   // ── Chapter state ────────────────────────────────────────────────────────
@@ -217,7 +219,10 @@ export class ChapterEditComponent implements OnInit, OnDestroy {
 
         // Set editor content after view init (setTimeout ensures ViewChild is ready)
         setTimeout(() => {
-          if (this.editorRef) this.editorRef.setContent(content);
+          if (this.editorRef) {
+            this.editorRef.setContent(content);
+            this.editorBridge.register(this.editorRef);
+          }
         });
 
         this.bookService.getById(data.bookId).subscribe({
@@ -269,6 +274,7 @@ export class ChapterEditComponent implements OnInit, OnDestroy {
   }
 
   ngOnDestroy(): void {
+    this.editorBridge.unregister();
     this.routeSub?.unsubscribe();
     this.headerService.clear();
     if (this.autoSaveTimer) clearTimeout(this.autoSaveTimer);

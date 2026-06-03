@@ -144,6 +144,17 @@ export class RichTextEditorComponent implements OnInit, AfterViewInit, OnDestroy
   private inlineAiAnchorRect: DOMRect | null = null;
   private inlineAiResizeObserver: ResizeObserver | null = null;
 
+  private externalInsertRange: Range | null = null;
+  private readonly onDocumentSelectionChange = (): void => {
+    const sel = window.getSelection();
+    if (!sel || sel.rangeCount === 0) return;
+    const range = sel.getRangeAt(0);
+    const editorEl = this.editorRef?.nativeElement;
+    if (editorEl?.contains(range.commonAncestorContainer)) {
+      this.externalInsertRange = range.cloneRange();
+    }
+  };
+
   // ── Grammar ──────────────────────────────────────────────────────────────
   grammarPopoverVisible = signal(false);
   grammarPopoverTop = signal(0);
@@ -291,6 +302,7 @@ export class RichTextEditorComponent implements OnInit, AfterViewInit, OnDestroy
     this.minimapResizeObserver = new ResizeObserver(() => this.scheduleMinimap());
     this.minimapResizeObserver.observe(this.editorRef.nativeElement);
     this.scheduleMinimap();
+    document.addEventListener('selectionchange', this.onDocumentSelectionChange);
   }
 
   ngOnDestroy(): void {
@@ -304,6 +316,7 @@ export class RichTextEditorComponent implements OnInit, AfterViewInit, OnDestroy
     this.inlineAiAbortController?.abort();
     this.inlineAiResizeObserver?.disconnect();
     this.minimapResizeObserver?.disconnect();
+    document.removeEventListener('selectionchange', this.onDocumentSelectionChange);
     if (this.resizeDrag) {
       document.removeEventListener('mousemove', this.resizeDrag.moveHandler);
       document.removeEventListener('mouseup', this.resizeDrag.upHandler);
@@ -325,6 +338,36 @@ export class RichTextEditorComponent implements OnInit, AfterViewInit, OnDestroy
 
   focus(): void {
     this.editorRef?.nativeElement.focus();
+  }
+
+  insertExternalText(text: string): void {
+    const editorEl = this.editorRef?.nativeElement;
+    if (!editorEl) return;
+
+    let range = this.externalInsertRange;
+    if (!range || !editorEl.contains(range.commonAncestorContainer)) {
+      range = document.createRange();
+      range.selectNodeContents(editorEl);
+      range.collapse(false);
+    }
+
+    const wrapper = document.createElement('span');
+    wrapper.setAttribute('data-ai-generated', 'true');
+    wrapper.textContent = text;
+
+    range.deleteContents();
+    range.insertNode(wrapper);
+
+    const ar = document.createRange();
+    ar.setStartAfter(wrapper);
+    ar.collapse(true);
+    const sel = window.getSelection();
+    if (sel) { sel.removeAllRanges(); sel.addRange(ar); }
+
+    editorEl.focus();
+    this.scrollCursorIntoView();
+    this.editorContent = editorEl.innerHTML;
+    this.scheduleEmit();
   }
 
   /** Wrap all occurrences of the given entity's names in entity-reference spans.

@@ -204,14 +204,17 @@
               <div class="fe-grid">
                 <!-- Action buttons -->
                 <div class="fe-action-buttons">
-                  <button mat-stroked-button class="fe-action-btn" (click)="triggerFileUpload()">
-                    <mat-icon>upload_file</mat-icon> Upload
+                  <button mat-stroked-button class="fe-action-btn" (click)="triggerFileUpload()" matTooltip="Upload" aria-label="Upload">
+                    <mat-icon>upload_file</mat-icon>
+                    <span class="fe-action-label">Upload</span>
                   </button>
-                  <button mat-stroked-button class="fe-action-btn" (click)="newNote()">
-                    <mat-icon>note_add</mat-icon> New Note
+                  <button mat-stroked-button class="fe-action-btn" (click)="newNote()" matTooltip="New note" aria-label="New note">
+                    <mat-icon>note_add</mat-icon>
+                    <span class="fe-action-label">New Note</span>
                   </button>
-                  <button mat-stroked-button class="fe-action-btn" (click)="newChat()">
-                    <mat-icon>add_comment</mat-icon> New Chat
+                  <button mat-stroked-button class="fe-action-btn" (click)="newChat()" matTooltip="New chat" aria-label="New chat">
+                    <mat-icon>add_comment</mat-icon>
+                    <span class="fe-action-label">New Chat</span>
                   </button>
                 </div>
 
@@ -439,14 +442,17 @@
         <mat-icon class="ai-welcome-icon">smart_toy</mat-icon>
         <p>Select a previous session or start a new one.</p>
         <div class="fe-action-buttons">
-          <button mat-stroked-button class="fe-action-btn" (click)="triggerFileUpload()">
-            <mat-icon>upload_file</mat-icon> Upload
+          <button mat-stroked-button class="fe-action-btn" (click)="triggerFileUpload()" matTooltip="Upload" aria-label="Upload">
+            <mat-icon>upload_file</mat-icon>
+            <span class="fe-action-label">Upload</span>
           </button>
-          <button mat-stroked-button class="fe-action-btn" (click)="newNote()">
-            <mat-icon>note_add</mat-icon> New Note
+          <button mat-stroked-button class="fe-action-btn" (click)="newNote()" matTooltip="New note" aria-label="New note">
+            <mat-icon>note_add</mat-icon>
+            <span class="fe-action-label">New Note</span>
           </button>
-          <button mat-stroked-button class="fe-action-btn" (click)="newChat()">
-            <mat-icon>add_comment</mat-icon> New Chat
+          <button mat-stroked-button class="fe-action-btn" (click)="newChat()" matTooltip="New chat" aria-label="New chat">
+            <mat-icon>add_comment</mat-icon>
+            <span class="fe-action-label">New Chat</span>
           </button>
         </div>
       </div>
@@ -479,6 +485,15 @@
             (click)="eraseHighlights()">
       <mat-icon>format_color_reset</mat-icon>
     </button>
+    @if (editorBridge.hasEditor()) {
+      <div class="highlight-toolbar-divider"></div>
+      <button class="highlight-copy-to-editor-btn"
+              title="Copy to editor at cursor"
+              (mousedown)="$event.preventDefault()"
+              (click)="copyToEditor()">
+        <mat-icon>edit_note</mat-icon>
+      </button>
+    }
   </div>
 }
 

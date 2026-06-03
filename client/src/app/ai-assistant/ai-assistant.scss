@@ -40,7 +40,7 @@
 
 .ai-sessions-sidebar {
   width: 300px;
-  min-width: 220px;
+  min-width: 160px;
   border-right: 1px solid var(--mat-sys-outline-variant);
   display: flex;
   flex-direction: column;
@@ -351,7 +351,7 @@
   flex: 1;
   display: flex;
   flex-direction: column;
-  min-width: 0;
+  min-width: 240px;
   overflow: hidden;
 }
 
@@ -641,6 +641,26 @@ mark.chat-highlight.highlight-flash {
     height: 16px !important;
     margin-right: 4px !important;
     vertical-align: middle;
+  }
+}
+
+.fe-action-label {
+  display: inline;
+}
+
+@media (min-width: 1800px) {
+  :host-context(.ai-panel-narrow-actions) .fe-action-btn {
+    min-width: 34px !important;
+    width: 34px !important;
+    padding: 0 !important;
+  }
+
+  :host-context(.ai-panel-narrow-actions) .fe-action-btn mat-icon {
+    margin: 0 !important;
+  }
+
+  :host-context(.ai-panel-narrow-actions) .fe-action-btn .fe-action-label {
+    display: none;
   }
 }
 
@@ -1279,6 +1299,33 @@ mark.chat-highlight.highlight-flash {
 }
 
 .highlight-erase-btn mat-icon {
+  font-size: 18px !important;
+  width: 18px !important;
+  height: 18px !important;
+}
+
+.highlight-copy-to-editor-btn {
+  width: 28px;
+  height: 28px;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 6px;
+  color: var(--mat-sys-primary);
+  padding: 0;
+  transition: background 0.12s, color 0.12s;
+  flex-shrink: 0;
+}
+
+.highlight-copy-to-editor-btn:hover {
+  background: var(--mat-sys-primary-container);
+  color: var(--mat-sys-on-primary-container);
+}
+
+.highlight-copy-to-editor-btn mat-icon {
   font-size: 18px !important;
   width: 18px !important;
   height: 18px !important;
