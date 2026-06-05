@@ -77,7 +77,11 @@ router.post('/general', async (req: Request, res: Response) => {
     res.write('data: [DONE]\n\n');
   } catch (err) {
     console.error('General chat streaming error:', err);
-    res.write(`data: ${JSON.stringify({ error: 'AI error occurred' })}\n\n`);
+    const isContentFilter = (err as { code?: string })?.code === 'content_filter';
+    const errorMessage = isContentFilter
+      ? 'Your request was blocked by the content filter. Try rephrasing.'
+      : 'AI error occurred';
+    res.write(`data: ${JSON.stringify({ error: errorMessage })}\n\n`);
   } finally {
     res.end();
   }
@@ -211,7 +215,11 @@ router.post('/:chapterId', async (req: Request, res: Response) => {
     res.write('data: [DONE]\n\n');
   } catch (err) {
     console.error('Chat streaming error:', err);
-    res.write(`data: ${JSON.stringify({ error: 'AI error occurred' })}\n\n`);
+    const isContentFilter = (err as { code?: string })?.code === 'content_filter';
+    const errorMessage = isContentFilter
+      ? 'Your request was blocked by the content filter. Try rephrasing.'
+      : 'AI error occurred';
+    res.write(`data: ${JSON.stringify({ error: errorMessage })}\n\n`);
   } finally {
     res.end();
   }
