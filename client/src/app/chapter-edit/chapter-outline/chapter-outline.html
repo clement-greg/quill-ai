@@ -1,0 +1,88 @@
+<div class="outline-panel">
+  <div class="outline-panel-header">
+    <mat-icon>toc</mat-icon>
+    <span>Outline</span>
+    <span class="outline-count">({{ items().length }})</span>
+  </div>
+
+  <div class="outline-scroll-area">
+    <div
+      cdkDropList
+      [cdkDropListData]="items()"
+      (cdkDropListDropped)="onDrop($event)"
+      (cdkDragStarted)="dragging.set(true)"
+      class="outline-list"
+      [class.outline-list-dragging]="dragging()"
+    >
+      @for (item of items(); track item.id; let i = $index) {
+        <div
+          class="outline-item"
+          [class.outline-item-sub]="item.level === 1"
+          cdkDrag
+          [cdkDragData]="item"
+        >
+          <div class="outline-drag-placeholder" *cdkDragPlaceholder></div>
+
+          <button
+            class="outline-drag-handle"
+            cdkDragHandle
+            mat-icon-button
+            title="Drag to reorder"
+            aria-label="Drag to reorder"
+            tabindex="-1"
+          >
+            <mat-icon>drag_indicator</mat-icon>
+          </button>
+
+          <span class="outline-bullet" aria-hidden="true">
+            @if (item.level === 0) { ● } @else { ○ }
+          </span>
+
+          <input
+            class="outline-item-input"
+            [id]="'outline-input-' + item.id"
+            [value]="item.text"
+            [placeholder]="item.level === 0 ? 'Section heading…' : 'Sub-point…'"
+            (input)="onInputChange(item.id, $any($event.target).value)"
+            (keydown)="onKeyDown($event, item.id)"
+            aria-label="Outline item text"
+          />
+
+          <button
+            class="outline-delete-btn"
+            mat-icon-button
+            (click)="onDeleteClick(item.id, $event)"
+            title="Delete item"
+            aria-label="Delete outline item"
+            tabindex="-1"
+          >
+            <mat-icon>close</mat-icon>
+          </button>
+        </div>
+      }
+    </div>
+
+    <!-- Phantom input — always visible, never stored in items -->
+    <div class="outline-item outline-phantom-item" [class.outline-item-sub]="phantomLevel() === 1">
+      <span class="outline-drag-handle-spacer" aria-hidden="true"></span>
+
+      <span class="outline-bullet outline-bullet-phantom" aria-hidden="true">
+        @if (phantomLevel() === 0) { ● } @else { ○ }
+      </span>
+
+      <input
+        id="outline-phantom-input"
+        class="outline-item-input outline-phantom-input"
+        [placeholder]="phantomLevel() === 0 ? 'Add item…' : 'Add sub-point…'"
+        (input)="onPhantomInput($event)"
+        (keydown)="onPhantomKeyDown($event)"
+        aria-label="Add new outline item"
+        autocomplete="off"
+      />
+    </div>
+  </div>
+
+  <div class="outline-footer">
+    <span class="outline-keyboard-hint">Tab to indent · Shift+Tab to dedent · Enter to continue</span>
+  </div>
+</div>

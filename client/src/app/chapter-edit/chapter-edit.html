@@ -258,6 +258,17 @@
                 </div>
               </mat-tab>
 
+              <!-- Tab 3: Outline -->
+              <mat-tab>
+                <ng-template mat-tab-label><mat-icon>toc</mat-icon></ng-template>
+                <div class="sidebar-tab-content sidebar-tab-content-outline">
+                  <app-chapter-outline
+                    [items]="outline()"
+                    (itemsChange)="onOutlineChange($event)"
+                  />
+                </div>
+              </mat-tab>
+
             </mat-tab-group>
           </aside>
         </div>

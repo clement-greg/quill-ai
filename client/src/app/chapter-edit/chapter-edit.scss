@@ -250,6 +250,17 @@
   flex-direction: column;
   height: 100%;
   overflow: hidden;
+
+  &.sidebar-tab-content-outline {
+    padding: 0;
+
+    app-chapter-outline {
+      flex: 1;
+      min-height: 0;
+      display: flex;
+      flex-direction: column;
+    }
+  }
 }
 
 /* Mobile close button (absolute, top-right of sidebar) */

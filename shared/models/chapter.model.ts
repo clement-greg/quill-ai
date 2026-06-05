@@ -1,3 +1,9 @@
+export interface OutlineItem {
+    id: string;
+    text: string;
+    level: number; // 0 = section heading, 1 = sub-point
+}
+
 export interface ChapterNote {
     id: string;
     noteText: string;
@@ -21,6 +27,7 @@ export interface Chapter extends AuditedRecord {
     imageUrl?: string;
     imageThumbnailUrl?: string;
     archived?: boolean;
+    outline?: OutlineItem[];
 }
 
 export interface ChapterVersion {

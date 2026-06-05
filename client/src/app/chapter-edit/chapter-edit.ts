@@ -16,7 +16,7 @@ import { MatDialog, MatDialogModule, MAT_DIALOG_DATA } from '@angular/material/d
 import { ChapterService } from '../chapter/chapter.service';
 import { ChapterDraftService } from './chapter-draft.service';
 import { ChapterVersionService } from './chapter-version.service';
-import { Chapter, ChapterNote, ChapterVersion } from '@shared/models/chapter.model';
+import { Chapter, ChapterNote, ChapterVersion, OutlineItem } from '@shared/models/chapter.model';
 import { Entity } from '@shared/models/entity.model';
 import { EntityQuote } from '@shared/models';
 import { BookService } from '../book/book.service';
@@ -27,6 +27,7 @@ import { SlideOutPanelContainer } from '../shared/slide-out-panel-container/slid
 import { EntityEditComponent } from '../entity-edit/entity-edit';
 import { RichTextEditorComponent, SuggestedEntityCard } from '../shared/rich-text-editor/rich-text-editor';
 import { AiStatsComponent } from '../book-detail/ai-stats/ai-stats';
+import { ChapterOutlineComponent } from './chapter-outline/chapter-outline';
 import { HeaderService } from '../services/header.service';
 import { EntityPanelService } from '../services/entity-panel.service';
 import { UserSettingsService } from '../services/user-settings.service';
@@ -45,7 +46,7 @@ interface DiffParagraph { hasChanges: boolean; segments: DiffWord[]; }
     FormsModule,
     MatButtonModule, MatIconModule, MatInputModule, MatFormFieldModule,
     MatProgressSpinnerModule, MatTabsModule, MatDialogModule, MatMenuModule,
-    SlideOutPanelContainer, EntityEditComponent, RichTextEditorComponent, AiStatsComponent,
+    SlideOutPanelContainer, EntityEditComponent, RichTextEditorComponent, AiStatsComponent, ChapterOutlineComponent,
   ],
   templateUrl: './chapter-edit.html',
   styleUrl: './chapter-edit.scss',
@@ -88,6 +89,9 @@ export class ChapterEditComponent implements OnInit, OnDestroy {
 
   // ── Entity quotes ────────────────────────────────────────────────────────
   capturingQuote = signal(false);
+
+  // ── Outline ──────────────────────────────────────────────────────────────
+  outline = signal<OutlineItem[]>([]);
 
   // ── Notes (in-text annotation) ───────────────────────────────────────────
   notes = signal<ChapterNote[]>([]);
@@ -202,17 +206,22 @@ export class ChapterEditComponent implements OnInit, OnDestroy {
       this.chapter.set(null);
       this.hasDraft.set(false);
       this.notes.set([]);
+      this.outline.set([]);
       this.lastSavedContent = null;
 
       this.chapterService.getById(id).subscribe({
       next: async (data) => {
         const draft = await this.draftService.getDraft(data.id);
-        const hasDraft = draft !== null && draft.content !== (data.content ?? '');
+        const contentDiffers = draft !== null && draft.content !== (data.content ?? '');
+        const outlineDiffers = draft !== null && JSON.stringify(draft.outline ?? []) !== JSON.stringify(data.outline ?? []);
+        const hasDraft = contentDiffers || outlineDiffers;
         const content = hasDraft ? draft!.content : (data.content ?? '');
         const notes = hasDraft ? draft!.notes : (data.notes ?? []);
+        const outline = draft !== null ? (draft.outline ?? data.outline ?? []) : (data.outline ?? []);
         if (hasDraft) this.hasDraft.set(true);
         this.chapter.set({ ...data, content });
         this.notes.set(notes);
+        this.outline.set(outline);
         this.imageUrl.set(data.imageUrl ?? null);
         this.imageThumbnailUrl.set(data.imageThumbnailUrl ?? null);
         this.lastSavedContent = data.content ?? '';
@@ -308,15 +317,26 @@ export class ChapterEditComponent implements OnInit, OnDestroy {
     }
   }
 
-  onEditorContentChange(html: string): void {
+  private scheduleDraftSave(html?: string): void {
     const current = this.chapter();
     if (!current) return;
     if (this.autoSaveTimer) clearTimeout(this.autoSaveTimer);
     this.autoSaveTimer = setTimeout(() => {
-      this.draftService.saveDraft(current.id, html, this.notes());
+      const content = html ?? this.editorRef?.getContent() ?? '';
+      this.draftService.saveDraft(current.id, content, this.notes(), this.outline());
       this.hasDraft.set(true);
       this.autoSaveTimer = null;
     }, 800);
+  }
+
+  onEditorContentChange(html: string): void {
+    if (!this.chapter()) return;
+    this.scheduleDraftSave(html);
+  }
+
+  onOutlineChange(items: OutlineItem[]): void {
+    this.outline.set(items);
+    this.scheduleDraftSave();
   }
 
   onEntityEditRequest(entity: Entity): void {
@@ -439,7 +459,8 @@ export class ChapterEditComponent implements OnInit, OnDestroy {
     const content = this.editorRef?.getContent() ?? chapter.content ?? '';
 
     this.saving.set(true);
-    const toSave = { ...chapter, content, notes: this.notes() };
+    const outline = this.outline().filter(item => item.text.trim() !== '');
+    const toSave = { ...chapter, content, notes: this.notes(), outline };
 
     this.chapterService.update(toSave).subscribe({
       next: async () => {
@@ -489,6 +510,7 @@ export class ChapterEditComponent implements OnInit, OnDestroy {
         next: (data) => {
           this.chapter.set(data);
           this.notes.set(data.notes ?? []);
+          this.outline.set(data.outline ?? []);
           this.imageUrl.set(data.imageUrl ?? null);
           this.imageThumbnailUrl.set(data.imageThumbnailUrl ?? null);
           this.editorRef?.setContent(data.content ?? '');
