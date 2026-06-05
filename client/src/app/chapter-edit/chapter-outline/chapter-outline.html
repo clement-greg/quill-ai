@@ -18,6 +18,7 @@
         <div
           class="outline-item"
           [class.outline-item-sub]="item.level === 1"
+          [class.outline-item-sub2]="item.level === 2"
           cdkDrag
           [cdkDragData]="item"
         >
@@ -35,16 +36,17 @@
           </button>
 
           <span class="outline-bullet" aria-hidden="true">
-            @if (item.level === 0) { ● } @else { ○ }
+            @if (item.level === 0) { ● } @else if (item.level === 1) { ○ } @else { ▪ }
           </span>
 
           <input
             class="outline-item-input"
             [id]="'outline-input-' + item.id"
             [value]="item.text"
-            [placeholder]="item.level === 0 ? 'Section heading…' : 'Sub-point…'"
-            (input)="onInputChange(item.id, $any($event.target).value)"
+            [placeholder]="item.level === 0 ? 'Section heading…' : item.level === 1 ? 'Sub-point…' : 'Detail…'"
+            (input)="onInputChange(item.id, $any($event.target).value, $any($event.target))"
             (keydown)="onKeyDown($event, item.id)"
+            (blur)="onInputBlur()"
             aria-label="Outline item text"
           />
 
@@ -63,17 +65,19 @@
     </div>
 
     <!-- Phantom input — always visible, never stored in items -->
-    <div class="outline-item outline-phantom-item" [class.outline-item-sub]="phantomLevel() === 1">
+    <div class="outline-item outline-phantom-item"
+         [class.outline-item-sub]="phantomLevel() === 1"
+         [class.outline-item-sub2]="phantomLevel() === 2">
       <span class="outline-drag-handle-spacer" aria-hidden="true"></span>
 
       <span class="outline-bullet outline-bullet-phantom" aria-hidden="true">
-        @if (phantomLevel() === 0) { ● } @else { ○ }
+        @if (phantomLevel() === 0) { ● } @else if (phantomLevel() === 1) { ○ } @else { ▪ }
       </span>
 
       <input
         id="outline-phantom-input"
         class="outline-item-input outline-phantom-input"
-        [placeholder]="phantomLevel() === 0 ? 'Add item…' : 'Add sub-point…'"
+        [placeholder]="phantomLevel() === 0 ? 'Add item…' : phantomLevel() === 1 ? 'Add sub-point…' : 'Add detail…'"
         (input)="onPhantomInput($event)"
         (keydown)="onPhantomKeyDown($event)"
         aria-label="Add new outline item"
@@ -86,3 +90,20 @@
     <span class="outline-keyboard-hint">Tab to indent · Shift+Tab to dedent · Enter to continue</span>
   </div>
 </div>
+
+@if (acItems().length > 0) {
+  <div class="outline-ac-dropdown"
+    [class.outline-ac-above]="acAbove()"
+    [style.top.px]="acTop()"
+    [style.left.px]="acLeft()"
+    [style.width.px]="acWidth()">
+    @for (item of acItems(); track $index; let i = $index) {
+      <div class="outline-ac-item"
+        [class.active]="i === acIndex()"
+        (mousedown)="selectAc(item.text, acActiveId()!)">
+        <span [class.outline-ac-preferred]="item.isPreferred"
+              [class.outline-ac-alt]="!item.isPreferred">{{ item.text }}</span>
+      </div>
+    }
+  </div>
+}

@@ -264,6 +264,7 @@
                 <div class="sidebar-tab-content sidebar-tab-content-outline">
                   <app-chapter-outline
                     [items]="outline()"
+                    [entities]="entities()"
                     (itemsChange)="onOutlineChange($event)"
                   />
                 </div>

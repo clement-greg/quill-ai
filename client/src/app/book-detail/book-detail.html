@@ -27,6 +27,9 @@
       <div class="chapters-header">
         <h2>Chapters</h2>
         <div class="chapters-header-actions">
+          <button mat-stroked-button (click)="openOutline()">
+            <mat-icon>format_list_bulleted</mat-icon> Outline
+          </button>
           <button mat-stroked-button (click)="openNotes()">
             <mat-icon>notes</mat-icon> Notes
           </button>
@@ -83,6 +86,12 @@
   </div>
 
   <div right-panel>
+    @if (panelMode() === 'outline') {
+      <app-chapter-outline
+        [items]="bookOutline()"
+        [entities]="bookOutlineEntities()"
+        (itemsChange)="onBookOutlineChange($event)" />
+    }
     @if (panelMode() === 'ai-stats') {
       <app-ai-stats [chapters]="aiStatsChapters()" [loading]="aiStatsLoading()" [entities]="aiStatsEntities()" />
     }

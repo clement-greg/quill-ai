@@ -1,4 +1,5 @@
 import { AuditedRecord } from './audited-record';
+import { OutlineItem } from './chapter.model';
 
 export interface Book extends AuditedRecord {
     title: string;
@@ -10,4 +11,5 @@ export interface Book extends AuditedRecord {
     archived?: boolean;
     deleted?: boolean;
     notes?: string;
+    outline?: OutlineItem[];
 }

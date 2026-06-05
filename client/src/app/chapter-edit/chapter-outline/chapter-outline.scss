@@ -70,6 +70,15 @@
       color: var(--mat-sys-on-surface-variant, #888);
     }
   }
+
+  &.outline-item-sub2 {
+    padding-left: 40px;
+
+    .outline-bullet {
+      font-size: 6px;
+      color: var(--mat-sys-on-surface-variant, #aaa);
+    }
+  }
 }
 
 // Drag handle
@@ -213,6 +222,47 @@
 
 .outline-list-dragging .outline-item:not(.cdk-drag-placeholder) {
   transition: transform 250ms cubic-bezier(0, 0, 0.2, 1);
+}
+
+// ── Entity autocomplete dropdown ─────────────────────────────────────────────
+
+.outline-ac-dropdown {
+  position: fixed;
+  z-index: 1000;
+  background: var(--mat-sys-surface-container, #fff);
+  border: 1px solid var(--mat-sys-outline-variant, #e0e0e0);
+  border-radius: 6px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.12);
+  max-height: 200px;
+  overflow-y: auto;
+  min-width: 180px;
+
+  &.outline-ac-above {
+    transform: translateY(-100%);
+    margin-top: -2px;
+  }
+}
+
+.outline-ac-item {
+  padding: 6px 12px;
+  cursor: pointer;
+  transition: background 0.1s;
+
+  &.active,
+  &:hover {
+    background: var(--mat-sys-surface-container-high, #efefef);
+  }
+}
+
+.outline-ac-preferred {
+  font-size: 0.85rem;
+  color: var(--mat-sys-on-surface, #212121);
+}
+
+.outline-ac-alt {
+  font-size: 0.8rem;
+  color: var(--mat-sys-on-surface-variant, #666);
+  padding-left: 8px;
 }
 
 // ── Footer ───────────────────────────────────────────────────────────────────

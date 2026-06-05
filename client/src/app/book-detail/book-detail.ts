@@ -25,6 +25,8 @@ import { SeriesContextService } from '../services/series-context.service';
 import { SlideOutPanelContainer } from '../shared/slide-out-panel-container/slide-out-panel-container';
 import { BookNotesComponent } from '../book-notes/book-notes';
 import { AiStatsComponent } from './ai-stats/ai-stats';
+import { ChapterOutlineComponent } from '../chapter-edit/chapter-outline/chapter-outline';
+import { OutlineItem } from '@shared/models/chapter.model';
 
 @Component({
   selector: 'app-book-detail',
@@ -41,6 +43,7 @@ import { AiStatsComponent } from './ai-stats/ai-stats';
     SlideOutPanelContainer,
     BookNotesComponent,
     AiStatsComponent,
+    ChapterOutlineComponent,
   ],
   templateUrl: './book-detail.html',
   styleUrl: './book-detail.scss',
@@ -66,7 +69,9 @@ export class BookDetailComponent implements OnInit, OnDestroy {
   uploading = signal(false);
   thumbnailPreview = signal<string | null>(null);
   exporting = signal(false);
-  panelMode = signal<'edit' | 'notes' | 'ai-stats' | null>(null);
+  panelMode = signal<'edit' | 'notes' | 'ai-stats' | 'outline' | null>(null);
+  bookOutline = signal<OutlineItem[]>([]);
+  bookOutlineEntities = signal<Entity[]>([]);
   notesContent = signal<string>('');
   savingNotes = signal(false);
   seriesId = signal<string>('');
@@ -74,6 +79,8 @@ export class BookDetailComponent implements OnInit, OnDestroy {
   aiStatsLoading = signal(false);
   aiStatsEntities = signal<Entity[]>([]);
   private routeSub?: Subscription;
+
+  private outlineSaveTimer: ReturnType<typeof setTimeout> | null = null;
 
   get rightPanelWidth(): number {
     return this.panelMode() === 'ai-stats' ? 520 : 420;
@@ -165,6 +172,32 @@ export class BookDetailComponent implements OnInit, OnDestroy {
     });
   }
 
+  openOutline(): void {
+    const book = this.book();
+    if (!book) return;
+    this.bookOutline.set(book.outline ?? []);
+    this.panelMode.set('outline');
+    this.showPanel.set(true);
+    if (this.bookOutlineEntities().length === 0) {
+      this.entityService.getBySeries(this.seriesId()).subscribe({
+        next: (entities) => this.bookOutlineEntities.set(entities.filter(e => !e.archived && !e.deleted)),
+      });
+    }
+  }
+
+  onBookOutlineChange(items: OutlineItem[]): void {
+    this.bookOutline.set(items);
+    if (this.outlineSaveTimer) clearTimeout(this.outlineSaveTimer);
+    this.outlineSaveTimer = setTimeout(() => {
+      const book = this.book();
+      if (!book) return;
+      const updated = { ...book, outline: items };
+      this.bookService.update(updated).subscribe({
+        next: (saved) => this.book.set(saved),
+      });
+    }, 800);
+  }
+
   onPanelChanged(open: boolean): void {
     this.showPanel.set(open);
     if (!open) {
@@ -173,6 +206,8 @@ export class BookDetailComponent implements OnInit, OnDestroy {
       this.panelMode.set(null);
       this.aiStatsChapters.set([]);
       this.aiStatsEntities.set([]);
+      this.bookOutline.set([]);
+      this.bookOutlineEntities.set([]);
     }
   }
 
@@ -183,6 +218,8 @@ export class BookDetailComponent implements OnInit, OnDestroy {
     this.panelMode.set(null);
     this.aiStatsChapters.set([]);
     this.aiStatsEntities.set([]);
+    this.bookOutline.set([]);
+    this.bookOutlineEntities.set([]);
   }
 
   updateTitle(value: string): void {
@@ -261,6 +298,7 @@ export class BookDetailComponent implements OnInit, OnDestroy {
   ngOnDestroy(): void {
     this.routeSub?.unsubscribe();
     this.headerService.clear();
+    if (this.outlineSaveTimer) clearTimeout(this.outlineSaveTimer);
   }
 
   proxyUrl(azureUrl: string | undefined): string | null {
