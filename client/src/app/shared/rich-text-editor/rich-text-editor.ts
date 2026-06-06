@@ -652,6 +652,11 @@ export class RichTextEditorComponent implements OnInit, AfterViewInit, OnDestroy
   // ── Keyboard handler ─────────────────────────────────────────────────────
 
   onEditorKeyDown(event: KeyboardEvent): void {
+    // Grammar popover
+    if (this.grammarPopoverVisible() && event.key === 'Escape') {
+      event.preventDefault(); this.dismissGrammarPopover(); return;
+    }
+
     // Ctrl+. context menu
     if (this.ctxMenuVisible()) {
       if (event.key === 'Escape') { event.preventDefault(); this.closeCtxMenu(); return; }
@@ -1492,8 +1497,10 @@ export class RichTextEditorComponent implements OnInit, AfterViewInit, OnDestroy
     this.grammarAbortController = null;
     this.grammarLastCheckedText = text;
 
+    const savedCursor = this.saveCursorOffset(editor);
     this.unwrapGrammarMarks();
     if (this.userSettings.grammarCheckEnabled() && errors.length > 0) this.applyGrammarMarks(errors);
+    this.restoreCursorOffset(editor, savedCursor);
 
     if (this.userSettings.entityDetectionEnabled()) {
       const fullText = (editor.innerText ?? '').toLowerCase();
@@ -1515,6 +1522,48 @@ export class RichTextEditorComponent implements OnInit, AfterViewInit, OnDestroy
         suggestedEntities.forEach(s => this.suggestedEntityNames.add(s.name.toLowerCase()));
       }
     }
+  }
+
+  private saveCursorOffset(editor: HTMLElement): { start: number; end: number } | null {
+    const sel = window.getSelection();
+    if (!sel || sel.rangeCount === 0) return null;
+    const range = sel.getRangeAt(0);
+    if (!editor.contains(range.commonAncestorContainer)) return null;
+    const measure = (node: Node, offset: number): number => {
+      let chars = 0;
+      const walker = document.createTreeWalker(editor, NodeFilter.SHOW_TEXT);
+      let n: Text | null;
+      while ((n = walker.nextNode() as Text | null)) {
+        if (n === node) return chars + offset;
+        chars += n.length;
+      }
+      return chars;
+    };
+    return { start: measure(range.startContainer, range.startOffset), end: measure(range.endContainer, range.endOffset) };
+  }
+
+  private restoreCursorOffset(editor: HTMLElement, saved: { start: number; end: number } | null): void {
+    if (!saved) return;
+    const find = (target: number): { node: Text; offset: number } | null => {
+      let chars = 0;
+      const walker = document.createTreeWalker(editor, NodeFilter.SHOW_TEXT);
+      let n: Text | null;
+      while ((n = walker.nextNode() as Text | null)) {
+        if (chars + n.length >= target) return { node: n, offset: target - chars };
+        chars += n.length;
+      }
+      return null;
+    };
+    const startPos = find(saved.start);
+    if (!startPos) return;
+    const endPos = saved.start === saved.end ? startPos : (find(saved.end) ?? startPos);
+    try {
+      const range = document.createRange();
+      range.setStart(startPos.node, startPos.offset);
+      range.setEnd(endPos.node, saved.start === saved.end ? startPos.offset : endPos.offset);
+      const sel = window.getSelection();
+      if (sel) { sel.removeAllRanges(); sel.addRange(range); }
+    } catch { /* ignore if nodes shifted */ }
   }
 
   private unwrapGrammarMarks(): void {

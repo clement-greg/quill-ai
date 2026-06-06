@@ -211,7 +211,8 @@
   <div class="rte-grammar-popover"
     [class.grammar-popover-above]="grammarPopoverAbove()"
     [style.top.px]="grammarPopoverTop()"
-    [style.left.px]="grammarPopoverLeft()">
+    [style.left.px]="grammarPopoverLeft()"
+    (keydown.escape)="dismissGrammarPopover()">
     <div class="rte-grammar-popover-message">
       <mat-icon class="rte-grammar-popover-icon">spellcheck</mat-icon>
       {{ grammarPopoverError()?.message }}

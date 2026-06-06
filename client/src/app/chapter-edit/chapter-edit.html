@@ -91,7 +91,14 @@
 
               <!-- Tab 0: Notes -->
               <mat-tab>
-                <ng-template mat-tab-label><mat-icon>sticky_note_2</mat-icon></ng-template>
+                <ng-template mat-tab-label>
+                  <span class="entity-suggestion-tab-label">
+                    <mat-icon>sticky_note_2</mat-icon>
+                    @if (notes().length > 0) {
+                      <span class="entity-suggestion-tab-badge">{{ notes().length }}</span>
+                    }
+                  </span>
+                </ng-template>
                 <div class="sidebar-tab-content">
                   <div class="notes-panel-header">
                     <mat-icon>sticky_note_2</mat-icon>
