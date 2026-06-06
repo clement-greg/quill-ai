@@ -1873,3 +1873,69 @@ button.mobile-only {
   pointer-events: none;
   overflow: visible;
 }
+
+/* ── Find-in-page search bar ─────────────────────────── */
+.editor-panel {
+  position: relative;
+}
+
+.search-bar {
+  position: absolute;
+  top: 24px;
+  right: 24px;
+  z-index: 100;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  background: var(--mat-sys-surface, #fff);
+  border: 1px solid var(--mat-sys-outline-variant, #e0e0e0);
+  border-radius: 8px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.18);
+  padding: 4px 4px 4px 10px;
+  min-width: 280px;
+  animation: search-bar-in 0.12s ease;
+}
+
+@keyframes search-bar-in {
+  from { opacity: 0; transform: translateY(-6px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+.search-input {
+  flex: 1;
+  border: none;
+  outline: none;
+  background: transparent;
+  font-size: 0.875rem;
+  color: var(--mat-sys-on-surface, #212121);
+  min-width: 0;
+
+  &::placeholder { color: var(--mat-sys-on-surface-variant, #757575); }
+
+  /* Remove native clear button — we have our own close */
+  &::-webkit-search-cancel-button { display: none; }
+}
+
+.search-count {
+  font-size: 0.75rem;
+  color: var(--mat-sys-on-surface-variant, #757575);
+  white-space: nowrap;
+  min-width: 54px;
+  text-align: center;
+  padding: 0 4px;
+}
+
+.search-nav-btn,
+.search-close-btn {
+  width: 32px;
+  height: 32px;
+  line-height: 32px;
+
+  mat-icon { font-size: 18px; width: 18px; height: 18px; line-height: 18px; }
+}
+
+.search-close-btn {
+  margin-left: 2px;
+  border-left: 1px solid var(--mat-sys-outline-variant, #e0e0e0);
+  border-radius: 0 4px 4px 0;
+}

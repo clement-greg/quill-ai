@@ -448,6 +448,74 @@ export class RichTextEditorComponent implements OnInit, AfterViewInit, OnDestroy
     return this.editorRef?.nativeElement ?? null;
   }
 
+  // ── Search (find-in-page) ────────────────────────────────────────────────
+
+  private searchMarks: HTMLElement[] = [];
+  private searchActive = false;
+
+  /** Highlight all case-insensitive matches of query; returns match count. */
+  highlightSearchMatches(query: string): number {
+    const editor = this.editorRef?.nativeElement;
+    if (!editor) return 0;
+    this.clearSearchHighlights();
+    if (!query.trim()) return 0;
+
+    const lowerQuery = query.toLowerCase();
+    const queryLen = query.length;
+    const walker = document.createTreeWalker(editor, NodeFilter.SHOW_TEXT);
+    const textNodes: Text[] = [];
+    let node: Node | null;
+    while ((node = walker.nextNode())) textNodes.push(node as Text);
+
+    const marks: HTMLElement[] = [];
+    for (const textNode of textNodes) {
+      const text = textNode.textContent ?? '';
+      const lower = text.toLowerCase();
+      let idx = lower.indexOf(lowerQuery);
+      if (idx === -1) continue;
+      const frag = document.createDocumentFragment();
+      let lastIdx = 0;
+      while (idx !== -1) {
+        if (idx > lastIdx) frag.appendChild(document.createTextNode(text.slice(lastIdx, idx)));
+        const mark = document.createElement('mark');
+        mark.setAttribute('data-search-match', '');
+        mark.textContent = text.slice(idx, idx + queryLen);
+        frag.appendChild(mark);
+        marks.push(mark);
+        lastIdx = idx + queryLen;
+        idx = lower.indexOf(lowerQuery, lastIdx);
+      }
+      if (lastIdx < text.length) frag.appendChild(document.createTextNode(text.slice(lastIdx)));
+      textNode.parentNode!.replaceChild(frag, textNode);
+    }
+
+    this.searchMarks = marks;
+    this.searchActive = marks.length > 0;
+    return marks.length;
+  }
+
+  /** Remove all search highlights and restore clean DOM state. */
+  clearSearchHighlights(): void {
+    const editor = this.editorRef?.nativeElement;
+    if (!editor) return;
+    editor.querySelectorAll('mark[data-search-match]').forEach(mark => {
+      const parent = mark.parentNode!;
+      while (mark.firstChild) parent.insertBefore(mark.firstChild, mark);
+      parent.removeChild(mark);
+    });
+    editor.normalize();
+    this.editorContent = editor.innerHTML;
+    this.searchMarks = [];
+    this.searchActive = false;
+  }
+
+  /** Activate the nth match (0-based) and scroll it into view. */
+  scrollToSearchMatch(index: number): void {
+    this.searchMarks.forEach((m, i) => m.classList.toggle('search-match-active', i === index));
+    const active = this.searchMarks[index];
+    if (active) active.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  }
+
   /** Returns the bounding rect of the current selection, or null. */
   getSelectionRect(): DOMRect | null {
     const sel = window.getSelection();
@@ -459,6 +527,14 @@ export class RichTextEditorComponent implements OnInit, AfterViewInit, OnDestroy
 
   onContentInput(event: Event): void {
     const el = event.target as HTMLDivElement;
+    if (this.searchActive) {
+      el.querySelectorAll('mark[data-search-match]').forEach(m => {
+        const p = m.parentNode!; while (m.firstChild) p.insertBefore(m.firstChild, m); p.removeChild(m);
+      });
+      el.normalize();
+      this.searchMarks = [];
+      this.searchActive = false;
+    }
     this.editorContent = el.innerHTML;
 
     // If a sentence-ending ejection was set on a previous input, check whether

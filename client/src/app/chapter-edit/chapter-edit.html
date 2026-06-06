@@ -60,6 +60,40 @@
 
           <!-- Rich text editor -->
           <div class="editor-panel">
+
+            <!-- Find-in-page search bar -->
+            @if (searchVisible()) {
+              <div class="search-bar" role="search" aria-label="Find in chapter">
+                <input #searchInputEl
+                  class="search-input"
+                  type="search"
+                  placeholder="Find…"
+                  aria-label="Search text"
+                  autocomplete="off"
+                  [value]="searchQuery()"
+                  (input)="onSearchQueryChange($any($event.target).value)"
+                  (keydown)="onSearchKeyDown($event)" />
+                <span class="search-count" aria-live="polite">
+                  @if (searchMatchCount() === 0 && searchQuery().trim()) {
+                    No results
+                  } @else if (searchMatchCount() > 0) {
+                    {{ searchMatchIndex() + 1 }} / {{ searchMatchCount() }}
+                  }
+                </span>
+                <button mat-icon-button class="search-nav-btn" (click)="prevSearchMatch()"
+                  [disabled]="searchMatchCount() === 0" title="Previous match (Shift+Enter)" aria-label="Previous match">
+                  <mat-icon>keyboard_arrow_up</mat-icon>
+                </button>
+                <button mat-icon-button class="search-nav-btn" (click)="nextSearchMatch()"
+                  [disabled]="searchMatchCount() === 0" title="Next match (Enter)" aria-label="Next match">
+                  <mat-icon>keyboard_arrow_down</mat-icon>
+                </button>
+                <button mat-icon-button class="search-close-btn" (click)="closeSearch()" title="Close (Esc)" aria-label="Close search">
+                  <mat-icon>close</mat-icon>
+                </button>
+              </div>
+            }
+
             <app-rich-text-editor
               [seriesId]="seriesId()"
               [externalEntities]="entities()"

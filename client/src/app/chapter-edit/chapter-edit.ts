@@ -54,6 +54,7 @@ interface DiffParagraph { hasChanges: boolean; segments: DiffWord[]; }
 export class ChapterEditComponent implements OnInit, OnDestroy {
   @ViewChild(RichTextEditorComponent) editorRef!: RichTextEditorComponent;
   @ViewChild('noteInputEl') noteInputEl!: ElementRef<HTMLTextAreaElement>;
+  @ViewChild('searchInputEl') searchInputEl?: ElementRef<HTMLInputElement>;
 
   private route = inject(ActivatedRoute);
   private router = inject(Router);
@@ -125,6 +126,12 @@ export class ChapterEditComponent implements OnInit, OnDestroy {
   pendingSuggestions = signal<SuggestedEntityCard[]>([]);
   private suggestedEntityNames = new Set<string>();
 
+  // ── Find-in-page search ──────────────────────────────────────────────────
+  searchVisible = signal(false);
+  searchQuery = signal('');
+  searchMatchCount = signal(0);
+  searchMatchIndex = signal(0); // 0-based
+
   // ── Sidebar ──────────────────────────────────────────────────────────────
   mobileSidebarOpen = signal(false);
   sidebarTabIndex = signal(0);
@@ -134,6 +141,15 @@ export class ChapterEditComponent implements OnInit, OnDestroy {
   private _avatarErrors = signal<ReadonlySet<string>>(new Set());
   avatarFailed(email: string): boolean { return this._avatarErrors().has(email); }
   onAvatarError(email: string): void { this._avatarErrors.update(s => new Set([...s, email])); }
+
+  private onDocumentKeyDown = (e: KeyboardEvent): void => {
+    if ((e.ctrlKey || e.metaKey) && e.key === 'f' && this.chapter()) {
+      e.preventDefault();
+      this.openSearch();
+    } else if (e.key === 'Escape' && this.searchVisible()) {
+      this.closeSearch();
+    }
+  };
 
   private resizerDrag: {
     startX: number; startWidth: number;
@@ -198,6 +214,7 @@ export class ChapterEditComponent implements OnInit, OnDestroy {
   }
 
   ngOnInit(): void {
+    document.addEventListener('keydown', this.onDocumentKeyDown);
     this.loadSidebarWidth();
     this.loadHistoryListHeight();
 
@@ -283,6 +300,7 @@ export class ChapterEditComponent implements OnInit, OnDestroy {
   }
 
   ngOnDestroy(): void {
+    document.removeEventListener('keydown', this.onDocumentKeyDown);
     this.editorBridge.unregister();
     this.routeSub?.unsubscribe();
     this.headerService.clear();
@@ -331,6 +349,12 @@ export class ChapterEditComponent implements OnInit, OnDestroy {
 
   onEditorContentChange(html: string): void {
     if (!this.chapter()) return;
+    if (this.searchVisible()) {
+      this.searchMatchCount.set(0);
+      this.searchMatchIndex.set(0);
+      this.searchVisible.set(false);
+      this.searchQuery.set('');
+    }
     this.scheduleDraftSave(html);
   }
 
@@ -592,6 +616,63 @@ export class ChapterEditComponent implements OnInit, OnDestroy {
   }
 
   toggleNotesList(): void { this.activateSidebarTab(0); }
+
+  // ── Find-in-page search ──────────────────────────────────────────────────
+
+  openSearch(): void {
+    this.searchVisible.set(true);
+    setTimeout(() => this.searchInputEl?.nativeElement?.focus());
+  }
+
+  closeSearch(): void {
+    this.searchVisible.set(false);
+    this.searchQuery.set('');
+    this.searchMatchCount.set(0);
+    this.searchMatchIndex.set(0);
+    this.editorRef?.clearSearchHighlights();
+    this.editorRef?.focus();
+  }
+
+  onSearchQueryChange(query: string): void {
+    this.searchQuery.set(query);
+    if (!query.trim()) {
+      this.editorRef?.clearSearchHighlights();
+      this.searchMatchCount.set(0);
+      this.searchMatchIndex.set(0);
+      return;
+    }
+    const count = this.editorRef?.highlightSearchMatches(query) ?? 0;
+    this.searchMatchCount.set(count);
+    const idx = count > 0 ? 0 : 0;
+    this.searchMatchIndex.set(idx);
+    if (count > 0) this.editorRef?.scrollToSearchMatch(idx);
+  }
+
+  onSearchKeyDown(event: KeyboardEvent): void {
+    if (event.key === 'Enter') {
+      event.preventDefault();
+      if (event.shiftKey) this.prevSearchMatch();
+      else this.nextSearchMatch();
+    } else if (event.key === 'Escape') {
+      this.closeSearch();
+    }
+  }
+
+  nextSearchMatch(): void {
+    const count = this.searchMatchCount();
+    if (count === 0) return;
+    const next = (this.searchMatchIndex() + 1) % count;
+    this.searchMatchIndex.set(next);
+    this.editorRef?.scrollToSearchMatch(next);
+  }
+
+  prevSearchMatch(): void {
+    const count = this.searchMatchCount();
+    if (count === 0) return;
+    const prev = (this.searchMatchIndex() - 1 + count) % count;
+    this.searchMatchIndex.set(prev);
+    this.editorRef?.scrollToSearchMatch(prev);
+  }
 
   // ── Quote capture ────────────────────────────────────────────────────────
 

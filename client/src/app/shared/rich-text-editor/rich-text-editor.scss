@@ -73,6 +73,19 @@
   100% { background: color-mix(in srgb, #ffeb3b 40%, transparent); }
 }
 
+/* ── Search / find-in-page highlights ───────────────── */
+:host ::ng-deep mark[data-search-match] {
+  background: color-mix(in srgb, #ffd600 45%, transparent);
+  color: inherit;
+  border-radius: 2px;
+  padding: 0 1px;
+}
+
+:host ::ng-deep mark[data-search-match].search-match-active {
+  background: color-mix(in srgb, #ff6d00 55%, transparent);
+  outline: 2px solid color-mix(in srgb, #ff6d00 80%, transparent);
+}
+
 /* ── Grammar error mark ──────────────────────────────── */
 :host ::ng-deep mark.grammar-error {
   background: none;
