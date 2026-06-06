@@ -15,7 +15,9 @@
     </div>
 </div>
 <div class="right-panel" animate.enter="slide-in" animate.leave="slide-out" *ngIf="showRightPanel"
-    [style.width.px]="rightPanelWidth" [style.height]="rightPanelHeight" [style.top.px]="rightPanelTop">
+    [style.width.px]="effectiveRightPanelWidth" [style.height]="rightPanelHeight" [style.top.px]="rightPanelTop">
+
+    <div class="right-resize-handle" (mousedown)="onRightResizeStart($event)" aria-hidden="true"></div>
 
     <button [class.scrolled]="isScrolled" [style.top.px]="rightCloseButtonTop" mat-icon-button
         class="close-detail-button" (click)="closeRightPanel()">

@@ -68,17 +68,23 @@
     box-sizing: border-box;
 }
 
-.right-panel {
+.right-resize-handle {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 6px;
+    height: 100%;
+    cursor: ew-resize;
+    z-index: 10;
+    transition: background 0.15s;
 
-    &::after {
-        content: '';
-        position: absolute;
-        top: 56px;
-        left: 0;
-        right: 0;
-        border-bottom: 1px solid rgba(0, 0, 0, 0.12);
-        pointer-events: none;
+    &:hover {
+        background: var(--mat-sys-primary, #1976d2);
+        opacity: 0.25;
     }
+}
+
+.right-panel {
 
     .close-detail-button {
         margin-left: -48px;
@@ -98,16 +104,6 @@
 
 
 .left-panel {
-
-    &::after {
-        content: '';
-        position: absolute;
-        top: 56px;
-        left: 0;
-        right: 0;
-        border-bottom: 1px solid rgba(0, 0, 0, 0.12);
-        pointer-events: none;
-    }
 
     .close-detail-button {
         margin-right: -48px;
