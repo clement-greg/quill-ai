@@ -39,13 +39,13 @@ export class ChapterOutlineComponent {
 
   private focusItem(id: string): void {
     setTimeout(() => {
-      (document.getElementById('outline-input-' + id) as HTMLInputElement | null)?.focus();
+      (document.getElementById('outline-input-' + id) as HTMLTextAreaElement | null)?.focus();
     });
   }
 
   private focusPhantom(): void {
     setTimeout(() => {
-      (document.getElementById('outline-phantom-input') as HTMLInputElement | null)?.focus();
+      (document.getElementById('outline-phantom-input') as HTMLTextAreaElement | null)?.focus();
     });
   }
 
@@ -81,7 +81,7 @@ export class ChapterOutlineComponent {
     });
   }
 
-  onInputChange(id: string, text: string, inputEl: HTMLInputElement): void {
+  onInputChange(id: string, text: string, inputEl: HTMLTextAreaElement): void {
     this.items.update(list => list.map(i => i.id === id ? { ...i, text } : i));
     this.checkAutocomplete(inputEl, id);
   }
@@ -148,7 +148,7 @@ export class ChapterOutlineComponent {
   }
 
   onPhantomInput(event: Event): void {
-    const input = event.target as HTMLInputElement;
+    const input = event.target as HTMLTextAreaElement;
     const text = input.value;
     if (!text) return;
 
@@ -161,7 +161,7 @@ export class ChapterOutlineComponent {
   }
 
   onPhantomKeyDown(event: KeyboardEvent): void {
-    const input = event.target as HTMLInputElement;
+    const input = event.target as HTMLTextAreaElement;
     if (event.key === 'Tab') {
       event.preventDefault();
       this.phantomLevel.update(l => event.shiftKey ? Math.max(0, l - 1) : Math.min(2, l + 1));
@@ -173,7 +173,7 @@ export class ChapterOutlineComponent {
   }
 
   selectAc(text: string, itemId: string): void {
-    const inputEl = document.getElementById('outline-input-' + itemId) as HTMLInputElement | null;
+    const inputEl = document.getElementById('outline-input-' + itemId) as HTMLTextAreaElement | null;
     if (!inputEl) { this.clearAc(); return; }
 
     const cursorPos = inputEl.selectionStart ?? inputEl.value.length;
@@ -197,7 +197,7 @@ export class ChapterOutlineComponent {
     this.acWordStart = 0;
   }
 
-  private checkAutocomplete(inputEl: HTMLInputElement, itemId: string): void {
+  private checkAutocomplete(inputEl: HTMLTextAreaElement, itemId: string): void {
     const wordInfo = this.getWordAtCursor(inputEl);
     if (!wordInfo) { this.clearAc(); return; }
 
@@ -232,7 +232,7 @@ export class ChapterOutlineComponent {
     this.acWidth.set(Math.max(rect.width, 180));
   }
 
-  private getWordAtCursor(input: HTMLInputElement): { word: string; start: number } | null {
+  private getWordAtCursor(input: HTMLTextAreaElement): { word: string; start: number } | null {
     const text = input.value;
     const pos = input.selectionStart ?? text.length;
     let start = pos;

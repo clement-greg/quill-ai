@@ -39,7 +39,7 @@
             @if (item.level === 0) { ● } @else if (item.level === 1) { ○ } @else { ▪ }
           </span>
 
-          <input
+          <textarea
             class="outline-item-input"
             [id]="'outline-input-' + item.id"
             [value]="item.text"
@@ -48,7 +48,9 @@
             (keydown)="onKeyDown($event, item.id)"
             (blur)="onInputBlur()"
             aria-label="Outline item text"
-          />
+            rows="1"
+            autocomplete="off"
+          ></textarea>
 
           <button
             class="outline-delete-btn"
@@ -74,7 +76,7 @@
         @if (phantomLevel() === 0) { ● } @else if (phantomLevel() === 1) { ○ } @else { ▪ }
       </span>
 
-      <input
+      <textarea
         id="outline-phantom-input"
         class="outline-item-input outline-phantom-input"
         [placeholder]="phantomLevel() === 0 ? 'Add item…' : phantomLevel() === 1 ? 'Add sub-point…' : 'Add detail…'"
@@ -82,7 +84,8 @@
         (keydown)="onPhantomKeyDown($event)"
         aria-label="Add new outline item"
         autocomplete="off"
-      />
+        rows="1"
+      ></textarea>
     </div>
   </div>
 
