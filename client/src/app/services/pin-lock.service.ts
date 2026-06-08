@@ -1,20 +1,26 @@
-import { Injectable, inject, signal } from '@angular/core';
+import { Injectable, inject, signal, ApplicationRef } from '@angular/core';
 import { UserSettingsService } from './user-settings.service';
 
 /** Manages the PIN-based lock state for photo areas. */
 @Injectable({ providedIn: 'root' })
 export class PinLockService {
   private settingsService = inject(UserSettingsService);
+  private appRef = inject(ApplicationRef);
 
   private _isLocked = signal(true);
   readonly isLocked = this._isLocked.asReadonly();
   readonly hasPin = this.settingsService.hasPin;
 
   constructor() {
-    // Auto-lock when the app loses visibility (tab switch, minimize, etc.)
+    // Auto-lock when the app loses visibility (tab switch, minimize, etc.).
+    // In zoneless Angular the rAF-based scheduler is suspended on hidden tabs,
+    // so we call appRef.tick() to force a synchronous change-detection pass
+    // while the tab is still transitioning — ensuring the PIN overlay and
+    // carousel state are updated before the user can see the screen again.
     document.addEventListener('visibilitychange', () => {
       if (document.visibilityState === 'hidden' && this.hasPin()) {
         this._isLocked.set(true);
+        this.appRef.tick();
       }
     });
   }

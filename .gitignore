@@ -1,3 +1,5 @@
 node_modules/
 dist/
 _private/
+.claude/auth.json
+.playwright-mcp/

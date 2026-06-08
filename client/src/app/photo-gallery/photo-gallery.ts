@@ -1,4 +1,4 @@
-import { Component, inject, signal, computed, OnInit, OnDestroy, HostListener } from '@angular/core';
+import { Component, inject, signal, computed, effect, OnInit, OnDestroy, HostListener } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { MatButtonModule } from '@angular/material/button';
 import { MatIconModule } from '@angular/material/icon';
@@ -105,6 +105,14 @@ export class PhotoGalleryComponent implements OnInit, OnDestroy {
     const idx = this.lightboxIndex();
     return photos[idx] ?? null;
   });
+
+  constructor() {
+    effect(() => {
+      if (this.pinLock.isLocked()) {
+        this.closeLightbox();
+      }
+    });
+  }
 
   ngOnInit(): void {
     this.headerService.set([{ label: 'Photo Gallery' }], []);

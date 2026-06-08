@@ -81,7 +81,7 @@
 </div>
 
 <!-- Lightbox overlay -->
-@if (lightboxOpen() && currentLightboxPhoto(); as item) {
+@if (!pinLock.isLocked() && lightboxOpen() && currentLightboxPhoto(); as item) {
   <div class="lightbox-overlay" (click)="closeLightbox()">
     <div class="lightbox-content"
          (click)="$event.stopPropagation()"

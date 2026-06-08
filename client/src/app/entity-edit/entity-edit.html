@@ -344,7 +344,7 @@
 </div>
 
 <!-- ── Photo lightbox overlay ───────────────────────── -->
-@if (lightboxIndex() !== null) {
+@if (!pinLock.isLocked() && lightboxIndex() !== null) {
   <div class="lightbox-backdrop" (click)="closeLightbox()">
     <button mat-icon-button class="lightbox-close" (click)="closeLightbox()" matTooltip="Close">
       <mat-icon>close</mat-icon>
@@ -356,7 +356,10 @@
       </button>
     }
 
-    <div class="lightbox-image-wrap" (click)="$event.stopPropagation()">
+    <div class="lightbox-image-wrap"
+         (click)="$event.stopPropagation()"
+         (touchstart)="onLightboxTouchStart($event)"
+         (touchend)="onLightboxTouchEnd($event)">
       @for (item of visiblePhotoItems(); track item.photo.url; let i = $index) {
         @if (i === lightboxIndex()) {
           <img [src]="proxyUrl(item.photo.url)" [alt]="item.photo.caption || 'Photo ' + (i + 1)"

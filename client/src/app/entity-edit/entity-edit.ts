@@ -107,6 +107,7 @@ export class EntityEditComponent {
 
   private longPressTimer: ReturnType<typeof setTimeout> | null = null;
   private longPressActivated = false;
+  private touchStartX = 0;
 
   /** Visible photos with their original array index, for rendering and lightbox nav. */
   visiblePhotoItems = computed(() =>
@@ -121,6 +122,12 @@ export class EntityEditComponent {
 
   constructor() {
     this.destroyRef.onDestroy(() => this.cancelLongPress());
+
+    effect(() => {
+      if (this.pinLock.isLocked()) {
+        this.lightboxIndex.set(null);
+      }
+    });
 
     effect(() => {
       const e = this.entity();
@@ -227,6 +234,17 @@ export class EntityEditComponent {
     if (idx === null) return;
     this.lightboxAnim.set('prev');
     this.lightboxIndex.set((idx - 1 + this.visiblePhotoItems().length) % this.visiblePhotoItems().length);
+  }
+
+  onLightboxTouchStart(event: TouchEvent): void {
+    this.touchStartX = event.changedTouches[0].clientX;
+  }
+
+  onLightboxTouchEnd(event: TouchEvent): void {
+    const delta = event.changedTouches[0].clientX - this.touchStartX;
+    if (Math.abs(delta) < 40) return;
+    if (delta < 0) this.lightboxNext();
+    else           this.lightboxPrev();
   }
 
   @HostListener('paste', ['$event'])
