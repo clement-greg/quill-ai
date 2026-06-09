@@ -24,6 +24,7 @@ import backfillRoutes from './routes/backfill.routes';
 import folderNotesRoutes from './routes/folder-notes.routes';
 import userSettingsRoutes from './routes/user-settings.routes';
 import avatarRoutes from './routes/avatar.routes';
+import userStatsRoutes from './routes/user-stats.routes';
 
 const app = express();
 const PORT = process.env['PORT'] || 3200;
@@ -75,6 +76,7 @@ app.use('/api/entity-quotes', entityQuotesRoutes);
 app.use('/api/backfill', backfillRoutes);
 app.use('/api/folder-notes', folderNotesRoutes);
 app.use('/api/user-settings', userSettingsRoutes);
+app.use('/api/user-stats', userStatsRoutes);
 
 // Serve Angular static files
 app.use(express.static(path.join(__dirname, '../../client/dist/client/browser')));

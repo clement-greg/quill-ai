@@ -29,6 +29,10 @@
                 <mat-icon>auto_awesome</mat-icon>
                 Generate
               </button>
+              <button mat-stroked-button type="button" (click)="openPhotoPickerDialog()" [disabled]="uploading() || generatingImage()" title="Pick from photo gallery">
+                <mat-icon>photo_library</mat-icon>
+                Gallery
+              </button>
               <input #fileInput type="file" accept="image/*" hidden (change)="onFileSelected($event)" />
             </div>
             <span class="thumbnail-paste-hint">or paste an image</span>

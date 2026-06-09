@@ -220,6 +220,7 @@ import { AuthService } from '../auth/auth.service';
 import { Series } from '@shared/models/series.model';
 import { v4 as uuidv4 } from 'uuid';
 import { SlideOutPanelContainer } from '../shared/slide-out-panel-container/slide-out-panel-container';
+import { WritingStatsSummaryComponent } from '../writing-stats/writing-stats-summary';
 
 @Component({
   selector: 'app-series',
@@ -237,6 +238,7 @@ import { SlideOutPanelContainer } from '../shared/slide-out-panel-container/slid
     MatChipsModule,
     TextFieldModule,
     SlideOutPanelContainer,
+    WritingStatsSummaryComponent,
   ],
   templateUrl: './series.html',
   styleUrl: './series.scss',

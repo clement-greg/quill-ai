@@ -16,6 +16,7 @@ import { EntityQuote } from '@shared/models/entity-quote.model';
 import { EntityService } from '../services/entity.service';
 import { EntityQuoteService } from '../services/entity-quote.service';
 import { ImageGenDialogComponent, ImageGenResult } from './image-gen-dialog';
+import { PhotoPickerDialogComponent, PhotoPickerResult } from './photo-picker-dialog';
 import { UserSettingsService } from '../services/user-settings.service';
 import { PinLockService } from '../services/pin-lock.service';
 import { PinEntryOverlayComponent } from '../pin-entry-overlay/pin-entry-overlay';
@@ -306,6 +307,22 @@ export class EntityEditComponent {
     } else if (parts.length === 1 && parts[0]) {
       this.draft.set({ ...d, firstName: parts[0], lastName: '' });
     }
+  }
+
+  openPhotoPickerDialog(): void {
+    const dialogRef = this.dialog.open(PhotoPickerDialogComponent, {
+      data: this.photos(),
+      panelClass: 'photo-picker-panel',
+      autoFocus: false,
+    });
+    dialogRef.afterClosed().subscribe((result: PhotoPickerResult | undefined) => {
+      if (!result) return;
+      const current = this.draft();
+      if (current) {
+        this.draft.set({ ...current, thumbnailUrl: result.thumbnailUrl, originalUrl: result.url });
+      }
+      this.thumbnailPreview.set(this.proxyUrl(result.thumbnailUrl));
+    });
   }
 
   openGenerateImageDialog(): void {

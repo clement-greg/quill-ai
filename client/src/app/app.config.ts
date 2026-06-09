@@ -15,6 +15,7 @@ import { ArchivedComponent } from './archived/archived';
 import { Home } from './home/home';
 import { UserSettingsComponent } from './user-settings/user-settings';
 import { PhotoGalleryComponent } from './photo-gallery/photo-gallery';
+import { WritingStatsComponent } from './writing-stats/writing-stats';
 import { authGuard } from './auth/auth.guard';
 import { authInterceptor } from './auth/auth.interceptor';
 
@@ -31,6 +32,7 @@ const routes: Routes = [
   { path: 'archived', component: ArchivedComponent, canActivate: [authGuard] },
   { path: 'settings', component: UserSettingsComponent, canActivate: [authGuard] },
   { path: 'gallery', component: PhotoGalleryComponent, canActivate: [authGuard] },
+  { path: 'writing-stats', component: WritingStatsComponent, canActivate: [authGuard] },
   { path: 'home', component: Home, canActivate: [authGuard] },
   { path: '', redirectTo: 'home', pathMatch: 'full' },
 ];

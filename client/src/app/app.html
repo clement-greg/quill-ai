@@ -70,6 +70,10 @@
       {{ settings.displayName() || user.name }}
     </button>
     <mat-menu #userMenu="matMenu">
+      <button mat-menu-item routerLink="/writing-stats">
+        <mat-icon>bar_chart</mat-icon>
+        Writing Stats
+      </button>
       <button mat-menu-item routerLink="/settings">
         <mat-icon>settings</mat-icon>
         Settings
@@ -121,6 +125,10 @@
       <mat-icon>more_vert</mat-icon>
     </button>
     <mat-menu #mobileUserMenu="matMenu">
+      <button mat-menu-item routerLink="/writing-stats">
+        <mat-icon>bar_chart</mat-icon>
+        Writing Stats
+      </button>
       <button mat-menu-item routerLink="/settings">
         <mat-icon>settings</mat-icon>
         Settings

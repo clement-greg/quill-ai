@@ -1,0 +1,26 @@
+<div class="picker-container">
+  @if (pinLock.hasPin() && pinLock.isLocked()) {
+    <app-pin-entry-overlay />
+  }
+
+  <div class="picker-header">
+    <h2 class="picker-title" id="photo-picker-title">Pick from Gallery</h2>
+    <button mat-icon-button (click)="close()" aria-label="Close dialog">
+      <mat-icon>close</mat-icon>
+    </button>
+  </div>
+
+  <div class="picker-body">
+    @if (photos().length === 0) {
+      <p class="picker-empty">No photos in gallery yet. Add photos to entities first.</p>
+    } @else {
+      <div class="picker-grid">
+        @for (photo of photos(); track photo.url) {
+          <button class="picker-tile" type="button" (click)="select(photo)" aria-label="Use this photo as avatar">
+            <img [src]="proxyUrl(photo.thumbnailUrl)" alt="" />
+          </button>
+        }
+      </div>
+    }
+  </div>
+</div>
