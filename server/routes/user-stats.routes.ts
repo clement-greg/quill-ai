@@ -24,12 +24,9 @@ function tokenize(html: string): string[] {
  */
 function wordDiff(prevTokens: string[], currTokens: string[]): { added: number; removed: number } {
   const counts = new Map<string, number>();
-
   for (const w of prevTokens) counts.set(w, (counts.get(w) ?? 0) - 1);
   for (const w of currTokens) counts.set(w, (counts.get(w) ?? 0) + 1);
-
-  let added = 0;
-  let removed = 0;
+  let added = 0, removed = 0;
   for (const delta of counts.values()) {
     if (delta > 0) added += delta;
     else if (delta < 0) removed += -delta;
@@ -38,10 +35,6 @@ function wordDiff(prevTokens: string[], currTokens: string[]): { added: number; 
 }
 
 // GET /api/user-stats/writing?days=365
-// Returns per-day word-diff counts derived from chapter-version history.
-// Note: the first version of each chapter within the window is diffed against
-// an empty baseline (0 words), so the very first save of an old chapter may
-// overstate the "added" count.
 router.get('/writing', async (req: Request, res: Response): Promise<void> => {
   try {
     const days = Math.min(Math.max(parseInt(req.query['days'] as string) || 365, 1), 365);
@@ -49,20 +42,17 @@ router.get('/writing', async (req: Request, res: Response): Promise<void> => {
     since.setDate(since.getDate() - days);
     const sinceIso = since.toISOString();
 
-    const container = getContainer('chapter-versions');
+    const versionsContainer = getContainer('chapter-versions');
 
-    // Cross-partition query (no partition key = fan-out).
-    // ORDER BY omitted to avoid requiring a composite index; we sort below.
-    const { resources } = await container.items
+    // Cross-partition query. ORDER BY omitted to avoid needing a composite index.
+    const { resources } = await versionsContainer.items
       .query(withOwnerFilter(req, {
-        query: `SELECT c.chapterId, c.savedAt, c.content
-                FROM c
-                WHERE c.savedAt >= @since`,
+        query: `SELECT c.chapterId, c.savedAt, c.content FROM c WHERE c.savedAt >= @since`,
         parameters: [{ name: '@since', value: sinceIso }],
       }))
       .fetchAll();
 
-    // Sort by chapter then time so consecutive diffs are in the right order
+    // Sort by chapter then time so diffs are computed in the right order
     resources.sort((a: any, b: any) => {
       const cmp = (a.chapterId as string).localeCompare(b.chapterId);
       return cmp !== 0 ? cmp : (a.savedAt as string).localeCompare(b.savedAt);
@@ -77,14 +67,18 @@ router.get('/writing', async (req: Request, res: Response): Promise<void> => {
 
     interface DayBucket { added: number; deleted: number }
     const dailyMap = new Map<string, DayBucket>();
-
     const bucket = (date: string): DayBucket => {
       if (!dailyMap.has(date)) dailyMap.set(date, { added: 0, deleted: 0 });
       return dailyMap.get(date)!;
     };
 
-    for (const versions of byChapter.values()) {
+    // Per-chapter totals accumulated alongside per-day totals
+    interface ChapterTotals { added: number; deleted: number; lastSaved: string }
+    const chapterTotals = new Map<string, ChapterTotals>();
+
+    for (const [chapterId, versions] of byChapter.entries()) {
       let prevTokens: string[] = [];
+      let chapAdded = 0, chapDeleted = 0, lastSaved = '';
       for (const version of versions) {
         const currTokens = tokenize(version.content);
         const { added, removed } = wordDiff(prevTokens, currTokens);
@@ -92,8 +86,12 @@ router.get('/writing', async (req: Request, res: Response): Promise<void> => {
         const b = bucket(date);
         b.added += added;
         b.deleted += removed;
+        chapAdded += added;
+        chapDeleted += removed;
+        lastSaved = date;
         prevTokens = currTokens;
       }
+      chapterTotals.set(chapterId, { added: chapAdded, deleted: chapDeleted, lastSaved });
     }
 
     const daily = Array.from(dailyMap.entries())
@@ -104,8 +102,7 @@ router.get('/writing', async (req: Request, res: Response): Promise<void> => {
     const totalDeleted = daily.reduce((s, d) => s + d.wordsDeleted, 0);
     const activeDays   = daily.filter(d => d.wordsAdded > 0 || d.wordsDeleted > 0).length;
 
-    // Current streak: consecutive active days up to and including today
-    // (if today has no writing yet, count from yesterday backward)
+    // Streak: consecutive active days up to and including today
     const dateSet = new Set(daily.map(d => d.date));
     const today = new Date();
     const todayStr = today.toISOString().slice(0, 10);
@@ -119,8 +116,59 @@ router.get('/writing', async (req: Request, res: Response): Promise<void> => {
       else break;
     }
 
+    function proxyImageUrl(azureUrl: string | undefined): string | null {
+      if (!azureUrl) return null;
+      const filename = azureUrl.split('/').pop();
+      return filename ? `/api/image/${filename}` : null;
+    }
+
+    // Fetch chapter metadata in parallel (chapters partition key = /id → efficient point reads)
+    const chaptersContainer = getContainer('chapters');
+    const chapterIds = [...chapterTotals.keys()];
+
+    interface ChapterMeta { title: string; thumbnailUrl: string | null }
+    const chapterMetaMap = new Map<string, ChapterMeta>();
+
+    await Promise.all(
+      chapterIds.map(async (id) => {
+        try {
+          const { resource } = await chaptersContainer.item(id, id).read<{
+            id: string;
+            title?: string;
+            imageThumbnailUrl?: string;
+            imageUrl?: string;
+          }>();
+          chapterMetaMap.set(id, {
+            title: resource?.title?.trim() || 'Untitled Chapter',
+            thumbnailUrl: proxyImageUrl(resource?.imageThumbnailUrl ?? resource?.imageUrl),
+          });
+        } catch {
+          chapterMetaMap.set(id, { title: 'Untitled Chapter', thumbnailUrl: null });
+        }
+      })
+    );
+
+    const byChapterStats = chapterIds
+      .map(id => {
+        const { added, deleted, lastSaved } = chapterTotals.get(id)!;
+        const meta = chapterMetaMap.get(id)!;
+        return {
+          chapterId: id,
+          title: meta.title,
+          thumbnailUrl: meta.thumbnailUrl,
+          wordsAdded: added,
+          wordsDeleted: deleted,
+          netWords: added - deleted,
+          lastSaved,
+        };
+      })
+      // Drop chapters with no activity in this window
+      .filter(ch => ch.wordsAdded > 0 || ch.wordsDeleted > 0)
+      .sort((a, b) => (b.wordsAdded + b.wordsDeleted) - (a.wordsAdded + a.wordsDeleted));
+
     res.json({
       daily,
+      byChapter: byChapterStats,
       summary: {
         totalAdded,
         totalDeleted,

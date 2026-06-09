@@ -27,6 +27,16 @@ interface DailyStats {
   wordsDeleted: number;
 }
 
+interface ChapterStats {
+  chapterId: string;
+  title: string;
+  thumbnailUrl: string | null;
+  wordsAdded: number;
+  wordsDeleted: number;
+  netWords: number;
+  lastSaved: string;    // YYYY-MM-DD
+}
+
 interface StatsSummary {
   totalAdded: number;
   totalDeleted: number;
@@ -38,6 +48,7 @@ interface StatsSummary {
 
 interface StatsResponse {
   daily: DailyStats[];
+  byChapter: ChapterStats[];
   summary: StatsSummary;
 }
 
@@ -111,6 +122,44 @@ interface PeriodBucket {
                     role="img"></canvas>
           </div>
         </div>
+
+        @if (allData()?.byChapter?.length) {
+          <div class="chapter-section">
+            <h3 class="chapter-section-title">By Chapter</h3>
+            <div class="chapter-table" role="table" aria-label="Word counts by chapter">
+              <div class="chapter-table-head" role="row">
+                <span role="columnheader" aria-label="Cover"></span>
+                <span role="columnheader">Chapter</span>
+                <span role="columnheader">Added</span>
+                <span role="columnheader">Deleted</span>
+                <span role="columnheader">Net</span>
+                <span role="columnheader">Last edited</span>
+              </div>
+              @for (ch of allData()!.byChapter; track ch.chapterId) {
+                <div class="chapter-row" role="row">
+                  <span class="ch-thumb" role="cell">
+                    @if (ch.thumbnailUrl) {
+                      <img [src]="ch.thumbnailUrl" [alt]="ch.title" class="ch-thumb-img" />
+                    } @else {
+                      <span class="ch-thumb-placeholder" aria-hidden="true">
+                        <mat-icon>menu_book</mat-icon>
+                      </span>
+                    }
+                  </span>
+                  <span class="ch-title" role="cell" [title]="ch.title">{{ ch.title }}</span>
+                  <span class="ch-added" role="cell">{{ fmtCount(ch.wordsAdded, '+') }}</span>
+                  <span class="ch-deleted" role="cell">{{ fmtCount(ch.wordsDeleted, '−') }}</span>
+                  <span class="ch-net" role="cell"
+                        [class.positive]="ch.netWords > 0"
+                        [class.negative]="ch.netWords < 0">
+                    {{ fmtCount(ch.netWords, ch.netWords >= 0 ? '+' : '') }}
+                  </span>
+                  <span class="ch-date" role="cell">{{ ch.lastSaved }}</span>
+                </div>
+              }
+            </div>
+          </div>
+        }
       }
     </div>
   `,
@@ -237,6 +286,124 @@ interface PeriodBucket {
       position: relative;
       height: 280px;
     }
+
+    /* ── Chapter breakdown ─────────────────────────────── */
+
+    .chapter-section {
+      margin-top: 24px;
+      background: var(--mat-sys-surface-container-low);
+      border-radius: 12px;
+      padding: 16px 20px 8px;
+    }
+
+    .chapter-section-title {
+      margin: 0 0 14px;
+      font-size: 0.9rem;
+      font-weight: 500;
+      color: var(--mat-sys-on-surface-variant);
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+
+    .chapter-table {
+      display: flex;
+      flex-direction: column;
+    }
+
+    .chapter-table-head,
+    .chapter-row {
+      display: grid;
+      grid-template-columns: 44px 1fr 80px 80px 80px 90px;
+      gap: 8px;
+      align-items: center;
+      padding: 8px 4px;
+      font-size: 0.85rem;
+
+      @media (max-width: 600px) {
+        grid-template-columns: 36px 1fr 64px 64px 64px;
+
+        .ch-date { display: none; }
+      }
+    }
+
+    .chapter-table-head {
+      font-size: 0.75rem;
+      font-weight: 600;
+      color: var(--mat-sys-on-surface-variant);
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      border-bottom: 1px solid var(--mat-sys-outline-variant);
+      padding-bottom: 6px;
+      margin-bottom: 2px;
+
+      span:not(:first-child) { text-align: right; }
+    }
+
+    .ch-thumb {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .ch-thumb-img {
+      width: 36px;
+      height: 36px;
+      border-radius: 4px;
+      object-fit: cover;
+      display: block;
+    }
+
+    .ch-thumb-placeholder {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      width: 36px;
+      height: 36px;
+      border-radius: 4px;
+      background: var(--mat-sys-surface-container);
+
+      mat-icon {
+        font-size: 18px;
+        width: 18px;
+        height: 18px;
+        color: var(--mat-sys-on-surface-variant);
+      }
+    }
+
+    .chapter-row {
+      border-bottom: 1px solid var(--mat-sys-outline-variant);
+      color: var(--mat-sys-on-surface);
+
+      &:last-child { border-bottom: none; }
+      &:hover { background: var(--mat-sys-surface-container); border-radius: 6px; }
+    }
+
+    .ch-title {
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      font-weight: 500;
+    }
+
+    .ch-added, .ch-deleted, .ch-net, .ch-date {
+      text-align: right;
+      font-variant-numeric: tabular-nums;
+    }
+
+    .ch-added  { color: #4caf50; }
+    .ch-deleted { color: #e57373; }
+
+    .ch-net {
+      font-weight: 600;
+      color: var(--mat-sys-on-surface-variant);
+      &.positive { color: #4caf50; }
+      &.negative { color: #e57373; }
+    }
+
+    .ch-date {
+      color: var(--mat-sys-on-surface-variant);
+      font-size: 0.78rem;
+    }
   `],
 })
 export class WritingStatsComponent implements OnInit, AfterViewInit, OnDestroy {
@@ -306,6 +473,10 @@ export class WritingStatsComponent implements OnInit, AfterViewInit, OnDestroy {
 
   setRange(r: Range): void {
     this.range.set(r);
+  }
+
+  fmtCount(n: number, prefix = ''): string {
+    return n === 0 ? '—' : `${prefix}${n.toLocaleString()}`;
   }
 
   private loadData(): void {
