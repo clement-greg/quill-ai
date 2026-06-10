@@ -2,6 +2,7 @@ import {
   Component, inject, signal, computed, effect, untracked,
   OnInit, AfterViewInit, OnDestroy, ViewChild, ElementRef, HostListener, input, output,
 } from '@angular/core';
+import { DecimalPipe } from '@angular/common';
 import { MatButtonModule } from '@angular/material/button';
 import { MatIconModule } from '@angular/material/icon';
 import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
@@ -25,7 +26,7 @@ export interface SuggestedEntityCard {
 
 @Component({
   selector: 'app-rich-text-editor',
-  imports: [MatButtonModule, MatIconModule, MatProgressSpinnerModule],
+  imports: [MatButtonModule, MatIconModule, MatProgressSpinnerModule, DecimalPipe],
   templateUrl: './rich-text-editor.html',
   styleUrl: './rich-text-editor.scss',
 })
@@ -165,6 +166,9 @@ export class RichTextEditorComponent implements OnInit, AfterViewInit, OnDestroy
   private grammarTimer: ReturnType<typeof setTimeout> | null = null;
   private grammarAbortController: AbortController | null = null;
   private grammarLastCheckedText = '';
+
+  // ── Word count ──────────────────────────────────────────────────────────
+  wordCount = signal(0);
 
   // ── Internal editor state ────────────────────────────────────────────────
   // ── Minimap ──────────────────────────────────────────────────────────────
@@ -328,8 +332,16 @@ export class RichTextEditorComponent implements OnInit, AfterViewInit, OnDestroy
   setContent(html: string): void {
     this.contentInitialized = true;
     this.editorContent = html;
-    if (this.editorRef) this.editorRef.nativeElement.innerHTML = html;
+    if (this.editorRef) {
+      this.editorRef.nativeElement.innerHTML = html;
+      this.wordCount.set(this.countWords(this.editorRef.nativeElement.textContent ?? ''));
+    }
     setTimeout(() => this.scheduleMinimap());
+  }
+
+  private countWords(text: string): number {
+    const trimmed = text.trim();
+    return trimmed ? trimmed.split(/\s+/).length : 0;
   }
 
   getContent(): string {
@@ -536,6 +548,7 @@ export class RichTextEditorComponent implements OnInit, AfterViewInit, OnDestroy
       this.searchActive = false;
     }
     this.editorContent = el.innerHTML;
+    this.wordCount.set(this.countWords(el.textContent ?? ''));
 
     // If a sentence-ending ejection was set on a previous input, check whether
     // Chrome snapped the newly typed text back inside the AI span. If so,

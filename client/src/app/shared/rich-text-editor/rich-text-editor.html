@@ -18,6 +18,11 @@
     (paste)="onEditorPaste($event)">
   </div>
 
+  <!-- Word count badge -->
+  <div class="rte-word-count" aria-live="polite" aria-label="Word count">
+    {{ wordCount() | number }} words
+  </div>
+
   <!-- VS Code-style minimap -->
   <div class="rte-minimap"
     (mousedown)="onMinimapMouseDown($event)"

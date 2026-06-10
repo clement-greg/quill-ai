@@ -96,6 +96,25 @@
   padding: 0;
 }
 
+/* ── Word count badge ────────────────────────────────── */
+.rte-word-count {
+  position: absolute;
+  bottom: 8px;
+  right: 88px; /* sits just left of the 80px minimap */
+  font-size: 0.72rem;
+  color: var(--mat-sys-on-surface-variant, #888);
+  pointer-events: none;
+  user-select: none;
+  opacity: 0.6;
+  transition: opacity 0.15s;
+}
+
+.rte-host:focus-within .rte-word-count { opacity: 1; }
+
+@media (max-width: 768px) {
+  .rte-word-count { right: 8px; }
+}
+
 /* ── VS Code-style minimap ──────────────────────────── */
 .rte-minimap {
   position: absolute;
