@@ -246,7 +246,7 @@ export class WritingStatsSummaryComponent implements OnInit, AfterViewInit, OnDe
           backgroundColor: values.map(v => v >= 0 ? 'rgba(79,177,128,0.8)' : 'rgba(229,115,115,0.8)'),
           borderColor:     values.map(v => v >= 0 ? 'rgba(79,177,128,1)'   : 'rgba(229,115,115,1)'),
           borderWidth: 1,
-          borderRadius: 2,
+          borderRadius: 3,
         }],
       },
       options: {
@@ -267,7 +267,7 @@ export class WritingStatsSummaryComponent implements OnInit, AfterViewInit, OnDe
           x: {
             ticks: {
               color: onSurfaceVariant,
-              maxRotation: 0,
+              maxRotation: 45,
               autoSkip: true,
               maxTicksLimit: 10,
               font: { size: 10 },
@@ -275,6 +275,7 @@ export class WritingStatsSummaryComponent implements OnInit, AfterViewInit, OnDe
             grid: { color: outlineVariant },
           },
           y: {
+            beginAtZero: true,
             ticks: {
               color: onSurfaceVariant,
               callback: v => Number(v).toLocaleString(),

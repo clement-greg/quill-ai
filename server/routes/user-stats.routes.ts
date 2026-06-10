@@ -42,13 +42,21 @@ router.get('/writing', async (req: Request, res: Response): Promise<void> => {
     since.setDate(since.getDate() - days);
     const sinceIso = since.toISOString();
 
+    // Fetch an extra 60-day baseline window before the stats window so the first
+    // in-window version of each chapter is diffed against real prior content
+    // rather than an empty string. This prevents inflated "added" counts.
+    const BASELINE_DAYS = 60;
+    const baseSince = new Date();
+    baseSince.setDate(baseSince.getDate() - days - BASELINE_DAYS);
+    const baseSinceIso = baseSince.toISOString();
+
     const versionsContainer = getContainer('chapter-versions');
 
     // Cross-partition query. ORDER BY omitted to avoid needing a composite index.
     const { resources } = await versionsContainer.items
       .query(withOwnerFilter(req, {
         query: `SELECT c.chapterId, c.savedAt, c.content FROM c WHERE c.savedAt >= @since`,
-        parameters: [{ name: '@since', value: sinceIso }],
+        parameters: [{ name: '@since', value: baseSinceIso }],
       }))
       .fetchAll();
 
@@ -82,13 +90,17 @@ router.get('/writing', async (req: Request, res: Response): Promise<void> => {
       for (const version of versions) {
         const currTokens = tokenize(version.content);
         const { added, removed } = wordDiff(prevTokens, currTokens);
-        const date = version.savedAt.slice(0, 10);
-        const b = bucket(date);
-        b.added += added;
-        b.deleted += removed;
-        chapAdded += added;
-        chapDeleted += removed;
-        lastSaved = date;
+        // Only count stats for versions inside the requested stats window;
+        // baseline versions (in the earlier 60-day buffer) only advance prevTokens.
+        if (version.savedAt >= sinceIso) {
+          const date = version.savedAt.slice(0, 10);
+          const b = bucket(date);
+          b.added += added;
+          b.deleted += removed;
+          chapAdded += added;
+          chapDeleted += removed;
+          lastSaved = date;
+        }
         prevTokens = currTokens;
       }
       chapterTotals.set(chapterId, { added: chapAdded, deleted: chapDeleted, lastSaved });
