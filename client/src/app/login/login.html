@@ -1,11 +1,17 @@
+<div class="bg-wrapper" aria-hidden="true">
+  @for (n of [1, 2, 3, 4, 5, 6]; track n) {
+    <div
+      [class]="'bg-slide slide-' + n + (currentIndex() === n - 1 ? ' active' : '')"
+      [style.background-image]="'url(/bg-images/bg-' + n + '.png)'"
+    ></div>
+  }
+</div>
 <div class="login-container">
   <mat-card>
-
     <mat-card-content>
-
       <div style="text-align: center;">
-        <img src="/quill-ai-logo.svg" style="height: 150px;">
-      <p>Please sign in with your Google account to access the app.</p>
+        <img src="/quill-ai-logo.svg" style="height: 150px;" alt="Quill AI">
+        <p>Please sign in with your Google account to access the app.</p>
       </div>
       <div #googleBtn class="google-btn-wrapper"></div>
     </mat-card-content>

@@ -1,8 +1,32 @@
+.bg-wrapper {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  overflow: hidden;
+}
+
+.bg-slide {
+  position: absolute;
+  inset: -20px; /* compensate for blur bleeding at edges */
+  background-size: cover;
+  background-position: center;
+  opacity: 0;
+  filter: blur(6px);
+  transition: opacity 2s ease-in-out, transform 2s ease-in-out;
+  will-change: transform, opacity;
+}
+
+.bg-slide.active {
+  opacity: 1;
+}
+
 .login-container {
+  position: relative;
+  z-index: 1;
   display: flex;
   justify-content: center;
   align-items: center;
-  min-height: 80vh;
+  min-height: 100vh;
 }
 
 mat-card {
