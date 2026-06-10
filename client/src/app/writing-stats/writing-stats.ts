@@ -65,6 +65,11 @@ interface CalDay {
   pad: boolean;
 }
 
+function localDateStr(d = new Date()): string {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+const localTz = Intl.DateTimeFormat().resolvedOptions().timeZone;
+
 @Component({
   selector: 'app-writing-stats',
   imports: [DecimalPipe, RouterLink, MatButtonModule, MatIconModule, MatProgressSpinnerModule],
@@ -670,11 +675,11 @@ export class WritingStatsComponent implements OnInit, AfterViewInit, OnDestroy {
   readonly weekdays = ['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa'];
 
   private readonly _today = new Date();
-  readonly todayStr = this._today.toISOString().slice(0, 10);
+  readonly todayStr = localDateStr(this._today);
   readonly minDateStr = (() => {
     const d = new Date(this._today);
     d.setDate(d.getDate() - 365);
-    return d.toISOString().slice(0, 10);
+    return localDateStr(d);
   })();
 
   // ── Main state ───────────────────────────────────────────
@@ -708,7 +713,7 @@ export class WritingStatsComponent implements OnInit, AfterViewInit, OnDestroy {
     }
     const cutoff = new Date(this._today);
     cutoff.setDate(cutoff.getDate() - parseInt(mode));
-    const cutoffStr = cutoff.toISOString().slice(0, 10);
+    const cutoffStr = localDateStr(cutoff);
     return data.daily.filter(d => d.date >= cutoffStr);
   });
 
@@ -945,7 +950,7 @@ export class WritingStatsComponent implements OnInit, AfterViewInit, OnDestroy {
   // ── Data loading ─────────────────────────────────────────
 
   private loadData(): void {
-    this.http.get<StatsResponse>('/api/user-stats/writing?days=365').subscribe({
+    this.http.get<StatsResponse>(`/api/user-stats/writing?days=365&tz=${encodeURIComponent(localTz)}`).subscribe({
       next: (data) => {
         this.allData.set(data);
         this.loading.set(false);
@@ -978,7 +983,7 @@ export class WritingStatsComponent implements OnInit, AfterViewInit, OnDestroy {
       const cur = new Date(start + 'T00:00:00');
       const endDate = new Date(end + 'T00:00:00');
       while (cur <= endDate) {
-        const ds = cur.toISOString().slice(0, 10);
+        const ds = localDateStr(cur);
         buckets.push({ label: ds.slice(5).replace('-', '/'), net: netMap.get(ds) ?? 0 });
         cur.setDate(cur.getDate() + 1);
       }
@@ -991,7 +996,7 @@ export class WritingStatsComponent implements OnInit, AfterViewInit, OnDestroy {
     for (let i = days - 1; i >= 0; i--) {
       const d = new Date(this._today);
       d.setDate(d.getDate() - i);
-      const ds = d.toISOString().slice(0, 10);
+      const ds = localDateStr(d);
       buckets.push({ label: ds.slice(5).replace('-', '/'), net: netMap.get(ds) ?? 0 });
     }
     return buckets;

@@ -40,6 +40,11 @@ interface StatsResponse {
 
 type Range = 30 | 90 | 365;
 
+function localDateStr(d = new Date()): string {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+const localTz = Intl.DateTimeFormat().resolvedOptions().timeZone;
+
 @Component({
   selector: 'app-writing-stats-dialog',
   imports: [DecimalPipe, MatButtonModule, MatDialogModule, MatIconModule, MatProgressSpinnerModule],
@@ -202,7 +207,7 @@ export class WritingStatsDialogComponent implements AfterViewInit, OnDestroy {
     if (r === 365) return data.daily;
     const cutoff = new Date();
     cutoff.setDate(cutoff.getDate() - r);
-    const cutoffStr = cutoff.toISOString().slice(0, 10);
+    const cutoffStr = localDateStr(cutoff);
     return data.daily.filter(d => d.date >= cutoffStr);
   });
 
@@ -240,7 +245,7 @@ export class WritingStatsDialogComponent implements AfterViewInit, OnDestroy {
   }
 
   private loadData(): void {
-    this.http.get<StatsResponse>('/api/user-stats/writing?days=365').subscribe({
+    this.http.get<StatsResponse>(`/api/user-stats/writing?days=365&tz=${encodeURIComponent(localTz)}`).subscribe({
       next: (data) => {
         this.allData.set(data);
         this.loading.set(false);
@@ -283,7 +288,7 @@ export class WritingStatsDialogComponent implements AfterViewInit, OnDestroy {
     for (let i = r - 1; i >= 0; i--) {
       const d = new Date(now);
       d.setDate(d.getDate() - i);
-      const ds = d.toISOString().slice(0, 10);
+      const ds = localDateStr(d);
       labels.push(ds.slice(5).replace('-', '/'));
       values.push(dataMap.get(ds) ?? 0);
     }

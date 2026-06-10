@@ -34,10 +34,24 @@ function wordDiff(prevTokens: string[], currTokens: string[]): { added: number; 
   return { added, removed };
 }
 
-// GET /api/user-stats/writing?days=365
+function toLocalDateStr(isoUtc: string, tz: string): string {
+  return new Intl.DateTimeFormat('en-CA', {
+    timeZone: tz,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).format(new Date(isoUtc));
+}
+
+// GET /api/user-stats/writing?days=365&tz=America/New_York
 router.get('/writing', async (req: Request, res: Response): Promise<void> => {
   try {
     const days = Math.min(Math.max(parseInt(req.query['days'] as string) || 365, 1), 365);
+    const rawTz = req.query['tz'] as string | undefined;
+    let tz = 'UTC';
+    if (rawTz) {
+      try { Intl.DateTimeFormat(undefined, { timeZone: rawTz }); tz = rawTz; } catch { /* invalid, use UTC */ }
+    }
     const since = new Date();
     since.setDate(since.getDate() - days);
     const sinceIso = since.toISOString();
@@ -93,7 +107,7 @@ router.get('/writing', async (req: Request, res: Response): Promise<void> => {
         // Only count stats for versions inside the requested stats window;
         // baseline versions (in the earlier 60-day buffer) only advance prevTokens.
         if (version.savedAt >= sinceIso) {
-          const date = version.savedAt.slice(0, 10);
+          const date = toLocalDateStr(version.savedAt, tz);
           const b = bucket(date);
           b.added += added;
           b.deleted += removed;
@@ -117,13 +131,13 @@ router.get('/writing', async (req: Request, res: Response): Promise<void> => {
     // Streak: consecutive active days up to and including today
     const dateSet = new Set(daily.map(d => d.date));
     const today = new Date();
-    const todayStr = today.toISOString().slice(0, 10);
+    const todayStr = toLocalDateStr(today.toISOString(), tz);
     let streak = 0;
     const startOffset = dateSet.has(todayStr) ? 0 : 1;
     for (let i = startOffset; i < days; i++) {
       const d = new Date(today);
       d.setDate(d.getDate() - i);
-      const ds = d.toISOString().slice(0, 10);
+      const ds = toLocalDateStr(d.toISOString(), tz);
       if (dateSet.has(ds)) streak++;
       else break;
     }

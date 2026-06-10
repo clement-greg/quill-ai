@@ -31,6 +31,11 @@ interface Snapshot {
   streak: number;
 }
 
+function localDateStr(d = new Date()): string {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+const localTz = Intl.DateTimeFormat().resolvedOptions().timeZone;
+
 @Component({
   selector: 'app-writing-stats-summary',
   imports: [DecimalPipe, RouterLink, MatIconModule],
@@ -183,7 +188,7 @@ export class WritingStatsSummaryComponent implements OnInit, AfterViewInit, OnDe
   private chart?: Chart;
 
   ngOnInit(): void {
-    this.http.get<StatsResponse>('/api/user-stats/writing?days=30').subscribe({
+    this.http.get<StatsResponse>(`/api/user-stats/writing?days=30&tz=${encodeURIComponent(localTz)}`).subscribe({
       next: ({ daily, summary }) => {
         this.dailyData = daily;
         const added   = daily.reduce((s, d) => s + d.wordsAdded, 0);
@@ -228,7 +233,7 @@ export class WritingStatsSummaryComponent implements OnInit, AfterViewInit, OnDe
     for (let i = 29; i >= 0; i--) {
       const d = new Date(now);
       d.setDate(d.getDate() - i);
-      const ds = d.toISOString().slice(0, 10);
+      const ds = localDateStr(d);
       labels.push(ds.slice(5).replace('-', '/'));
       values.push(dataMap.get(ds) ?? 0);
     }
