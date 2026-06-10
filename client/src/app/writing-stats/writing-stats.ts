@@ -4,6 +4,7 @@ import {
   AfterViewInit, OnDestroy, ChangeDetectionStrategy, OnInit,
 } from '@angular/core';
 import { DecimalPipe } from '@angular/common';
+import { RouterLink } from '@angular/router';
 import { HttpClient } from '@angular/common/http';
 import { MatButtonModule } from '@angular/material/button';
 import { MatIconModule } from '@angular/material/icon';
@@ -22,7 +23,7 @@ import {
 Chart.register(BarController, BarElement, CategoryScale, LinearScale, Tooltip, Legend);
 
 interface DailyStats {
-  date: string;         // YYYY-MM-DD
+  date: string;
   wordsAdded: number;
   wordsDeleted: number;
 }
@@ -34,7 +35,7 @@ interface ChapterStats {
   wordsAdded: number;
   wordsDeleted: number;
   netWords: number;
-  lastSaved: string;    // YYYY-MM-DD
+  lastSaved: string;
 }
 
 interface StatsSummary {
@@ -52,30 +53,111 @@ interface StatsResponse {
   summary: StatsSummary;
 }
 
-type Range = 30 | 90 | 365;
-
 interface PeriodBucket {
   label: string;
-  added: number;
-  deleted: number;
+  net: number;
+}
+
+interface CalDay {
+  date: string;
+  n: number;
+  disabled: boolean;
+  pad: boolean;
 }
 
 @Component({
   selector: 'app-writing-stats',
-  imports: [DecimalPipe, MatButtonModule, MatIconModule, MatProgressSpinnerModule],
+  imports: [DecimalPipe, RouterLink, MatButtonModule, MatIconModule, MatProgressSpinnerModule],
   changeDetection: ChangeDetectionStrategy.OnPush,
   host: { class: 'writing-stats-host' },
   template: `
     <div class="stats-page">
       <h2 class="page-title">Writing Stats</h2>
 
-      <div class="range-row" role="group" aria-label="Time range">
-        @for (opt of rangeOptions; track opt.value) {
-          <button mat-stroked-button
-                  [class.active]="range() === opt.value"
-                  (click)="setRange(opt.value)">
-            {{ opt.label }}
+      <div class="range-controls">
+        <div class="range-row" role="group" aria-label="Time range">
+          <button mat-stroked-button [class.active]="activeMode() === '30'" (click)="setPreset(30)">30 days</button>
+          <button mat-stroked-button [class.active]="activeMode() === '90'" (click)="setPreset(90)">90 days</button>
+          <button mat-stroked-button [class.active]="activeMode() === 'custom'" (click)="openPicker()">
+            <mat-icon>date_range</mat-icon>
+            {{ customRangeLabel() }}
           </button>
+        </div>
+
+        @if (showPicker()) {
+          <div class="rp-backdrop" (click)="cancelPicker()" aria-hidden="true"></div>
+          <div class="range-picker" role="region" aria-label="Select date range">
+          <div class="rp-header">
+            <button mat-icon-button [disabled]="!canGoPrev()" (click)="pickerPrevMonth()" aria-label="Previous month">
+              <mat-icon>chevron_left</mat-icon>
+            </button>
+            <div class="rp-month-titles">
+              <span class="rp-month-title">{{ pickerLeftLabel() }}</span>
+              <span class="rp-month-title rp-right-title">{{ pickerRightLabel() }}</span>
+            </div>
+            <button mat-icon-button [disabled]="!canGoNext()" (click)="pickerNextMonth()" aria-label="Next month">
+              <mat-icon>chevron_right</mat-icon>
+            </button>
+          </div>
+
+          <div class="rp-calendars" (mouseleave)="hoverDate.set(null)">
+            <div class="rp-calendar" role="grid" [attr.aria-label]="pickerLeftLabel()">
+              <div class="rp-weekdays" aria-hidden="true">
+                @for (d of weekdays; track d) { <span>{{ d }}</span> }
+              </div>
+              <div class="rp-grid">
+                @for (day of leftMonthDays(); track $index) {
+                  @if (day.pad) {
+                    <span class="rp-cell" aria-hidden="true"></span>
+                  } @else {
+                    <span [class]="cellClass(day.date)">
+                      <button
+                        [class]="btnClass(day.date, day.disabled)"
+                        [disabled]="day.disabled"
+                        (click)="onDayClick(day.date)"
+                        (mouseenter)="hoverDate.set(day.date)"
+                        [attr.aria-label]="day.date"
+                        [attr.aria-pressed]="isSelected(day.date) ? true : null"
+                        role="gridcell">{{ day.n }}</button>
+                    </span>
+                  }
+                }
+              </div>
+            </div>
+
+            <div class="rp-calendar rp-right-calendar" role="grid" [attr.aria-label]="pickerRightLabel()">
+              <div class="rp-weekdays" aria-hidden="true">
+                @for (d of weekdays; track d) { <span>{{ d }}</span> }
+              </div>
+              <div class="rp-grid">
+                @for (day of rightMonthDays(); track $index) {
+                  @if (day.pad) {
+                    <span class="rp-cell" aria-hidden="true"></span>
+                  } @else {
+                    <span [class]="cellClass(day.date)">
+                      <button
+                        [class]="btnClass(day.date, day.disabled)"
+                        [disabled]="day.disabled"
+                        (click)="onDayClick(day.date)"
+                        (mouseenter)="hoverDate.set(day.date)"
+                        [attr.aria-label]="day.date"
+                        [attr.aria-pressed]="isSelected(day.date) ? true : null"
+                        role="gridcell">{{ day.n }}</button>
+                    </span>
+                  }
+                }
+              </div>
+            </div>
+          </div>
+
+          <div class="rp-footer">
+            <span class="rp-hint">{{ selectionHint() }}</span>
+            <div class="rp-actions">
+              <button mat-button (click)="cancelPicker()">Cancel</button>
+              <button mat-flat-button [disabled]="!pendingStart() || !pendingEnd()" (click)="applyPicker()">Apply</button>
+            </div>
+          </div>
+        </div>
         }
       </div>
 
@@ -112,13 +194,9 @@ interface PeriodBucket {
         </div>
 
         <div class="chart-section">
-          <div class="chart-legend">
-            <span class="legend-dot added"></span> Added
-            <span class="legend-dot deleted"></span> Deleted
-          </div>
           <div class="chart-wrap">
             <canvas #chartCanvas
-                    [attr.aria-label]="'Words added and deleted per ' + (range() === 365 ? 'month' : 'day')"
+                    [attr.aria-label]="'Net words written per ' + chartGranularity()"
                     role="img"></canvas>
           </div>
         </div>
@@ -146,7 +224,9 @@ interface PeriodBucket {
                       </span>
                     }
                   </span>
-                  <span class="ch-title" role="cell" [title]="ch.title">{{ ch.title }}</span>
+                  <span class="ch-title" role="cell" [title]="ch.title">
+                    <a [routerLink]="['/chapters', ch.chapterId, 'edit']" class="ch-link">{{ ch.title }}</a>
+                  </span>
                   <span class="ch-added" role="cell">{{ fmtCount(ch.wordsAdded, '+') }}</span>
                   <span class="ch-deleted" role="cell">{{ fmtCount(ch.wordsDeleted, '−') }}</span>
                   <span class="ch-net" role="cell"
@@ -183,10 +263,16 @@ interface PeriodBucket {
       font-weight: 500;
     }
 
+    /* ── Range row ──────────────────────────────────────── */
+
+    .range-controls {
+      position: relative;
+      margin-bottom: 28px;
+    }
+
     .range-row {
       display: flex;
       gap: 8px;
-      margin-bottom: 28px;
       flex-wrap: wrap;
 
       button.active {
@@ -194,7 +280,185 @@ interface PeriodBucket {
         color: var(--mat-sys-on-primary-container);
         border-color: var(--mat-sys-primary);
       }
+
+      mat-icon {
+        font-size: 18px;
+        width: 18px;
+        height: 18px;
+        margin-right: 4px;
+        vertical-align: middle;
+      }
     }
+
+    /* ── Date range picker popover ──────────────────────── */
+
+    .rp-backdrop {
+      position: fixed;
+      inset: 0;
+      z-index: 99;
+    }
+
+    .range-picker {
+      position: absolute;
+      top: calc(100% + 6px);
+      left: 0;
+      z-index: 100;
+      background: var(--mat-sys-surface-container);
+      border: 1px solid var(--mat-sys-outline-variant);
+      border-radius: 16px;
+      padding: 16px 20px 18px;
+      box-shadow: 0 8px 32px rgba(0, 0, 0, 0.18);
+
+      @media (max-width: 600px) {
+        left: 0;
+        right: 0;
+      }
+    }
+
+    .rp-header {
+      display: flex;
+      align-items: center;
+      margin-bottom: 10px;
+    }
+
+    .rp-month-titles {
+      flex: 1;
+      display: flex;
+      justify-content: space-around;
+    }
+
+    .rp-month-title {
+      font-size: 0.9rem;
+      font-weight: 600;
+      color: var(--mat-sys-on-surface);
+      text-align: center;
+      width: 252px;
+    }
+
+    .rp-right-title {
+      @media (max-width: 600px) { display: none; }
+    }
+
+    .rp-calendars {
+      display: flex;
+      gap: 24px;
+      user-select: none;
+    }
+
+    .rp-right-calendar {
+      @media (max-width: 600px) { display: none; }
+    }
+
+    .rp-weekdays {
+      display: grid;
+      grid-template-columns: repeat(7, 36px);
+      margin-bottom: 2px;
+
+      span {
+        width: 36px;
+        text-align: center;
+        font-size: 0.68rem;
+        font-weight: 600;
+        color: var(--mat-sys-on-surface-variant);
+        padding: 2px 0 6px;
+      }
+    }
+
+    .rp-grid {
+      display: grid;
+      grid-template-columns: repeat(7, 36px);
+    }
+
+    /* Cell wrapper handles the range-band background */
+    .rp-cell {
+      width: 36px;
+      height: 36px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+
+      &.rp-between {
+        background: var(--mat-sys-primary-container);
+      }
+      &.rp-start-cell {
+        background: linear-gradient(to right, transparent 50%, var(--mat-sys-primary-container) 50%);
+      }
+      &.rp-end-cell {
+        background: linear-gradient(to left, transparent 50%, var(--mat-sys-primary-container) 50%);
+      }
+    }
+
+    /* Day button renders the circle */
+    .rp-btn {
+      width: 34px;
+      height: 34px;
+      flex-shrink: 0;
+      border: none;
+      background: none;
+      border-radius: 50%;
+      cursor: pointer;
+      font-size: 0.8rem;
+      color: var(--mat-sys-on-surface);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      position: relative;
+      transition: background 100ms;
+      line-height: 1;
+      font-family: inherit;
+
+      &:hover:not(:disabled) {
+        background: var(--mat-sys-surface-container-highest);
+      }
+
+      &.rp-selected {
+        background: var(--mat-sys-primary);
+        color: var(--mat-sys-on-primary);
+      }
+
+      &.rp-today:not(.rp-selected)::after {
+        content: '';
+        position: absolute;
+        bottom: 3px;
+        left: 50%;
+        transform: translateX(-50%);
+        width: 4px;
+        height: 4px;
+        border-radius: 50%;
+        background: var(--mat-sys-primary);
+      }
+
+      &.rp-disabled, &:disabled {
+        color: var(--mat-sys-on-surface-variant);
+        opacity: 0.35;
+        cursor: default;
+        pointer-events: none;
+      }
+    }
+
+    .rp-footer {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-top: 14px;
+      padding-top: 12px;
+      border-top: 1px solid var(--mat-sys-outline-variant);
+      gap: 16px;
+      flex-wrap: wrap;
+    }
+
+    .rp-hint {
+      font-size: 0.85rem;
+      color: var(--mat-sys-on-surface-variant);
+    }
+
+    .rp-actions {
+      display: flex;
+      gap: 8px;
+      margin-left: auto;
+    }
+
+    /* ── Spinner / error ────────────────────────────────── */
 
     .center-spinner {
       display: flex;
@@ -208,6 +472,8 @@ interface PeriodBucket {
       text-align: center;
       padding: 64px 0;
     }
+
+    /* ── Stat cards ─────────────────────────────────────── */
 
     .stat-cards {
       display: grid;
@@ -236,9 +502,9 @@ interface PeriodBucket {
         color: var(--mat-sys-primary);
       }
 
-      &.added mat-icon { color: #4caf50; }
+      &.added mat-icon  { color: #4caf50; }
       &.deleted mat-icon { color: #e57373; }
-      &.net mat-icon { color: var(--mat-sys-secondary); }
+      &.net mat-icon    { color: var(--mat-sys-secondary); }
     }
 
     .stat-value {
@@ -256,30 +522,12 @@ interface PeriodBucket {
       text-align: center;
     }
 
+    /* ── Chart ──────────────────────────────────────────── */
+
     .chart-section {
       background: var(--mat-sys-surface-container-low);
       border-radius: 12px;
       padding: 16px 20px 20px;
-    }
-
-    .chart-legend {
-      display: flex;
-      gap: 16px;
-      align-items: center;
-      margin-bottom: 12px;
-      font-size: 0.8rem;
-      color: var(--mat-sys-on-surface-variant);
-    }
-
-    .legend-dot {
-      display: inline-block;
-      width: 12px;
-      height: 12px;
-      border-radius: 3px;
-      margin-right: 4px;
-
-      &.added { background: rgba(79, 177, 128, 0.85); }
-      &.deleted { background: rgba(229, 115, 115, 0.85); }
     }
 
     .chart-wrap {
@@ -287,7 +535,7 @@ interface PeriodBucket {
       height: 280px;
     }
 
-    /* ── Chapter breakdown ─────────────────────────────── */
+    /* ── Chapter breakdown ──────────────────────────────── */
 
     .chapter-section {
       margin-top: 24px;
@@ -385,6 +633,13 @@ interface PeriodBucket {
       font-weight: 500;
     }
 
+    .ch-link {
+      color: var(--mat-sys-primary);
+      text-decoration: none;
+
+      &:hover { text-decoration: underline; }
+    }
+
     .ch-added, .ch-deleted, .ch-net, .ch-date {
       text-align: right;
       font-variant-numeric: tabular-nums;
@@ -412,26 +667,47 @@ export class WritingStatsComponent implements OnInit, AfterViewInit, OnDestroy {
 
   @ViewChild('chartCanvas') private chartCanvas!: ElementRef<HTMLCanvasElement>;
 
-  readonly rangeOptions: { label: string; value: Range }[] = [
-    { label: '30 days', value: 30 },
-    { label: '90 days', value: 90 },
-    { label: 'All time', value: 365 },
-  ];
+  readonly weekdays = ['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa'];
 
+  private readonly _today = new Date();
+  readonly todayStr = this._today.toISOString().slice(0, 10);
+  readonly minDateStr = (() => {
+    const d = new Date(this._today);
+    d.setDate(d.getDate() - 365);
+    return d.toISOString().slice(0, 10);
+  })();
+
+  // ── Main state ───────────────────────────────────────────
   loading = signal(true);
   errorMsg = signal<string | null>(null);
   allData = signal<StatsResponse | null>(null);
-  range = signal<Range>(30);
-
+  activeMode = signal<'30' | '90' | 'custom'>('30');
+  customStart = signal<string | null>(null);
+  customEnd = signal<string | null>(null);
   private viewReady = signal(false);
 
+  // ── Picker state ─────────────────────────────────────────
+  showPicker = signal(false);
+  // Start showing previous month on left, current month on right
+  pickerYear = signal(this._today.getMonth() === 0 ? this._today.getFullYear() - 1 : this._today.getFullYear());
+  pickerMonth = signal(this._today.getMonth() === 0 ? 11 : this._today.getMonth() - 1);
+  pendingStart = signal<string | null>(null);
+  pendingEnd = signal<string | null>(null);
+  hoverDate = signal<string | null>(null);
+
+  // ── Computed ─────────────────────────────────────────────
   filteredDaily = computed(() => {
     const data = this.allData();
     if (!data) return [];
-    const r = this.range();
-    if (r === 365) return data.daily;
-    const cutoff = new Date();
-    cutoff.setDate(cutoff.getDate() - r);
+    const mode = this.activeMode();
+    if (mode === 'custom') {
+      const s = this.customStart();
+      const e = this.customEnd();
+      if (!s || !e) return [];
+      return data.daily.filter(d => d.date >= s && d.date <= e);
+    }
+    const cutoff = new Date(this._today);
+    cutoff.setDate(cutoff.getDate() - parseInt(mode));
     const cutoffStr = cutoff.toISOString().slice(0, 10);
     return data.daily.filter(d => d.date >= cutoffStr);
   });
@@ -440,9 +716,67 @@ export class WritingStatsComponent implements OnInit, AfterViewInit, OnDestroy {
     const daily = this.filteredDaily();
     const totalAdded   = daily.reduce((s, d) => s + d.wordsAdded, 0);
     const totalDeleted = daily.reduce((s, d) => s + d.wordsDeleted, 0);
-    const net = totalAdded - totalDeleted;
-    const activeDays = daily.filter(d => d.wordsAdded > 0 || d.wordsDeleted > 0).length;
-    return { totalAdded, totalDeleted, net, activeDays };
+    return {
+      totalAdded,
+      totalDeleted,
+      net: totalAdded - totalDeleted,
+      activeDays: daily.filter(d => d.wordsAdded > 0 || d.wordsDeleted > 0).length,
+    };
+  });
+
+  pickerLeftLabel = computed(() =>
+    new Date(this.pickerYear(), this.pickerMonth(), 1)
+      .toLocaleString('default', { month: 'long', year: 'numeric' })
+  );
+
+  pickerRightLabel = computed(() => {
+    let m = this.pickerMonth() + 1;
+    let y = this.pickerYear();
+    if (m > 11) { m = 0; y++; }
+    return new Date(y, m, 1).toLocaleString('default', { month: 'long', year: 'numeric' });
+  });
+
+  leftMonthDays  = computed(() => this.buildMonthDays(this.pickerYear(), this.pickerMonth()));
+  rightMonthDays = computed(() => {
+    let m = this.pickerMonth() + 1;
+    let y = this.pickerYear();
+    if (m > 11) { m = 0; y++; }
+    return this.buildMonthDays(y, m);
+  });
+
+  canGoPrev = computed(() => {
+    const minDate = new Date(this._today);
+    minDate.setDate(minDate.getDate() - 365);
+    return !(this.pickerYear() === minDate.getFullYear() && this.pickerMonth() === minDate.getMonth());
+  });
+
+  canGoNext = computed(() => {
+    let rm = this.pickerMonth() + 1;
+    let ry = this.pickerYear();
+    if (rm > 11) { rm = 0; ry++; }
+    return !(ry === this._today.getFullYear() && rm === this._today.getMonth());
+  });
+
+  customRangeLabel = computed(() => {
+    const s = this.customStart();
+    const e = this.customEnd();
+    return s && e ? `${this.fmtDate(s)} – ${this.fmtDate(e)}` : 'Custom range';
+  });
+
+  selectionHint = computed(() => {
+    const s = this.pendingStart();
+    const e = this.pendingEnd();
+    if (!s) return 'Select start date';
+    if (!e) return 'Select end date';
+    return `${this.fmtDate(s)} – ${this.fmtDate(e)}`;
+  });
+
+  chartGranularity = computed(() => {
+    if (this.activeMode() !== 'custom') return 'day';
+    const s = this.customStart();
+    const e = this.customEnd();
+    if (!s || !e) return 'day';
+    return this.daysBetween(s, e) > 90 ? 'month' : 'day';
   });
 
   private chart?: Chart;
@@ -450,7 +784,7 @@ export class WritingStatsComponent implements OnInit, AfterViewInit, OnDestroy {
   constructor() {
     effect(() => {
       const ready = this.viewReady();
-      const _data = this.filteredDaily(); // track for re-render on range/data change
+      const _data = this.filteredDaily();
       if (ready && !this.loading()) {
         setTimeout(() => this.renderChart(), 0);
       }
@@ -471,13 +805,144 @@ export class WritingStatsComponent implements OnInit, AfterViewInit, OnDestroy {
     this.header.clear();
   }
 
-  setRange(r: Range): void {
-    this.range.set(r);
+  // ── Range controls ───────────────────────────────────────
+
+  setPreset(days: 30 | 90): void {
+    this.showPicker.set(false);
+    this.activeMode.set(String(days) as '30' | '90');
   }
+
+  openPicker(): void {
+    const s = this.customStart();
+    const e = this.customEnd();
+    if (s && e) {
+      this.pendingStart.set(s);
+      this.pendingEnd.set(e);
+      // Navigate left calendar to the start month
+      const parts = s.split('-').map(Number);
+      this.pickerYear.set(parts[0]);
+      this.pickerMonth.set(parts[1] - 1);
+    } else {
+      this.pendingStart.set(null);
+      this.pendingEnd.set(null);
+    }
+    this.hoverDate.set(null);
+    this.showPicker.set(true);
+  }
+
+  cancelPicker(): void {
+    this.showPicker.set(false);
+  }
+
+  applyPicker(): void {
+    const s = this.pendingStart();
+    const e = this.pendingEnd();
+    if (!s || !e) return;
+    const [start, end] = s <= e ? [s, e] : [e, s];
+    this.customStart.set(start);
+    this.customEnd.set(end);
+    this.activeMode.set('custom');
+    this.showPicker.set(false);
+  }
+
+  pickerPrevMonth(): void {
+    let m = this.pickerMonth() - 1;
+    let y = this.pickerYear();
+    if (m < 0) { m = 11; y--; }
+    this.pickerMonth.set(m);
+    this.pickerYear.set(y);
+  }
+
+  pickerNextMonth(): void {
+    let m = this.pickerMonth() + 1;
+    let y = this.pickerYear();
+    if (m > 11) { m = 0; y++; }
+    this.pickerMonth.set(m);
+    this.pickerYear.set(y);
+  }
+
+  onDayClick(date: string): void {
+    const s = this.pendingStart();
+    const e = this.pendingEnd();
+    if (!s || (s && e)) {
+      this.pendingStart.set(date);
+      this.pendingEnd.set(null);
+    } else {
+      this.pendingEnd.set(date);
+    }
+  }
+
+  // ── Day cell helpers (read signals → tracked by Angular) ─
+
+  isSelected(date: string): boolean {
+    const [rs, re] = this.effectiveRange();
+    return date === rs || date === re;
+  }
+
+  cellClass(date: string): string {
+    const [rs, re] = this.effectiveRange();
+    if (!rs || !re) return 'rp-cell';
+    if (date === rs && date !== re) return 'rp-cell rp-start-cell';
+    if (date === re && date !== rs) return 'rp-cell rp-end-cell';
+    if (date > rs && date < re) return 'rp-cell rp-between';
+    return 'rp-cell';
+  }
+
+  btnClass(date: string, disabled: boolean): string {
+    const [rs, re] = this.effectiveRange();
+    const selected = date === rs || date === re;
+    const today = date === this.todayStr;
+    return [
+      'rp-btn',
+      selected ? 'rp-selected' : '',
+      today    ? 'rp-today'    : '',
+      disabled ? 'rp-disabled' : '',
+    ].filter(Boolean).join(' ');
+  }
+
+  // ── Formatters ───────────────────────────────────────────
 
   fmtCount(n: number, prefix = ''): string {
     return n === 0 ? '—' : `${prefix}${n.toLocaleString()}`;
   }
+
+  private fmtDate(ds: string): string {
+    const [y, m, d] = ds.split('-').map(Number);
+    return new Date(y, m - 1, d).toLocaleDateString('default', { month: 'short', day: 'numeric' });
+  }
+
+  // ── Picker internals ─────────────────────────────────────
+
+  private effectiveRange(): [string | null, string | null] {
+    const s = this.pendingStart();
+    const e = this.pendingEnd();
+    const h = this.hoverDate();
+    if (!s) return [null, null];
+    const end = e ?? h;
+    if (!end) return [s, null];
+    return s <= end ? [s, end] : [end, s];
+  }
+
+  private buildMonthDays(year: number, month: number): CalDay[] {
+    const firstWeekday = new Date(year, month, 1).getDay();
+    const lastDate = new Date(year, month + 1, 0).getDate();
+    const days: CalDay[] = [];
+    for (let i = 0; i < firstWeekday; i++) {
+      days.push({ date: '', n: 0, disabled: true, pad: true });
+    }
+    for (let d = 1; d <= lastDate; d++) {
+      const ds = `${year}-${String(month + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+      days.push({
+        date: ds,
+        n: d,
+        disabled: ds > this.todayStr || ds < this.minDateStr,
+        pad: false,
+      });
+    }
+    return days;
+  }
+
+  // ── Data loading ─────────────────────────────────────────
 
   private loadData(): void {
     this.http.get<StatsResponse>('/api/user-stats/writing?days=365').subscribe({
@@ -492,48 +957,72 @@ export class WritingStatsComponent implements OnInit, AfterViewInit, OnDestroy {
     });
   }
 
-  private getChartBuckets(): PeriodBucket[] {
-    const r = this.range();
-    const daily = this.filteredDaily();
-    const now = new Date();
+  // ── Chart ────────────────────────────────────────────────
 
-    if (r === 365) {
-      // Aggregate by month, fill all 12 months
-      const addedMap = new Map<string, number>();
-      const deletedMap = new Map<string, number>();
-      for (const d of daily) {
-        const key = d.date.slice(0, 7);
-        addedMap.set(key, (addedMap.get(key) ?? 0) + d.wordsAdded);
-        deletedMap.set(key, (deletedMap.get(key) ?? 0) + d.wordsDeleted);
+  private getChartBuckets(): PeriodBucket[] {
+    const mode = this.activeMode();
+    const daily = this.filteredDaily();
+    const netMap = new Map(daily.map(d => [d.date, d.wordsAdded - d.wordsDeleted]));
+
+    if (mode === 'custom') {
+      const start = this.customStart()!;
+      const end   = this.customEnd()!;
+      const span  = this.daysBetween(start, end);
+
+      if (span > 90) {
+        return this.monthlyBuckets(daily, start, end);
       }
+
+      // Daily buckets for the exact selected range
       const buckets: PeriodBucket[] = [];
-      for (let i = 11; i >= 0; i--) {
-        const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
-        const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
-        buckets.push({
-          label: d.toLocaleString('default', { month: 'short' }) + ' \'' + String(d.getFullYear()).slice(2),
-          added: addedMap.get(key) ?? 0,
-          deleted: deletedMap.get(key) ?? 0,
-        });
+      const cur = new Date(start + 'T00:00:00');
+      const endDate = new Date(end + 'T00:00:00');
+      while (cur <= endDate) {
+        const ds = cur.toISOString().slice(0, 10);
+        buckets.push({ label: ds.slice(5).replace('-', '/'), net: netMap.get(ds) ?? 0 });
+        cur.setDate(cur.getDate() + 1);
       }
       return buckets;
     }
 
-    // Daily with zero-fill
-    const addedMap  = new Map(daily.map(d => [d.date, d.wordsAdded]));
-    const deletedMap = new Map(daily.map(d => [d.date, d.wordsDeleted]));
+    // Preset: zero-filled daily window
+    const days = parseInt(mode) as 30 | 90;
     const buckets: PeriodBucket[] = [];
-    for (let i = r - 1; i >= 0; i--) {
-      const d = new Date(now);
+    for (let i = days - 1; i >= 0; i--) {
+      const d = new Date(this._today);
       d.setDate(d.getDate() - i);
       const ds = d.toISOString().slice(0, 10);
-      buckets.push({
-        label: ds.slice(5).replace('-', '/'),
-        added: addedMap.get(ds) ?? 0,
-        deleted: deletedMap.get(ds) ?? 0,
-      });
+      buckets.push({ label: ds.slice(5).replace('-', '/'), net: netMap.get(ds) ?? 0 });
     }
     return buckets;
+  }
+
+  private monthlyBuckets(daily: DailyStats[], start: string, end: string): PeriodBucket[] {
+    const monthMap = new Map<string, number>();
+    for (const d of daily) {
+      const key = d.date.slice(0, 7);
+      monthMap.set(key, (monthMap.get(key) ?? 0) + (d.wordsAdded - d.wordsDeleted));
+    }
+    const [sy, sm] = start.split('-').map(Number);
+    const [ey, em] = end.split('-').map(Number);
+    const buckets: PeriodBucket[] = [];
+    let y = sy, m = sm;
+    while (y < ey || (y === ey && m <= em)) {
+      const key = `${y}-${String(m).padStart(2, '0')}`;
+      buckets.push({
+        label: new Date(y, m - 1, 1).toLocaleString('default', { month: 'short' }) + ' \'' + String(y).slice(2),
+        net: monthMap.get(key) ?? 0,
+      });
+      m++;
+      if (m > 12) { m = 1; y++; }
+    }
+    return buckets;
+  }
+
+  private daysBetween(start: string, end: string): number {
+    return Math.round(
+      (new Date(end + 'T00:00:00').getTime() - new Date(start + 'T00:00:00').getTime()) / 86400000
+    );
   }
 
   private resolveColor(cssVar: string, fallback: string): string {
@@ -548,7 +1037,6 @@ export class WritingStatsComponent implements OnInit, AfterViewInit, OnDestroy {
   private renderChart(): void {
     const canvas = this.chartCanvas?.nativeElement;
     if (!canvas) return;
-
     this.chart?.destroy();
 
     const buckets = this.getChartBuckets();
@@ -559,24 +1047,14 @@ export class WritingStatsComponent implements OnInit, AfterViewInit, OnDestroy {
       type: 'bar',
       data: {
         labels: buckets.map(b => b.label),
-        datasets: [
-          {
-            label: 'Added',
-            data: buckets.map(b => b.added),
-            backgroundColor: 'rgba(79, 177, 128, 0.85)',
-            borderColor: 'rgba(79, 177, 128, 1)',
-            borderWidth: 1,
-            borderRadius: 3,
-          },
-          {
-            label: 'Deleted',
-            data: buckets.map(b => b.deleted),
-            backgroundColor: 'rgba(229, 115, 115, 0.85)',
-            borderColor: 'rgba(229, 115, 115, 1)',
-            borderWidth: 1,
-            borderRadius: 3,
-          },
-        ],
+        datasets: [{
+          label: 'Net words',
+          data: buckets.map(b => b.net),
+          backgroundColor: buckets.map(b => b.net >= 0 ? 'rgba(79,177,128,0.8)' : 'rgba(229,115,115,0.8)'),
+          borderColor:     buckets.map(b => b.net >= 0 ? 'rgba(79,177,128,1)'   : 'rgba(229,115,115,1)'),
+          borderWidth: 1,
+          borderRadius: 3,
+        }],
       },
       options: {
         responsive: true,
@@ -585,7 +1063,10 @@ export class WritingStatsComponent implements OnInit, AfterViewInit, OnDestroy {
           legend: { display: false },
           tooltip: {
             callbacks: {
-              label: ctx => `${ctx.dataset.label}: ${(ctx.parsed.y as number).toLocaleString()} words`,
+              label: ctx => {
+                const v = ctx.parsed.y as number;
+                return `${v >= 0 ? '+' : ''}${v.toLocaleString()} words`;
+              },
             },
           },
         },
@@ -595,7 +1076,7 @@ export class WritingStatsComponent implements OnInit, AfterViewInit, OnDestroy {
               color: onSurfaceVariant,
               maxRotation: 45,
               autoSkip: true,
-              maxTicksLimit: this.range() === 365 ? 12 : 15,
+              maxTicksLimit: Math.min(buckets.length, 15),
             },
             grid: { color: outlineVariant },
           },
