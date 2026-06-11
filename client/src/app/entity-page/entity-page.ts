@@ -4,9 +4,12 @@ import {
   signal,
   computed,
   effect,
+  afterEveryRender,
   ChangeDetectionStrategy,
+  ElementRef,
   OnInit,
   OnDestroy,
+  ViewChild,
 } from '@angular/core';
 import { ActivatedRoute, Router } from '@angular/router';
 import { toSignal } from '@angular/core/rxjs-interop';
@@ -57,6 +60,8 @@ export class EntityPageComponent implements OnInit, OnDestroy {
   private headerService = inject(HeaderService);
   private router = inject(Router);
   private route = inject(ActivatedRoute);
+  @ViewChild('entityListPanel') private entityListPanelRef?: ElementRef<HTMLElement>;
+  private lastScrolledEntityId = '';
 
   selectedEntityId = toSignal(
     this.route.paramMap.pipe(map(p => p.get('id')))
@@ -93,6 +98,19 @@ export class EntityPageComponent implements OnInit, OnDestroy {
         next: ({ counts }) => this.mentionCounts.set(counts),
         error: () => this.mentionCounts.set({}),
       });
+    });
+
+    afterEveryRender(() => {
+      const id = this.selectedEntityId() ?? '';
+      if (!id || id === this.lastScrolledEntityId) return;
+      const panel = this.entityListPanelRef?.nativeElement;
+      const selected = panel?.querySelector<HTMLElement>('.avatar-btn--selected');
+      if (!panel || !selected) return;
+      this.lastScrolledEntityId = id;
+      const panelRect = panel.getBoundingClientRect();
+      const btnRect = selected.getBoundingClientRect();
+      const targetLeft = panel.scrollLeft + btnRect.left - panelRect.left - panel.clientWidth / 2 + btnRect.width / 2;
+      panel.scrollTo({ left: targetLeft, behavior: 'smooth' });
     });
   }
 

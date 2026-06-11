@@ -3,6 +3,7 @@
   <!-- ── Left panel: entity list ── -->
   <div class="entity-list-panel"
        [class.entity-list-panel--collapsed]="isCollapsed()"
+       #entityListPanel
        (dragover)="onListDragOver($event)"
        (dragleave)="onListDragLeave($event)"
        (drop)="onListDrop($event)">
