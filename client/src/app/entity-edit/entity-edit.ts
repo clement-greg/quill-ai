@@ -1,4 +1,4 @@
-import { Component, input, output, signal, inject, effect, computed, HostListener, DestroyRef } from '@angular/core';
+import { Component, input, output, signal, inject, effect, computed, HostListener } from '@angular/core';
 import { Router } from '@angular/router';
 import { FormsModule } from '@angular/forms';
 import { MatButtonModule } from '@angular/material/button';
@@ -11,15 +11,13 @@ import { MatTooltipModule } from '@angular/material/tooltip';
 import { MatTabsModule } from '@angular/material/tabs';
 import { MatDialog } from '@angular/material/dialog';
 import { TextFieldModule } from '@angular/cdk/text-field';
-import { Entity, EntityPhoto, EntityReference } from '@shared/models/entity.model';
+import { Entity, EntityReference } from '@shared/models/entity.model';
 import { EntityQuote } from '@shared/models/entity-quote.model';
 import { EntityService } from '../services/entity.service';
 import { EntityQuoteService } from '../services/entity-quote.service';
 import { ImageGenDialogComponent, ImageGenResult } from './image-gen-dialog';
 import { PhotoPickerDialogComponent, PhotoPickerResult } from './photo-picker-dialog';
 import { UserSettingsService } from '../services/user-settings.service';
-import { PinLockService } from '../services/pin-lock.service';
-import { PinEntryOverlayComponent } from '../pin-entry-overlay/pin-entry-overlay';
 
 @Component({
   selector: 'app-entity-edit',
@@ -34,7 +32,6 @@ import { PinEntryOverlayComponent } from '../pin-entry-overlay/pin-entry-overlay
     MatTooltipModule,
     MatTabsModule,
     TextFieldModule,
-    PinEntryOverlayComponent,
   ],
   templateUrl: './entity-edit.html',
   styleUrl: './entity-edit.scss',
@@ -45,8 +42,6 @@ export class EntityEditComponent {
   private dialog = inject(MatDialog);
   private router = inject(Router);
   private settingsService = inject(UserSettingsService);
-  readonly pinLock = inject(PinLockService);
-  private destroyRef = inject(DestroyRef);
 
   readonly genderOptions = this.settingsService.genderOptions;
   readonly raceOptions = this.settingsService.raceOptions;
@@ -59,6 +54,7 @@ export class EntityEditComponent {
   archive = output<string>();
   unarchive = output<string>();
   refresh = output<void>();
+  viewDetails = output<void>();
 
   readonly entityTypes: Entity['type'][] = ['PERSON', 'PLACE', 'THING'];
   readonly referenceOptions: { value: EntityReference; label: string; requiresTitle?: boolean }[] = [
@@ -94,42 +90,11 @@ export class EntityEditComponent {
   addingQuote = signal(false);
   newQuoteText = signal('');
 
-  readonly showHiddenPhotos = this.settingsService.showHiddenPhotos;
-
-  // Photos tab
-  photos = signal<EntityPhoto[]>([]);
-  photoUploading = signal(false);
-  lightboxIndex = signal<number | null>(null);
-  lightboxAnim = signal<'next' | 'prev' | ''>('');
-
-  // Multi-select / hide
-  selectMode = signal(false);
-  selectedActualIndices = signal<Set<number>>(new Set());
-
-  private longPressTimer: ReturnType<typeof setTimeout> | null = null;
-  private longPressActivated = false;
-  private touchStartX = 0;
-
-  /** Visible photos with their original array index, for rendering and lightbox nav. */
-  visiblePhotoItems = computed(() =>
-    this.photos()
-      .map((photo, actualIndex) => ({ photo, actualIndex }))
-      .filter(item => this.showHiddenPhotos() || !item.photo.hidden)
-  );
-
   // Per-quote inline edit state: maps quote id → draft text (null = not editing)
   editingQuoteId = signal<string | null>(null);
   editingQuoteText = signal('');
 
   constructor() {
-    this.destroyRef.onDestroy(() => this.cancelLongPress());
-
-    effect(() => {
-      if (this.pinLock.isLocked()) {
-        this.lightboxIndex.set(null);
-      }
-    });
-
     effect(() => {
       const e = this.entity();
       const draft = { ...e };
@@ -140,7 +105,6 @@ export class EntityEditComponent {
       }
       this.draft.set(draft);
       this.thumbnailPreview.set(this.proxyUrl(e.thumbnailUrl));
-      this.photos.set(e.photos ?? []);
       if (e.id) this.loadQuotes(e.id);
     });
   }
@@ -165,87 +129,6 @@ export class EntityEditComponent {
     if (!url) return null;
     const filename = url.split('/').pop();
     return filename ? `/api/image/${filename}` : null;
-  }
-
-  @HostListener('keydown', ['$event'])
-  onKeydown(event: KeyboardEvent): void {
-    const idx = this.lightboxIndex();
-    if (idx === null) return;
-    if (event.key === 'Escape') { this.closeLightbox(); event.preventDefault(); }
-    else if (event.key === 'ArrowRight') { this.lightboxNext(); event.preventDefault(); }
-    else if (event.key === 'ArrowLeft') { this.lightboxPrev(); event.preventDefault(); }
-  }
-
-  openLightbox(index: number): void {
-    this.lightboxAnim.set('');
-    this.lightboxIndex.set(index);
-  }
-
-  closeLightbox(): void {
-    this.lightboxIndex.set(null);
-  }
-
-  lightboxHide(): void {
-    const idx = this.lightboxIndex();
-    if (idx === null) return;
-    const item = this.visiblePhotoItems()[idx];
-    const entityId = this.entity().id;
-    if (!item || !entityId) return;
-    this.entityService.setPhotosHidden(entityId, [item.actualIndex], true).subscribe({
-      next: updated => {
-        this.photos.set(updated.photos ?? []);
-        this.advanceLightboxAfterRemoval(idx);
-      },
-    });
-  }
-
-  lightboxDelete(): void {
-    const idx = this.lightboxIndex();
-    if (idx === null) return;
-    const item = this.visiblePhotoItems()[idx];
-    const entityId = this.entity().id;
-    if (!item || !entityId) return;
-    this.entityService.removePhoto(entityId, item.actualIndex).subscribe({
-      next: updated => {
-        this.photos.set(updated.photos ?? []);
-        this.advanceLightboxAfterRemoval(idx);
-      },
-    });
-  }
-
-  private advanceLightboxAfterRemoval(removedIndex: number): void {
-    const newCount = this.visiblePhotoItems().length;
-    if (newCount === 0) {
-      this.closeLightbox();
-      return;
-    }
-    this.lightboxAnim.set('');
-    this.lightboxIndex.set(Math.min(removedIndex, newCount - 1));
-  }
-
-  lightboxNext(): void {
-    const idx = this.lightboxIndex();
-    if (idx === null) return;
-    this.lightboxAnim.set('next');
-    this.lightboxIndex.set((idx + 1) % this.visiblePhotoItems().length);
-  }
-
-  lightboxPrev(): void {
-    const idx = this.lightboxIndex();
-    if (idx === null) return;
-    this.lightboxAnim.set('prev');
-    this.lightboxIndex.set((idx - 1 + this.visiblePhotoItems().length) % this.visiblePhotoItems().length);
-  }
-
-  onLightboxTouchStart(event: TouchEvent): void {
-    this.touchStartX = event.changedTouches[0].clientX;
-  }
-
-  onLightboxTouchEnd(event: TouchEvent): void {
-    const delta = event.changedTouches[0].clientX - this.touchStartX;
-    if (Math.abs(delta) < 40) return;
-    if (delta < 0) this.lightboxNext();
-    else           this.lightboxPrev();
   }
 
   @HostListener('paste', ['$event'])
@@ -311,7 +194,7 @@ export class EntityEditComponent {
 
   openPhotoPickerDialog(): void {
     const dialogRef = this.dialog.open(PhotoPickerDialogComponent, {
-      data: this.photos(),
+      data: this.entity().photos ?? [],
       panelClass: 'photo-picker-panel',
       autoFocus: false,
     });
@@ -369,6 +252,10 @@ export class EntityEditComponent {
 
   onRefresh(): void {
     this.refresh.emit();
+  }
+
+  onViewDetails(): void {
+    this.viewDetails.emit();
   }
 
   onArchive(): void {
@@ -457,122 +344,6 @@ export class EntityEditComponent {
     });
   }
 
-  onPhotoFileSelected(event: Event): void {
-    const input = event.target as HTMLInputElement;
-    const file = input.files?.[0];
-    if (!file) return;
-    input.value = '';
-    this.uploadPhoto(file);
-  }
-
-  private uploadPhoto(file: File): void {
-    const entityId = this.entity().id;
-    if (!entityId) return;
-    this.photoUploading.set(true);
-    this.entityService.uploadThumbnail(file).subscribe({
-      next: ({ url, thumbnailUrl }) => {
-        this.entityService.addPhoto(entityId, url, thumbnailUrl).subscribe({
-          next: updated => {
-            this.photos.set(updated.photos ?? []);
-            this.photoUploading.set(false);
-          },
-          error: () => this.photoUploading.set(false),
-        });
-      },
-      error: () => this.photoUploading.set(false),
-    });
-  }
-
-  onPhotoClick(actualIndex: number, visibleIndex: number): void {
-    if (this.longPressActivated) {
-      this.longPressActivated = false;
-      return;
-    }
-    if (this.selectMode()) {
-      this.togglePhotoSelection(actualIndex);
-    } else {
-      this.openLightbox(visibleIndex);
-    }
-  }
-
-  startLongPress(actualIndex: number): void {
-    this.cancelLongPress();
-    this.longPressActivated = false;
-    this.longPressTimer = setTimeout(() => {
-      this.longPressActivated = true;
-      if (!this.selectMode()) {
-        this.selectMode.set(true);
-        this.selectedActualIndices.set(new Set([actualIndex]));
-      }
-    }, 500);
-  }
-
-  cancelLongPress(): void {
-    if (this.longPressTimer !== null) {
-      clearTimeout(this.longPressTimer);
-      this.longPressTimer = null;
-    }
-  }
-
-  toggleSelectMode(): void {
-    this.selectMode.update(v => !v);
-    this.selectedActualIndices.set(new Set());
-  }
-
-  togglePhotoSelection(actualIndex: number): void {
-    this.selectedActualIndices.update(s => {
-      const next = new Set(s);
-      if (next.has(actualIndex)) next.delete(actualIndex);
-      else next.add(actualIndex);
-      return next;
-    });
-  }
-
-  hideSelectedPhotos(): void {
-    const entityId = this.entity().id;
-    if (!entityId) return;
-    const indices = Array.from(this.selectedActualIndices());
-    if (indices.length === 0) return;
-    this.entityService.setPhotosHidden(entityId, indices, true).subscribe({
-      next: updated => {
-        this.photos.set(updated.photos ?? []);
-        this.selectedActualIndices.set(new Set());
-        this.selectMode.set(false);
-      },
-    });
-  }
-
-  deleteSelectedPhotos(): void {
-    const entityId = this.entity().id;
-    if (!entityId) return;
-    // Delete in descending index order so earlier indices stay stable
-    const indices = Array.from(this.selectedActualIndices()).sort((a, b) => b - a);
-    if (indices.length === 0) return;
-    const deleteNext = (remaining: number[]): void => {
-      if (remaining.length === 0) {
-        this.selectedActualIndices.set(new Set());
-        this.selectMode.set(false);
-        return;
-      }
-      const [head, ...tail] = remaining;
-      this.entityService.removePhoto(entityId, head).subscribe({
-        next: updated => {
-          this.photos.set(updated.photos ?? []);
-          deleteNext(tail);
-        },
-      });
-    };
-    deleteNext(indices);
-  }
-
-  deletePhoto(index: number): void {
-    const entityId = this.entity().id;
-    if (!entityId) return;
-    this.entityService.removePhoto(entityId, index).subscribe({
-      next: updated => this.photos.set(updated.photos ?? []),
-    });
-  }
-
   openRelationshipDiagram(): void {
     const d = this.draft();
     if (d?.seriesId) {
@@ -580,10 +351,4 @@ export class EntityEditComponent {
     }
   }
 
-  /** Lock photos whenever the user switches tabs, so returning to the Photos tab requires re-entry. */
-  onPhotosTabChange(_index: number): void {
-    if (this.pinLock.hasPin()) {
-      this.pinLock.lock();
-    }
-  }
 }

@@ -48,7 +48,7 @@ export class ArchivedComponent implements OnInit {
   archivedChatSessions = signal<ChatSessionSummary[]>([]);
 
   ngOnInit(): void {
-    this.headerService.set([{ label: 'Archived Items' }], []);
+    this.headerService.setPage('Archived Items');
     this.load();
   }
 

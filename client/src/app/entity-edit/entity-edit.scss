@@ -1,15 +1,10 @@
 :host {
-  display: flex;
-  flex-direction: column;
-  flex: 1;
-  min-height: 0;
+  display: block;
 }
 
 .entity-edit-form {
   display: flex;
   flex-direction: column;
-  flex: 1;
-  min-height: 0;
   width: 100%;
   gap: 4px;
 }
@@ -108,43 +103,19 @@
 
 /* ── Tabs ────────────────────────────────────────────── */
 .entity-tabs {
-  flex: 1;
-  min-height: 0;
   width: 100%;
 }
 
-/* Thread flex sizing through Angular Material's tab wrappers so each tab's
-   .tab-content fills the available height and scrolls independently. */
-::ng-deep .entity-tabs.mat-mdc-tab-group {
-  flex: 1;
-  min-height: 0;
-}
-::ng-deep .entity-tabs .mat-mdc-tab-body-wrapper {
-  flex: 1;
-  min-height: 0;
-}
-::ng-deep .entity-tabs .mat-mdc-tab-body {
-  flex: 1;
-  min-height: 0;
-  display: flex;
-  flex-direction: column;
-}
+/* Let tab bodies expand to natural content height — outer page scrolls. */
 ::ng-deep .entity-tabs .mat-mdc-tab-body-content {
-  flex: 1;
-  min-height: 0;
-  display: flex;
-  flex-direction: column;
-  overflow: hidden;
+  overflow: visible !important;
 }
 
 .tab-content {
-  flex: 1;
-  min-height: 0;
   display: flex;
   flex-direction: column;
   gap: 4px;
   padding-top: 16px;
-  overflow-y: auto;
 }
 
 .tab-badge {
@@ -288,10 +259,7 @@
 
 /* ── Photos tab ──────────────────────────────────────── */
 
-/* Override .tab-content's auto-scroll: toolbar is a pinned header,
-   only .photos-scroll scrolls. */
 .photos-tab {
-  overflow: hidden;
   gap: 0;
   padding-top: 8px;
 }
@@ -300,14 +268,11 @@
   display: flex;
   align-items: center;
   gap: 8px;
-  flex-shrink: 0;
   padding: 4px 0 8px;
 }
 
 .photos-scroll {
-  flex: 1;
-  min-height: 0;
-  overflow-y: auto;
+  /* No internal scroll — outer page handles it */
 }
 
 .photos-empty {

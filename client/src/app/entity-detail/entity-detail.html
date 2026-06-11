@@ -1,0 +1,385 @@
+<div class="entity-detail-page">
+
+  @if (loading()) {
+    <div class="loading-state">
+      <mat-spinner diameter="48" />
+    </div>
+  } @else if (entity(); as e) {
+
+    <!-- Header -->
+    <div class="detail-header">
+      <div class="header-avatar">
+        @if (e.thumbnailUrl) {
+          <img [src]="proxyUrl(e.thumbnailUrl)" [alt]="e.name" />
+        } @else {
+          <mat-icon class="avatar-placeholder">{{ e.type === 'PERSON' ? 'person' : e.type === 'PLACE' ? 'place' : 'category' }}</mat-icon>
+        }
+      </div>
+      <div class="header-info">
+        <h1 class="entity-name">{{ e.name }}</h1>
+        <span class="type-badge type-badge--{{ e.type.toLowerCase() }}">{{ typeLabel(e.type) }}</span>
+      </div>
+      <button mat-stroked-button class="edit-btn" (click)="edit.emit()" aria-label="Edit entity">
+        <mat-icon>edit</mat-icon>
+        Edit
+      </button>
+    </div>
+
+    <!-- Biography -->
+    @if (e.biography) {
+      <section class="detail-section">
+        <h2 class="section-title">Biography</h2>
+        <p class="biography-text">{{ e.biography }}</p>
+      </section>
+    }
+
+    <!-- Photos -->
+    <section class="detail-section">
+      <h2 class="section-title">
+        <span class="photos-title-tap" (click)="onPhotosTitleTap()">Photos</span>
+        @if (visiblePhotos().length > 0) {
+          <span class="section-count">{{ visiblePhotos().length }}</span>
+        }
+        <button mat-stroked-button class="section-action photos-add-btn"
+                (click)="photoFileInput.click()"
+                [disabled]="photoUploading()"
+                aria-label="Add photos">
+          @if (photoUploading()) {
+            <mat-spinner diameter="16" />
+          } @else {
+            <mat-icon>add_photo_alternate</mat-icon>
+          }
+          {{ photoUploading() ? 'Uploading…' : 'Add photos' }}
+        </button>
+        <input #photoFileInput type="file" accept="image/*" multiple hidden (change)="onPhotoFileSelected($event)" />
+      </h2>
+
+      <div class="photos-drop-zone"
+           [class.photos-drop-zone--active]="photoDragOver()"
+           (dragover)="onPhotoDragOver($event)"
+           (dragleave)="onPhotoDragLeave($event)"
+           (drop)="onPhotosDrop($event)">
+        @if (visiblePhotos().length === 0) {
+          <p class="empty-hint">No photos added yet. Add photos or drag &amp; drop here.</p>
+        } @else {
+          <div class="photo-grid">
+            @for (photo of displayedPhotos(); track $index) {
+              <button class="photo-card" draggable="true" (dragstart)="onPhotoDragStart($event, photo)" (click)="openLightbox($index)" [attr.aria-label]="photo.caption || 'Photo ' + ($index + 1)">
+                <img [src]="proxyUrl(photo.thumbnailUrl) || proxyUrl(photo.url)" [alt]="photo.caption || ''" />
+                @if (photo.caption) {
+                  <span class="photo-caption">{{ photo.caption }}</span>
+                }
+              </button>
+            }
+          </div>
+          @if (visiblePhotos().length > PHOTO_PREVIEW_LIMIT) {
+            @if (showAllPhotos()) {
+              <button mat-button class="photos-toggle" (click)="showAllPhotos.set(false)">
+                <mat-icon>expand_less</mat-icon>
+                Show fewer
+              </button>
+            } @else {
+              <button mat-button class="photos-toggle" (click)="showAllPhotos.set(true)">
+                <mat-icon>expand_more</mat-icon>
+                Show all {{ visiblePhotos().length }} photos
+              </button>
+            }
+          }
+        }
+      </div>
+    </section>
+
+    <!-- Timeline -->
+    <section class="detail-section">
+      <h2 class="section-title">
+        Timeline
+        @if (timelineEvents().length > 0) {
+          <span class="section-count">{{ timelineEvents().length }}</span>
+        }
+        <button mat-icon-button class="section-action" (click)="addTimelineEvent()" matTooltip="Add timeline event" aria-label="Add timeline event">
+          <mat-icon>add</mat-icon>
+        </button>
+      </h2>
+
+      @if (timelineLoading()) {
+        <div class="section-loading">
+          <mat-spinner diameter="32" />
+        </div>
+      } @else if (timelineEvents().length === 0) {
+        <div class="timeline-empty">
+          <p class="empty-hint">No timeline events yet.</p>
+          <button mat-stroked-button (click)="addTimelineEvent()">
+            <mat-icon>add</mat-icon>
+            Add the first event
+          </button>
+        </div>
+      } @else {
+        <div class="timeline" cdkDropList (cdkDropListDropped)="onTimelineDrop($event)">
+          @for (ev of timelineEvents(); track ev.id) {
+            <div class="timeline-item" cdkDrag cdkDragLockAxis="y">
+              <div class="timeline-card"
+                   [class.timeline-card--drop-target]="timelineDragOverId() === ev.id"
+                   (dragover)="onTimelineCardDragOver($event, ev)"
+                   (dragleave)="onTimelineCardDragLeave($event, ev)"
+                   (drop)="onTimelineCardDrop($event, ev)">
+                <div class="timeline-card-main">
+                  @if (ev.timeframe) {
+                    <span class="timeline-timeframe">{{ ev.timeframe }}</span>
+                  }
+                  <h3 class="timeline-event-name">{{ ev.name }}</h3>
+                  @if (ev.description) {
+                    <p class="timeline-desc">{{ ev.description }}</p>
+                  }
+                </div>
+                @if (ev.photo; as photo) {
+                    <button class="timeline-photo" (click)="openEventPhoto(ev)" [attr.aria-label]="'View photo for ' + ev.name">
+                      <img [src]="proxyUrl(photo.thumbnailUrl) || proxyUrl(photo.url)" [alt]="'Photo for ' + ev.name" />
+                    </button>
+                }
+                <div class="timeline-actions">
+                  <mat-icon class="timeline-drag-handle" cdkDragHandle aria-hidden="true" matTooltip="Drag to reorder">drag_indicator</mat-icon>
+                  <button mat-icon-button [matMenuTriggerFor]="eventMenu" [attr.aria-label]="'Actions for ' + ev.name">
+                    <mat-icon>more_vert</mat-icon>
+                  </button>
+                  <mat-menu #eventMenu="matMenu">
+                    <button mat-menu-item (click)="editTimelineEvent(ev)">
+                      <mat-icon>edit</mat-icon>
+                      <span>Edit</span>
+                    </button>
+                    <button mat-menu-item (click)="moveTimelineEvent(ev, -1)" [disabled]="$first">
+                      <mat-icon>arrow_upward</mat-icon>
+                      <span>Move up</span>
+                    </button>
+                    <button mat-menu-item (click)="moveTimelineEvent(ev, 1)" [disabled]="$last">
+                      <mat-icon>arrow_downward</mat-icon>
+                      <span>Move down</span>
+                    </button>
+                    <button mat-menu-item (click)="pendingDelete.set(ev)">
+                      <mat-icon>delete</mat-icon>
+                      <span>Delete</span>
+                    </button>
+                  </mat-menu>
+                </div>
+              </div>
+              @if (pendingDelete()?.id === ev.id) {
+                <div class="timeline-confirm" role="alertdialog" aria-label="Confirm delete">
+                  <span class="timeline-confirm-text">Delete "{{ ev.name }}"?</span>
+                  <button mat-button (click)="pendingDelete.set(null)">Cancel</button>
+                  <button mat-button class="timeline-confirm-delete" (click)="confirmDeleteEvent(ev)">Delete</button>
+                </div>
+              }
+            </div>
+          }
+        </div>
+      }
+    </section>
+
+    <!-- Relationships -->
+    <section class="detail-section">
+      <h2 class="section-title">
+        Relationships
+        @if (relationships().length > 0) {
+          <span class="section-count">{{ relationships().length }}</span>
+        }
+      </h2>
+
+      @if (relationshipsLoading()) {
+        <div class="section-loading">
+          <mat-spinner diameter="32" />
+        </div>
+      } @else if (relationships().length === 0) {
+        <p class="empty-hint">No relationships recorded yet.</p>
+      } @else {
+        <ul class="relationship-list">
+          @for (rel of relationships(); track rel.id) {
+            <li>
+              <button class="relationship-item" (click)="navigateToEntity(rel.partnerEntityId)"
+                      [attr.aria-label]="relationshipTypeLabel(rel.relationshipType) + ' of ' + rel.partnerEntityName">
+                <div class="rel-avatar">
+                  @if (rel.partnerEntityThumbnailUrl) {
+                    <img [src]="proxyUrl(rel.partnerEntityThumbnailUrl)" [alt]="rel.partnerEntityName" />
+                  } @else {
+                    <mat-icon class="rel-avatar-placeholder">
+                      {{ rel.partnerEntityType === 'PERSON' ? 'person' : rel.partnerEntityType === 'PLACE' ? 'place' : 'category' }}
+                    </mat-icon>
+                  }
+                </div>
+                <div class="rel-info">
+                  <span class="rel-name">{{ rel.partnerEntityName }}</span>
+                  @if (rel.description) {
+                    <span class="rel-desc">{{ rel.description }}</span>
+                  }
+                </div>
+                <span class="rel-type-badge">{{ relationshipTypeLabel(rel.relationshipType) }}</span>
+                <mat-icon class="rel-arrow">chevron_right</mat-icon>
+              </button>
+            </li>
+          }
+        </ul>
+      }
+    </section>
+
+    <!-- Chapter Appearances -->
+    <section class="detail-section">
+      <h2 class="section-title">Appears In</h2>
+
+      @if (chaptersLoading()) {
+        <div class="section-loading">
+          <mat-spinner diameter="32" />
+        </div>
+      } @else if (chaptersByBook().length === 0) {
+        <p class="empty-hint">No chapter appearances recorded yet.</p>
+      } @else {
+        @for (group of chaptersByBook(); track group.bookId) {
+          <div class="book-group">
+            <h3 class="book-title">{{ group.bookTitle }}</h3>
+            <ul class="chapter-list">
+              @for (chapter of group.chapters; track chapter.id) {
+                <li>
+                  <button class="chapter-item" (click)="openChapter(chapter.id)">
+                    <mat-icon class="chapter-icon">menu_book</mat-icon>
+                    <span>{{ chapter.title }}</span>
+                    <mat-icon class="chapter-arrow">chevron_right</mat-icon>
+                  </button>
+                </li>
+              }
+            </ul>
+          </div>
+        }
+      }
+    </section>
+
+    <!-- Profile Details -->
+    @if (hasProfileDetails(e)) {
+      <section class="detail-section">
+        <h2 class="section-title">Profile</h2>
+        <dl class="profile-details">
+          @if (e.type === 'PERSON') {
+            @if (e.title) {
+              <div class="profile-row">
+                <dt>Title</dt>
+                <dd>{{ e.title }}</dd>
+              </div>
+            }
+            @if (e.firstName) {
+              <div class="profile-row">
+                <dt>First Name</dt>
+                <dd>{{ e.firstName }}</dd>
+              </div>
+            }
+            @if (e.lastName) {
+              <div class="profile-row">
+                <dt>Last Name</dt>
+                <dd>{{ e.lastName }}</dd>
+              </div>
+            }
+            @if (e.gender) {
+              <div class="profile-row">
+                <dt>Gender</dt>
+                <dd>{{ e.gender }}</dd>
+              </div>
+            }
+            @if (e.race) {
+              <div class="profile-row">
+                <dt>Race / Ethnicity</dt>
+                <dd>{{ e.race }}</dd>
+              </div>
+            }
+            @if (e.orientation) {
+              <div class="profile-row">
+                <dt>Sexual Orientation</dt>
+                <dd>{{ e.orientation }}</dd>
+              </div>
+            }
+          }
+          @if (e.nickname) {
+            <div class="profile-row">
+              <dt>Nickname</dt>
+              <dd>{{ e.nickname }}</dd>
+            </div>
+          }
+          @if (e.preferredReference) {
+            <div class="profile-row">
+              <dt>Preferred Reference</dt>
+              <dd>{{ preferredReferenceLabel(e.preferredReference) }}</dd>
+            </div>
+          }
+        </dl>
+        @if (e.type === 'PERSON' && e.personality) {
+          <div class="personality-block">
+            <h3 class="personality-label">Personality</h3>
+            <p class="personality-text">{{ e.personality }}</p>
+          </div>
+        }
+      </section>
+    }
+
+  }
+
+</div>
+
+<!-- Lightbox -->
+@if (lightboxOpen() && currentLightboxPhoto(); as photo) {
+  <div class="lightbox-overlay"
+       role="dialog"
+       aria-modal="true"
+       [attr.aria-label]="photo.caption || 'Photo lightbox'"
+       (click)="closeLightbox()">
+    <div class="lightbox-content"
+         (click)="$event.stopPropagation()"
+         (keydown)="onLightboxKey($event)"
+         (touchstart)="onLightboxTouchStart($event)"
+         (touchend)="onLightboxTouchEnd($event)"
+         tabindex="0"
+         #lightboxContent>
+
+      <button mat-icon-button class="lightbox-close" (click)="closeLightbox()" matTooltip="Close" aria-label="Close">
+        <mat-icon>close</mat-icon>
+      </button>
+
+      @if (visiblePhotos().length > 1) {
+        <button mat-icon-button class="lightbox-prev" (click)="prevPhoto()" matTooltip="Previous" aria-label="Previous photo">
+          <mat-icon>chevron_left</mat-icon>
+        </button>
+      }
+
+      @for (_ of [lightboxKey()]; track _) {
+        <div class="lightbox-image-wrap" [class]="'lightbox-image-wrap slide-' + slideDir()">
+          <img [src]="proxyUrl(photo.url)" [alt]="photo.caption || 'Photo'" class="lightbox-image" />
+        </div>
+      }
+
+      @if (visiblePhotos().length > 1) {
+        <button mat-icon-button class="lightbox-next" (click)="nextPhoto()" matTooltip="Next" aria-label="Next photo">
+          <mat-icon>chevron_right</mat-icon>
+        </button>
+      }
+
+      <div class="lightbox-footer">
+        @if (photo.caption) {
+          <span class="lightbox-caption">{{ photo.caption }}</span>
+        }
+        <span class="lightbox-counter">{{ lightboxIndex() + 1 }} of {{ visiblePhotos().length }}</span>
+      </div>
+
+      <div class="lightbox-actions" (click)="$event.stopPropagation()">
+        @if (photo.hidden) {
+          <button mat-stroked-button class="lightbox-action-btn" (click)="lightboxUnhide()" aria-label="Unhide photo">
+            <mat-icon>visibility</mat-icon>
+            Unhide
+          </button>
+        } @else {
+          <button mat-stroked-button class="lightbox-action-btn" (click)="lightboxHide()" aria-label="Hide photo">
+            <mat-icon>visibility_off</mat-icon>
+            Hide
+          </button>
+        }
+        <button mat-stroked-button class="lightbox-action-btn lightbox-action-delete" (click)="lightboxDelete()" aria-label="Delete photo">
+          <mat-icon>delete</mat-icon>
+          Delete
+        </button>
+      </div>
+
+    </div>
+  </div>
+}

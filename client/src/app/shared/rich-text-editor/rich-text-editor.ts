@@ -3,9 +3,11 @@ import {
   OnInit, AfterViewInit, OnDestroy, ViewChild, ElementRef, HostListener, input, output,
 } from '@angular/core';
 import { DecimalPipe } from '@angular/common';
+import { RouterLink } from '@angular/router';
 import { MatButtonModule } from '@angular/material/button';
 import { MatIconModule } from '@angular/material/icon';
 import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
+import { MatTooltipModule } from '@angular/material/tooltip';
 import { Entity, EntityReference } from '@shared/models/entity.model';
 import { EntityService } from '../../services/entity.service';
 import { GrammarCheckService, GrammarError, SuggestedEntity } from '../../services/grammar-check.service';
@@ -26,7 +28,7 @@ export interface SuggestedEntityCard {
 
 @Component({
   selector: 'app-rich-text-editor',
-  imports: [MatButtonModule, MatIconModule, MatProgressSpinnerModule, DecimalPipe],
+  imports: [MatButtonModule, MatIconModule, MatProgressSpinnerModule, MatTooltipModule, DecimalPipe, RouterLink],
   templateUrl: './rich-text-editor.html',
   styleUrl: './rich-text-editor.scss',
 })

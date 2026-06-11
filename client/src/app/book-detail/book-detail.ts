@@ -20,7 +20,6 @@ import { Chapter } from '@shared/models/chapter.model';
 import { Entity } from '@shared/models/entity.model';
 import { v4 as uuidv4 } from 'uuid';
 import { HeaderService } from '../services/header.service';
-import { EntityPanelService } from '../services/entity-panel.service';
 import { SeriesContextService } from '../services/series-context.service';
 import { SlideOutPanelContainer } from '../shared/slide-out-panel-container/slide-out-panel-container';
 import { BookNotesComponent } from '../book-notes/book-notes';
@@ -55,7 +54,6 @@ export class BookDetailComponent implements OnInit, OnDestroy {
   private chapterService = inject(ChapterService);
   private seriesService = inject(SeriesService);
   private headerService = inject(HeaderService);
-  private entityPanel = inject(EntityPanelService);
   private seriesContext = inject(SeriesContextService);
   private entityService = inject(EntityService);
 

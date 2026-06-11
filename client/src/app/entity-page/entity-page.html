@@ -1,0 +1,237 @@
+<div class="entities-page" [class.entities-page--browse]="isBrowsing()">
+
+  <!-- ── Left panel: entity list ── -->
+  <div class="entity-list-panel"
+       [class.entity-list-panel--collapsed]="isCollapsed()"
+       (dragover)="onListDragOver($event)"
+       (dragleave)="onListDragLeave($event)"
+       (drop)="onListDrop($event)">
+
+    @if (!isCollapsed()) {
+      <!-- Full list view -->
+      <div class="panel-header">
+        <h2 class="panel-title">
+          {{ panel.showingArchived() ? 'Archived' : 'Entities' }}
+        </h2>
+        @if (!panel.showingArchived()) {
+          <button mat-icon-button
+                  (click)="addEntity()"
+                  [disabled]="!panel.seriesId()"
+                  matTooltip="Add entity"
+                  aria-label="Add entity">
+            <mat-icon>add</mat-icon>
+          </button>
+        }
+      </div>
+
+      @if (panel.allSeries().length > 1) {
+        <div class="series-selector">
+          <mat-icon class="series-icon">auto_stories</mat-icon>
+          <mat-select class="series-select"
+                      [value]="panel.seriesId()"
+                      (valueChange)="panel.selectSeries($event)"
+                      placeholder="Select a series">
+            @for (s of panel.allSeries(); track s.id) {
+              <mat-option [value]="s.id">{{ s.title }}</mat-option>
+            }
+          </mat-select>
+        </div>
+      }
+
+      @if (panel.entityLoading()) {
+        <p class="panel-loading">Loading...</p>
+      }
+
+      <!-- Narrator -->
+      @if (!panel.showingArchived() && panel.narrator(); as narrator) {
+        <div class="narrator-section">
+          <div class="entity-list-item narrator-item"
+               [attr.data-entity-id]="narrator.id"
+               [class.entity-selected]="selectedEntityId() === narrator.id"
+               [class.entity-drop-target]="dragOverEntityId() === narrator.id"
+               (click)="selectEntity(narrator.id)"
+               role="button"
+               tabindex="0"
+               (keydown.enter)="selectEntity(narrator.id)"
+               (keydown.space)="selectEntity(narrator.id)">
+            <div class="entity-avatar narrator-avatar">
+              @if (narrator.thumbnailUrl) {
+                <img [src]="panel.proxyUrl(narrator.thumbnailUrl)" alt="Narrator" />
+              } @else {
+                <mat-icon class="entity-avatar-icon">record_voice_over</mat-icon>
+              }
+            </div>
+            <span class="narrator-badge">NARRATOR</span>
+            <span class="entity-name">Narrator</span>
+            @if (uploadingEntityId() === narrator.id) {
+              <div class="entity-upload-overlay"><mat-spinner diameter="18" /></div>
+            }
+          </div>
+        </div>
+      }
+
+      <!-- Grouped entity list -->
+      @if (!panel.showingArchived()) {
+        @for (group of panel.entityGroups(); track group.type) {
+          <div class="entity-group">
+            <button class="entity-group-header" (click)="panel.toggleGroup(group.type)">
+              <mat-icon class="entity-group-icon">{{ groupIcon(group.type) }}</mat-icon>
+              <span class="entity-group-label">{{ groupLabel(group.type) }}</span>
+              <span class="entity-group-count">{{ group.entities.length }}</span>
+              <mat-icon class="entity-group-chevron">
+                {{ panel.isGroupCollapsed(group.type) ? 'expand_more' : 'expand_less' }}
+              </mat-icon>
+            </button>
+            @if (!panel.isGroupCollapsed(group.type)) {
+              <div class="entity-list"
+                   cdkDropList
+                   (cdkDropListDropped)="onGroupDrop(group.type, $event)">
+                @for (entity of group.entities; track entity.id) {
+                  <div class="entity-list-item"
+                       cdkDrag
+                       [attr.data-entity-id]="entity.id"
+                       [class.entity-selected]="selectedEntityId() === entity.id"
+                       [class.entity-drop-target]="dragOverEntityId() === entity.id"
+                       (click)="selectEntity(entity.id)"
+                       role="button"
+                       tabindex="0"
+                       (keydown.enter)="selectEntity(entity.id)"
+                       (keydown.space)="selectEntity(entity.id)">
+                    <mat-icon class="drag-handle" cdkDragHandle (click)="$event.stopPropagation()">
+                      drag_indicator
+                    </mat-icon>
+                    <div class="entity-avatar">
+                      @if (entity.thumbnailUrl) {
+                        <img [src]="panel.proxyUrl(entity.thumbnailUrl)" [alt]="entity.name" />
+                      } @else {
+                        <mat-icon class="entity-avatar-icon">person</mat-icon>
+                      }
+                    </div>
+                    <span class="entity-name">{{ entity.name || '(unnamed)' }}</span>
+                    @if (uploadingEntityId() === entity.id) {
+                      <div class="entity-upload-overlay"><mat-spinner diameter="18" /></div>
+                    }
+                  </div>
+                }
+              </div>
+            }
+          </div>
+        }
+      } @else {
+        <!-- Archived flat list -->
+        <div class="entity-list">
+          @for (entity of panel.entityList(); track entity.id) {
+            <div class="entity-list-item"
+                 [attr.data-entity-id]="entity.id"
+                 [class.entity-selected]="selectedEntityId() === entity.id"
+                 [class.entity-drop-target]="dragOverEntityId() === entity.id"
+                 (click)="selectEntity(entity.id)"
+                 role="button"
+                 tabindex="0"
+                 (keydown.enter)="selectEntity(entity.id)"
+                 (keydown.space)="selectEntity(entity.id)">
+              <div class="entity-avatar">
+                @if (entity.thumbnailUrl) {
+                  <img [src]="panel.proxyUrl(entity.thumbnailUrl)" [alt]="entity.name" />
+                } @else {
+                  <mat-icon class="entity-avatar-icon">person</mat-icon>
+                }
+              </div>
+              <span class="entity-type-badge">{{ entity.type }}</span>
+              <span class="entity-name">{{ entity.name || '(unnamed)' }}</span>
+            </div>
+          }
+        </div>
+      }
+
+    } @else {
+      <!-- Collapsed: avatar rail only -->
+      <div class="avatar-rail">
+        <button mat-icon-button
+                (click)="addEntity()"
+                [disabled]="!panel.seriesId()"
+                matTooltip="Add entity"
+                matTooltipTouchGestures="off"
+                aria-label="Add entity"
+                class="rail-add-btn">
+          <mat-icon>add</mat-icon>
+        </button>
+
+        @if (panel.narrator(); as narrator) {
+          <button class="avatar-btn"
+                  [class.avatar-btn--selected]="selectedEntityId() === narrator.id"
+                  (click)="selectEntity(narrator.id)"
+                  [matTooltip]="'Narrator'"
+                  matTooltipTouchGestures="off"
+                  matTooltipPosition="right"
+                  [attr.aria-label]="'Narrator'">
+            <div class="entity-avatar narrator-avatar">
+              @if (narrator.thumbnailUrl) {
+                <img [src]="panel.proxyUrl(narrator.thumbnailUrl)" alt="Narrator" />
+              } @else {
+                <mat-icon class="entity-avatar-icon">record_voice_over</mat-icon>
+              }
+            </div>
+          </button>
+        }
+
+        @for (entity of panel.entityList(); track entity.id) {
+          <button class="avatar-btn"
+                  [class.avatar-btn--selected]="selectedEntityId() === entity.id"
+                  (click)="selectEntity(entity.id)"
+                  [matTooltip]="entity.name || '(unnamed)'"
+                  matTooltipTouchGestures="off"
+                  matTooltipPosition="right"
+                  [attr.aria-label]="entity.name || '(unnamed)'">
+            <div class="entity-avatar">
+              @if (entity.thumbnailUrl) {
+                <img [src]="panel.proxyUrl(entity.thumbnailUrl)" [alt]="entity.name" />
+              } @else {
+                <mat-icon class="entity-avatar-icon">person</mat-icon>
+              }
+            </div>
+          </button>
+        }
+      </div>
+    }
+
+  </div>
+
+  <!-- ── Right panel: detail / edit / empty state ── -->
+  <div class="entity-content-panel">
+
+    @if (isEditMode() && editingEntity(); as editEntity) {
+      <div class="edit-container">
+        <app-entity-edit
+          [entity]="editEntity"
+          [isNew]="isNewEntity()"
+          (save)="onSave($event)"
+          (cancel)="onCancel()"
+          (viewDetails)="onViewDetails()"
+          (archive)="onArchive($event)"
+          (unarchive)="onUnarchive($event)"
+          (refresh)="onRefresh()" />
+      </div>
+    } @else if (selectedEntityId(); as entityId) {
+      <app-entity-detail
+        [entityId]="entityId"
+        [refreshTrigger]="detailRefreshTrigger()"
+        (edit)="onEditRequested()" />
+    } @else if (!panel.showingArchived() && panel.seriesId() && collageEntities().length > 0) {
+      <app-entity-collage
+        [entities]="collageEntities()"
+        [counts]="mentionCounts()"
+        (entitySelected)="selectEntity($event)" />
+    } @else {
+      <div class="empty-state">
+        <mat-icon class="empty-icon">people</mat-icon>
+        <p class="empty-text">Select an entity to view details</p>
+        @if (!panel.seriesId()) {
+          <p class="empty-hint">No series selected. Open a series to manage its entities.</p>
+        }
+      </div>
+    }
+
+  </div>
+
+</div>

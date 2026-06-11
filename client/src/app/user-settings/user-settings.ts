@@ -8,7 +8,6 @@ import { MatButtonToggleModule } from '@angular/material/button-toggle';
 import { MatSlideToggleModule } from '@angular/material/slide-toggle';
 import { MatSnackBar } from '@angular/material/snack-bar';
 import { UserSettingsService, GhostCompleteItem, DEFAULT_GENDER_OPTIONS, DEFAULT_RACE_OPTIONS, DEFAULT_ORIENTATION_OPTIONS } from '../services/user-settings.service';
-import { PinLockService } from '../services/pin-lock.service';
 import { HeaderService } from '../services/header.service';
 
 export interface ColorThemeOption {
@@ -52,7 +51,6 @@ export class UserSettingsComponent {
   private settingsService = inject(UserSettingsService);
   private snackBar = inject(MatSnackBar);
   private headerService = inject(HeaderService);
-  private pinLock = inject(PinLockService);
 
   @ViewChild('avatarFileInput') avatarFileInput!: ElementRef<HTMLInputElement>;
 
@@ -84,7 +82,7 @@ export class UserSettingsComponent {
   private displayNameDraftDirty = false;
 
   constructor() {
-    this.headerService.set([{ label: 'Settings' }]);
+    this.headerService.setPage('Settings');
     // Keep the draft in sync with the server value until the user edits it
     effect(() => {
       if (!this.displayNameDraftDirty) {
@@ -277,96 +275,4 @@ export class UserSettingsComponent {
     this.settingsService.setOrientationOptions([...DEFAULT_ORIENTATION_OPTIONS]);
   }
 
-  // ── Photos ───────────────────────────────────────────
-  readonly showHiddenPhotos = this.settingsService.showHiddenPhotos;
-
-  setShowHiddenPhotos(value: boolean): void {
-    this.settingsService.setShowHiddenPhotos(value);
-  }
-
-  // ── PIN Lock ─────────────────────────────────────────
-  readonly hasPin = this.settingsService.hasPin;
-  readonly settingsLoaded = this.settingsService.settingsLoaded;
-
-  pinFormMode = signal<'hidden' | 'set' | 'change' | 'remove'>('hidden');
-  pinCurrentDraft = signal('');
-  pinNewDraft = signal('');
-  pinConfirmDraft = signal('');
-  pinFormError = signal('');
-  pinFormWorking = signal(false);
-
-  startSetPin(): void {
-    this.pinCurrentDraft.set('');
-    this.pinNewDraft.set('');
-    this.pinConfirmDraft.set('');
-    this.pinFormError.set('');
-    this.pinFormMode.set('set');
-  }
-
-  startChangePin(): void {
-    this.pinCurrentDraft.set('');
-    this.pinNewDraft.set('');
-    this.pinConfirmDraft.set('');
-    this.pinFormError.set('');
-    this.pinFormMode.set('change');
-  }
-
-  startRemovePin(): void {
-    this.pinCurrentDraft.set('');
-    this.pinFormError.set('');
-    this.pinFormMode.set('remove');
-  }
-
-  cancelPinForm(): void {
-    this.pinFormMode.set('hidden');
-  }
-
-  async submitPinForm(): Promise<void> {
-    if (this.pinFormWorking()) return;
-    const mode = this.pinFormMode();
-
-    if (mode === 'remove') {
-      const current = this.pinCurrentDraft().trim();
-      if (!current) {
-        this.pinFormError.set('Enter your current PIN.');
-        return;
-      }
-      this.pinFormWorking.set(true);
-      const ok = await this.pinLock.clearPin(current);
-      this.pinFormWorking.set(false);
-      if (!ok) {
-        this.pinFormError.set('Incorrect PIN.');
-        return;
-      }
-      this.pinFormMode.set('hidden');
-      this.snackBar.open('PIN removed.', undefined, { duration: 2000 });
-      return;
-    }
-
-    // set or change
-    const newPin = this.pinNewDraft().trim();
-    const confirmPin = this.pinConfirmDraft().trim();
-    if (!newPin) {
-      this.pinFormError.set('Enter a new PIN.');
-      return;
-    }
-    if (newPin !== confirmPin) {
-      this.pinFormError.set('PINs do not match.');
-      return;
-    }
-    const currentPin = mode === 'change' ? this.pinCurrentDraft().trim() : undefined;
-    this.pinFormWorking.set(true);
-    const ok = await this.pinLock.setPin(newPin, currentPin);
-    this.pinFormWorking.set(false);
-    if (!ok) {
-      this.pinFormError.set('Current PIN is incorrect.');
-      return;
-    }
-    this.pinFormMode.set('hidden');
-    this.snackBar.open(
-      mode === 'set' ? 'PIN set. Photos are now locked.' : 'PIN updated.',
-      undefined,
-      { duration: 3000 }
-    );
-  }
 }

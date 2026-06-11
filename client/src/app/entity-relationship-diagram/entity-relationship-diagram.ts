@@ -131,7 +131,7 @@ export class EntityRelationshipDiagramComponent implements OnInit, OnDestroy {
             );
           },
         });
-        this.headerService.set([{ label: 'Relationships' }]);
+        this.headerService.setPage('Relationships');
       }
     });
 

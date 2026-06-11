@@ -132,9 +132,9 @@
         <span class="rte-popup-bio">{{ hoveredEntity()!.biography }}</span>
       }
     </div>
-    <button mat-icon-button class="rte-popup-edit-btn" (click)="openEntityEdit(hoveredEntity()!)">
-      <mat-icon>edit</mat-icon>
-    </button>
+    <a mat-icon-button class="rte-popup-edit-btn" [routerLink]="['/entities', hoveredEntity()!.id]" matTooltip="View entity">
+      <mat-icon>open_in_new</mat-icon>
+    </a>
   </div>
 }
 

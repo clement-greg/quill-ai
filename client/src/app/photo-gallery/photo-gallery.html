@@ -1,9 +1,5 @@
 <div class="gallery-page">
 
-  @if (pinLock.hasPin() && pinLock.isLocked()) {
-    <app-pin-entry-overlay />
-  } @else {
-
   <!-- Filters toolbar -->
   <div class="gallery-filters">
     <mat-form-field appearance="outline" class="series-select">
@@ -76,12 +72,10 @@
     </div>
   }
 
-  } <!-- end @else (unlocked) -->
-
 </div>
 
 <!-- Lightbox overlay -->
-@if (!pinLock.isLocked() && lightboxOpen() && currentLightboxPhoto(); as item) {
+@if (lightboxOpen() && currentLightboxPhoto(); as item) {
   <div class="lightbox-overlay" (click)="closeLightbox()">
     <div class="lightbox-content"
          (click)="$event.stopPropagation()"

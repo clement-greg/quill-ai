@@ -20,7 +20,6 @@ import { Book } from '@shared/models/book.model';
 import { v4 as uuidv4 } from 'uuid';
 import { SlideOutPanelContainer } from '../shared/slide-out-panel-container/slide-out-panel-container';
 import { HeaderService } from '../services/header.service';
-import { EntityPanelService } from '../services/entity-panel.service';
 import { SeriesContextService } from '../services/series-context.service';
 
 @Component({
@@ -49,7 +48,6 @@ export class SeriesDetailComponent implements OnInit, OnDestroy {
   private seriesService = inject(SeriesService);
   private bookService = inject(BookService);
   private headerService = inject(HeaderService);
-  private entityPanel = inject(EntityPanelService);
   private seriesContext = inject(SeriesContextService);
 
   series = signal<Series | null>(null);

@@ -7,8 +7,6 @@ import {
 import { MatDialogRef, MAT_DIALOG_DATA } from '@angular/material/dialog';
 import { MatButtonModule } from '@angular/material/button';
 import { MatIconModule } from '@angular/material/icon';
-import { PinLockService } from '../services/pin-lock.service';
-import { PinEntryOverlayComponent } from '../pin-entry-overlay/pin-entry-overlay';
 import { EntityPhoto } from '@shared/models/entity.model';
 
 export interface PhotoPickerResult {
@@ -21,7 +19,6 @@ export interface PhotoPickerResult {
   imports: [
     MatButtonModule,
     MatIconModule,
-    PinEntryOverlayComponent,
   ],
   templateUrl: './photo-picker-dialog.html',
   styleUrl: './photo-picker-dialog.scss',
@@ -30,8 +27,6 @@ export interface PhotoPickerResult {
 export class PhotoPickerDialogComponent {
   private dialogRef = inject(MatDialogRef<PhotoPickerDialogComponent>);
   private data = inject<EntityPhoto[]>(MAT_DIALOG_DATA);
-  readonly pinLock = inject(PinLockService);
-
   photos = computed(() => this.data.filter(p => !p.hidden));
 
   proxyUrl(url: string): string {

@@ -1,6 +1,6 @@
 <div class="entity-edit-form">
 
-  <mat-tab-group animationDuration="150ms" class="entity-tabs" (selectedTabChange)="onPhotosTabChange($event.index)">
+  <mat-tab-group animationDuration="150ms" class="entity-tabs">
 
     <!-- ── Details tab ─────────────────────────────── -->
     <mat-tab label="Details">
@@ -231,87 +231,6 @@
       </mat-tab>
     }
 
-    <!-- ── Photos tab ──────────────────────────────── -->
-    @if (entity().id && entity().type === 'PERSON' && !isNarrator()) {
-      <mat-tab>
-        <ng-template mat-tab-label>
-          Photos
-          @if (visiblePhotoItems().length > 0) {
-            <span class="tab-badge">{{ visiblePhotoItems().length }}</span>
-          }
-        </ng-template>
-
-        <div class="tab-content photos-tab">
-          @if (pinLock.hasPin() && pinLock.isLocked()) {
-            <app-pin-entry-overlay />
-          } @else {
-          <div class="photos-toolbar">
-            @if (!selectMode()) {
-              <button mat-stroked-button type="button" (click)="photoFileInput.click()" [disabled]="photoUploading()">
-                @if (photoUploading()) {
-                  <mat-spinner diameter="18" />
-                } @else {
-                  <mat-icon>add_photo_alternate</mat-icon>
-                }
-                {{ photoUploading() ? 'Uploading…' : 'Add photo' }}
-              </button>
-              @if (visiblePhotoItems().length > 0) {
-                <button mat-stroked-button type="button" (click)="toggleSelectMode()">
-                  <mat-icon>checklist</mat-icon>
-                  Select
-                </button>
-              }
-            } @else {
-              <button mat-stroked-button type="button"
-                      [disabled]="selectedActualIndices().size === 0"
-                      (click)="hideSelectedPhotos()">
-                <mat-icon>visibility_off</mat-icon>
-                Hide ({{ selectedActualIndices().size }})
-              </button>
-              <button mat-stroked-button type="button" color="warn"
-                      [disabled]="selectedActualIndices().size === 0"
-                      (click)="deleteSelectedPhotos()">
-                <mat-icon>delete</mat-icon>
-                Delete ({{ selectedActualIndices().size }})
-              </button>
-              <button mat-button type="button" (click)="toggleSelectMode()">Cancel</button>
-            }
-            <input #photoFileInput type="file" accept="image/*" hidden (change)="onPhotoFileSelected($event)" />
-          </div>
-
-          <div class="photos-scroll">
-            @if (visiblePhotoItems().length === 0) {
-              <p class="photos-empty">No photos yet. Add photos to build a gallery for this character.</p>
-            } @else {
-              <div class="photos-grid" [class.photos-select-mode]="selectMode()">
-                @for (item of visiblePhotoItems(); track item.photo.url; let i = $index) {
-                  <div class="photo-tile"
-                       [class.photo-tile-selected]="selectedActualIndices().has(item.actualIndex)"
-                       (click)="onPhotoClick(item.actualIndex, i)"
-                       (mousedown)="startLongPress(item.actualIndex)"
-                       (touchstart)="startLongPress(item.actualIndex)"
-                       (mouseup)="cancelLongPress()"
-                       (mouseleave)="cancelLongPress()"
-                       (touchend)="cancelLongPress()"
-                       (touchmove)="cancelLongPress()">
-                    <img [src]="proxyUrl(item.photo.thumbnailUrl)" [alt]="item.photo.caption || 'Photo ' + (i + 1)" />
-                    @if (selectMode()) {
-                      <div class="photo-select-overlay">
-                        <mat-icon class="photo-select-check">
-                          {{ selectedActualIndices().has(item.actualIndex) ? 'check_circle' : 'radio_button_unchecked' }}
-                        </mat-icon>
-                      </div>
-                    }
-                  </div>
-                }
-              </div>
-            }
-          </div>
-          } <!-- end @else (unlocked) -->
-        </div>
-      </mat-tab>
-    }
-
   </mat-tab-group>
 
   <!-- Actions always visible below the tabs -->
@@ -325,6 +244,9 @@
         } @else {
           <mat-icon>refresh</mat-icon>
         }
+      </button>
+      <button mat-icon-button (click)="onViewDetails()" matTooltip="View details page">
+        <mat-icon>open_in_new</mat-icon>
       </button>
     }
     <span class="action-spacer"></span>
@@ -347,47 +269,3 @@
 
 </div>
 
-<!-- ── Photo lightbox overlay ───────────────────────── -->
-@if (!pinLock.isLocked() && lightboxIndex() !== null) {
-  <div class="lightbox-backdrop" (click)="closeLightbox()">
-    <button mat-icon-button class="lightbox-close" (click)="closeLightbox()" matTooltip="Close">
-      <mat-icon>close</mat-icon>
-    </button>
-
-    @if (visiblePhotoItems().length > 1) {
-      <button mat-icon-button class="lightbox-nav lightbox-prev" (click)="$event.stopPropagation(); lightboxPrev()" matTooltip="Previous">
-        <mat-icon>chevron_left</mat-icon>
-      </button>
-    }
-
-    <div class="lightbox-image-wrap"
-         (click)="$event.stopPropagation()"
-         (touchstart)="onLightboxTouchStart($event)"
-         (touchend)="onLightboxTouchEnd($event)">
-      @for (item of visiblePhotoItems(); track item.photo.url; let i = $index) {
-        @if (i === lightboxIndex()) {
-          <img [src]="proxyUrl(item.photo.url)" [alt]="item.photo.caption || 'Photo ' + (i + 1)"
-               class="lightbox-image" [class.lightbox-anim-next]="lightboxAnim() === 'next'" [class.lightbox-anim-prev]="lightboxAnim() === 'prev'" />
-        }
-      }
-      <span class="lightbox-counter">{{ lightboxIndex()! + 1 }} / {{ visiblePhotoItems().length }}</span>
-    </div>
-
-    <div class="lightbox-actions" (click)="$event.stopPropagation()">
-      <button mat-stroked-button class="lightbox-action-btn" (click)="lightboxHide()" matTooltip="Hide photo">
-        <mat-icon>visibility_off</mat-icon>
-        Hide
-      </button>
-      <button mat-stroked-button class="lightbox-action-btn lightbox-action-delete" (click)="lightboxDelete()" matTooltip="Delete photo">
-        <mat-icon>delete</mat-icon>
-        Delete
-      </button>
-    </div>
-
-    @if (visiblePhotoItems().length > 1) {
-      <button mat-icon-button class="lightbox-nav lightbox-next" (click)="$event.stopPropagation(); lightboxNext()" matTooltip="Next">
-        <mat-icon>chevron_right</mat-icon>
-      </button>
-    }
-  </div>
-}

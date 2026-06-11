@@ -16,6 +16,7 @@ import { Home } from './home/home';
 import { UserSettingsComponent } from './user-settings/user-settings';
 import { PhotoGalleryComponent } from './photo-gallery/photo-gallery';
 import { WritingStatsComponent } from './writing-stats/writing-stats';
+import { EntityPageComponent } from './entity-page/entity-page';
 import { authGuard } from './auth/auth.guard';
 import { authInterceptor } from './auth/auth.interceptor';
 
@@ -33,6 +34,8 @@ const routes: Routes = [
   { path: 'settings', component: UserSettingsComponent, canActivate: [authGuard] },
   { path: 'gallery', component: PhotoGalleryComponent, canActivate: [authGuard] },
   { path: 'writing-stats', component: WritingStatsComponent, canActivate: [authGuard] },
+  { path: 'entities', component: EntityPageComponent, canActivate: [authGuard] },
+  { path: 'entities/:id', component: EntityPageComponent, canActivate: [authGuard] },
   { path: 'home', component: Home, canActivate: [authGuard] },
   { path: '', redirectTo: 'home', pathMatch: 'full' },
 ];

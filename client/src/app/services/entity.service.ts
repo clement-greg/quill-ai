@@ -3,6 +3,14 @@ import { HttpClient } from '@angular/common/http';
 import { Observable } from 'rxjs';
 import { Entity } from '@shared/models/entity.model';
 
+export interface ChapterAppearance {
+  id: string;
+  title: string;
+  sortOrder?: number;
+  bookId: string;
+  bookTitle: string;
+}
+
 @Injectable({ providedIn: 'root' })
 export class EntityService {
   private http = inject(HttpClient);
@@ -78,8 +86,8 @@ export class EntityService {
     return this.http.patch<void>(`${this.apiUrl}/reorder`, { ids });
   }
 
-  addPhoto(entityId: string, url: string, thumbnailUrl: string): Observable<Entity> {
-    return this.http.post<Entity>(`${this.apiUrl}/${entityId}/photos`, { url, thumbnailUrl });
+  addPhoto(entityId: string, url: string, thumbnailUrl: string, hidden = false): Observable<Entity> {
+    return this.http.post<Entity>(`${this.apiUrl}/${entityId}/photos`, { url, thumbnailUrl, hidden });
   }
 
   removePhoto(entityId: string, index: number): Observable<Entity> {
@@ -88,5 +96,13 @@ export class EntityService {
 
   setPhotosHidden(entityId: string, indices: number[], hidden: boolean): Observable<Entity> {
     return this.http.patch<Entity>(`${this.apiUrl}/${entityId}/photos/visibility`, { indices, hidden });
+  }
+
+  getChapterAppearances(entityId: string): Observable<ChapterAppearance[]> {
+    return this.http.get<ChapterAppearance[]>(`${this.apiUrl}/${entityId}/chapters`);
+  }
+
+  getMentionCounts(seriesId: string): Observable<{ counts: Record<string, number> }> {
+    return this.http.get<{ counts: Record<string, number> }>(`${this.apiUrl}/series/${seriesId}/mention-counts`);
   }
 }

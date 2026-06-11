@@ -1,8 +1,4 @@
 <div class="picker-container">
-  @if (pinLock.hasPin() && pinLock.isLocked()) {
-    <app-pin-entry-overlay />
-  }
-
   <div class="picker-header">
     <h2 class="picker-title" id="photo-picker-title">Pick from Gallery</h2>
     <button mat-icon-button (click)="close()" aria-label="Close dialog">

@@ -42,7 +42,7 @@
         <mat-icon>smart_toy</mat-icon>
         Resource Manager
       </button>
-      <button mat-menu-item (click)="entityPanel.openPanel(seriesContext.currentSeriesId())">
+      <button mat-menu-item routerLink="/entities">
         <mat-icon>people</mat-icon>
         Entities
       </button>
@@ -102,7 +102,7 @@
         <mat-icon>smart_toy</mat-icon>
         Resource Manager
       </button>
-      <button mat-menu-item (click)="entityPanel.openPanel(seriesContext.currentSeriesId())">
+      <button mat-menu-item routerLink="/entities">
         <mat-icon>people</mat-icon>
         Entities
       </button>
@@ -150,8 +150,6 @@
 @if (aiAssistant.isOpen()) {
   <div class="panel-resizer" (pointerdown)="onResizerPointerDown($event)"></div>
 }
-
-<app-entity-panel />
 
 @if (auth.currentUser()) {
   <app-ai-assistant />

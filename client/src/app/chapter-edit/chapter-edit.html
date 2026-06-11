@@ -48,6 +48,10 @@
             <mat-icon>more_vert</mat-icon>
           </button>
           <mat-menu #chapterMenu="matMenu">
+            <button mat-menu-item (click)="analyzeChapter()" [disabled]="analyzingChapter()">
+              <mat-icon>auto_awesome</mat-icon>
+              {{ analyzingChapter() ? 'Analyzing…' : 'Analyze chapter' }}
+            </button>
             <button mat-menu-item (click)="archiveChapter()">
               <mat-icon>archive</mat-icon> Archive chapter
             </button>

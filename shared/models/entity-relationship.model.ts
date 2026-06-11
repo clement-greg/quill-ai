@@ -40,6 +40,40 @@ export interface EntityRelationship extends AuditedRecord {
   description?: string;
 }
 
+export interface RelationshipAddProposal {
+  sourceEntityId: string;
+  sourceEntityName: string;
+  targetEntityId: string;
+  targetEntityName: string;
+  relationshipType: RelationshipType;
+  description?: string;
+}
+
+export interface RelationshipExtractionResult {
+  adds: RelationshipAddProposal[];
+}
+
+export interface ApplyRelationshipProposalsRequest {
+  chapterId: string;
+  seriesId: string;
+  adds: RelationshipAddProposal[];
+}
+
+export interface ApplyRelationshipProposalsResult {
+  added: number;
+}
+
+export interface EntityRelationshipSummary {
+  id: string;
+  partnerEntityId: string;
+  partnerEntityName: string;
+  partnerEntityType: 'PERSON' | 'PLACE' | 'THING';
+  partnerEntityThumbnailUrl?: string;
+  relationshipType: RelationshipType;
+  description?: string;
+  direction: 'source' | 'target';
+}
+
 export interface DiagramNodePosition {
   entityId: string;
   x: number;

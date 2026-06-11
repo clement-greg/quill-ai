@@ -23,6 +23,8 @@ const standardContainerDefs = [
   { id: 'entity-relationships', partitionKey: { paths: ['/id'] } },
   { id: 'diagram-layouts', partitionKey: { paths: ['/id'] } },
   { id: 'entity-quotes', partitionKey: { paths: ['/entityId'] } },
+  { id: 'timeline-events', partitionKey: { paths: ['/entityId'] } },
+  { id: 'mention-counts', partitionKey: { paths: ['/id'] } },
 ];
 
 // text-embedding-3-small produces 1536-dimensional vectors.

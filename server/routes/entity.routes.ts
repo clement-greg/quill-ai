@@ -4,6 +4,8 @@ import config from '../config';
 import { getContainer } from '../cosmos';
 import { deleteBlob } from '../storage';
 import { Entity } from '../../shared/models/entity.model';
+import { Chapter } from '../../shared/models/chapter.model';
+import { Book } from '../../shared/models/book.model';
 import { withOwnerFilter, readOwnedItem } from '../owner-guard';
 
 const aiClient = new AzureOpenAI({
@@ -62,6 +64,109 @@ router.get('/series/:seriesId/archived', async (req: Request, res: Response) => 
   }
 });
 
+interface MentionCountsDoc {
+  id: string;
+  owner?: string;
+  chapterCount: number;
+  chapterMaxTs: number;
+  counts: Record<string, number>;
+  computedAt: string;
+}
+
+// GET entity mention counts for a series (number of times each entity is
+// referenced across chapter content). Results are cached in the mention-counts
+// container; the cache is revalidated against the chapters' COUNT and MAX(_ts)
+// so the expensive content scan only reruns when a chapter actually changes.
+router.get('/series/:seriesId/mention-counts', async (req: Request, res: Response) => {
+  try {
+    const seriesId = req.params['seriesId'] as string;
+    const owner = req.user!.email;
+
+    const booksContainer = getContainer('books');
+    const { resources: books } = await booksContainer.items
+      .query<{ id: string }>({
+        query: 'SELECT c.id FROM c WHERE c.seriesId = @seriesId AND c.owner = @owner AND (NOT IS_DEFINED(c.archived) OR c.archived = false) AND (NOT IS_DEFINED(c.deleted) OR c.deleted = false)',
+        parameters: [
+          { name: '@seriesId', value: seriesId },
+          { name: '@owner', value: owner },
+        ],
+      })
+      .fetchAll();
+
+    if (books.length === 0) {
+      res.json({ counts: {} });
+      return;
+    }
+
+    const bookIdParams = books.map((b, i) => ({ name: `@bookId${i}`, value: b.id }));
+    const chapterFilter = `c.bookId IN (${bookIdParams.map(p => p.name).join(', ')}) AND c.owner = @owner AND (NOT IS_DEFINED(c.archived) OR c.archived = false)`;
+    const chapterParams = [...bookIdParams, { name: '@owner', value: owner }];
+    const chaptersContainer = getContainer('chapters');
+
+    // Cheap freshness probe: chapter count + latest modification timestamp.
+    const [countResult, maxTsResult] = await Promise.all([
+      chaptersContainer.items
+        .query<number>({ query: `SELECT VALUE COUNT(1) FROM c WHERE ${chapterFilter}`, parameters: chapterParams })
+        .fetchAll(),
+      chaptersContainer.items
+        .query<number | null>({ query: `SELECT VALUE MAX(c._ts) FROM c WHERE ${chapterFilter}`, parameters: chapterParams })
+        .fetchAll(),
+    ]);
+    const chapterCount = countResult.resources[0] ?? 0;
+    const chapterMaxTs = maxTsResult.resources[0] ?? 0;
+
+    const cacheContainer = getContainer('mention-counts');
+    const cached = await readOwnedItem<MentionCountsDoc>(cacheContainer, seriesId, seriesId, req);
+    if (cached && cached.chapterCount === chapterCount && cached.chapterMaxTs === chapterMaxTs) {
+      res.json({ counts: cached.counts });
+      return;
+    }
+
+    // Cache miss or stale: scan chapter content for entity-reference ids.
+    const [{ resources: chapters }, { resources: entityIds }] = await Promise.all([
+      chaptersContainer.items
+        .query<{ content?: string; _ts: number }>({
+          query: `SELECT c.content, c._ts FROM c WHERE ${chapterFilter}`,
+          parameters: chapterParams,
+        })
+        .fetchAll(),
+      container.items
+        .query<string>(withOwnerFilter(req, {
+          query: 'SELECT VALUE c.id FROM c WHERE c.seriesId = @seriesId AND (NOT IS_DEFINED(c.archived) OR c.archived = false) AND (NOT IS_DEFINED(c.deleted) OR c.deleted = false)',
+          parameters: [{ name: '@seriesId', value: seriesId }],
+        }))
+        .fetchAll(),
+    ]);
+
+    // Entity references are embedded as <span data-id="{entityId}"> in the
+    // chapter HTML; ids are UUIDs, so raw occurrence counting is unambiguous.
+    const counts: Record<string, number> = {};
+    for (const id of entityIds) counts[id] = 0;
+    for (const chapter of chapters) {
+      const content = chapter.content;
+      if (!content) continue;
+      for (const id of entityIds) {
+        counts[id] += content.split(id).length - 1;
+      }
+    }
+
+    const cacheDoc: MentionCountsDoc = {
+      id: seriesId,
+      owner,
+      chapterCount: chapters.length,
+      chapterMaxTs: chapters.reduce((max, c) => Math.max(max, c._ts ?? 0), 0),
+      counts,
+      computedAt: new Date().toISOString(),
+    };
+    await cacheContainer.items.upsert(cacheDoc);
+
+    res.json({ counts });
+  } catch (err) {
+    console.error('Error fetching mention counts:', err);
+    res.status(500).json({ error: 'Failed to fetch mention counts' });
+  }
+});
+
 // GET all archived entities (cross-series)
 router.get('/archived', async (req: Request, res: Response) => {
   try {
@@ -111,6 +216,70 @@ router.get('/narrator/:seriesId', async (req: Request, res: Response) => {
   } catch (err) {
     console.error('Error fetching/creating narrator:', err);
     res.status(500).json({ error: 'Failed to fetch narrator' });
+  }
+});
+
+// GET chapters where this entity appears (via entity-reference spans in chapter content)
+router.get('/:id/chapters', async (req: Request, res: Response) => {
+  const entityId = req.params['id'] as string;
+  try {
+    const entity = await readOwnedItem<Entity>(container, entityId, entityId, req);
+    if (!entity?.seriesId) {
+      res.json([]);
+      return;
+    }
+
+    // Find all non-archived books in this series
+    const booksContainer = getContainer('books');
+    const { resources: books } = await booksContainer.items
+      .query<Book>({
+        query: 'SELECT c.id, c.title FROM c WHERE c.seriesId = @seriesId AND c.owner = @owner AND (NOT IS_DEFINED(c.archived) OR c.archived = false) AND (NOT IS_DEFINED(c.deleted) OR c.deleted = false)',
+        parameters: [
+          { name: '@seriesId', value: entity.seriesId },
+          { name: '@owner', value: req.user!.email },
+        ],
+      })
+      .fetchAll();
+
+    if (books.length === 0) {
+      res.json([]);
+      return;
+    }
+
+    const bookMap = new Map(books.map(b => [b.id, b.title]));
+
+    // Query chapters whose content contains this entity's id (as a data-id attribute value)
+    const bookIdParams = books.map((b, i) => ({ name: `@bookId${i}`, value: b.id }));
+    const bookIdList = bookIdParams.map(p => p.name).join(', ');
+    const chaptersContainer = getContainer('chapters');
+    const { resources: chapters } = await chaptersContainer.items
+      .query<Chapter>({
+        query: `SELECT c.id, c.title, c.bookId, c.sortOrder FROM c WHERE c.bookId IN (${bookIdList}) AND c.owner = @owner AND (NOT IS_DEFINED(c.archived) OR c.archived = false) AND CONTAINS(c.content, @entityId)`,
+        parameters: [
+          ...bookIdParams,
+          { name: '@owner', value: req.user!.email },
+          { name: '@entityId', value: entityId },
+        ],
+      })
+      .fetchAll();
+
+    const result = chapters
+      .map(c => ({
+        id: c.id,
+        title: c.title,
+        sortOrder: c.sortOrder,
+        bookId: c.bookId,
+        bookTitle: bookMap.get(c.bookId) ?? 'Unknown Book',
+      }))
+      .sort((a, b) => {
+        const bookCmp = a.bookTitle.localeCompare(b.bookTitle);
+        return bookCmp !== 0 ? bookCmp : (a.sortOrder ?? Infinity) - (b.sortOrder ?? Infinity);
+      });
+
+    res.json(result);
+  } catch (err) {
+    console.error('Error fetching entity chapters:', err);
+    res.status(500).json({ error: 'Failed to fetch entity chapters' });
   }
 });
 
@@ -313,7 +482,7 @@ router.delete('/:id', async (req: Request, res: Response) => {
 router.post('/:id/photos', async (req: Request, res: Response) => {
   try {
     const id = req.params['id'] as string;
-    const { url, thumbnailUrl, caption } = req.body as { url?: string; thumbnailUrl?: string; caption?: string };
+    const { url, thumbnailUrl, caption, hidden } = req.body as { url?: string; thumbnailUrl?: string; caption?: string; hidden?: boolean };
     if (!url || !thumbnailUrl) {
       res.status(400).json({ error: 'url and thumbnailUrl are required' });
       return;
@@ -323,7 +492,8 @@ router.post('/:id/photos', async (req: Request, res: Response) => {
       res.status(404).json({ error: 'Entity not found' });
       return;
     }
-    const photos = [...(existing.photos ?? []), { url, thumbnailUrl, ...(caption ? { caption } : {}) }];
+    const newPhoto = { url, thumbnailUrl, ...(caption ? { caption } : {}), ...(hidden ? { hidden: true } : {}) };
+    const photos = [...(existing.photos ?? []), newPhoto];
     const updated: Entity = { ...existing, photos, modifiedBy: req.user!.email, modifiedAt: new Date().toISOString() };
     const { resource } = await container.item(id, id).replace<Entity>(updated);
     res.json(resource);

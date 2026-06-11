@@ -22,6 +22,9 @@ import { EntityQuote } from '@shared/models';
 import { BookService } from '../book/book.service';
 import { EntityService } from '../services/entity.service';
 import { EntityQuoteService } from '../services/entity-quote.service';
+import { TimelineEventService } from '../services/timeline-event.service';
+import { ChapterAnalysisDialogComponent, ChapterAnalysisDialogData, ChapterAnalysisDialogResult } from './chapter-analysis-dialog';
+import { EntityRelationshipService } from '../services/entity-relationship.service';
 import { SeriesService } from '../series/series.service';
 import { SlideOutPanelContainer } from '../shared/slide-out-panel-container/slide-out-panel-container';
 import { EntityEditComponent } from '../entity-edit/entity-edit';
@@ -29,7 +32,6 @@ import { RichTextEditorComponent, SuggestedEntityCard } from '../shared/rich-tex
 import { AiStatsComponent } from '../book-detail/ai-stats/ai-stats';
 import { ChapterOutlineComponent } from './chapter-outline/chapter-outline';
 import { HeaderService } from '../services/header.service';
-import { EntityPanelService } from '../services/entity-panel.service';
 import { UserSettingsService } from '../services/user-settings.service';
 import { AuthService } from '../auth/auth.service';
 import { SeriesContextService } from '../services/series-context.service';
@@ -63,12 +65,13 @@ export class ChapterEditComponent implements OnInit, OnDestroy {
   private chapterVersionService = inject(ChapterVersionService);
   private entityService = inject(EntityService);
   private entityQuoteService = inject(EntityQuoteService);
+  private timelineEventService = inject(TimelineEventService);
+  private entityRelationshipService = inject(EntityRelationshipService);
   private bookService = inject(BookService);
   private seriesService = inject(SeriesService);
   private snackBar = inject(MatSnackBar);
   private dialog = inject(MatDialog);
   private headerService = inject(HeaderService);
-  private entityPanel = inject(EntityPanelService);
   private userSettings = inject(UserSettingsService);
   private authService = inject(AuthService);
   private seriesContext = inject(SeriesContextService);
@@ -90,6 +93,9 @@ export class ChapterEditComponent implements OnInit, OnDestroy {
 
   // ── Entity quotes ────────────────────────────────────────────────────────
   capturingQuote = signal(false);
+
+  // ── Chapter analysis (timeline + relationships) ──────────────────────────
+  analyzingChapter = signal(false);
 
   // ── Outline ──────────────────────────────────────────────────────────────
   outline = signal<OutlineItem[]>([]);
@@ -179,15 +185,6 @@ export class ChapterEditComponent implements OnInit, OnDestroy {
   ];
 
   constructor() {
-    // Sync entity reference text when entity panel updates an entity
-    effect(() => {
-      const updated = this.entityPanel.lastUpdatedEntity();
-      if (!updated) return;
-      untracked(() => {
-        this.entities.update(list => list.map(e => e.id === updated.id ? updated : e));
-      });
-    });
-
     // Auto-load version history when history tab becomes active
     effect(() => {
       const idx = this.sidebarTabIndex();
@@ -716,6 +713,94 @@ export class ChapterEditComponent implements OnInit, OnDestroy {
       error: () => {
         this.snackBar.open('Failed to find narrator', undefined, { duration: 4000 });
         this.capturingQuote.set(false);
+      },
+    });
+  }
+
+  // ── Chapter analysis (timeline + relationships) ──────────────────────────
+
+  analyzeChapter(): void {
+    const chapter = this.chapter();
+    if (!chapter || this.analyzingChapter()) return;
+    const text = this.stripHtml(this.editorRef?.getContent() ?? chapter.content ?? '');
+    if (!text.trim()) {
+      this.snackBar.open('Chapter is empty — nothing to analyze', undefined, { duration: 3000 });
+      return;
+    }
+    this.analyzingChapter.set(true);
+    this.snackBar.open('Analyzing chapter…');
+    forkJoin({
+      timeline: this.timelineEventService.extractFromChapter(chapter.id, this.seriesId(), text),
+      relationships: this.entityRelationshipService.extractFromChapter(chapter.id, this.seriesId(), text),
+    }).subscribe({
+      next: ({ timeline, relationships }) => {
+        this.analyzingChapter.set(false);
+        this.snackBar.dismiss();
+        const totalProposals =
+          timeline.adds.length + timeline.updates.length + timeline.removes.length +
+          relationships.adds.length;
+        if (totalProposals === 0) {
+          this.snackBar.open('Nothing new found — everything is up to date', undefined, { duration: 4000 });
+          return;
+        }
+        const ref = this.dialog.open(ChapterAnalysisDialogComponent, {
+          data: { timeline: { ...timeline, entities: this.entities() }, relationships } satisfies ChapterAnalysisDialogData,
+          autoFocus: false,
+          maxHeight: '85vh',
+        });
+        ref.afterClosed().subscribe((selection?: ChapterAnalysisDialogResult) => {
+          if (!selection) return;
+          const { timeline: tl, relationships: rel } = selection;
+          const hasTl = tl.adds.length + tl.updates.length + tl.removes.length > 0;
+          const hasRel = rel.adds.length > 0;
+          if (!hasTl && !hasRel) return;
+
+          const pending: Promise<string>[] = [];
+
+          if (hasTl) {
+            pending.push(new Promise(resolve => {
+              this.timelineEventService.applyChapterProposals({ chapterId: chapter.id, ...tl }).subscribe({
+                next: ({ added, updated, removed }) => {
+                  const parts: string[] = [];
+                  if (added) parts.push(`${added} timeline added`);
+                  if (updated) parts.push(`${updated} updated`);
+                  if (removed) parts.push(`${removed} removed`);
+                  resolve(parts.join(', '));
+                },
+                error: () => {
+                  this.snackBar.open('Failed to apply timeline changes', undefined, { duration: 4000 });
+                  resolve('');
+                },
+              });
+            }));
+          }
+
+          if (hasRel) {
+            pending.push(new Promise(resolve => {
+              this.entityRelationshipService.applyChapterProposals({
+                chapterId: chapter.id,
+                seriesId: this.seriesId(),
+                adds: rel.adds,
+              }).subscribe({
+                next: ({ added }) => resolve(`${added} relationship${added === 1 ? '' : 's'} added`),
+                error: () => {
+                  this.snackBar.open('Failed to apply relationship changes', undefined, { duration: 4000 });
+                  resolve('');
+                },
+              });
+            }));
+          }
+
+          Promise.all(pending).then(parts => {
+            const summary = parts.filter(Boolean).join(', ');
+            if (summary) this.snackBar.open(`Applied: ${summary}`, undefined, { duration: 4000 });
+          });
+        });
+      },
+      error: () => {
+        this.analyzingChapter.set(false);
+        this.snackBar.dismiss();
+        this.snackBar.open('Chapter analysis failed', undefined, { duration: 4000 });
       },
     });
   }

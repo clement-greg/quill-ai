@@ -1,4 +1,4 @@
-import { Component, inject, signal, computed, effect, OnInit, OnDestroy, HostListener } from '@angular/core';
+import { Component, inject, signal, computed, OnInit, OnDestroy, HostListener } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { MatButtonModule } from '@angular/material/button';
 import { MatIconModule } from '@angular/material/icon';
@@ -13,8 +13,6 @@ import { EntityService } from '../services/entity.service';
 import { SeriesService } from '../series/series.service';
 import { HeaderService } from '../services/header.service';
 import { SeriesContextService } from '../services/series-context.service';
-import { PinLockService } from '../services/pin-lock.service';
-import { PinEntryOverlayComponent } from '../pin-entry-overlay/pin-entry-overlay';
 import { UserSettingsService } from '../services/user-settings.service';
 
 interface GalleryPhoto {
@@ -32,7 +30,6 @@ interface GalleryPhoto {
     MatFormFieldModule,
     MatProgressSpinnerModule,
     MatTooltipModule,
-    PinEntryOverlayComponent,
   ],
   templateUrl: './photo-gallery.html',
   styleUrl: './photo-gallery.scss',
@@ -42,7 +39,6 @@ export class PhotoGalleryComponent implements OnInit, OnDestroy {
   private seriesService = inject(SeriesService);
   private headerService = inject(HeaderService);
   private seriesContext = inject(SeriesContextService);
-  readonly pinLock = inject(PinLockService);
   private settingsService = inject(UserSettingsService);
 
   loading = signal(false);
@@ -106,26 +102,14 @@ export class PhotoGalleryComponent implements OnInit, OnDestroy {
     return photos[idx] ?? null;
   });
 
-  constructor() {
-    effect(() => {
-      if (this.pinLock.isLocked()) {
-        this.closeLightbox();
-      }
-    });
-  }
-
   ngOnInit(): void {
-    this.headerService.set([{ label: 'Photo Gallery' }], []);
+    this.headerService.setPage('Photo Gallery');
     this.load();
   }
 
   ngOnDestroy(): void {
     this.stopSlideshow();
     this.routeSub?.unsubscribe();
-    // Re-lock when the user navigates away so returning requires PIN again
-    if (this.pinLock.hasPin()) {
-      this.pinLock.lock();
-    }
   }
 
   load(): void {

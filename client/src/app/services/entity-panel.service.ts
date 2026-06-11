@@ -21,7 +21,22 @@ export class EntityPanelService {
   showingArchived = signal(false);
   lastUpdatedEntity = signal<Entity | null>(null);
   private readonly COLLAPSED_KEY = 'entityPanel.collapsedGroups';
+  private readonly LAST_SERIES_KEY = 'entityPanel.lastSeriesId';
   collapsedGroups = signal<Set<string>>(this.loadCollapsedGroups());
+
+  private loadLastSeriesId(): string | null {
+    try {
+      return localStorage.getItem(this.LAST_SERIES_KEY);
+    } catch {
+      return null;
+    }
+  }
+
+  private saveLastSeriesId(id: string): void {
+    try {
+      localStorage.setItem(this.LAST_SERIES_KEY, id);
+    } catch { /* storage unavailable */ }
+  }
 
   private loadCollapsedGroups(): Set<string> {
     try {
@@ -61,6 +76,7 @@ export class EntityPanelService {
   }
 
   open(seriesId: string): void {
+    this.saveLastSeriesId(seriesId);
     this.seriesId.set(seriesId);
     this.editingEntity.set(null);
     this.isNewEntity.set(false);
@@ -81,7 +97,12 @@ export class EntityPanelService {
           .filter((s: any) => !s.deleted && !s.archived)
           .sort((a, b) => (a.title ?? '').localeCompare(b.title ?? ''));
         this.allSeries.set(active);
-        const targetId = autoSelectId ?? (active.length === 1 ? active[0].id : null);
+        // With no series in scope, fall back to the last one the user selected
+        // (if it still exists), then to the only series when there is just one.
+        const lastId = this.loadLastSeriesId();
+        const targetId = autoSelectId
+          ?? (lastId && active.some(s => s.id === lastId) ? lastId : null)
+          ?? (active.length === 1 ? active[0].id : null);
         if (targetId) {
           this.selectSeries(targetId);
         }
@@ -90,6 +111,7 @@ export class EntityPanelService {
   }
 
   selectSeries(id: string): void {
+    this.saveLastSeriesId(id);
     if (this.seriesId() === id) return;
     this.seriesId.set(id);
     this.editingEntity.set(null);
