@@ -55,8 +55,13 @@
   gap: 6px;
 }
 
-.edit-btn {
+.refresh-btn {
   margin-left: auto;
+  flex-shrink: 0;
+  color: var(--mat-sys-on-surface-variant);
+}
+
+.edit-btn {
   flex-shrink: 0;
 }
 

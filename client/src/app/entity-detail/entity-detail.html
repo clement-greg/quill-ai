@@ -19,6 +19,9 @@
         <h1 class="entity-name">{{ e.name }}</h1>
         <span class="type-badge type-badge--{{ e.type.toLowerCase() }}">{{ typeLabel(e.type) }}</span>
       </div>
+      <button mat-icon-button class="refresh-btn" (click)="refresh()" [disabled]="loading()" matTooltip="Refresh" aria-label="Refresh entity">
+        <mat-icon>refresh</mat-icon>
+      </button>
       <button mat-stroked-button class="edit-btn" (click)="edit.emit()" aria-label="Edit entity">
         <mat-icon>edit</mat-icon>
         Edit

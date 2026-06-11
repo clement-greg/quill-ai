@@ -193,18 +193,24 @@ export class EntityEditComponent {
   }
 
   openPhotoPickerDialog(): void {
-    const dialogRef = this.dialog.open(PhotoPickerDialogComponent, {
-      data: this.entity().photos ?? [],
-      panelClass: 'photo-picker-panel',
-      autoFocus: false,
-    });
-    dialogRef.afterClosed().subscribe((result: PhotoPickerResult | undefined) => {
-      if (!result) return;
-      const current = this.draft();
-      if (current) {
-        this.draft.set({ ...current, thumbnailUrl: result.thumbnailUrl, originalUrl: result.url });
-      }
-      this.thumbnailPreview.set(this.proxyUrl(result.thumbnailUrl));
+    // Always fetch fresh photos from the server so deletions made in the
+    // detail view are reflected without needing a full app reload.
+    this.entityService.getById(this.entity().id).subscribe({
+      next: (fresh) => {
+        const dialogRef = this.dialog.open(PhotoPickerDialogComponent, {
+          data: fresh.photos ?? [],
+          panelClass: 'photo-picker-panel',
+          autoFocus: false,
+        });
+        dialogRef.afterClosed().subscribe((result: PhotoPickerResult | undefined) => {
+          if (!result) return;
+          const current = this.draft();
+          if (current) {
+            this.draft.set({ ...current, thumbnailUrl: result.thumbnailUrl, originalUrl: result.url });
+          }
+          this.thumbnailPreview.set(this.proxyUrl(result.thumbnailUrl));
+        });
+      },
     });
   }
 

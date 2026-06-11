@@ -133,11 +133,17 @@ export class EntityDetailComponent implements OnDestroy {
   private _chapters = signal<ChapterAppearance[]>([]);
   private _photosTapTimes: number[] = [];
 
+  private _localRefresh = signal(0);
+
+  refresh(): void {
+    this._localRefresh.update(n => n + 1);
+  }
+
   constructor() {
     effect(() => {
       const id = this.entityId();
-      // Subscribe to refreshTrigger so the effect re-runs when parent requests a reload
       void this.refreshTrigger();
+      void this._localRefresh();
       this.loadEntity(id);
       this.loadChapters(id);
       this.loadTimeline(id);
