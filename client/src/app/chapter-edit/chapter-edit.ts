@@ -125,6 +125,7 @@ export class ChapterEditComponent implements OnInit, OnDestroy {
   // ── Entity suggestions (from editor grammar check) ───────────────────────
   pendingSuggestions = signal<SuggestedEntityCard[]>([]);
   private suggestedEntityNames = new Set<string>();
+  private dismissedEntityNames = new Set<string>();
 
   // ── Find-in-page search ──────────────────────────────────────────────────
   searchVisible = signal(false);
@@ -370,7 +371,10 @@ export class ChapterEditComponent implements OnInit, OnDestroy {
   onEditorPendingSuggestionsChange(suggestions: SuggestedEntityCard[]): void {
     const existingNames = new Set(this.entities().map(e => e.name.toLowerCase()));
     const filtered = suggestions.filter(s =>
-      s.created || s.creating || !existingNames.has(s.name.toLowerCase()),
+      s.created || s.creating || (
+        !existingNames.has(s.name.toLowerCase()) &&
+        !this.dismissedEntityNames.has(s.name.toLowerCase())
+      ),
     );
     const newOnes = filtered.filter(s =>
       !s.created && !s.creating && !this.suggestedEntityNames.has(s.name.toLowerCase()),
@@ -756,7 +760,13 @@ export class ChapterEditComponent implements OnInit, OnDestroy {
   }
 
   dismissSuggestion(index: number): void {
-    this.pendingSuggestions.update(list => list.filter((_, i) => i !== index));
+    this.pendingSuggestions.update(list => {
+      const dismissed = list[index];
+      if (dismissed) {
+        this.dismissedEntityNames.add(dismissed.name.toLowerCase());
+      }
+      return list.filter((_, i) => i !== index);
+    });
   }
 
   // ── Entity edit slide-out ────────────────────────────────────────────────
