@@ -101,6 +101,12 @@
   margin: 0;
 }
 
+.btn-text {
+  @media (max-width: 599px) {
+    display: none;
+  }
+}
+
 .series-section-header {
   padding: 24px 0 0;
 }
@@ -120,9 +126,14 @@
 
 .series-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(200px, 240px));
-  gap: 16px;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 12px;
   padding: 16px 0;
+
+  @media (min-width: 600px) {
+    grid-template-columns: repeat(auto-fill, minmax(200px, 240px));
+    gap: 16px;
+  }
 }
 
 .series-card-placeholder {
@@ -136,6 +147,7 @@
 
 .series-card {
   cursor: pointer;
+  min-width: 0;
 }
 
 .series-card img[mat-card-image] {

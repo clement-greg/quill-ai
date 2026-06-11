@@ -79,15 +79,20 @@
 }
 
 .books-grid {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 16px;
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 12px;
   padding: 16px 0;
+
+  @media (min-width: 600px) {
+    grid-template-columns: repeat(auto-fill, minmax(180px, 220px));
+    gap: 16px;
+  }
 }
 
 .book-card {
-  width: 200px;
-  flex-shrink: 0;
+  width: 100%;
+  min-width: 0;
   cursor: pointer;
 }
 
@@ -166,7 +171,7 @@
   box-shadow: 0 6px 20px rgba(0, 0, 0, 0.3);
   border-radius: 4px;
   opacity: 0.95;
-  width: 200px;
+  width: clamp(140px, 40vw, 200px);
 }
 
 .cdk-drag-placeholder {
@@ -182,7 +187,7 @@
 }
 
 .book-card-drag-placeholder {
-  width: 200px;
+  width: 100%;
   min-height: 220px;
   background-color: #f5f5f5;
   border: 2px dashed #ccc;
@@ -192,6 +197,12 @@
 .books-header-actions {
   display: flex;
   gap: 8px;
+}
+
+.btn-text {
+  @media (max-width: 599px) {
+    display: none;
+  }
 }
 
 .entity-panel-columns {

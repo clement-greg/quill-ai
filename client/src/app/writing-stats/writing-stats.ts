@@ -232,14 +232,16 @@ const localTz = Intl.DateTimeFormat().resolvedOptions().timeZone;
                   <span class="ch-title" role="cell" [title]="ch.title">
                     <a [routerLink]="['/chapters', ch.chapterId, 'edit']" class="ch-link">{{ ch.title }}</a>
                   </span>
-                  <span class="ch-added" role="cell">{{ fmtCount(ch.wordsAdded, '+') }}</span>
-                  <span class="ch-deleted" role="cell">{{ fmtCount(ch.wordsDeleted, '−') }}</span>
-                  <span class="ch-net" role="cell"
-                        [class.positive]="ch.netWords > 0"
-                        [class.negative]="ch.netWords < 0">
-                    {{ fmtCount(ch.netWords, ch.netWords >= 0 ? '+' : '') }}
-                  </span>
-                  <span class="ch-date" role="cell">{{ ch.lastSaved }}</span>
+                  <div class="ch-stats" role="presentation">
+                    <span class="ch-added" role="cell">{{ fmtCount(ch.wordsAdded, '+') }}</span>
+                    <span class="ch-deleted" role="cell">{{ fmtCount(ch.wordsDeleted, '−') }}</span>
+                    <span class="ch-net" role="cell"
+                          [class.positive]="ch.netWords > 0"
+                          [class.negative]="ch.netWords < 0">
+                      {{ fmtCount(ch.netWords, ch.netWords >= 0 ? '+' : '') }}
+                    </span>
+                    <span class="ch-date" role="cell">{{ ch.lastSaved }}</span>
+                  </div>
                 </div>
               }
             </div>
@@ -571,12 +573,64 @@ const localTz = Intl.DateTimeFormat().resolvedOptions().timeZone;
       align-items: center;
       padding: 8px 4px;
       font-size: 0.85rem;
+    }
 
-      @media (max-width: 600px) {
-        grid-template-columns: 36px 1fr 64px 64px 64px;
+    .ch-stats {
+      display: contents;
+    }
 
-        .ch-date { display: none; }
+    @media (max-width: 599px) {
+      .chapter-table-head { display: none; }
+
+      .chapter-row {
+        display: grid;
+        grid-template-columns: 44px 1fr;
+        grid-template-areas: "thumb title" "thumb stats";
+        gap: 2px 10px;
+        padding: 10px 4px;
+        align-items: start;
       }
+
+      .ch-thumb { grid-area: thumb; align-self: center; }
+
+      .ch-title {
+        grid-area: title;
+        align-self: end;
+        white-space: normal;
+        overflow: visible;
+        text-overflow: unset;
+      }
+
+      .ch-stats {
+        display: flex;
+        grid-area: stats;
+        gap: 0;
+        align-self: start;
+        padding-bottom: 2px;
+      }
+
+      .ch-added, .ch-deleted, .ch-net {
+        flex: 1;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        text-align: center;
+        gap: 2px;
+      }
+
+      .ch-added::before  { content: 'Added'; }
+      .ch-deleted::before { content: 'Deleted'; }
+      .ch-net::before    { content: 'Net'; }
+
+      .ch-added::before, .ch-deleted::before, .ch-net::before {
+        font-size: 0.65rem;
+        font-weight: 600;
+        text-transform: uppercase;
+        letter-spacing: 0.04em;
+        color: var(--mat-sys-on-surface-variant);
+      }
+
+      .ch-date { display: none; }
     }
 
     .chapter-table-head {
