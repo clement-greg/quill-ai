@@ -17,6 +17,7 @@ function isImageBlob(name: string): boolean {
 // Run once after deploying the encryption feature. Idempotent only if all blobs
 // are already encrypted — running twice on unencrypted data will double-encrypt.
 router.post('/encrypt-photos', async (_req: Request, res: Response) => {
+  return;
   const names = await listBlobs();
   const imageNames = names.filter(isImageBlob);
 
@@ -32,7 +33,7 @@ router.post('/encrypt-photos', async (_req: Request, res: Response) => {
       evictBlobCache(name);
       succeeded++;
     } catch (err: any) {
-      failed++;
+      failed++; 
       errors.push(`${name}: ${err?.message ?? String(err)}`);
       console.error(`migrate: failed to encrypt ${name}`, err);
     }
