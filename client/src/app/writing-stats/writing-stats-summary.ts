@@ -29,6 +29,12 @@ interface Snapshot {
   deleted: number;
   net: number;
   streak: number;
+  bestDay: { date: string; words: number } | null;
+}
+
+function formatBestDayDate(dateStr: string): string {
+  const [y, m, d] = dateStr.split('-').map(Number);
+  return new Date(y, m - 1, d).toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
 }
 
 function localDateStr(d = new Date()): string {
@@ -72,6 +78,16 @@ const localTz = Intl.DateTimeFormat().resolvedOptions().timeZone;
           <mat-icon aria-hidden="true">local_fire_department</mat-icon>
           <span class="wss-value">{{ snap().streak }}</span>
           <span class="wss-label">Day Streak</span>
+        </div>
+        <div class="wss-card best-day">
+          <mat-icon aria-hidden="true">emoji_events</mat-icon>
+          @if (snap().bestDay) {
+            <span class="wss-value">{{ snap().bestDay!.words | number }}</span>
+            <span class="wss-label">Best Day · {{ formatBestDayDate(snap().bestDay!.date) }}</span>
+          } @else {
+            <span class="wss-value">—</span>
+            <span class="wss-label">Best Day</span>
+          }
         </div>
       </div>
 
@@ -125,11 +141,11 @@ const localTz = Intl.DateTimeFormat().resolvedOptions().timeZone;
 
     .wss-cards {
       display: grid;
-      grid-template-columns: repeat(4, 1fr);
+      grid-template-columns: repeat(5, 1fr);
       gap: 10px;
       margin-bottom: 16px;
 
-      @media (max-width: 520px) {
+      @media (max-width: 640px) {
         grid-template-columns: repeat(2, 1fr);
       }
     }
@@ -150,9 +166,10 @@ const localTz = Intl.DateTimeFormat().resolvedOptions().timeZone;
         color: var(--mat-sys-primary);
       }
 
-      &.added mat-icon  { color: #4caf50; }
-      &.deleted mat-icon { color: #e57373; }
-      &.streak mat-icon  { color: #ff9800; }
+      &.added mat-icon    { color: #4caf50; }
+      &.deleted mat-icon  { color: #e57373; }
+      &.streak mat-icon   { color: #ff9800; }
+      &.best-day mat-icon { color: #fdd835; }
     }
 
     .wss-value {
@@ -181,7 +198,8 @@ export class WritingStatsSummaryComponent implements OnInit, AfterViewInit, OnDe
 
   @ViewChild('chartCanvas') private chartCanvas!: ElementRef<HTMLCanvasElement>;
 
-  snap = signal<Snapshot>({ added: 0, deleted: 0, net: 0, streak: 0 });
+  snap = signal<Snapshot>({ added: 0, deleted: 0, net: 0, streak: 0, bestDay: null });
+  readonly formatBestDayDate = formatBestDayDate;
 
   private dailyData: DailyEntry[] = [];
   private viewReady = false;
@@ -193,7 +211,14 @@ export class WritingStatsSummaryComponent implements OnInit, AfterViewInit, OnDe
         this.dailyData = daily;
         const added   = daily.reduce((s, d) => s + d.wordsAdded, 0);
         const deleted = daily.reduce((s, d) => s + d.wordsDeleted, 0);
-        this.snap.set({ added, deleted, net: added - deleted, streak: summary.currentStreak });
+        const bestEntry = daily.reduce<DailyEntry | null>((best, d) => {
+          const net = d.wordsAdded - d.wordsDeleted;
+          return net > 0 && (best === null || net > (best.wordsAdded - best.wordsDeleted)) ? d : best;
+        }, null);
+        const bestDay = bestEntry
+          ? { date: bestEntry.date, words: bestEntry.wordsAdded - bestEntry.wordsDeleted }
+          : null;
+        this.snap.set({ added, deleted, net: added - deleted, streak: summary.currentStreak, bestDay });
         if (this.viewReady) setTimeout(() => this.renderChart(), 0);
       },
     });
