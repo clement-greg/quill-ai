@@ -660,22 +660,122 @@ export class RichTextEditorComponent implements OnInit, AfterViewInit, OnDestroy
     const html = clipboard.getData('text/html');
     const text = clipboard.getData('text/plain');
 
-    let cleanHtml: string;
     if (html) {
-      cleanHtml = this.cleanPastedHtml(html);
+      this.insertPastedHtml(this.cleanPastedHtml(html));
     } else {
-      cleanHtml = text
-        .split('\n')
-        .map(line => `<p>${line.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;') || '<br>'}</p>`)
-        .join('');
+      // Plain text: single line → inline text; multiple lines → one <p> per line.
+      const lines = text.split('\n');
+      if (lines.length === 1) {
+        const escaped = text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+        document.execCommand('insertHTML', false, escaped);
+      } else {
+        const blocksHtml = lines
+          .map(line => `<p>${line.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;') || '<br>'}</p>`)
+          .join('');
+        this.insertPastedHtml(blocksHtml);
+      }
     }
-
-    // execCommand keeps the operation on the browser's native undo stack so
-    // Ctrl+Z works as expected.
-    document.execCommand('insertHTML', false, cleanHtml);
 
     if (this.editorRef) { this.editorContent = this.editorRef.nativeElement.innerHTML; this.scheduleEmit(); }
     this.scheduleMinimap();
+  }
+
+  /**
+   * Inserts cleaned HTML at the current cursor position without creating
+   * spurious empty paragraphs. For single-block content the inner HTML is
+   * inserted inline. For multi-block content the current paragraph is split
+   * at the cursor and the blocks are merged correctly.
+   */
+  private insertPastedHtml(html: string): void {
+    const sel = window.getSelection();
+    if (!sel || sel.rangeCount === 0) return;
+
+    const range = sel.getRangeAt(0);
+    range.deleteContents();
+
+    const tmp = document.createElement('div');
+    tmp.innerHTML = html;
+
+    // Drop whitespace-only text nodes that would produce spurious line breaks.
+    const pastedNodes = Array.from(tmp.childNodes).filter(
+      n => !(n.nodeType === Node.TEXT_NODE && !(n as Text).data.trim()),
+    );
+
+    if (pastedNodes.length === 0) return;
+
+    const BLOCK_TAGS = new Set(['P', 'DIV', 'BLOCKQUOTE', 'PRE']);
+    const allBlock = pastedNodes.every(
+      n => n.nodeType === Node.ELEMENT_NODE && BLOCK_TAGS.has((n as Element).tagName),
+    );
+
+    // ── Single paragraph or inline content ──────────────────────────────
+    // Insert the inner HTML directly so insertHTML never needs to split a block.
+    if (!allBlock || pastedNodes.length === 1) {
+      const inlineHtml = allBlock
+        ? (pastedNodes[0] as HTMLElement).innerHTML
+        : pastedNodes.map(n => (n as HTMLElement).outerHTML ?? (n as Text).data).join('');
+      document.execCommand('insertHTML', false, inlineHtml);
+      return;
+    }
+
+    // ── Multiple block paragraphs ────────────────────────────────────────
+    // Split the current paragraph at the cursor and stitch the pasted blocks
+    // in between so no extra empty paragraphs appear.
+    const editor = this.editorRef?.nativeElement as HTMLElement | undefined;
+    if (!editor) { document.execCommand('insertHTML', false, html); return; }
+
+    // Find the direct-child block of the editor that contains the cursor.
+    let curBlock: Node | null = range.startContainer;
+    while (curBlock && curBlock.parentNode !== editor) curBlock = curBlock.parentNode;
+    if (!curBlock) { document.execCommand('insertHTML', false, html); return; }
+
+    // Extract everything after the cursor from curBlock (removes it from DOM).
+    const afterRange = document.createRange();
+    afterRange.setStart(range.startContainer, range.startOffset);
+    afterRange.setEnd(curBlock, curBlock.childNodes.length);
+    const afterFrag = afterRange.extractContents();
+
+    // Merge the first pasted block's children into curBlock (now ends at cursor).
+    const firstBlock = pastedNodes[0] as HTMLElement;
+    while (firstBlock.firstChild) curBlock.appendChild(firstBlock.firstChild);
+
+    // Insert any middle blocks.
+    let ref: Node = curBlock;
+    for (let i = 1; i < pastedNodes.length - 1; i++) {
+      const mid = pastedNodes[i] as HTMLElement;
+      if (!mid.innerHTML.trim()) mid.innerHTML = '<br>';
+      editor.insertBefore(mid, ref.nextSibling);
+      ref = mid;
+    }
+
+    // Build trailing block: last pasted block content + what was after cursor.
+    const trailingP = document.createElement('p');
+    const lastBlock = pastedNodes[pastedNodes.length - 1] as HTMLElement;
+    let lastPastedChild: Node | null = null;
+    while (lastBlock.firstChild) {
+      lastPastedChild = lastBlock.firstChild;
+      trailingP.appendChild(lastPastedChild);
+    }
+    trailingP.appendChild(afterFrag);
+    if (!trailingP.textContent && !trailingP.querySelector('br, img')) {
+      trailingP.appendChild(document.createElement('br'));
+    }
+    editor.insertBefore(trailingP, ref.nextSibling);
+
+    // Position cursor at the end of the last pasted content (before the after-text).
+    const newRange = document.createRange();
+    if (lastPastedChild) {
+      if (lastPastedChild.nodeType === Node.TEXT_NODE) {
+        newRange.setStart(lastPastedChild, (lastPastedChild as Text).length);
+      } else {
+        newRange.setStartAfter(lastPastedChild);
+      }
+    } else {
+      newRange.setStart(trailingP, 0);
+    }
+    newRange.collapse(true);
+    sel.removeAllRanges();
+    sel.addRange(newRange);
   }
 
   private cleanPastedHtml(html: string): string {
@@ -735,6 +835,16 @@ export class RichTextEditorComponent implements OnInit, AfterViewInit, OnDestroy
     };
 
     Array.from(body.childNodes).forEach(node => processNode(node));
+
+    // Remove whitespace-only text nodes left at the body level (e.g. newlines
+    // between <p> tags in the source HTML). They would produce spurious <p>
+    // elements when insertHTML encounters them.
+    Array.from(body.childNodes).forEach(node => {
+      if (node.nodeType === Node.TEXT_NODE && !(node as Text).data.trim()) {
+        body.removeChild(node);
+      }
+    });
+
     return body.innerHTML;
   }
 
