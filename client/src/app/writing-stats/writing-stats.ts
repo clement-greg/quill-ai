@@ -65,6 +65,11 @@ interface CalDay {
   pad: boolean;
 }
 
+function formatBestDayDate(dateStr: string): string {
+  const [y, m, d] = dateStr.split('-').map(Number);
+  return new Date(y, m - 1, d).toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+}
+
 function localDateStr(d = new Date()): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 }
@@ -191,10 +196,20 @@ const localTz = Intl.DateTimeFormat().resolvedOptions().timeZone;
             </span>
             <span class="stat-label">Net Change</span>
           </div>
-          <div class="stat-card">
+          <div class="stat-card streak">
             <mat-icon aria-hidden="true">local_fire_department</mat-icon>
             <span class="stat-value">{{ allData()?.summary?.currentStreak ?? 0 }}</span>
             <span class="stat-label">Day Streak</span>
+          </div>
+          <div class="stat-card best-day">
+            <mat-icon aria-hidden="true">emoji_events</mat-icon>
+            @if (summary().bestDay) {
+              <span class="stat-value">{{ summary().bestDay!.words | number }}</span>
+              <span class="stat-label">Best Day · {{ formatBestDayDate(summary().bestDay!.date) }}</span>
+            } @else {
+              <span class="stat-value">—</span>
+              <span class="stat-label">Best Day</span>
+            }
           </div>
         </div>
 
@@ -484,11 +499,11 @@ const localTz = Intl.DateTimeFormat().resolvedOptions().timeZone;
 
     .stat-cards {
       display: grid;
-      grid-template-columns: repeat(4, 1fr);
+      grid-template-columns: repeat(5, 1fr);
       gap: 12px;
       margin-bottom: 32px;
 
-      @media (max-width: 560px) {
+      @media (max-width: 640px) {
         grid-template-columns: repeat(2, 1fr);
       }
     }
@@ -509,9 +524,11 @@ const localTz = Intl.DateTimeFormat().resolvedOptions().timeZone;
         color: var(--mat-sys-primary);
       }
 
-      &.added mat-icon  { color: #4caf50; }
-      &.deleted mat-icon { color: #e57373; }
-      &.net mat-icon    { color: var(--mat-sys-secondary); }
+      &.added mat-icon    { color: #4caf50; }
+      &.deleted mat-icon  { color: #e57373; }
+      &.net mat-icon      { color: var(--mat-sys-secondary); }
+      &.streak mat-icon   { color: #ff9800; }
+      &.best-day mat-icon { color: #fdd835; }
     }
 
     .stat-value {
@@ -771,15 +788,22 @@ export class WritingStatsComponent implements OnInit, AfterViewInit, OnDestroy {
     return data.daily.filter(d => d.date >= cutoffStr);
   });
 
+  readonly formatBestDayDate = formatBestDayDate;
+
   summary = computed(() => {
     const daily = this.filteredDaily();
     const totalAdded   = daily.reduce((s, d) => s + d.wordsAdded, 0);
     const totalDeleted = daily.reduce((s, d) => s + d.wordsDeleted, 0);
+    const bestEntry = daily.reduce<DailyStats | null>((best, d) => {
+      const net = d.wordsAdded - d.wordsDeleted;
+      return net > 0 && (best === null || net > (best.wordsAdded - best.wordsDeleted)) ? d : best;
+    }, null);
     return {
       totalAdded,
       totalDeleted,
       net: totalAdded - totalDeleted,
       activeDays: daily.filter(d => d.wordsAdded > 0 || d.wordsDeleted > 0).length,
+      bestDay: bestEntry ? { date: bestEntry.date, words: bestEntry.wordsAdded - bestEntry.wordsDeleted } : null,
     };
   });
 
