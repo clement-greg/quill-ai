@@ -2,6 +2,7 @@ import express, { Request, Response } from 'express';
 import path from 'path';
 import { HelloResponse } from '../shared/models';
 import { initDatabase } from './cosmos';
+import config from './config';
 import { requireAuth } from './auth.middleware';
 import authRoutes from './routes/auth.routes';
 import seriesRoutes from './routes/series.routes';
@@ -46,6 +47,11 @@ app.use(express.json());
 app.get('/api/hello', (_req: Request, res: Response) => {
   const response: HelloResponse = { message: 'Hello World' };
   res.json(response);
+});
+
+// Public config endpoint — exposes client-safe keys (never secrets)
+app.get('/api/config/maps-key', (_req: Request, res: Response) => {
+  res.json({ key: config.googleMapsApiKey });
 });
 
 // Public auth route — exchanges a Google ID token for a custom 48-hour JWT

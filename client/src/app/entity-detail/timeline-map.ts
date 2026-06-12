@@ -14,7 +14,6 @@ import {
 import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
 import { MatIconModule } from '@angular/material/icon';
 import { TimelineEvent } from '@shared/models/timeline-event.model';
-import { environment } from '../../environments/environment';
 import { UserSettingsService } from '../services/user-settings.service';
 
 const DARK_MAP_STYLES: google.maps.MapTypeStyle[] = [
@@ -44,27 +43,36 @@ const DARK_MAP_STYLES: google.maps.MapTypeStyle[] = [
 // callers await the same promise.
 let mapsLoaderPromise: Promise<typeof google.maps> | undefined;
 
+async function fetchMapsKey(): Promise<string> {
+  const res = await fetch('/api/config/maps-key');
+  if (!res.ok) throw new Error('Failed to fetch Maps API key');
+  const data = await res.json() as { key: string };
+  return data.key;
+}
+
 function loadGoogleMaps(): Promise<typeof google.maps> {
   if (mapsLoaderPromise) return mapsLoaderPromise;
-  mapsLoaderPromise = new Promise((resolve, reject) => {
+  mapsLoaderPromise = (async () => {
     if (typeof google !== 'undefined' && google.maps) {
-      resolve(google.maps);
-      return;
+      return google.maps;
     }
-    const callbackName = '__quillGoogleMapsReady';
-    (window as unknown as Record<string, () => void>)[callbackName] = () => resolve(google.maps);
-    const script = document.createElement('script');
-    const params = new URLSearchParams({
-      key: environment.googleMapsApiKey,
-      callback: callbackName,
-      loading: 'async',
-      libraries: 'marker',
+    const apiKey = await fetchMapsKey();
+    return new Promise<typeof google.maps>((resolve, reject) => {
+      const callbackName = '__quillGoogleMapsReady';
+      (window as unknown as Record<string, () => void>)[callbackName] = () => resolve(google.maps);
+      const script = document.createElement('script');
+      const params = new URLSearchParams({
+        key: apiKey,
+        callback: callbackName,
+        loading: 'async',
+        libraries: 'marker',
+      });
+      script.src = `https://maps.googleapis.com/maps/api/js?${params.toString()}`;
+      script.async = true;
+      script.onerror = () => reject(new Error('Failed to load Google Maps'));
+      document.head.appendChild(script);
     });
-    script.src = `https://maps.googleapis.com/maps/api/js?${params.toString()}`;
-    script.async = true;
-    script.onerror = () => reject(new Error('Failed to load Google Maps'));
-    document.head.appendChild(script);
-  });
+  })();
   return mapsLoaderPromise;
 }
 

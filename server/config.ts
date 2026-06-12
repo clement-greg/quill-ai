@@ -11,6 +11,7 @@ interface AppConfig {
   storageContainerName: string;
   storageAccountName: string;
   storageAccountKey: string;
+  googleMapsApiKey: string;
   foundry: {
     projectId: string;
     endpoint: string;
@@ -44,6 +45,7 @@ function loadConfig(): AppConfig {
     storageContainerName: process.env['STORAGE_CONTAINER_NAME']!,
     storageAccountName: process.env['STORAGE_ACCOUNT_NAME']!,
     storageAccountKey: process.env['STORAGE_ACCOUNT_KEY']!,
+    googleMapsApiKey: process.env['GOOGLE_MAPS_API_KEY']!,
     foundry: {
       projectId: process.env['FOUNDRY_PROJECT_ID']!,
       endpoint: process.env['FOUNDRY_ENDPOINT']!,
