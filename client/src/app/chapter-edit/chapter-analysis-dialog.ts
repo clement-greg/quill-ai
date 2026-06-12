@@ -59,6 +59,11 @@ const RELATIONSHIP_LABEL = new Map(RELATIONSHIP_TYPES.map(t => [t.value, t.label
               @if (add.timeframe) {
                 <div class="event-timeframe">{{ add.timeframe }}</div>
               }
+              @if (add.location) {
+                <div class="event-location">
+                  <mat-icon class="location-icon" aria-hidden="true">place</mat-icon>{{ add.location }}
+                </div>
+              }
               @if (add.description) {
                 <p class="event-description">{{ add.description }}</p>
               }
@@ -137,6 +142,14 @@ const RELATIONSHIP_LABEL = new Map(RELATIONSHIP_TYPES.map(t => [t.value, t.label
                   <div class="field-diff field-diff--stacked">
                     <span class="diff-old">{{ update.current.description || '(no description)' }}</span>
                     <span class="diff-new">{{ update.proposed.description || '(no description)' }}</span>
+                  </div>
+                }
+                @if ((update.current.location ?? '') !== (update.proposed.location ?? '')) {
+                  <div class="field-diff">
+                    <mat-icon class="location-icon" aria-hidden="true">place</mat-icon>
+                    <span class="diff-old">{{ update.current.location || '(no location)' }}</span>
+                    <mat-icon class="diff-arrow">arrow_forward</mat-icon>
+                    <span class="diff-new">{{ update.proposed.location || '(no location)' }}</span>
                   </div>
                 }
               </div>
@@ -235,6 +248,11 @@ const RELATIONSHIP_LABEL = new Map(RELATIONSHIP_TYPES.map(t => [t.value, t.label
     }
     .arrow-icon { font-size: 16px; width: 16px; height: 16px; color: var(--mat-sys-on-surface-variant, #49454f); }
     .event-timeframe { font-size: 0.8rem; font-style: italic; color: var(--mat-sys-on-surface-variant, #49454f); margin-top: 2px; }
+    .event-location {
+      display: flex; align-items: center; gap: 2px;
+      font-size: 0.8rem; font-style: italic; color: var(--mat-sys-on-surface-variant, #49454f); margin-top: 2px;
+    }
+    .location-icon { font-size: 14px; width: 14px; height: 14px; flex-shrink: 0; }
     .event-description { margin: 4px 0 0; font-size: 0.875rem; }
     .proposal-reason { font-size: 0.8rem; font-style: italic; color: var(--mat-sys-on-surface-variant, #49454f); margin-top: 2px; }
     .field-diffs { margin-top: 6px; display: flex; flex-direction: column; gap: 4px; }

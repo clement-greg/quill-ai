@@ -32,6 +32,7 @@ import {
   TimelineEventDialogData,
   TimelineEventDialogResult,
 } from './timeline-event-dialog';
+import { TimelineMapComponent } from './timeline-map';
 
 interface BookGroup {
   bookTitle: string;
@@ -52,6 +53,7 @@ interface BookGroup {
     CdkDrag,
     CdkDragHandle,
     CdkDragPlaceholder,
+    TimelineMapComponent,
   ],
   templateUrl: './entity-detail.html',
   styleUrl: './entity-detail.scss',
@@ -228,6 +230,7 @@ export class EntityDetailComponent implements OnDestroy {
           name: result.name,
           timeframe: result.timeframe,
           description: result.description,
+          location: result.location,
           photo: result.photo,
         }).subscribe({
           next: updated =>
@@ -240,6 +243,7 @@ export class EntityDetailComponent implements OnDestroy {
           name: result.name,
           timeframe: result.timeframe,
           description: result.description,
+          location: result.location,
           photo: result.photo,
         }).subscribe({
           next: created => this.timelineEvents.update(list => [...list, created]),
@@ -342,7 +346,7 @@ export class EntityDetailComponent implements OnDestroy {
     if (this._photosTapTimes.length > 3) this._photosTapTimes.shift();
     if (
       this._photosTapTimes.length === 3 &&
-      this._photosTapTimes[2] - this._photosTapTimes[0] < 600
+      this._photosTapTimes[2] - this._photosTapTimes[0] < 1200
     ) {
       const next = !this.settingsService.showHiddenPhotos();
       this.settingsService.setShowHiddenPhotos(next);
@@ -493,7 +497,7 @@ export class EntityDetailComponent implements OnDestroy {
   }
 
   enterSortMode(): void {
-    this.sortablePhotos.set([...(this.entity()?.photos ?? [])]);
+    this.sortablePhotos.set([...this.visiblePhotos()]);
     this.showAllPhotos.set(true);
     this.sortingPhotos.set(true);
   }

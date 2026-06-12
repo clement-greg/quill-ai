@@ -13,6 +13,8 @@ export interface TimelineEvent extends AuditedRecord {
     /** Free-form timeframe, often relative to other events (e.g. "Three years before the war"). */
     timeframe?: string;
     description?: string;
+    /** Free-form location — real or fictitious (e.g. "London", "The Forbidden Forest"). */
+    location?: string;
     /** Relative position on the timeline. */
     sortOrder?: number;
     photo?: TimelineEventPhoto;
@@ -26,6 +28,7 @@ export interface TimelineEventFields {
     name: string;
     timeframe?: string;
     description?: string;
+    location?: string;
 }
 
 /** A new event the LLM found in the chapter. */

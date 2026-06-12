@@ -11,7 +11,12 @@ import { MatIconModule } from '@angular/material/icon';
 import { MatInputModule } from '@angular/material/input';
 import { MatFormFieldModule } from '@angular/material/form-field';
 import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
+import { MatAutocompleteModule } from '@angular/material/autocomplete';
 import { TextFieldModule } from '@angular/cdk/text-field';
+import { AsyncPipe } from '@angular/common';
+import { HttpClient } from '@angular/common/http';
+import { Observable, of } from 'rxjs';
+import { debounceTime, distinctUntilChanged, switchMap, map, catchError, startWith } from 'rxjs/operators';
 import { Entity, EntityPhoto } from '@shared/models/entity.model';
 import { TimelineEvent, TimelineEventPhoto } from '@shared/models/timeline-event.model';
 import { EntityService } from '../services/entity.service';
@@ -26,6 +31,7 @@ export interface TimelineEventDialogResult {
   name: string;
   timeframe?: string;
   description?: string;
+  location?: string;
   photo?: TimelineEventPhoto;
   /** Set when a file upload added a new photo to the entity gallery. */
   updatedEntity?: Entity;
@@ -42,7 +48,9 @@ export interface TimelineEventDialogResult {
     MatInputModule,
     MatFormFieldModule,
     MatProgressSpinnerModule,
+    MatAutocompleteModule,
     TextFieldModule,
+    AsyncPipe,
   ],
   template: `
     <h2 mat-dialog-title>{{ data.event ? 'Edit Timeline Event' : 'Add Timeline Event' }}</h2>
@@ -56,6 +64,20 @@ export interface TimelineEventDialogResult {
         <mat-label>Timeframe</mat-label>
         <input matInput formControlName="timeframe" placeholder="e.g. Three years before the war" />
         <mat-hint>Free-form — relative to other events is fine</mat-hint>
+      </mat-form-field>
+
+      <mat-form-field appearance="outline" class="full-field">
+        <mat-label>Location (optional)</mat-label>
+        <mat-icon matPrefix>place</mat-icon>
+        <input matInput formControlName="location"
+               placeholder="e.g. London, The Dark Forest, Rivendell"
+               [matAutocomplete]="locationAuto" />
+        <mat-autocomplete #locationAuto="matAutocomplete">
+          @for (s of locationSuggestions$ | async; track s) {
+            <mat-option [value]="s">{{ s }}</mat-option>
+          }
+        </mat-autocomplete>
+        <mat-hint>Real or fictitious — type to get suggestions for real places</mat-hint>
       </mat-form-field>
 
       <mat-form-field appearance="outline" class="full-field">
@@ -106,7 +128,7 @@ export interface TimelineEventDialogResult {
   `,
   styles: [`
     mat-dialog-content { width: min(440px, 90vw); box-sizing: border-box; }
-    .full-field { width: 100%; margin-top: 4px; }
+    .full-field { width: 100%; margin-top: 16px; }
     .photo-row { display: flex; align-items: center; gap: 12px; margin-top: 8px; }
     .photo-preview {
       width: 72px;
@@ -129,14 +151,29 @@ export class TimelineEventDialogComponent {
   private dialogRef = inject(MatDialogRef<TimelineEventDialogComponent>);
   private dialog = inject(MatDialog);
   private entityService = inject(EntityService);
+  private http = inject(HttpClient);
   private fb = inject(FormBuilder);
   readonly data = inject<TimelineEventDialogData>(MAT_DIALOG_DATA);
 
   form = this.fb.nonNullable.group({
     name: [this.data.event?.name ?? '', Validators.required],
     timeframe: [this.data.event?.timeframe ?? ''],
+    location: [this.data.event?.location ?? ''],
     description: [this.data.event?.description ?? ''],
   });
+
+  locationSuggestions$: Observable<string[]> = this.form.controls.location.valueChanges.pipe(
+    debounceTime(300),
+    distinctUntilChanged(),
+    switchMap(q => !q || q.trim().length < 2
+      ? of([])
+      : this.http.get<{ suggestions: string[] }>('/api/timeline-events/places/autocomplete', { params: { q: q.trim() } }).pipe(
+          map(r => r.suggestions),
+          catchError(() => of([])),
+        )
+    ),
+    startWith([]),
+  );
 
   photo = signal<TimelineEventPhoto | null>(this.data.event?.photo ?? null);
   uploading = signal(false);
@@ -184,10 +221,11 @@ export class TimelineEventDialogComponent {
 
   confirm(): void {
     if (this.form.invalid) return;
-    const { name, timeframe, description } = this.form.getRawValue();
+    const { name, timeframe, location, description } = this.form.getRawValue();
     this.dialogRef.close({
       name: name.trim(),
       timeframe: timeframe.trim() || undefined,
+      location: location.trim() || undefined,
       description: description.trim() || undefined,
       photo: this.photo() ?? undefined,
       updatedEntity: this.updatedEntity,

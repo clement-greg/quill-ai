@@ -53,7 +53,7 @@ router.get('/entity/:entityId', async (req: Request, res: Response) => {
 // POST create new timeline event
 router.post('/', async (req: Request, res: Response) => {
   try {
-    const { entityId, name, timeframe, description, photo, sortOrder } = req.body as Partial<TimelineEvent>;
+    const { entityId, name, timeframe, description, location, photo, sortOrder } = req.body as Partial<TimelineEvent>;
     if (!name?.trim()) {
       res.status(400).json({ error: 'Name is required' });
       return;
@@ -88,6 +88,7 @@ router.post('/', async (req: Request, res: Response) => {
       name: name.trim(),
       timeframe: timeframe?.trim() || undefined,
       description: description?.trim() || undefined,
+      location: location?.trim() || undefined,
       photo: photo ?? undefined,
       sortOrder: resolvedSortOrder,
       source: 'manual',
@@ -109,7 +110,7 @@ router.post('/', async (req: Request, res: Response) => {
 router.put('/:id', async (req: Request, res: Response) => {
   try {
     const id = req.params['id'] as string;
-    const { entityId, name, timeframe, description, photo } = req.body as Partial<TimelineEvent>;
+    const { entityId, name, timeframe, description, location, photo } = req.body as Partial<TimelineEvent>;
     if (!entityId) {
       res.status(400).json({ error: 'entityId is required' });
       return;
@@ -128,6 +129,7 @@ router.put('/:id', async (req: Request, res: Response) => {
       name: name.trim(),
       timeframe: timeframe?.trim() || undefined,
       description: description?.trim() || undefined,
+      location: location?.trim() || undefined,
       photo: photo ?? undefined,
       modifiedBy: req.user!.email,
       modifiedAt: new Date().toISOString(),
@@ -201,10 +203,12 @@ Return a JSON object with exactly three keys:
    - "name": a short event title (under ten words)
    - "timeframe": free-form timing if the text establishes one (e.g. "Three years before the war"); omit when unknown
    - "description": one or two sentences describing the event as established by the text
+   - "location": the place where the event occurs if the text clearly establishes one (city, country, region, landmark, or fictional place name); omit when unknown or vague
 
 2. "updates": existing timeline events whose underlying facts have SUBSTANTIVELY changed in the chapter text — a different outcome, different participants, or materially different circumstances. Each item must have:
    - "id": the existing event id
    - "name", "timeframe", "description": the corrected values (always include "name"; reuse the current value for anything unchanged)
+   - "location": the corrected location if it changed; omit to preserve the current value
    - "reason": one short sentence explaining what substantively changed
    Never propose an update for rewording, tone, or trivial detail differences.
 
@@ -221,16 +225,20 @@ Rules for what counts as an event — these are CRITICAL:
 
 const MAX_EXTRACTION_CHARS = 60000;
 
-function normalizeFields(name: string, timeframe?: unknown, description?: unknown): TimelineEventFields {
+function normalizeFields(name: string, timeframe?: unknown, description?: unknown, location?: unknown): TimelineEventFields {
   return {
     name: name.trim(),
     timeframe: typeof timeframe === 'string' && timeframe.trim() ? timeframe.trim() : undefined,
     description: typeof description === 'string' && description.trim() ? description.trim() : undefined,
+    location: typeof location === 'string' && location.trim() ? location.trim() : undefined,
   };
 }
 
 function fieldsChanged(a: TimelineEventFields, b: TimelineEventFields): boolean {
-  return a.name !== b.name || (a.timeframe ?? '') !== (b.timeframe ?? '') || (a.description ?? '') !== (b.description ?? '');
+  return a.name !== b.name ||
+    (a.timeframe ?? '') !== (b.timeframe ?? '') ||
+    (a.description ?? '') !== (b.description ?? '') ||
+    (a.location ?? '') !== (b.location ?? '');
 }
 
 // POST analyze chapter text and propose timeline changes. Nothing is persisted —
@@ -283,6 +291,7 @@ router.post('/extract-from-chapter', async (req: Request, res: Response) => {
         name: e.name,
         timeframe: e.timeframe,
         description: e.description,
+        location: e.location,
       }))),
       '',
       'Chapter text:',
@@ -310,23 +319,24 @@ router.post('/extract-from-chapter', async (req: Request, res: Response) => {
       .filter((a: { entityId?: unknown; name?: unknown }) =>
         a && typeof a.entityId === 'string' && entityById.has(a.entityId) &&
         typeof a.name === 'string' && a.name.trim().length > 0)
-      .map((a: { entityId: string; name: string; timeframe?: unknown; description?: unknown }) => ({
+      .map((a: { entityId: string; name: string; timeframe?: unknown; description?: unknown; location?: unknown }) => ({
         entityId: a.entityId,
         entityName: entityById.get(a.entityId)!.name,
-        ...normalizeFields(a.name, a.timeframe, a.description),
+        ...normalizeFields(a.name, a.timeframe, a.description, a.location),
       }));
 
     const updates: TimelineUpdateProposal[] = (Array.isArray(parsed.updates) ? parsed.updates : [])
       .filter((u: { id?: unknown; name?: unknown }) =>
         u && typeof u.id === 'string' && eventById.has(u.id) &&
         typeof u.name === 'string' && u.name.trim().length > 0)
-      .map((u: { id: string; name: string; timeframe?: unknown; description?: unknown; reason?: unknown }) => {
+      .map((u: { id: string; name: string; timeframe?: unknown; description?: unknown; location?: unknown; reason?: unknown }) => {
         const existing = eventById.get(u.id)!;
-        const current = normalizeFields(existing.name, existing.timeframe, existing.description);
+        const current = normalizeFields(existing.name, existing.timeframe, existing.description, existing.location);
         const proposed: TimelineEventFields = {
           name: u.name.trim(),
           timeframe: typeof u.timeframe === 'string' && u.timeframe.trim() ? u.timeframe.trim() : current.timeframe,
           description: typeof u.description === 'string' && u.description.trim() ? u.description.trim() : current.description,
+          location: typeof u.location === 'string' && u.location.trim() ? u.location.trim() : current.location,
         };
         return {
           eventId: existing.id,
@@ -415,6 +425,7 @@ router.post('/apply-chapter-proposals', async (req: Request, res: Response) => {
         name: add.name.trim(),
         timeframe: add.timeframe?.trim() || undefined,
         description: add.description?.trim() || undefined,
+        location: add.location?.trim() || undefined,
         photo,
         sortOrder,
         source: 'chapter',
@@ -443,6 +454,7 @@ router.post('/apply-chapter-proposals', async (req: Request, res: Response) => {
         name: update.proposed.name.trim(),
         timeframe: update.proposed.timeframe?.trim() || undefined,
         description: update.proposed.description?.trim() || undefined,
+        location: update.proposed.location?.trim() || undefined,
         modifiedBy: req.user!.email,
         modifiedAt: now,
       };
@@ -471,6 +483,48 @@ router.post('/apply-chapter-proposals', async (req: Request, res: Response) => {
   } catch (err) {
     console.error('Error applying chapter timeline proposals:', err);
     res.status(500).json({ error: 'Failed to apply timeline proposals' });
+  }
+});
+
+// ── Place name autocomplete ──────────────────────────────────────────────────
+
+// GET suggest real place names matching a partial query. Used by the location
+// autocomplete field in the timeline event dialog. Returns [] on short/empty
+// queries rather than hitting the LLM unnecessarily.
+router.get('/places/autocomplete', async (req: Request, res: Response) => {
+  const q = typeof req.query['q'] === 'string' ? req.query['q'].trim() : '';
+  if (q.length < 2) {
+    res.json({ suggestions: [] });
+    return;
+  }
+  try {
+    const completion = await aiClient.chat.completions.create({
+      model: config.foundry.miniModel,
+      messages: [
+        {
+          role: 'system',
+          content: 'You are a geography assistant. Given partial text, return up to 6 real place names (cities, countries, regions, landmarks) that match or start with that text. Return a JSON object with a "suggestions" key containing an array of strings. Example: {"suggestions": ["London, England", "London, Ontario, Canada"]}. If no good real-place matches exist, return {"suggestions": []}.',
+        },
+        { role: 'user', content: q },
+      ],
+      response_format: { type: 'json_object' },
+      max_tokens: 200,
+    });
+    const raw = completion.choices[0]?.message?.content ?? '{"suggestions":[]}';
+    let suggestions: string[] = [];
+    try {
+      const parsed = JSON.parse(raw) as Record<string, unknown>;
+      const arr = parsed['suggestions'] ?? parsed['places'] ?? parsed['results'];
+      if (Array.isArray(arr)) {
+        suggestions = arr.filter((s): s is string => typeof s === 'string').slice(0, 6);
+      }
+    } catch {
+      suggestions = [];
+    }
+    res.json({ suggestions });
+  } catch (err) {
+    console.error('Error getting place suggestions:', err);
+    res.json({ suggestions: [] });
   }
 });
 

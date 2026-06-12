@@ -173,16 +173,21 @@
         <div class="timeline" cdkDropList (cdkDropListDropped)="onTimelineDrop($event)">
           @for (ev of timelineEvents(); track ev.id) {
             <div class="timeline-item" cdkDrag cdkDragLockAxis="y">
+              @if (ev.timeframe) {
+                <span class="timeline-timeframe">{{ ev.timeframe }}</span>
+              }
               <div class="timeline-card"
                    [class.timeline-card--drop-target]="timelineDragOverId() === ev.id"
                    (dragover)="onTimelineCardDragOver($event, ev)"
                    (dragleave)="onTimelineCardDragLeave($event, ev)"
                    (drop)="onTimelineCardDrop($event, ev)">
                 <div class="timeline-card-main">
-                  @if (ev.timeframe) {
-                    <span class="timeline-timeframe">{{ ev.timeframe }}</span>
-                  }
                   <h3 class="timeline-event-name">{{ ev.name }}</h3>
+                  @if (ev.location) {
+                    <span class="timeline-location">
+                      <mat-icon class="timeline-location-icon" aria-hidden="true">place</mat-icon>{{ ev.location }}
+                    </span>
+                  }
                   @if (ev.description) {
                     <p class="timeline-desc">{{ ev.description }}</p>
                   }
@@ -226,6 +231,12 @@
               }
             </div>
           }
+        </div>
+      }
+
+      @if (timelineEvents().length > 0) {
+        <div class="timeline-map-wrap">
+          <app-timeline-map [events]="timelineEvents()" />
         </div>
       }
     </section>

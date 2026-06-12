@@ -68,7 +68,7 @@ export class UserSettingsService {
   private _settingsLoaded = signal(false);
   /** True when the active theme is a dark variant (for backward compat). */
   readonly darkMode = computed(() =>
-    this._colorTheme() === 'dark' || this._colorTheme() === 'midnight'
+    this._colorTheme() === 'dark' || this._colorTheme() === 'midnight' || this._colorTheme() === 'crimson'
   );
   readonly colorTheme = this._colorTheme.asReadonly();
   readonly editorFontSize = this._editorFontSize.asReadonly();

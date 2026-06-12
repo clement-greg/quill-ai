@@ -2317,8 +2317,8 @@ export class RichTextEditorComponent implements OnInit, AfterViewInit, OnDestroy
         // Merge rects that share the same visual line (within 2 px tolerance).
         const lineGroups: { top: number; minLeft: number; maxRight: number; height: number }[] = [];
         for (const r of rawRects) {
-          if (r.width < 1 || r.height < 1) continue;
-          const existing = lineGroups.find(l => Math.abs(l.top - r.top) < 2);
+          if (r.width < 2 || r.height < 2) continue;
+          const existing = lineGroups.find(l => Math.abs(l.top - r.top) < 4);
           if (existing) {
             existing.minLeft = Math.min(existing.minLeft, r.left);
             existing.maxRight = Math.max(existing.maxRight, r.right);
@@ -2374,7 +2374,9 @@ export class RichTextEditorComponent implements OnInit, AfterViewInit, OnDestroy
           const relRight = Math.min(blockWidth, line.maxRight - blockLeft);
           const lineX = indent + (relLeft / blockWidth) * maxLineW;
           const lineW = Math.max(2, ((relRight - relLeft) / blockWidth) * maxLineW);
-          const miniH = Math.max(1, line.height * scale - 0.5);
+          // Use ~50% of the line's allocated space so individual lines are
+          // distinguishable and gaps between paragraphs are clearly visible.
+          const miniH = Math.max(1.5, Math.min(line.height * scale * 0.5, 3.5));
 
           ctx.fillRect(lineX, miniY, lineW, miniH);
         }
@@ -2386,11 +2388,12 @@ export class RichTextEditorComponent implements OnInit, AfterViewInit, OnDestroy
       const lineH = parseFloat(getComputedStyle(editor).lineHeight) || 20;
       const numLines = Math.round(totalH / lineH);
       const miniLineH = Math.max(1, lineH * scale);
+      const miniLineBarH = Math.max(1.5, Math.min(miniLineH * 0.5, 3.5));
       ctx.fillStyle = `rgba(${tr},${tg},${tb},0.5)`;
       for (let i = 0; i < numLines; i++) {
         const lineY = i * miniLineH;
         if (lineY > H) break;
-        ctx.fillRect(4, lineY, W - 12, Math.max(1, miniLineH - 0.5));
+        ctx.fillRect(4, lineY, W - 12, miniLineBarH);
       }
     }
 
