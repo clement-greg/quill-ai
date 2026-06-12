@@ -98,6 +98,10 @@ export class EntityService {
     return this.http.patch<Entity>(`${this.apiUrl}/${entityId}/photos/visibility`, { indices, hidden });
   }
 
+  reorderPhotos(entityId: string, order: number[]): Observable<Entity> {
+    return this.http.patch<Entity>(`${this.apiUrl}/${entityId}/photos/reorder`, { order });
+  }
+
   getChapterAppearances(entityId: string): Observable<ChapterAppearance[]> {
     return this.http.get<ChapterAppearance[]>(`${this.apiUrl}/${entityId}/chapters`);
   }

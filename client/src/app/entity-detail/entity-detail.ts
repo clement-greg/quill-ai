@@ -19,8 +19,8 @@ import { MatTooltipModule } from '@angular/material/tooltip';
 import { MatMenuModule } from '@angular/material/menu';
 import { MatDialog } from '@angular/material/dialog';
 import { MatSnackBar } from '@angular/material/snack-bar';
-import { CdkDropList, CdkDrag, CdkDragHandle, CdkDragDrop, moveItemInArray } from '@angular/cdk/drag-drop';
-import { Entity } from '@shared/models/entity.model';
+import { CdkDropList, CdkDrag, CdkDragHandle, CdkDragDrop, CdkDragPlaceholder, moveItemInArray } from '@angular/cdk/drag-drop';
+import { Entity, EntityPhoto } from '@shared/models/entity.model';
 import { TimelineEvent, TimelineEventPhoto } from '@shared/models/timeline-event.model';
 import { EntityRelationshipSummary, RELATIONSHIP_TYPES } from '@shared/models/entity-relationship.model';
 import { EntityService, ChapterAppearance } from '../services/entity.service';
@@ -51,6 +51,7 @@ interface BookGroup {
     CdkDropList,
     CdkDrag,
     CdkDragHandle,
+    CdkDragPlaceholder,
   ],
   templateUrl: './entity-detail.html',
   styleUrl: './entity-detail.scss',
@@ -86,6 +87,9 @@ export class EntityDetailComponent implements OnDestroy {
   showAllPhotos = signal(false);
   photoUploading = signal(false);
   photoDragOver = signal(false);
+  sortingPhotos = signal(false);
+  photoSortSaving = signal(false);
+  sortablePhotos = signal<EntityPhoto[]>([]);
   timelineDragOverId = signal<string | null>(null);
 
   readonly PHOTO_PREVIEW_LIMIT = 5;
@@ -485,6 +489,39 @@ export class EntityDetailComponent implements OnDestroy {
         this.entity.set(updated);
         this.advanceLightboxAfterRemoval(this.lightboxIndex());
       },
+    });
+  }
+
+  enterSortMode(): void {
+    this.sortablePhotos.set([...(this.entity()?.photos ?? [])]);
+    this.showAllPhotos.set(true);
+    this.sortingPhotos.set(true);
+  }
+
+  cancelSortMode(): void {
+    this.sortingPhotos.set(false);
+  }
+
+  onSortDrop(event: CdkDragDrop<EntityPhoto[]>): void {
+    const arr = [...this.sortablePhotos()];
+    moveItemInArray(arr, event.previousIndex, event.currentIndex);
+    this.sortablePhotos.set(arr);
+  }
+
+  saveSortOrder(): void {
+    const entityId = this.entity()?.id;
+    if (!entityId) return;
+    const original = this.entity()!.photos ?? [];
+    const sorted = this.sortablePhotos();
+    const order = sorted.map(p => original.indexOf(p));
+    this.photoSortSaving.set(true);
+    this.entityService.reorderPhotos(entityId, order).subscribe({
+      next: (updated) => {
+        this.entity.set(updated);
+        this.sortingPhotos.set(false);
+        this.photoSortSaving.set(false);
+      },
+      error: () => this.photoSortSaving.set(false),
     });
   }
 

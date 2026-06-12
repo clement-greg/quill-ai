@@ -558,6 +558,34 @@ router.patch('/:id/photos/visibility', async (req: Request, res: Response) => {
   }
 });
 
+// PATCH reorder photos
+router.patch('/:id/photos/reorder', async (req: Request, res: Response) => {
+  try {
+    const id = req.params['id'] as string;
+    const { order } = req.body as { order: number[] };
+    if (!Array.isArray(order)) {
+      res.status(400).json({ error: 'order (array) is required' });
+      return;
+    }
+    const existing = await readOwnedItem<Entity>(container, id, id, req);
+    if (!existing) {
+      res.status(404).json({ error: 'Entity not found' });
+      return;
+    }
+    const allPhotos = existing.photos ?? [];
+    const coveredSet = new Set(order);
+    const reordered = order.map(i => allPhotos[i]).filter(Boolean);
+    const leftover = allPhotos.filter((_, i) => !coveredSet.has(i));
+    const photos = [...reordered, ...leftover];
+    const updated: Entity = { ...existing, photos, modifiedBy: req.user!.email, modifiedAt: new Date().toISOString() };
+    const { resource } = await container.item(id, id).replace<Entity>(updated);
+    res.json(resource);
+  } catch (err) {
+    console.error('Error reordering photos:', err);
+    res.status(500).json({ error: 'Failed to reorder photos' });
+  }
+});
+
 // POST generate a personality prompt from basic entity info
 router.post('/:id/generate-personality', async (req: Request, res: Response) => {
   try {

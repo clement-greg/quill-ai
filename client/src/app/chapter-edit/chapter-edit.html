@@ -319,6 +319,59 @@
           </aside>
         </div>
 
+        <!-- Mobile sidebar tab bar (mobile only) -->
+        <div class="mobile-tab-bar" role="tablist" aria-label="Panel tabs">
+          <button mat-icon-button class="mobile-tab-btn"
+                  [class.mobile-tab-btn--active]="mobileSidebarOpen() && sidebarTabIndex() === 0"
+                  (click)="activateSidebarTab(0)"
+                  role="tab"
+                  [attr.aria-selected]="mobileSidebarOpen() && sidebarTabIndex() === 0"
+                  aria-label="Notes">
+            <span class="mobile-tab-icon">
+              <mat-icon>sticky_note_2</mat-icon>
+              @if (notes().length > 0) {
+                <span class="mobile-tab-badge" aria-hidden="true">{{ notes().length }}</span>
+              }
+            </span>
+          </button>
+          <button mat-icon-button class="mobile-tab-btn"
+                  [class.mobile-tab-btn--active]="mobileSidebarOpen() && sidebarTabIndex() === 1"
+                  (click)="activateSidebarTab(1)"
+                  role="tab"
+                  [attr.aria-selected]="mobileSidebarOpen() && sidebarTabIndex() === 1"
+                  aria-label="New entities">
+            <span class="mobile-tab-icon">
+              <mat-icon>person_add</mat-icon>
+              @if (pendingSuggestions().length > 0) {
+                <span class="mobile-tab-badge" aria-hidden="true">{{ pendingSuggestions().length }}</span>
+              }
+            </span>
+          </button>
+          <button mat-icon-button class="mobile-tab-btn"
+                  [class.mobile-tab-btn--active]="mobileSidebarOpen() && sidebarTabIndex() === 2"
+                  (click)="activateSidebarTab(2)"
+                  role="tab"
+                  [attr.aria-selected]="mobileSidebarOpen() && sidebarTabIndex() === 2"
+                  aria-label="Version history">
+            <mat-icon>history</mat-icon>
+          </button>
+          <button mat-icon-button class="mobile-tab-btn"
+                  [class.mobile-tab-btn--active]="mobileSidebarOpen() && sidebarTabIndex() === 3"
+                  (click)="activateSidebarTab(3)"
+                  role="tab"
+                  [attr.aria-selected]="mobileSidebarOpen() && sidebarTabIndex() === 3"
+                  aria-label="Outline">
+            <mat-icon>toc</mat-icon>
+          </button>
+        </div>
+
+        <!-- Backdrop to dismiss sidebar on mobile -->
+        @if (mobileSidebarOpen()) {
+          <div class="mobile-sidebar-backdrop"
+               (click)="mobileSidebarOpen.set(false)"
+               aria-hidden="true"></div>
+        }
+
         <!-- Note input popup (chapter-specific) -->
         @if (noteInputVisible()) {
           <div class="note-input-popup" [style.top.px]="noteInputTop()" [style.left.px]="noteInputLeft()">

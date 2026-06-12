@@ -189,9 +189,16 @@
 }
 
 .photos-add-btn {
-  margin-left: auto;
   flex-shrink: 0;
   font-size: 0.875rem;
+}
+
+.photos-actions {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
 }
 
 .photos-drop-zone {
@@ -260,6 +267,90 @@
 
 .photos-toggle {
   margin-top: 8px;
+}
+
+.photos-sort-label {
+  margin-left: auto;
+  font-size: 0.8125rem;
+  color: var(--mat-sys-on-surface-variant);
+  flex-shrink: 0;
+}
+
+.photos-sort-save-btn {
+  flex-shrink: 0;
+}
+
+.photo-grid--sorting {
+  cursor: default;
+}
+
+.photo-card--sort {
+  all: unset;
+  border-radius: 8px;
+  overflow: hidden;
+  display: block;
+  aspect-ratio: 1;
+  background: var(--mat-sys-surface-variant, #e8e0f0);
+  position: relative;
+  cursor: grab;
+
+  &:active {
+    cursor: grabbing;
+  }
+
+  img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: block;
+  }
+}
+
+.sort-drag-overlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.35);
+  color: #fff;
+  opacity: 0;
+  transition: opacity 0.15s;
+
+  .photo-card--sort:hover & {
+    opacity: 1;
+  }
+
+  mat-icon {
+    font-size: 2rem;
+    width: 2rem;
+    height: 2rem;
+  }
+}
+
+.photo-drag-placeholder {
+  border-radius: 8px;
+  aspect-ratio: 1;
+  background: color-mix(in srgb, var(--mat-sys-primary) 15%, transparent);
+  border: 2px dashed var(--mat-sys-primary);
+}
+
+.cdk-drag-preview {
+  border-radius: 8px;
+  overflow: hidden;
+  aspect-ratio: 1;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.3);
+
+  img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: block;
+  }
+}
+
+.cdk-drag-animating {
+  transition: transform 250ms cubic-bezier(0, 0, 0.2, 1);
 }
 
 // ── Timeline ──────────────────────────────────────────────

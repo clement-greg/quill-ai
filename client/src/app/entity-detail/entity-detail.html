@@ -43,53 +43,106 @@
         @if (visiblePhotos().length > 0) {
           <span class="section-count">{{ visiblePhotos().length }}</span>
         }
-        <button mat-stroked-button class="section-action photos-add-btn"
-                (click)="photoFileInput.click()"
-                [disabled]="photoUploading()"
-                aria-label="Add photos">
-          @if (photoUploading()) {
-            <mat-spinner diameter="16" />
-          } @else {
-            <mat-icon>add_photo_alternate</mat-icon>
-          }
-          {{ photoUploading() ? 'Uploading…' : 'Add photos' }}
-        </button>
-        <input #photoFileInput type="file" accept="image/*" multiple hidden (change)="onPhotoFileSelected($event)" />
+        @if (!sortingPhotos()) {
+          <div class="photos-actions">
+            @if (visiblePhotos().length > 1) {
+              <button mat-stroked-button class="section-action"
+                      (click)="enterSortMode()"
+                      aria-label="Sort photos">
+                <mat-icon>sort</mat-icon>
+                Sort
+              </button>
+            }
+            <button mat-stroked-button class="section-action"
+                    (click)="photoFileInput.click()"
+                    [disabled]="photoUploading()"
+                    aria-label="Add photos">
+              @if (photoUploading()) {
+                <mat-spinner diameter="16" />
+              } @else {
+                <mat-icon>add_photo_alternate</mat-icon>
+              }
+              {{ photoUploading() ? 'Uploading…' : 'Add photos' }}
+            </button>
+            <input #photoFileInput type="file" accept="image/*" multiple hidden (change)="onPhotoFileSelected($event)" />
+          </div>
+        } @else {
+          <span class="photos-sort-label">Drag to reorder</span>
+          <div class="photos-actions">
+            <button mat-button (click)="cancelSortMode()" aria-label="Cancel sorting">
+              Cancel
+            </button>
+            <button mat-flat-button class="photos-sort-save-btn"
+                    (click)="saveSortOrder()"
+                    [disabled]="photoSortSaving()"
+                    aria-label="Save photo order">
+              @if (photoSortSaving()) {
+                <mat-spinner diameter="16" />
+              } @else {
+                <mat-icon>check</mat-icon>
+              }
+              {{ photoSortSaving() ? 'Saving…' : 'Done' }}
+            </button>
+          </div>
+        }
       </h2>
 
-      <div class="photos-drop-zone"
-           [class.photos-drop-zone--active]="photoDragOver()"
-           (dragover)="onPhotoDragOver($event)"
-           (dragleave)="onPhotoDragLeave($event)"
-           (drop)="onPhotosDrop($event)">
-        @if (visiblePhotos().length === 0) {
-          <p class="empty-hint">No photos added yet. Add photos or drag &amp; drop here.</p>
-        } @else {
-          <div class="photo-grid">
-            @for (photo of displayedPhotos(); track $index) {
-              <button class="photo-card" draggable="true" (dragstart)="onPhotoDragStart($event, photo)" (click)="openLightbox($index)" [attr.aria-label]="photo.caption || 'Photo ' + ($index + 1)">
-                <img [src]="proxyUrl(photo.thumbnailUrl) || proxyUrl(photo.url)" [alt]="photo.caption || ''" />
-                @if (photo.caption) {
-                  <span class="photo-caption">{{ photo.caption }}</span>
-                }
-              </button>
-            }
-          </div>
-          @if (visiblePhotos().length > PHOTO_PREVIEW_LIMIT) {
-            @if (showAllPhotos()) {
-              <button mat-button class="photos-toggle" (click)="showAllPhotos.set(false)">
-                <mat-icon>expand_less</mat-icon>
-                Show fewer
-              </button>
-            } @else {
-              <button mat-button class="photos-toggle" (click)="showAllPhotos.set(true)">
-                <mat-icon>expand_more</mat-icon>
-                Show all {{ visiblePhotos().length }} photos
-              </button>
+      @if (sortingPhotos()) {
+        <div class="photo-grid photo-grid--sorting"
+             cdkDropList
+             cdkDropListOrientation="mixed"
+             [cdkDropListData]="sortablePhotos()"
+             (cdkDropListDropped)="onSortDrop($event)"
+             aria-label="Drag photos to reorder">
+          @for (photo of sortablePhotos(); track photo) {
+            <div class="photo-card photo-card--sort" cdkDrag [cdkDragData]="photo"
+                 [attr.aria-label]="photo.caption || 'Photo'">
+              <img [src]="proxyUrl(photo.thumbnailUrl) || proxyUrl(photo.url)" [alt]="photo.caption || ''" />
+              <div class="sort-drag-overlay" aria-hidden="true">
+                <mat-icon>drag_indicator</mat-icon>
+              </div>
+              @if (photo.caption) {
+                <span class="photo-caption">{{ photo.caption }}</span>
+              }
+              <div *cdkDragPlaceholder class="photo-drag-placeholder"></div>
+            </div>
+          }
+        </div>
+      } @else {
+        <div class="photos-drop-zone"
+             [class.photos-drop-zone--active]="photoDragOver()"
+             (dragover)="onPhotoDragOver($event)"
+             (dragleave)="onPhotoDragLeave($event)"
+             (drop)="onPhotosDrop($event)">
+          @if (visiblePhotos().length === 0) {
+            <p class="empty-hint">No photos added yet. Add photos or drag &amp; drop here.</p>
+          } @else {
+            <div class="photo-grid">
+              @for (photo of displayedPhotos(); track $index) {
+                <button class="photo-card" draggable="true" (dragstart)="onPhotoDragStart($event, photo)" (click)="openLightbox($index)" [attr.aria-label]="photo.caption || 'Photo ' + ($index + 1)">
+                  <img [src]="proxyUrl(photo.thumbnailUrl) || proxyUrl(photo.url)" [alt]="photo.caption || ''" />
+                  @if (photo.caption) {
+                    <span class="photo-caption">{{ photo.caption }}</span>
+                  }
+                </button>
+              }
+            </div>
+            @if (visiblePhotos().length > PHOTO_PREVIEW_LIMIT) {
+              @if (showAllPhotos()) {
+                <button mat-button class="photos-toggle" (click)="showAllPhotos.set(false)">
+                  <mat-icon>expand_less</mat-icon>
+                  Show fewer
+                </button>
+              } @else {
+                <button mat-button class="photos-toggle" (click)="showAllPhotos.set(true)">
+                  <mat-icon>expand_more</mat-icon>
+                  Show all {{ visiblePhotos().length }} photos
+                </button>
+              }
             }
           }
-        }
-      </div>
+        </div>
+      }
     </section>
 
     <!-- Timeline -->
