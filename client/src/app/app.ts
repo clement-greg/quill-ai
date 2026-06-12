@@ -132,10 +132,14 @@ export class App implements OnInit, OnDestroy {
     }
   });
 
-  backLink = computed(() => {
-    const crumbs = this.header.breadcrumbs().filter(c => c.link);
-    return crumbs.length > 0 ? crumbs[crumbs.length - 1].link! : null;
+  hasBackNav = computed(() => {
+    const url = this.currentUrl() ?? '';
+    return url !== '/series' && url !== '/' && url !== '/login';
   });
+
+  goBack() {
+    history.back();
+  }
 
   logoSrc = computed(() =>
     this.settings.colorTheme() === 'minimalist'

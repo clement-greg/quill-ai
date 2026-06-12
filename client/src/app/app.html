@@ -1,11 +1,11 @@
 @if (!isUnthemed()) {
 <mat-toolbar color="primary" class="app-toolbar">
 
-  <!-- Mobile back button (shown only on mobile when on a sub-page) -->
-  @if (backLink()) {
-    <a [routerLink]="backLink()" mat-icon-button class="mobile-back-btn">
+  <!-- Back button (shown on all pages deeper than /series) -->
+  @if (hasBackNav()) {
+    <button mat-icon-button class="back-btn" (click)="goBack()" aria-label="Go back">
       <mat-icon>arrow_back</mat-icon>
-    </a>
+    </button>
   }
 
   <!-- Logo -->
