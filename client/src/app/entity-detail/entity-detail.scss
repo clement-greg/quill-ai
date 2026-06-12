@@ -424,6 +424,12 @@
     box-shadow: 0 0 0 2px var(--mat-sys-primary, #6750a4);
     background: var(--mat-sys-primary-container, #eaddff);
   }
+
+  &--map-highlighted {
+    border-color: var(--mat-sys-tertiary, #7d5260);
+    box-shadow: 0 0 0 2px var(--mat-sys-tertiary, #7d5260);
+    background: var(--mat-sys-tertiary-container, #ffd8e4);
+  }
 }
 
 .timeline-card-main {

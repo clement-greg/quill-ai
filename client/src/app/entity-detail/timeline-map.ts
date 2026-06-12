@@ -2,6 +2,7 @@ import {
   Component,
   inject,
   input,
+  output,
   signal,
   computed,
   afterNextRender,
@@ -11,6 +12,7 @@ import {
   ElementRef,
   NgZone,
 } from '@angular/core';
+import { MatButtonModule } from '@angular/material/button';
 import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
 import { MatIconModule } from '@angular/material/icon';
 import { TimelineEvent } from '@shared/models/timeline-event.model';
@@ -80,10 +82,19 @@ function loadGoogleMaps(): Promise<typeof google.maps> {
   selector: 'app-timeline-map',
   changeDetection: ChangeDetectionStrategy.OnPush,
   host: { style: 'display: block' },
-  imports: [MatProgressSpinnerModule, MatIconModule],
+  imports: [MatProgressSpinnerModule, MatIconModule, MatButtonModule],
   template: `
-    <div class="map-shell">
+    <div class="map-shell" [class.map-shell--expanded]="isExpanded()">
       <div #mapEl class="map-el" role="region" aria-label="Timeline event map"></div>
+
+      <button
+        mat-icon-button
+        class="map-expand-btn"
+        (click)="toggleExpanded()"
+        [attr.aria-label]="isExpanded() ? 'Collapse map' : 'Expand map'"
+        [attr.aria-pressed]="isExpanded()">
+        <mat-icon>{{ isExpanded() ? 'fullscreen_exit' : 'fullscreen' }}</mat-icon>
+      </button>
 
       @if (geocodingRemaining() > 0) {
         <div class="map-status" aria-live="polite" aria-atomic="true">
@@ -164,6 +175,35 @@ function loadGoogleMaps(): Promise<typeof google.maps> {
       mat-icon { font-size: 40px; width: 40px; height: 40px; opacity: 0.5; }
       p { margin: 0; font-size: 0.9rem; max-width: 280px; }
     }
+    .map-expand-btn {
+      position: absolute;
+      top: 8px;
+      right: 8px;
+      z-index: 3;
+      background: rgba(255, 255, 255, 0.85);
+      backdrop-filter: blur(4px);
+      color: #444;
+      width: 32px;
+      height: 32px;
+      line-height: 32px;
+      mat-icon { font-size: 20px; width: 20px; height: 20px; line-height: 20px; }
+      &:hover { background: rgba(255, 255, 255, 1); }
+    }
+    :host-context([data-theme='dark']) .map-expand-btn,
+    :host-context(.dark) .map-expand-btn {
+      background: rgba(40, 40, 40, 0.85);
+      color: #ddd;
+      &:hover { background: rgba(50, 50, 50, 1); }
+    }
+    .map-shell--expanded {
+      position: fixed;
+      inset: 0;
+      width: 100vw;
+      height: 100vh;
+      border-radius: 0;
+      border: none;
+      z-index: 1000;
+    }
   `],
 })
 export class TimelineMapComponent implements OnDestroy {
@@ -171,6 +211,7 @@ export class TimelineMapComponent implements OnDestroy {
   private settings = inject(UserSettingsService);
 
   events = input<TimelineEvent[]>([]);
+  eventHovered = output<string | null>();
 
   geocodingRemaining = signal(0);
   pinCount = signal(0);
@@ -179,16 +220,24 @@ export class TimelineMapComponent implements OnDestroy {
   geocodeError = signal<string | null>(null);
   hasLocations = computed(() => this.events().some(e => e.location?.trim()));
 
+  isExpanded = signal(false);
+
   private map: google.maps.Map | undefined;
   private geocoder: google.maps.Geocoder | undefined;
   private infoWindow: google.maps.InfoWindow | undefined;
   private destroyed = false;
   private geocodeCache = new Map<string, google.maps.LatLngLiteral | null>();
+  private onKeyDown = (e: KeyboardEvent) => {
+    if (e.key === 'Escape' && this.isExpanded()) {
+      this.zone.run(() => this.collapse());
+    }
+  };
 
   readonly mapEl = viewChild<ElementRef<HTMLDivElement>>('mapEl');
 
   constructor() {
     afterNextRender(() => {
+      document.addEventListener('keydown', this.onKeyDown);
       this.zone.runOutsideAngular(() => void this.setup());
     });
   }
@@ -197,6 +246,26 @@ export class TimelineMapComponent implements OnDestroy {
     this.destroyed = true;
     this.infoWindow?.close();
     this.map = undefined;
+    document.removeEventListener('keydown', this.onKeyDown);
+    if (this.isExpanded()) {
+      document.body.style.overflow = '';
+    }
+  }
+
+  toggleExpanded(): void {
+    if (this.isExpanded()) {
+      this.collapse();
+    } else {
+      this.isExpanded.set(true);
+      document.body.style.overflow = 'hidden';
+      setTimeout(() => google.maps.event.trigger(this.map!, 'resize'), 0);
+    }
+  }
+
+  private collapse(): void {
+    this.isExpanded.set(false);
+    document.body.style.overflow = '';
+    setTimeout(() => google.maps.event.trigger(this.map!, 'resize'), 0);
   }
 
   private async setup(): Promise<void> {
@@ -250,6 +319,12 @@ export class TimelineMapComponent implements OnDestroy {
         if (!this.infoWindow || !this.map) return;
         this.infoWindow.setContent(this.popupHtml(event));
         this.infoWindow.open({ anchor: marker, map: this.map });
+      });
+      marker.addListener('mouseover', () => {
+        this.zone.run(() => this.eventHovered.emit(event.id));
+      });
+      marker.addListener('mouseout', () => {
+        this.zone.run(() => this.eventHovered.emit(null));
       });
       bounds.extend(coords);
       placed++;

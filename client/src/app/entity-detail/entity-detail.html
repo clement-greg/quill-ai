@@ -178,6 +178,7 @@
               }
               <div class="timeline-card"
                    [class.timeline-card--drop-target]="timelineDragOverId() === ev.id"
+                   [class.timeline-card--map-highlighted]="hoveredMapEventId() === ev.id"
                    (dragover)="onTimelineCardDragOver($event, ev)"
                    (dragleave)="onTimelineCardDragLeave($event, ev)"
                    (drop)="onTimelineCardDrop($event, ev)">
@@ -236,7 +237,7 @@
 
       @if (timelineEvents().length > 0) {
         <div class="timeline-map-wrap">
-          <app-timeline-map [events]="timelineEvents()" />
+          <app-timeline-map [events]="timelineEvents()" (eventHovered)="hoveredMapEventId.set($event)" />
         </div>
       }
     </section>

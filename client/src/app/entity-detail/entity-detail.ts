@@ -93,6 +93,7 @@ export class EntityDetailComponent implements OnDestroy {
   photoSortSaving = signal(false);
   sortablePhotos = signal<EntityPhoto[]>([]);
   timelineDragOverId = signal<string | null>(null);
+  hoveredMapEventId = signal<string | null>(null);
 
   readonly PHOTO_PREVIEW_LIMIT = 5;
 
