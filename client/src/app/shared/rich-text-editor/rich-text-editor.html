@@ -88,6 +88,49 @@
         <mat-icon style="font-size:16px;width:16px;height:16px;line-height:16px">sticky_note_2</mat-icon>
       </button>
     }
+    <div class="fmt-separator"></div>
+    <button class="fmt-btn" (mousedown)="$event.preventDefault(); openEntityTagPanel()" title="Tag entity">
+      <mat-icon style="font-size:16px;width:16px;height:16px;line-height:16px">person_pin</mat-icon>
+    </button>
+  </div>
+}
+
+<!-- Entity tag search panel -->
+@if (entityTagPanelVisible()) {
+  <div class="rte-entity-tag-panel"
+    [style.top.px]="entityTagPanelTop()"
+    [style.left.px]="entityTagPanelLeft()"
+    role="dialog"
+    aria-label="Tag entity">
+    <input #entityTagInputEl
+      class="rte-entity-tag-input"
+      type="text"
+      placeholder="Search entities…"
+      [value]="entityTagSearchQuery()"
+      (input)="entityTagSearchQuery.set($any($event.target).value); entityTagFocusIndex.set(0)"
+      (keydown)="onEntityTagSearchKeyDown($event)"
+      (blur)="onEntityTagInputBlur($event)"
+      aria-label="Search entities"
+      autocomplete="off" />
+    <div class="rte-entity-tag-list" role="listbox" aria-label="Matching entities">
+      @for (entity of entityTagFilteredEntities(); track entity.id; let i = $index) {
+        <div class="rte-entity-tag-item"
+          [class.active]="i === entityTagFocusIndex()"
+          role="option"
+          [attr.aria-selected]="i === entityTagFocusIndex()"
+          (mousedown)="$event.preventDefault(); applyEntityTagFromPanel(entity)">
+          @if (entity.thumbnailUrl) {
+            <img [src]="proxyUrl(entity.thumbnailUrl)!" class="rte-autocomplete-thumb" alt="" />
+          } @else {
+            <span class="rte-autocomplete-thumb-placeholder"></span>
+          }
+          <span>{{ entity.name }}</span>
+        </div>
+      }
+      @if (entityTagFilteredEntities().length === 0) {
+        <div class="rte-entity-tag-empty">No entities found</div>
+      }
+    </div>
   </div>
 }
 

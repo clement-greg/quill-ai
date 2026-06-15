@@ -216,6 +216,61 @@
   margin: 0 3px;
 }
 
+/* ── Entity tag panel ────────────────────────────────── */
+.rte-entity-tag-panel {
+  position: fixed;
+  z-index: 1001;
+  background: var(--mat-sys-surface-container, #fff);
+  border: 1px solid var(--mat-sys-outline-variant, #e0e0e0);
+  border-radius: 8px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.15);
+  min-width: 240px;
+  max-width: 320px;
+  padding: 8px;
+}
+
+.rte-entity-tag-input {
+  width: 100%;
+  box-sizing: border-box;
+  border: 1px solid var(--mat-sys-outline-variant, #e0e0e0);
+  border-radius: 4px;
+  padding: 6px 10px;
+  font-size: 0.875rem;
+  outline: none;
+  background: var(--mat-sys-surface, #fff);
+  color: var(--mat-sys-on-surface, #212121);
+
+  &:focus { border-color: var(--mat-sys-primary, #1976d2); }
+}
+
+.rte-entity-tag-list {
+  margin-top: 6px;
+  max-height: 200px;
+  overflow-y: auto;
+}
+
+.rte-entity-tag-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 8px;
+  cursor: pointer;
+  font-size: 0.9rem;
+  border-radius: 4px;
+  transition: background 0.1s;
+
+  &:hover, &.active {
+    background: var(--mat-sys-secondary-container, #e3f2fd);
+  }
+}
+
+.rte-entity-tag-empty {
+  padding: 8px;
+  font-size: 0.85rem;
+  color: var(--mat-sys-on-surface-variant, #555);
+  text-align: center;
+}
+
 /* ── Autocomplete dropdown ───────────────────────────── */
 .rte-autocomplete-dropdown {
   position: fixed;

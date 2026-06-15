@@ -1,6 +1,6 @@
 import { AuditedRecord } from './audited-record';
 
-export type EntityReference = 'full-name' | 'first-name' | 'last-name' | 'nickname' | 'title-full-name' | 'title-last-name';
+export type EntityReference = 'full-name' | 'first-name' | 'last-name' | 'nickname' | 'title-full-name' | 'title-last-name' | 'other';
 
 export interface EntityPhoto {
     url: string;

@@ -551,7 +551,7 @@ export class BookNotesComponent implements OnInit, OnDestroy {
     if (refs.firstName && text === refs.firstName) return 'first-name';
     if (refs.lastName && text === refs.lastName) return 'last-name';
     if (refs.nickname && text === refs.nickname) return 'nickname';
-    return 'full-name';
+    return 'other';
   }
 
   private getTextForReferenceType(entity: Entity, refType: EntityReference): string {
@@ -562,6 +562,7 @@ export class BookNotesComponent implements OnInit, OnDestroy {
       case 'nickname': return refs.nickname || entity.name;
       case 'title-full-name': return refs.title ? `${refs.title} ${entity.name}` : entity.name;
       case 'title-last-name': return refs.title && refs.lastName ? `${refs.title} ${refs.lastName}` : entity.name;
+      case 'other': return '';
       default: return entity.name;
     }
   }
@@ -574,6 +575,7 @@ export class BookNotesComponent implements OnInit, OnDestroy {
       const entity = entities.find(e => e.id === span.getAttribute('data-id'));
       if (!entity) return;
       const refType = span.getAttribute('data-reference-type') as EntityReference;
+      if (refType === 'other') return;
       const expected = this.getTextForReferenceType(entity, refType);
       if (span.textContent !== expected) span.textContent = expected;
     });

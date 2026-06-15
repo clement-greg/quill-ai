@@ -37,6 +37,7 @@ export class RichTextEditorComponent implements OnInit, AfterViewInit, OnDestroy
   @ViewChild('inlineAiInputEl') inlineAiInputEl?: ElementRef<HTMLInputElement>;
   @ViewChild('inlineAiPanelEl') inlineAiPanelRef?: ElementRef<HTMLElement>;
   @ViewChild('minimapCanvas') minimapCanvasRef?: ElementRef<HTMLCanvasElement>;
+  @ViewChild('entityTagInputEl') entityTagInputRef?: ElementRef<HTMLInputElement>;
 
   // ── Inputs ──────────────────────────────────────────────────────────────
   seriesId = input<string>('');
@@ -87,6 +88,24 @@ export class RichTextEditorComponent implements OnInit, AfterViewInit, OnDestroy
     align: '' as 'left' | 'center' | 'right' | 'justify' | '',
   });
   private formattingToolbarShownForImage = false;
+
+  // ── Entity tag panel ─────────────────────────────────────────────────────
+  entityTagPanelVisible = signal(false);
+  entityTagPanelTop = signal(0);
+  entityTagPanelLeft = signal(0);
+  entityTagSearchQuery = signal('');
+  entityTagFocusIndex = signal(0);
+  entityTagFilteredEntities = computed(() => {
+    const q = this.entityTagSearchQuery().toLowerCase().trim();
+    if (!q) return this.entities().slice(0, 20);
+    return this.entities().filter(e =>
+      e.name.toLowerCase().includes(q) ||
+      e.nickname?.toLowerCase().includes(q) ||
+      e.firstName?.toLowerCase().includes(q) ||
+      e.lastName?.toLowerCase().includes(q),
+    ).slice(0, 20);
+  });
+  private entityTagSavedRange: Range | null = null;
 
   // ── Entity hover popup ───────────────────────────────────────────────────
   hoveredEntity = signal<Entity | null>(null);
@@ -1127,7 +1146,7 @@ export class RichTextEditorComponent implements OnInit, AfterViewInit, OnDestroy
     const range = sel.getRangeAt(0);
     const rect = range.getBoundingClientRect();
     if (!rect.width) { this.formattingToolbarVisible.set(false); return; }
-    const toolbarWidth = 290;
+    const toolbarWidth = 330;
     const off = this.getFixedOffset();
     const left = (rect.left - off.x) + rect.width / 2 - toolbarWidth / 2;
     this.formattingToolbarTop.set(rect.top - off.y - 44);
@@ -1160,12 +1179,78 @@ export class RichTextEditorComponent implements OnInit, AfterViewInit, OnDestroy
     });
   }
 
+  // ── Entity tag panel ─────────────────────────────────────────────────────
+
+  openEntityTagPanel(): void {
+    const sel = window.getSelection();
+    if (!sel || sel.isCollapsed || sel.rangeCount === 0) return;
+    this.entityTagSavedRange = sel.getRangeAt(0).cloneRange();
+    this.entityTagSearchQuery.set('');
+    this.entityTagFocusIndex.set(0);
+    this.entityTagPanelTop.set(this.formattingToolbarTop() + 44 + 6);
+    this.entityTagPanelLeft.set(this.formattingToolbarLeft());
+    this.entityTagPanelVisible.set(true);
+    setTimeout(() => {
+      const input = this.entityTagInputRef?.nativeElement;
+      input?.focus();
+    });
+  }
+
+  onEntityTagSearchKeyDown(event: KeyboardEvent): void {
+    const items = this.entityTagFilteredEntities();
+    if (event.key === 'ArrowDown') {
+      event.preventDefault();
+      this.entityTagFocusIndex.set(Math.min(this.entityTagFocusIndex() + 1, items.length - 1));
+    } else if (event.key === 'ArrowUp') {
+      event.preventDefault();
+      this.entityTagFocusIndex.set(Math.max(this.entityTagFocusIndex() - 1, 0));
+    } else if (event.key === 'Enter') {
+      event.preventDefault();
+      const entity = items[this.entityTagFocusIndex()];
+      if (entity) this.applyEntityTagFromPanel(entity);
+    } else if (event.key === 'Escape') {
+      this.closeEntityTagPanel();
+    }
+  }
+
+  applyEntityTagFromPanel(entity: Entity): void {
+    const range = this.entityTagSavedRange;
+    if (!range) { this.closeEntityTagPanel(); return; }
+    const selectedText = range.toString();
+    if (!selectedText.trim()) { this.closeEntityTagPanel(); return; }
+    this.closeEntityTagPanel();
+    const span = document.createElement('span');
+    span.setAttribute('data-id', entity.id);
+    span.setAttribute('data-reference-type', this.getReferenceType(entity, selectedText));
+    span.className = 'entity-reference';
+    span.textContent = selectedText;
+    range.deleteContents();
+    range.insertNode(span);
+    const nr = document.createRange();
+    nr.setStartAfter(span);
+    nr.collapse(true);
+    const sel = window.getSelection();
+    if (sel) { sel.removeAllRanges(); sel.addRange(nr); }
+    if (this.editorRef) { this.editorContent = this.editorRef.nativeElement.innerHTML; this.scheduleEmit(); }
+  }
+
+  onEntityTagInputBlur(event: FocusEvent): void {
+    const related = event.relatedTarget as HTMLElement | null;
+    if (related?.closest('.rte-entity-tag-panel')) return;
+    this.closeEntityTagPanel();
+  }
+
+  closeEntityTagPanel(): void {
+    this.entityTagPanelVisible.set(false);
+    this.entityTagSavedRange = null;
+  }
+
   // ── Image resize ─────────────────────────────────────────────────────────
 
   private showFormattingToolbarForImage(img: HTMLImageElement): void {
     const rect = img.getBoundingClientRect();
     const off = this.getFixedOffset();
-    const toolbarWidth = 290;
+    const toolbarWidth = 330;
     const left = Math.max(8, Math.min((rect.left - off.x) + rect.width / 2 - toolbarWidth / 2, window.innerWidth - toolbarWidth - 8));
     this.formattingToolbarTop.set(rect.top - off.y - 44);
     this.formattingToolbarLeft.set(left);
@@ -1872,7 +1957,7 @@ export class RichTextEditorComponent implements OnInit, AfterViewInit, OnDestroy
     if (refs.firstName && text === refs.firstName) return 'first-name';
     if (refs.lastName && text === refs.lastName) return 'last-name';
     if (refs.nickname && text === refs.nickname) return 'nickname';
-    return 'full-name';
+    return 'other';
   }
 
   private getTextForReferenceType(entity: Entity, refType: EntityReference): string {
@@ -1883,6 +1968,7 @@ export class RichTextEditorComponent implements OnInit, AfterViewInit, OnDestroy
       case 'nickname': return refs.nickname || entity.name;
       case 'title-full-name': return refs.title ? `${refs.title} ${entity.name}` : entity.name;
       case 'title-last-name': return refs.title && refs.lastName ? `${refs.title} ${refs.lastName}` : entity.name;
+      case 'other': return '';
       default: return entity.name;
     }
   }
@@ -1895,6 +1981,7 @@ export class RichTextEditorComponent implements OnInit, AfterViewInit, OnDestroy
       const entity = entities.find(e => e.id === span.getAttribute('data-id'));
       if (!entity) return;
       const refType = span.getAttribute('data-reference-type') as EntityReference;
+      if (refType === 'other') return;
       const expected = this.getTextForReferenceType(entity, refType);
       if (span.textContent !== expected) span.textContent = expected;
     });
