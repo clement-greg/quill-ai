@@ -1,45 +1,44 @@
-import { Injectable, signal } from '@angular/core';
+import { Injectable, signal, inject } from '@angular/core';
+import { HttpClient } from '@angular/common/http';
+import { firstValueFrom } from 'rxjs';
+import { RecentChapter } from '@shared/models/recent-chapter.model';
 
-export interface RecentChapter {
-  chapterId: string;
-  chapterTitle: string;
-  bookTitle: string;
-  seriesTitle: string;
-  thumbnailUrl?: string;
-  visitedAt: number;
-}
+export type { RecentChapter };
 
-const STORAGE_KEY = 'quill-recent-chapters';
 const MAX_ITEMS = 5;
 
 @Injectable({ providedIn: 'root' })
 export class RecentChaptersService {
-  private readonly _items = signal<RecentChapter[]>(this.load());
+  private http = inject(HttpClient);
+  private readonly _items = signal<RecentChapter[]>([]);
 
   readonly recentChapters = this._items.asReadonly();
 
-  remove(chapterId: string): void {
-    this._items.update(items => {
-      const updated = items.filter(i => i.chapterId !== chapterId);
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(updated));
-      return updated;
-    });
+  constructor() {
+    this.loadFromServer();
+  }
+
+  private async loadFromServer(): Promise<void> {
+    try {
+      const items = await firstValueFrom(this.http.get<RecentChapter[]>('/api/recent-chapters'));
+      this._items.set(items);
+    } catch {
+      // Keep empty array on error — MRU is non-critical
+    }
   }
 
   record(entry: Omit<RecentChapter, 'visitedAt'>): void {
-    this._items.update(items => {
-      const filtered = items.filter(i => i.chapterId !== entry.chapterId);
-      const updated = [{ ...entry, visitedAt: Date.now() }, ...filtered].slice(0, MAX_ITEMS);
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(updated));
-      return updated;
-    });
+    const updated = [
+      { ...entry, visitedAt: Date.now() },
+      ...this._items().filter(i => i.chapterId !== entry.chapterId),
+    ].slice(0, MAX_ITEMS);
+    this._items.set(updated);
+    firstValueFrom(this.http.put<RecentChapter[]>('/api/recent-chapters', updated)).catch(() => {});
   }
 
-  private load(): RecentChapter[] {
-    try {
-      return JSON.parse(localStorage.getItem(STORAGE_KEY) ?? '[]');
-    } catch {
-      return [];
-    }
+  remove(chapterId: string): void {
+    const updated = this._items().filter(i => i.chapterId !== chapterId);
+    this._items.set(updated);
+    firstValueFrom(this.http.put<RecentChapter[]>('/api/recent-chapters', updated)).catch(() => {});
   }
 }

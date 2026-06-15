@@ -219,6 +219,7 @@ import { SeriesService } from './series.service';
 import { AuthService } from '../auth/auth.service';
 import { Series } from '@shared/models/series.model';
 import { RecentChaptersService } from '../services/recent-chapters.service';
+import { HeaderService } from '../services/header.service';
 import { v4 as uuidv4 } from 'uuid';
 import { SlideOutPanelContainer } from '../shared/slide-out-panel-container/slide-out-panel-container';
 import { WritingStatsSummaryComponent } from '../writing-stats/writing-stats-summary';
@@ -249,8 +250,18 @@ export class SeriesComponent implements OnInit {
   private authService = inject(AuthService);
   private router = inject(Router);
   private recentChaptersService = inject(RecentChaptersService);
+  private headerService = inject(HeaderService);
 
   readonly recentChapters = this.recentChaptersService.recentChapters;
+
+  readonly featureLinks = [
+    { label: 'Entities',      icon: 'people',        path: '/entities' },
+    { label: 'Relationships', icon: 'account_tree',  path: '/relationships' },
+    { label: 'Photo Gallery', icon: 'photo_library', path: '/gallery' },
+    { label: 'Writing Stats', icon: 'bar_chart',     path: '/writing-stats' },
+    { label: 'Archived',      icon: 'archive',       path: '/archived' },
+    { label: 'Settings',      icon: 'settings',      path: '/settings' },
+  ];
 
   readonly greeting = computed(() => {
     const hour = new Date().getHours();
@@ -304,6 +315,7 @@ export class SeriesComponent implements OnInit {
   nextQuote(): void { this.cycle(1); }
 
   ngOnInit(): void {
+    this.headerService.clearAll();
     this.loadSeries();
   }
 
@@ -471,6 +483,10 @@ export class SeriesComponent implements OnInit {
 
   removeRecentChapter(chapterId: string): void {
     this.recentChaptersService.remove(chapterId);
+  }
+
+  navigateTo(path: string): void {
+    this.router.navigate([path]);
   }
 
 }

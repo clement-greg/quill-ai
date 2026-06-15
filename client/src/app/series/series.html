@@ -48,6 +48,18 @@
       </div>
       }
 
+      <div class="feature-links">
+        <h2>Explore</h2>
+        <div class="feature-grid">
+          @for (link of featureLinks; track link.path) {
+          <button class="feature-card" (click)="navigateTo(link.path)">
+            <mat-icon class="feature-card-icon">{{ link.icon }}</mat-icon>
+            <span class="feature-card-label">{{ link.label }}</span>
+          </button>
+          }
+        </div>
+      </div>
+
       <div class="series-header">
         <h2>Series</h2>
         <button mat-flat-button (click)="openNew()" aria-label="New Series">
@@ -59,20 +71,16 @@
       <p class="loading">Loading...</p>
       }
 
-      <div class="series-grid">
+      <div class="series-chip-list">
         @for (series of ownedSeries(); track series.id) {
-        <mat-card class="series-card" (click)="navigateToDetail(series.id)">
+        <button class="series-chip" (click)="navigateToDetail(series.id)">
           @if (series.thumnailUrl) {
-          <img mat-card-image [src]="proxyUrl(series.thumnailUrl)!" [alt]="series.title" />
+          <img class="series-chip-thumb" [src]="proxyUrl(series.thumnailUrl)!" [alt]="series.title" />
           } @else {
-          <div class="series-card-placeholder">
-            <mat-icon>menu_book</mat-icon>
-          </div>
+          <mat-icon class="series-chip-icon">menu_book</mat-icon>
           }
-          <mat-card-header>
-            <mat-card-title>{{ series.title }}</mat-card-title>
-          </mat-card-header>
-        </mat-card>
+          <span class="series-chip-title">{{ series.title }}</span>
+        </button>
         }
       </div>
 
@@ -80,21 +88,19 @@
       <div class="series-section-header">
         <h3>Shared with me</h3>
       </div>
-      <div class="series-grid">
+      <div class="series-chip-list">
         @for (series of sharedSeries(); track series.id) {
-        <mat-card class="series-card" (click)="navigateToDetail(series.id)">
+        <button class="series-chip" (click)="navigateToDetail(series.id)">
           @if (series.thumnailUrl) {
-          <img mat-card-image [src]="proxyUrl(series.thumnailUrl)!" [alt]="series.title" />
+          <img class="series-chip-thumb" [src]="proxyUrl(series.thumnailUrl)!" [alt]="series.title" />
           } @else {
-          <div class="series-card-placeholder">
-            <mat-icon>menu_book</mat-icon>
-          </div>
+          <mat-icon class="series-chip-icon">menu_book</mat-icon>
           }
-          <mat-card-header>
-            <mat-card-title>{{ series.title }}</mat-card-title>
-            <mat-card-subtitle>by {{ series.owner }}</mat-card-subtitle>
-          </mat-card-header>
-        </mat-card>
+          <span class="series-chip-text">
+            <span class="series-chip-title">{{ series.title }}</span>
+            <span class="series-chip-sub">by {{ series.owner }}</span>
+          </span>
+        </button>
         }
       </div>
       }

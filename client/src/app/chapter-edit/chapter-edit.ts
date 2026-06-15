@@ -86,6 +86,8 @@ export class ChapterEditComponent implements OnInit, OnDestroy {
   hasDraft = signal(false);
   entities = signal<Entity[]>([]);
   seriesId = signal('');
+  private bookTitle = signal('');
+  private seriesTitle = signal('');
 
   // Computed AI endpoint for the editor
   aiEndpoint = computed(() => {
@@ -263,14 +265,9 @@ export class ChapterEditComponent implements OnInit, OnDestroy {
               chaptersInBook: this.chapterService.getByBook(data.bookId),
             }).subscribe({
               next: ({ series, allSeries, booksInSeries, chaptersInBook }) => {
-                const thumbFilename = data.imageThumbnailUrl?.split('/').pop();
-                this.recentChapters.record({
-                  chapterId: data.id,
-                  chapterTitle: data.title || 'Chapter',
-                  bookTitle: book.title,
-                  seriesTitle: series.title,
-                  thumbnailUrl: thumbFilename ? `/api/image/${thumbFilename}` : undefined,
-                });
+                this.bookTitle.set(book.title);
+                this.seriesTitle.set(series.title);
+                this.recordRecentChapter();
                 const filteredSeries = allSeries.filter(s => !s.archived && !s.deleted);
                 const filteredBooks = booksInSeries.filter(b => !b.archived && !b.deleted)
                   .sort((a, b) => (a.sortOrder ?? Infinity) - (b.sortOrder ?? Infinity));
@@ -443,6 +440,7 @@ export class ChapterEditComponent implements OnInit, OnDestroy {
         this.chapterService.update(updated).subscribe({
           next: () => {
             this.imageUploading.set(false);
+            this.recordRecentChapter();
             this.snackBar.open('Chapter image saved', undefined, { duration: 2500 });
           },
           error: () => {
@@ -478,6 +476,19 @@ export class ChapterEditComponent implements OnInit, OnDestroy {
 
   // ── Title / save ─────────────────────────────────────────────────────────
 
+  private recordRecentChapter(): void {
+    const chapter = this.chapter();
+    if (!chapter || !this.bookTitle() || !this.seriesTitle()) return;
+    const thumbFilename = this.imageThumbnailUrl()?.split('/').pop();
+    this.recentChapters.record({
+      chapterId: chapter.id,
+      chapterTitle: chapter.title || 'Chapter',
+      bookTitle: this.bookTitle(),
+      seriesTitle: this.seriesTitle(),
+      thumbnailUrl: thumbFilename ? `/api/image/${thumbFilename}` : undefined,
+    });
+  }
+
   updateTitle(value: string): void {
     const current = this.chapter();
     if (current) this.chapter.set({ ...current, title: value });
@@ -509,6 +520,7 @@ export class ChapterEditComponent implements OnInit, OnDestroy {
         this.hasDraft.set(false);
         this.lastSavedContent = content;
         this.saving.set(false);
+        this.recordRecentChapter();
         this.snackBar.open('Chapter saved', undefined, { duration: 3000 });
       },
       error: () => this.saving.set(false),
