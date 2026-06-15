@@ -384,7 +384,7 @@ export class ChapterEditComponent implements OnInit, OnDestroy {
       !s.created && !s.creating && !this.suggestedEntityNames.has(s.name.toLowerCase()),
     );
     if (newOnes.length > 0) {
-      this.activateSidebarTab(1);
+      this.onSidebarTabChange(1);
       newOnes.forEach(s => this.suggestedEntityNames.add(s.name.toLowerCase()));
     }
     this.pendingSuggestions.set(filtered);
