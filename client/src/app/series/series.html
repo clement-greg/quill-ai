@@ -22,6 +22,32 @@
         </div>
       </div>
 
+      @if (recentChapters().length > 0) {
+      <div class="recent-chapters">
+        <h2 class="recent-chapters-heading">Continue writing</h2>
+        <div class="recent-chapters-list">
+          @for (item of recentChapters(); track item.chapterId) {
+          <div class="recent-chapter-chip">
+            <button class="recent-chip-main" (click)="navigateToChapter(item.chapterId)">
+              @if (item.thumbnailUrl) {
+              <img class="recent-chip-thumb" [src]="item.thumbnailUrl" [alt]="item.chapterTitle" />
+              } @else {
+              <mat-icon class="recent-chip-icon">edit_note</mat-icon>
+              }
+              <span class="recent-chip-text">
+                <span class="recent-chip-title">{{ item.chapterTitle }}</span>
+                <span class="recent-chip-sub">{{ item.bookTitle }} · {{ item.seriesTitle }}</span>
+              </span>
+            </button>
+            <button class="recent-chip-remove" (click)="removeRecentChapter(item.chapterId)" aria-label="Remove from recent">
+              <mat-icon>close</mat-icon>
+            </button>
+          </div>
+          }
+        </div>
+      </div>
+      }
+
       <div class="series-header">
         <h2>Series</h2>
         <button mat-flat-button (click)="openNew()" aria-label="New Series">

@@ -218,6 +218,7 @@ import { TextFieldModule } from '@angular/cdk/text-field';
 import { SeriesService } from './series.service';
 import { AuthService } from '../auth/auth.service';
 import { Series } from '@shared/models/series.model';
+import { RecentChaptersService } from '../services/recent-chapters.service';
 import { v4 as uuidv4 } from 'uuid';
 import { SlideOutPanelContainer } from '../shared/slide-out-panel-container/slide-out-panel-container';
 import { WritingStatsSummaryComponent } from '../writing-stats/writing-stats-summary';
@@ -247,6 +248,9 @@ export class SeriesComponent implements OnInit {
   private seriesService = inject(SeriesService);
   private authService = inject(AuthService);
   private router = inject(Router);
+  private recentChaptersService = inject(RecentChaptersService);
+
+  readonly recentChapters = this.recentChaptersService.recentChapters;
 
   readonly greeting = computed(() => {
     const hour = new Date().getHours();
@@ -459,6 +463,14 @@ export class SeriesComponent implements OnInit {
 
   navigateToDetail(seriesId: string): void {
     this.router.navigate(['/series', seriesId]);
+  }
+
+  navigateToChapter(chapterId: string): void {
+    this.router.navigate(['/chapters', chapterId, 'edit']);
+  }
+
+  removeRecentChapter(chapterId: string): void {
+    this.recentChaptersService.remove(chapterId);
   }
 
 }

@@ -36,6 +36,7 @@ import { UserSettingsService } from '../services/user-settings.service';
 import { AuthService } from '../auth/auth.service';
 import { SeriesContextService } from '../services/series-context.service';
 import { EditorBridgeService } from '../services/editor-bridge.service';
+import { RecentChaptersService } from '../services/recent-chapters.service';
 import { diffWords } from 'diff';
 import { forkJoin, Subscription } from 'rxjs';
 
@@ -76,6 +77,7 @@ export class ChapterEditComponent implements OnInit, OnDestroy {
   private authService = inject(AuthService);
   private seriesContext = inject(SeriesContextService);
   private editorBridge = inject(EditorBridgeService);
+  private recentChapters = inject(RecentChaptersService);
   private routeSub?: Subscription;
 
   // ── Chapter state ────────────────────────────────────────────────────────
@@ -261,6 +263,14 @@ export class ChapterEditComponent implements OnInit, OnDestroy {
               chaptersInBook: this.chapterService.getByBook(data.bookId),
             }).subscribe({
               next: ({ series, allSeries, booksInSeries, chaptersInBook }) => {
+                const thumbFilename = data.imageThumbnailUrl?.split('/').pop();
+                this.recentChapters.record({
+                  chapterId: data.id,
+                  chapterTitle: data.title || 'Chapter',
+                  bookTitle: book.title,
+                  seriesTitle: series.title,
+                  thumbnailUrl: thumbFilename ? `/api/image/${thumbFilename}` : undefined,
+                });
                 const filteredSeries = allSeries.filter(s => !s.archived && !s.deleted);
                 const filteredBooks = booksInSeries.filter(b => !b.archived && !b.deleted)
                   .sort((a, b) => (a.sortOrder ?? Infinity) - (b.sortOrder ?? Infinity));

@@ -14,6 +14,7 @@ import { EntityService } from '../services/entity.service';
 import { EntityRelationshipService } from '../services/entity-relationship.service';
 import { HeaderService } from '../services/header.service';
 import { SeriesService } from '../series/series.service';
+import { SeriesContextService } from '../services/series-context.service';
 import { RelationshipDialogComponent, RelationshipDialogResult } from './relationship-dialog';
 
 interface ConnectionLine {
@@ -41,6 +42,7 @@ export class EntityRelationshipDiagramComponent implements OnInit, OnDestroy {
   private relationshipService = inject(EntityRelationshipService);
   private headerService = inject(HeaderService);
   private seriesService = inject(SeriesService);
+  private seriesContext = inject(SeriesContextService);
   private dialog = inject(MatDialog);
 
   canvas = viewChild<ElementRef<HTMLDivElement>>('canvas');
@@ -102,6 +104,7 @@ export class EntityRelationshipDiagramComponent implements OnInit, OnDestroy {
       this.diagramNodes.set([]);
       this.layout.set(null);
       if (id) {
+        this.seriesContext.set(id);
         this.loadData(id);
         forkJoin({
           series: this.seriesService.getById(id),
@@ -123,6 +126,11 @@ export class EntityRelationshipDiagramComponent implements OnInit, OnDestroy {
           },
         });
       } else {
+        const lastSeriesId = this.seriesContext.currentSeriesId();
+        if (lastSeriesId) {
+          this.router.navigate(['/series', lastSeriesId, 'relationships']);
+          return;
+        }
         this.seriesService.getAll().subscribe({
           next: (data) => {
             this.allSeries.set(
@@ -141,7 +149,7 @@ export class EntityRelationshipDiagramComponent implements OnInit, OnDestroy {
 
   ngOnDestroy(): void {
     this.routeSub?.unsubscribe();
-    this.headerService.clear();
+    this.headerService.clearAll();
     document.removeEventListener('mousemove', this.boundOnMouseMove);
     document.removeEventListener('mouseup', this.boundOnMouseUp);
   }
