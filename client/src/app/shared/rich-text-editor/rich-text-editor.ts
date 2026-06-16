@@ -1937,6 +1937,12 @@ export class RichTextEditorComponent implements OnInit, AfterViewInit, OnDestroy
     ar.setStartAfter(wrapper);
     ar.collapse(true);
     if (sel) { sel.removeAllRanges(); sel.addRange(ar); }
+    // Arm the eject guard: the caret sits right after the AI span, so Chrome
+    // will snap the user's first keystroke back into the end of the span. Let
+    // the existing overflow-extraction logic move that text out on the next
+    // input event instead of falsely marking the span as 'modified'.
+    this.lastEjectedSpan = wrapper;
+    this.lastEjectedSpanTextLength = wrapper.textContent?.length ?? 0;
     this.scrollCursorIntoView();
     if (this.editorRef) { this.editorContent = this.editorRef.nativeElement.innerHTML; this.scheduleEmit(); }
     this.dismissInlineAiPrompt(false);
