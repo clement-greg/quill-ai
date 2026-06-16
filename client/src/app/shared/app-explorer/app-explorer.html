@@ -1,0 +1,154 @@
+@if (explorer.isOpen()) {
+  <div class="explorer-backdrop" (click)="explorer.close()"></div>
+
+  <aside class="explorer-panel" animate.enter="slide-in" animate.leave="slide-out">
+    <header class="explorer-header">
+      <span class="explorer-title">Explorer</span>
+      <button mat-icon-button class="explorer-close" (click)="explorer.close()" aria-label="Close explorer">
+        <mat-icon>close</mat-icon>
+      </button>
+    </header>
+
+    <div class="explorer-body">
+      <!-- Actions (combined from the former apps + user menus) -->
+      <nav class="explorer-actions">
+        @if (header.menuActions().length > 0) {
+          @for (item of header.menuActions(); track item.label) {
+            <button class="explorer-item" (click)="runAction(item.action)">
+              <mat-icon>{{ item.icon }}</mat-icon>
+              <span>{{ item.label }}</span>
+            </button>
+          }
+          <mat-divider></mat-divider>
+        }
+
+        <button class="explorer-item" (click)="openResourceManager()">
+          <mat-icon>smart_toy</mat-icon>
+          <span>Resource Manager</span>
+        </button>
+        <button class="explorer-item" (click)="navigateTo(['/entities'])">
+          <mat-icon>people</mat-icon>
+          <span>Entities</span>
+        </button>
+        <button class="explorer-item" (click)="navigateToRelationships()">
+          <mat-icon>account_tree</mat-icon>
+          <span>Relationships</span>
+        </button>
+        <button class="explorer-item" (click)="navigateTo(['/gallery'])">
+          <mat-icon>photo_library</mat-icon>
+          <span>Photo Gallery</span>
+        </button>
+        <button class="explorer-item" (click)="navigateTo(['/archived'])">
+          <mat-icon>archive</mat-icon>
+          <span>Archived Items</span>
+        </button>
+
+        <mat-divider></mat-divider>
+
+        <button class="explorer-item" (click)="navigateTo(['/writing-stats'])">
+          <mat-icon>bar_chart</mat-icon>
+          <span>Writing Stats</span>
+        </button>
+        <button class="explorer-item" (click)="navigateTo(['/settings'])">
+          <mat-icon>settings</mat-icon>
+          <span>Settings</span>
+        </button>
+      </nav>
+
+      <mat-divider></mat-divider>
+
+      <!-- Series → Book → Chapter tree -->
+      <div class="explorer-tree">
+        <div class="tree-heading">Library</div>
+
+        @if (explorer.seriesLoading()) {
+          <div class="tree-loading">
+            <mat-spinner diameter="18"></mat-spinner>
+            <span>Loading…</span>
+          </div>
+        } @else if (explorer.series().length === 0) {
+          <div class="tree-empty">No series yet</div>
+        }
+
+        @for (s of explorer.series(); track s.id) {
+          <div class="tree-row level-0">
+            <button mat-icon-button class="tree-toggle" (click)="explorer.toggleSeries(s.id)"
+              aria-label="Expand series">
+              <mat-icon>{{ explorer.expandedSeries().has(s.id) ? 'expand_more' : 'chevron_right' }}</mat-icon>
+            </button>
+            <button class="tree-label" (click)="navigateTo(['/series', s.id])">
+              @if (proxyUrl(s.thumnailUrl || s.originalUrl); as src) {
+                <img class="tree-thumb" [src]="src" alt="" />
+              } @else {
+                <mat-icon class="tree-icon">auto_stories</mat-icon>
+              }
+              <span class="tree-text">{{ s.title }}</span>
+            </button>
+          </div>
+
+          @if (explorer.expandedSeries().has(s.id)) {
+            @if (explorer.loadingChildren().has(s.id)) {
+              <div class="tree-loading level-1">
+                <mat-spinner diameter="16"></mat-spinner>
+                <span>Loading…</span>
+              </div>
+            } @else if (explorer.booksFor(s.id).length === 0) {
+              <div class="tree-empty level-1">No books</div>
+            }
+
+            @for (b of explorer.booksFor(s.id); track b.id) {
+              <div class="tree-row level-1">
+                <button mat-icon-button class="tree-toggle" (click)="explorer.toggleBook(b.id)"
+                  aria-label="Expand book">
+                  <mat-icon>{{ explorer.expandedBooks().has(b.id) ? 'expand_more' : 'chevron_right' }}</mat-icon>
+                </button>
+                <button class="tree-label" (click)="navigateTo(['/books', b.id])">
+                  @if (proxyUrl(b.thumnailUrl || b.originalUrl); as src) {
+                    <img class="tree-thumb" [src]="src" alt="" />
+                  } @else {
+                    <mat-icon class="tree-icon">menu_book</mat-icon>
+                  }
+                  <span class="tree-text">{{ b.title }}</span>
+                </button>
+              </div>
+
+              @if (explorer.expandedBooks().has(b.id)) {
+                @if (explorer.loadingChildren().has(b.id)) {
+                  <div class="tree-loading level-2">
+                    <mat-spinner diameter="16"></mat-spinner>
+                    <span>Loading…</span>
+                  </div>
+                } @else if (explorer.chaptersFor(b.id).length === 0) {
+                  <div class="tree-empty level-2">No chapters</div>
+                }
+
+                @for (c of explorer.chaptersFor(b.id); track c.id) {
+                  <div class="tree-row level-2">
+                    <span class="tree-toggle-spacer"></span>
+                    <button class="tree-label" (click)="navigateTo(['/chapters', c.id, 'edit'])">
+                      @if (proxyUrl(c.imageThumbnailUrl || c.imageUrl); as src) {
+                        <img class="tree-thumb" [src]="src" alt="" />
+                      } @else {
+                        <mat-icon class="tree-icon">description</mat-icon>
+                      }
+                      <span class="tree-text">{{ c.title }}</span>
+                    </button>
+                  </div>
+                }
+              }
+            }
+          }
+        }
+      </div>
+
+      <mat-divider></mat-divider>
+
+      <nav class="explorer-actions">
+        <button class="explorer-item" (click)="signOut()">
+          <mat-icon>logout</mat-icon>
+          <span>Sign out</span>
+        </button>
+      </nav>
+    </div>
+  </aside>
+}

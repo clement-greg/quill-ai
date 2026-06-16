@@ -1,0 +1,189 @@
+.explorer-backdrop {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100vw;
+  height: 100vh;
+  background-color: rgba(0, 0, 0, 0.05);
+  z-index: 1000;
+  -webkit-backdrop-filter: blur(2px);
+  backdrop-filter: blur(2px);
+}
+
+.explorer-panel {
+  position: fixed;
+  top: 0;
+  right: 0;
+  height: 100vh;
+  width: 360px;
+  max-width: 100vw;
+  display: flex;
+  flex-direction: column;
+  background-color: var(--mat-sys-surface-container);
+  box-shadow: -5px 0 19px 0 rgba(0, 0, 0, 0.15);
+  z-index: 1001;
+  transform-origin: 100% 0;
+
+  @media (max-width: 400px) {
+    width: 100%;
+  }
+}
+
+.explorer-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 8px 8px 16px;
+  border-bottom: 1px solid var(--mat-sys-outline-variant);
+  flex-shrink: 0;
+}
+
+.explorer-title {
+  font-size: 1rem;
+  font-weight: 600;
+  color: var(--mat-sys-on-surface);
+}
+
+.explorer-body {
+  flex: 1 1 auto;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding: 8px 0;
+}
+
+/* Action items + tree labels share a flat, full-width button look */
+.explorer-item,
+.tree-label {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  padding: 8px 16px;
+  border: none;
+  background: none;
+  cursor: pointer;
+  text-align: left;
+  font: inherit;
+  color: var(--mat-sys-on-surface);
+
+  &:hover {
+    background-color: var(--mat-sys-surface-container-high);
+  }
+
+  mat-icon {
+    color: var(--mat-sys-on-surface-variant);
+    flex-shrink: 0;
+  }
+}
+
+.explorer-actions {
+  display: flex;
+  flex-direction: column;
+}
+
+mat-divider {
+  margin: 6px 0;
+}
+
+.explorer-tree {
+  display: flex;
+  flex-direction: column;
+}
+
+.tree-heading {
+  padding: 8px 16px 4px;
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--mat-sys-on-surface-variant);
+}
+
+.tree-row {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+
+  .tree-label {
+    padding-left: 0;
+    min-width: 0;
+  }
+}
+
+.tree-toggle {
+  flex-shrink: 0;
+  width: 32px;
+  height: 32px;
+  line-height: 32px;
+
+  mat-icon {
+    font-size: 20px;
+    width: 20px;
+    height: 20px;
+  }
+}
+
+.tree-toggle-spacer {
+  display: inline-block;
+  width: 32px;
+  flex-shrink: 0;
+}
+
+.tree-icon {
+  font-size: 18px;
+  width: 18px;
+  height: 18px;
+}
+
+.tree-thumb {
+  width: 22px;
+  height: 22px;
+  flex-shrink: 0;
+  border-radius: 3px;
+  object-fit: cover;
+  background-color: var(--mat-sys-surface-container-high);
+}
+
+.tree-text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Indentation by depth */
+.level-1 {
+  padding-left: 20px;
+}
+
+.level-2 {
+  padding-left: 40px;
+}
+
+.tree-loading,
+.tree-empty {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 16px;
+  font-size: 0.85rem;
+  color: var(--mat-sys-on-surface-variant);
+}
+
+/* Reuse the shared slide-in/out keyframes timing */
+@keyframes slide-in {
+  from { opacity: 0; transform: scaleX(0); }
+  to { opacity: 1; transform: scaleX(1); }
+}
+
+.slide-in {
+  animation: slide-in 250ms ease-out forwards;
+}
+
+@keyframes slide-out {
+  from { opacity: 1; transform: scaleX(1); }
+  to { opacity: 0; transform: scaleX(0); }
+}
+
+.slide-out {
+  animation: slide-out 250ms ease-in forwards;
+}

@@ -23,121 +23,11 @@
 
   <span class="toolbar-spacer"></span>
 
-  @if (auth.currentUser(); as user) {
-    <!-- App navigation menu (desktop) -->
-    <button mat-icon-button [matMenuTriggerFor]="appNavMenu" class="desktop-only" title="Navigation">
-      <mat-icon>apps</mat-icon>
+  @if (auth.currentUser()) {
+    <!-- Single hamburger that opens the Application Explorer -->
+    <button mat-icon-button (click)="explorer.toggle()" title="Menu" aria-label="Open menu">
+      <mat-icon>menu</mat-icon>
     </button>
-    <mat-menu #appNavMenu="matMenu">
-      @if (header.menuActions().length > 0) {
-        @for (item of header.menuActions(); track item.label) {
-          <button mat-menu-item (click)="item.action()">
-            <mat-icon>{{ item.icon }}</mat-icon>
-            <span>{{ item.label }}</span>
-          </button>
-        }
-        <mat-divider></mat-divider>
-      }
-      <button mat-menu-item (click)="aiAssistant.togglePanel()">
-        <mat-icon>smart_toy</mat-icon>
-        Resource Manager
-      </button>
-      <button mat-menu-item routerLink="/entities">
-        <mat-icon>people</mat-icon>
-        Entities
-      </button>
-      <button mat-menu-item (click)="navigateToRelationships()">
-        <mat-icon>account_tree</mat-icon>
-        Relationships
-      </button>
-      <button mat-menu-item routerLink="/gallery">
-        <mat-icon>photo_library</mat-icon>
-        Photo Gallery
-      </button>
-      <button mat-menu-item routerLink="/archived">
-        <mat-icon>archive</mat-icon>
-        Archived Items
-      </button>
-    </mat-menu>
-
-    <!-- User menu (desktop) -->
-    <button mat-button [matMenuTriggerFor]="userMenu" class="desktop-only toolbar-user-btn">
-      @if (settings.avatarUrl()) {
-        <img class="toolbar-user-avatar" [src]="settings.avatarUrl()" alt="Profile" />
-      } @else {
-        <mat-icon>account_circle</mat-icon>
-      }
-      {{ settings.displayName() || user.name }}
-    </button>
-    <mat-menu #userMenu="matMenu">
-      <button mat-menu-item routerLink="/writing-stats">
-        <mat-icon>bar_chart</mat-icon>
-        Writing Stats
-      </button>
-      <button mat-menu-item routerLink="/settings">
-        <mat-icon>settings</mat-icon>
-        Settings
-      </button>
-      <button mat-menu-item (click)="signOut()">
-        <mat-icon>logout</mat-icon>
-        Sign out
-      </button>
-    </mat-menu>
-
-    <!-- App navigation menu (mobile) -->
-    <button mat-icon-button [matMenuTriggerFor]="mobileNavMenu" class="mobile-only">
-      <mat-icon>apps</mat-icon>
-    </button>
-    <mat-menu #mobileNavMenu="matMenu">
-      @if (header.menuActions().length > 0) {
-        @for (item of header.menuActions(); track item.label) {
-          <button mat-menu-item (click)="item.action()">
-            <mat-icon>{{ item.icon }}</mat-icon>
-            <span>{{ item.label }}</span>
-          </button>
-        }
-        <mat-divider></mat-divider>
-      }
-      <button mat-menu-item (click)="aiAssistant.togglePanel()">
-        <mat-icon>smart_toy</mat-icon>
-        Resource Manager
-      </button>
-      <button mat-menu-item routerLink="/entities">
-        <mat-icon>people</mat-icon>
-        Entities
-      </button>
-      <button mat-menu-item (click)="navigateToRelationships()">
-        <mat-icon>account_tree</mat-icon>
-        Relationships
-      </button>
-      <button mat-menu-item routerLink="/gallery">
-        <mat-icon>photo_library</mat-icon>
-        Photo Gallery
-      </button>
-      <button mat-menu-item routerLink="/archived">
-        <mat-icon>archive</mat-icon>
-        Archived Items
-      </button>
-    </mat-menu>
-
-    <!-- User menu (mobile) -->
-    <button mat-icon-button [matMenuTriggerFor]="mobileUserMenu" class="mobile-only" style="color: #fff;">
-      <mat-icon>more_vert</mat-icon>
-    </button>
-    <mat-menu #mobileUserMenu="matMenu">
-      <button mat-menu-item routerLink="/writing-stats">
-        <mat-icon>bar_chart</mat-icon>
-        Writing Stats
-      </button>
-      <button mat-menu-item routerLink="/settings">
-        <mat-icon>settings</mat-icon>
-        Settings
-      </button>
-      <button mat-menu-item (click)="signOut()">
-        <mat-icon>logout</mat-icon>
-        Sign out
-      </button>
-    </mat-menu>
   }
 
 </mat-toolbar>
@@ -153,6 +43,7 @@
 
 @if (auth.currentUser()) {
   <app-ai-assistant />
+  <app-app-explorer />
 }
 
 @if (updateCheck.updateAvailable()) {

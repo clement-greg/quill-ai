@@ -5,20 +5,19 @@ import { filter, map, startWith } from 'rxjs';
 import { MatToolbarModule } from '@angular/material/toolbar';
 import { MatButtonModule } from '@angular/material/button';
 import { MatIconModule } from '@angular/material/icon';
-import { MatMenuModule } from '@angular/material/menu';
-import { MatDividerModule } from '@angular/material/divider';
 import { AuthService } from './auth/auth.service';
 import { HeaderService } from './services/header.service';
 import { UpdateCheckService } from './services/update-check.service';
 import { AiAssistantComponent } from './ai-assistant/ai-assistant';
 import { AiAssistantService } from './services/ai-assistant.service';
 import { UserSettingsService } from './services/user-settings.service';
-import { SeriesContextService } from './services/series-context.service';
+import { ExplorerService } from './services/explorer.service';
 import { BreadcrumbDropdownComponent } from './shared/breadcrumb-dropdown/breadcrumb-dropdown';
+import { AppExplorerComponent } from './shared/app-explorer/app-explorer';
 
 @Component({
   selector: 'app-root',
-  imports: [RouterOutlet, RouterLink, MatToolbarModule, MatButtonModule, MatIconModule, MatMenuModule, MatDividerModule, AiAssistantComponent, BreadcrumbDropdownComponent],
+  imports: [RouterOutlet, RouterLink, MatToolbarModule, MatButtonModule, MatIconModule, AiAssistantComponent, BreadcrumbDropdownComponent, AppExplorerComponent],
   templateUrl: './app.html',
   styleUrl: './app.scss'
 })
@@ -27,7 +26,7 @@ export class App implements OnInit, OnDestroy {
   header = inject(HeaderService);
   updateCheck = inject(UpdateCheckService);
   aiAssistant = inject(AiAssistantService);
-  seriesContext = inject(SeriesContextService);
+  explorer = inject(ExplorerService);
   private router = inject(Router);
   settings = inject(UserSettingsService);
   readonly isResizing = signal(false);
@@ -80,15 +79,6 @@ export class App implements OnInit, OnDestroy {
     const url = this.currentUrl() ?? '';
     return url === '/home' || url.startsWith('/login');
   });
-
-  navigateToRelationships(): void {
-    const id = this.seriesContext.currentSeriesId();
-    if (id) {
-      this.router.navigate(['/series', id, 'relationships']);
-    } else {
-      this.router.navigate(['/relationships']);
-    }
-  }
 
   private darkModeEffect = effect(() => {
     const theme = this.settings.colorTheme();
@@ -158,10 +148,5 @@ export class App implements OnInit, OnDestroy {
 
   reload(): void {
     window.location.reload();
-  }
-
-  signOut(): void {
-    this.auth.signOut();
-    this.router.navigate(['/login']);
   }
 }
