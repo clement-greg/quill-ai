@@ -2771,8 +2771,8 @@ export class RichTextEditorComponent implements OnInit, AfterViewInit, OnDestroy
     const editorLineH = parseFloat(getComputedStyle(editor).lineHeight) || 20;
 
     for (const row of rows) {
-      const hasImg = row.hasImg;
-      if (!row.textNodes.some(t => t.textContent?.trim()) && !hasImg) continue;
+      // Images are ignored in the minimap — only render rows that contain text.
+      if (!row.textNodes.some(t => t.textContent?.trim())) continue;
 
       const blockRect = row.boundingRect;
       const offsetTop = blockRect.top - editorRect.top + editor.scrollTop;
@@ -2781,19 +2781,12 @@ export class RichTextEditorComponent implements OnInit, AfterViewInit, OnDestroy
 
       const yTop = offsetTop * scale;
       if (yTop > H) continue;
-      const yH = blockH * scale;
 
       const isHeading = row.isHeading;
       const indent = isHeading ? 2 : 4;
       const maxLineW = W - indent * 2;
       const opacity = isHeading ? 0.78 : 0.55;
       ctx.fillStyle = `rgba(${tr},${tg},${tb},${opacity})`;
-
-      if (hasImg) {
-        ctx.fillStyle = `rgba(${tr},${tg},${tb},0.2)`;
-        ctx.fillRect(indent, yTop, maxLineW, Math.max(2, yH));
-        continue;
-      }
 
       // Use the browser's actual line layout via Range.getClientRects().
       // This gives exact Y positions and text widths for every wrapped line.
