@@ -2362,30 +2362,105 @@ export class RichTextEditorComponent implements OnInit, AfterViewInit, OnDestroy
     // offsetParent skips statically-positioned elements so it cannot be used here.
     const editorRect = editor.getBoundingClientRect();
 
-    // Collect block-level rows: direct children cover <div>/<p>/<h*>/etc.
-    // Chrome contenteditable produces <div> on Enter; stored HTML may use <p> or <h*>.
-    // For lists, expand the <ul>/<ol> into its <li> children.
-    const rawChildren = Array.from(editor.children) as HTMLElement[];
-    const blocks: HTMLElement[] = rawChildren.flatMap(child =>
-      (child.tagName === 'UL' || child.tagName === 'OL')
-        ? Array.from(child.children) as HTMLElement[]
-        : [child],
-    );
+    // Build logical rows from the editor's child NODES — not just element children.
+    // Content loaded from stored HTML often places a paragraph's text as loose
+    // top-level text nodes interleaved with inline <span class="entity-reference">
+    // elements, with no wrapping <div>/<p> (Chrome only inserts <div> as you press
+    // Enter). Iterating editor.children would skip the loose text entirely and
+    // mis-render each inline span as its own block — which is why the first paragraph
+    // collapsed to a couple of stray bars. So: group consecutive inline/text nodes
+    // into one synthetic row, treat <div>/<p>/<h*> as block rows, and expand
+    // <ul>/<ol> into their <li> rows.
+    const BLOCK_TAGS = /^(?:DIV|P|H[1-6]|LI|BLOCKQUOTE|PRE)$/;
+    const isBlockEl = (n: Node): n is HTMLElement =>
+      n.nodeType === Node.ELEMENT_NODE && BLOCK_TAGS.test((n as HTMLElement).tagName);
 
-    for (const block of blocks) {
-      const hasImg = !!block.querySelector('img');
-      if (!block.textContent?.trim() && !hasImg) continue;
+    const collectTextNodes = (root: Node): Text[] => {
+      if (root.nodeType === Node.TEXT_NODE) return [root as Text];
+      if (root.nodeType !== Node.ELEMENT_NODE) return [];
+      const out: Text[] = [];
+      const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+      let t: Node | null;
+      while ((t = walker.nextNode())) out.push(t as Text);
+      return out;
+    };
 
-      const blockRect = block.getBoundingClientRect();
+    interface MinimapRow {
+      range: Range;
+      boundingRect: DOMRect;
+      height: number;
+      textNodes: Text[];
+      isHeading: boolean;
+      hasImg: boolean;
+    }
+    const rows: MinimapRow[] = [];
+
+    const pushBlockRow = (el: HTMLElement): void => {
+      const range = document.createRange();
+      range.selectNodeContents(el);
+      rows.push({
+        range,
+        boundingRect: el.getBoundingClientRect(),
+        height: el.offsetHeight,
+        textNodes: collectTextNodes(el),
+        isHeading: /^H[1-6]$/.test(el.tagName),
+        hasImg: !!el.querySelector('img'),
+      });
+    };
+
+    // Consecutive loose inline/text nodes form one visual paragraph.
+    let inlineRun: Node[] = [];
+    const flushInlineRun = (): void => {
+      const meaningful = inlineRun.filter(n => (n.textContent ?? '') !== '' || n.nodeName === 'IMG');
+      inlineRun = [];
+      if (meaningful.length === 0) return;
+      const range = document.createRange();
+      range.setStartBefore(meaningful[0]);
+      range.setEndAfter(meaningful[meaningful.length - 1]);
+      rows.push({
+        range,
+        boundingRect: range.getBoundingClientRect(),
+        height: range.getBoundingClientRect().height,
+        textNodes: meaningful.flatMap(collectTextNodes),
+        isHeading: false,
+        hasImg: meaningful.some(n =>
+          n.nodeName === 'IMG' ||
+          (n.nodeType === Node.ELEMENT_NODE && !!(n as HTMLElement).querySelector?.('img'))),
+      });
+    };
+
+    for (const node of Array.from(editor.childNodes)) {
+      const tag = node.nodeType === Node.ELEMENT_NODE ? (node as HTMLElement).tagName : '';
+      if (tag === 'UL' || tag === 'OL') {
+        flushInlineRun();
+        for (const li of Array.from((node as HTMLElement).children)) pushBlockRow(li as HTMLElement);
+      } else if (isBlockEl(node)) {
+        flushInlineRun();
+        pushBlockRow(node);
+      } else {
+        inlineRun.push(node);
+      }
+    }
+    flushInlineRun();
+
+    // line-height resolves to px on the editor (set via unitless 1.75); use it for
+    // both the line-merge tolerance and the fallback path below.
+    const editorLineH = parseFloat(getComputedStyle(editor).lineHeight) || 20;
+
+    for (const row of rows) {
+      const hasImg = row.hasImg;
+      if (!row.textNodes.some(t => t.textContent?.trim()) && !hasImg) continue;
+
+      const blockRect = row.boundingRect;
       const offsetTop = blockRect.top - editorRect.top + editor.scrollTop;
-      const blockH = block.offsetHeight;
+      const blockH = row.height;
       if (blockH <= 0) continue;
 
       const yTop = offsetTop * scale;
       if (yTop > H) continue;
       const yH = blockH * scale;
 
-      const isHeading = /^H[1-6]$/.test(block.tagName);
+      const isHeading = row.isHeading;
       const indent = isHeading ? 2 : 4;
       const maxLineW = W - indent * 2;
       const opacity = isHeading ? 0.78 : 0.55;
@@ -2394,84 +2469,85 @@ export class RichTextEditorComponent implements OnInit, AfterViewInit, OnDestroy
       if (hasImg) {
         ctx.fillStyle = `rgba(${tr},${tg},${tb},0.2)`;
         ctx.fillRect(indent, yTop, maxLineW, Math.max(2, yH));
-      } else {
-        // Use the browser's actual line layout via Range.getClientRects().
-        // This gives exact Y positions and text widths for every wrapped line.
-        const range = document.createRange();
-        range.selectNodeContents(block);
-        const rawRects = Array.from(range.getClientRects());
+        continue;
+      }
 
-        // Merge rects that share the same visual line (within 2 px tolerance).
-        const lineGroups: { top: number; minLeft: number; maxRight: number; height: number }[] = [];
-        for (const r of rawRects) {
-          if (r.width < 2 || r.height < 2) continue;
-          const existing = lineGroups.find(l => Math.abs(l.top - r.top) < 4);
-          if (existing) {
-            existing.minLeft = Math.min(existing.minLeft, r.left);
-            existing.maxRight = Math.max(existing.maxRight, r.right);
-          } else {
-            lineGroups.push({ top: r.top, minLeft: r.left, maxRight: r.right, height: r.height });
+      // Use the browser's actual line layout via Range.getClientRects().
+      // This gives exact Y positions and text widths for every wrapped line.
+      const rawRects = Array.from(row.range.getClientRects());
+
+      // Merge rects that share the same visual line. Tolerance is 40 % of the line
+      // height: adjacent lines sit ~lineH apart, so staying under 50 % keeps inline
+      // fragments (entity spans, etc.) on one line without merging separate lines.
+      const mergeTol = editorLineH * 0.4;
+
+      const lineGroups: { top: number; minLeft: number; maxRight: number; height: number }[] = [];
+      for (const r of rawRects) {
+        if (r.width < 2 || r.height < 2) continue;
+        const existing = lineGroups.find(l => Math.abs(l.top - r.top) < mergeTol);
+        if (existing) {
+          existing.minLeft = Math.min(existing.minLeft, r.left);
+          existing.maxRight = Math.max(existing.maxRight, r.right);
+        } else {
+          lineGroups.push({ top: r.top, minLeft: r.left, maxRight: r.right, height: r.height });
+        }
+      }
+      lineGroups.sort((a, b) => a.top - b.top);
+
+      if (lineGroups.length === 0) continue;
+
+      const blockLeft = blockRect.left;
+      const blockWidth = blockRect.width || 1;
+
+      // A leading \t with white-space:pre-wrap renders as dead space, but
+      // getClientRects() starts the line rect AT the tab character (blockLeft),
+      // not after it — so minLeft always equals blockLeft for indented first lines.
+      // Fix: walk to the first non-whitespace character and measure its exact
+      // viewport left with a targeted single-char Range.
+      let firstVisibleLeft = blockLeft;
+      wsLoop: for (const wsNode of row.textNodes) {
+        const txt = wsNode.textContent ?? '';
+        for (let ci = 0; ci < txt.length; ci++) {
+          if (!/\s/.test(txt[ci])) {
+            const cr = document.createRange();
+            cr.setStart(wsNode, ci);
+            cr.setEnd(wsNode, ci + 1);
+            const crRect = cr.getClientRects()[0];
+            if (crRect) firstVisibleLeft = crRect.left;
+            break wsLoop;
           }
         }
-        lineGroups.sort((a, b) => a.top - b.top);
+      }
 
-        if (lineGroups.length === 0) continue;
+      for (const line of lineGroups) {
+        // Map viewport Y → document-absolute Y → minimap Y
+        const lineDocTop = offsetTop + (line.top - blockRect.top);
+        const miniY = lineDocTop * scale;
+        if (miniY < 0 || miniY > H) continue;
 
-        const blockLeft = blockRect.left;
-        const blockWidth = blockRect.width || 1;
+        // First line uses the measured first-visible-char position so that
+        // leading tabs produce a real indent; continuation lines use minLeft.
+        const effectiveLeft = (line === lineGroups[0]) ? firstVisibleLeft : line.minLeft;
+        const rawRelLeft = Math.max(0, effectiveLeft - blockLeft);
+        // A tab in a wide editor column scales to only ~2–3 px in the minimap.
+        // Amplify the indent 4× so it reads clearly; cap in block pixel space
+        // (same units as rawRelLeft) to avoid the value being divided away.
+        const relLeft = (line === lineGroups[0] && rawRelLeft > 0)
+          ? Math.min(rawRelLeft * 4, blockWidth * 0.22)
+          : rawRelLeft;
+        const relRight = Math.min(blockWidth, line.maxRight - blockLeft);
+        const lineX = indent + (relLeft / blockWidth) * maxLineW;
+        const lineW = Math.max(2, ((relRight - relLeft) / blockWidth) * maxLineW);
+        // Use ~50% of the line's allocated space so individual lines are
+        // distinguishable and gaps between paragraphs are clearly visible.
+        const miniH = Math.max(1.5, Math.min(line.height * scale * 0.5, 3.5));
 
-        // A leading \t with white-space:pre-wrap renders as dead space, but
-        // getClientRects() starts the line rect AT the tab character (blockLeft),
-        // not after it — so minLeft always equals blockLeft for indented first lines.
-        // Fix: walk to the first non-whitespace character and measure its exact
-        // viewport left with a targeted single-char Range.
-        let firstVisibleLeft = blockLeft;
-        const wsWalker = document.createTreeWalker(block, NodeFilter.SHOW_TEXT);
-        let wsNode: Text | null;
-        wsLoop: while ((wsNode = wsWalker.nextNode() as Text | null)) {
-          const txt = wsNode.textContent ?? '';
-          for (let ci = 0; ci < txt.length; ci++) {
-            if (!/\s/.test(txt[ci])) {
-              const cr = document.createRange();
-              cr.setStart(wsNode, ci);
-              cr.setEnd(wsNode, ci + 1);
-              const crRect = cr.getClientRects()[0];
-              if (crRect) firstVisibleLeft = crRect.left;
-              break wsLoop;
-            }
-          }
-        }
-
-        for (const line of lineGroups) {
-          // Map viewport Y → document-absolute Y → minimap Y
-          const lineDocTop = offsetTop + (line.top - blockRect.top);
-          const miniY = lineDocTop * scale;
-          if (miniY < 0 || miniY > H) continue;
-
-          // First line uses the measured first-visible-char position so that
-          // leading tabs produce a real indent; continuation lines use minLeft.
-          const effectiveLeft = (line === lineGroups[0]) ? firstVisibleLeft : line.minLeft;
-          const rawRelLeft = Math.max(0, effectiveLeft - blockLeft);
-          // A tab in a wide editor column scales to only ~2–3 px in the minimap.
-          // Amplify the indent 4× so it reads clearly; cap in block pixel space
-          // (same units as rawRelLeft) to avoid the value being divided away.
-          const relLeft = (line === lineGroups[0] && rawRelLeft > 0)
-            ? Math.min(rawRelLeft * 4, blockWidth * 0.22)
-            : rawRelLeft;
-          const relRight = Math.min(blockWidth, line.maxRight - blockLeft);
-          const lineX = indent + (relLeft / blockWidth) * maxLineW;
-          const lineW = Math.max(2, ((relRight - relLeft) / blockWidth) * maxLineW);
-          // Use ~50% of the line's allocated space so individual lines are
-          // distinguishable and gaps between paragraphs are clearly visible.
-          const miniH = Math.max(1.5, Math.min(line.height * scale * 0.5, 3.5));
-
-          ctx.fillRect(lineX, miniY, lineW, miniH);
-        }
+        ctx.fillRect(lineX, miniY, lineW, miniH);
       }
     }
 
     // Fallback: editor has raw text not wrapped in any child elements
-    if (blocks.length === 0 && editor.textContent?.trim()) {
+    if (rows.length === 0 && editor.textContent?.trim()) {
       const lineH = parseFloat(getComputedStyle(editor).lineHeight) || 20;
       const numLines = Math.round(totalH / lineH);
       const miniLineH = Math.max(1, lineH * scale);
