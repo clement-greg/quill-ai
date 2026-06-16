@@ -38,6 +38,8 @@ export class RichTextEditorComponent implements OnInit, AfterViewInit, OnDestroy
   @ViewChild('inlineAiPanelEl') inlineAiPanelRef?: ElementRef<HTMLElement>;
   @ViewChild('minimapCanvas') minimapCanvasRef?: ElementRef<HTMLCanvasElement>;
   @ViewChild('entityTagInputEl') entityTagInputRef?: ElementRef<HTMLInputElement>;
+  @ViewChild('photoPickerEntityInputEl') photoPickerEntityInputRef?: ElementRef<HTMLInputElement>;
+  @ViewChild('photoPickerFileInputEl') photoPickerFileInputRef?: ElementRef<HTMLInputElement>;
 
   // ── Inputs ──────────────────────────────────────────────────────────────
   seriesId = input<string>('');
@@ -188,6 +190,44 @@ export class RichTextEditorComponent implements OnInit, AfterViewInit, OnDestroy
   private grammarAbortController: AbortController | null = null;
   private grammarLastCheckedText = '';
 
+  // ── Photo picker panel ────────────────────────────────────────────────────
+  photoPickerVisible = signal(false);
+  photoPickerTop = signal(0);
+  photoPickerLeft = signal(0);
+  photoPickerAbove = signal(false);
+  photoPickerStep = signal<'entity' | 'source' | 'gallery' | 'upload'>('entity');
+  photoPickerEntityQuery = signal('');
+  photoPickerSelectedEntity = signal<Entity | null>(null);
+  photoPickerEntityFocusIndex = signal(0);
+  photoPickerFilteredEntities = computed(() => {
+    const q = this.photoPickerEntityQuery().toLowerCase().trim();
+    if (!q) return this.entities().slice(0, 20);
+    return this.entities().filter(e =>
+      e.name.toLowerCase().includes(q) ||
+      e.nickname?.toLowerCase().includes(q) ||
+      e.firstName?.toLowerCase().includes(q) ||
+      e.lastName?.toLowerCase().includes(q),
+    ).slice(0, 20);
+  });
+  photoPickerGalleryPhotos = computed(() => {
+    const entity = this.photoPickerSelectedEntity();
+    if (!entity) return [] as NonNullable<Entity['photos']>;
+    return (entity.photos ?? []).filter(p => !p.hidden);
+  });
+  photoPickerUploading = signal(false);
+  private photoPickerSavedRange: Range | null = null;
+  private photoPickerChangingEl: HTMLElement | null = null;
+
+  // ── Photo reference hover popup ───────────────────────────────────────────
+  photoRefPopupVisible = signal(false);
+  photoRefPopupTop = signal(0);
+  photoRefPopupLeft = signal(0);
+  photoRefPopupAbove = signal(false);
+  photoRefPopupPhotoUrl = signal('');
+  private photoRefHoveredEl: HTMLElement | null = null;
+  private photoRefPopupHideTimer: ReturnType<typeof setTimeout> | null = null;
+  private photoRefPopupShowTimer: ReturnType<typeof setTimeout> | null = null;
+
   // ── Word count ──────────────────────────────────────────────────────────
   wordCount = signal(0);
 
@@ -337,6 +377,8 @@ export class RichTextEditorComponent implements OnInit, AfterViewInit, OnDestroy
     if (this.popupHideTimer) clearTimeout(this.popupHideTimer);
     if (this.popupShowTimer) clearTimeout(this.popupShowTimer);
     if (this.minimapRenderTimer) clearTimeout(this.minimapRenderTimer);
+    if (this.photoRefPopupHideTimer) clearTimeout(this.photoRefPopupHideTimer);
+    if (this.photoRefPopupShowTimer) clearTimeout(this.photoRefPopupShowTimer);
     this.grammarAbortController?.abort();
     this.inlineAiAbortController?.abort();
     this.inlineAiResizeObserver?.disconnect();
@@ -1039,6 +1081,27 @@ export class RichTextEditorComponent implements OnInit, AfterViewInit, OnDestroy
   onEditorClick(event: MouseEvent): void {
     this.lastEjectedSpan = null; // user repositioned cursor manually
     const target = event.target as HTMLElement;
+
+    // Photo reference icon — show popup on tap/click (touch support)
+    const photoRefEl = target.closest?.('.photo-ref-icon') as HTMLElement | null;
+    if (photoRefEl) {
+      const rect = photoRefEl.getBoundingClientRect();
+      const off = this.getFixedOffset();
+      const photoUrl = photoRefEl.getAttribute('data-photo-url') ?? '';
+      this.photoRefHoveredEl = photoRefEl;
+      this.photoRefPopupPhotoUrl.set(photoUrl);
+      const POPUP_HEIGHT_EST = 380;
+      const GAP = 6;
+      const above = rect.bottom + GAP + POPUP_HEIGHT_EST > window.innerHeight;
+      this.photoRefPopupTop.set(above ? rect.top - GAP - off.y : rect.bottom + GAP - off.y);
+      this.photoRefPopupLeft.set(Math.max(8, rect.left - off.x));
+      this.photoRefPopupAbove.set(above);
+      this.photoRefPopupVisible.set(true);
+      event.preventDefault();
+      event.stopPropagation();
+      return;
+    }
+
     const grammarMark = target.closest('mark.grammar-error') as HTMLElement | null;
     if (grammarMark) { this.showGrammarPopover(event, grammarMark); return; }
     if (target.tagName === 'IMG') {
@@ -1069,6 +1132,41 @@ export class RichTextEditorComponent implements OnInit, AfterViewInit, OnDestroy
 
   onEditorMouseMove(event: MouseEvent): void {
     const target = event.target as HTMLElement;
+
+    // Photo reference icon hover
+    const photoRefEl = target.closest?.('.photo-ref-icon') as HTMLElement | null;
+    if (photoRefEl) {
+      if (this.photoRefPopupHideTimer) { clearTimeout(this.photoRefPopupHideTimer); this.photoRefPopupHideTimer = null; }
+      if (this.photoRefHoveredEl !== photoRefEl) {
+        this.photoRefHoveredEl = photoRefEl;
+        if (this.photoRefPopupShowTimer) clearTimeout(this.photoRefPopupShowTimer);
+        const rect = photoRefEl.getBoundingClientRect();
+        this.photoRefPopupShowTimer = setTimeout(() => {
+          const off = this.getFixedOffset();
+          const photoUrl = photoRefEl.getAttribute('data-photo-url') ?? '';
+          this.photoRefPopupPhotoUrl.set(photoUrl);
+          const POPUP_HEIGHT_EST = 380;
+          const GAP = 6;
+          const above = rect.bottom + GAP + POPUP_HEIGHT_EST > window.innerHeight;
+          this.photoRefPopupTop.set(above ? rect.top - GAP - off.y : rect.bottom + GAP - off.y);
+          this.photoRefPopupLeft.set(Math.max(8, rect.left - off.x));
+          this.photoRefPopupAbove.set(above);
+          this.photoRefPopupVisible.set(true);
+          this.photoRefPopupShowTimer = null;
+        }, 200);
+      }
+      if (this.hoveredEntity() !== null || this.popupShowTimer) this.scheduleHidePopup();
+      return;
+    }
+
+    // Clear photo ref popup when moving away — don't null photoRefHoveredEl here;
+    // let scheduleHidePhotoRefPopup() do it after the delay so the popup buttons
+    // remain functional if onPhotoRefPopupMouseEnter cancels the timer.
+    if (this.photoRefPopupVisible() || this.photoRefPopupShowTimer) {
+      if (this.photoRefPopupShowTimer) { clearTimeout(this.photoRefPopupShowTimer); this.photoRefPopupShowTimer = null; }
+      this.scheduleHidePhotoRefPopup();
+    }
+
     if (target.classList.contains('entity-reference')) {
       const entityId = target.getAttribute('data-id');
       if (this.popupHideTimer) { clearTimeout(this.popupHideTimer); this.popupHideTimer = null; }
@@ -1092,7 +1190,11 @@ export class RichTextEditorComponent implements OnInit, AfterViewInit, OnDestroy
     }
   }
 
-  onEditorMouseLeave(): void { this.scheduleHidePopup(); }
+  onEditorMouseLeave(): void {
+    this.scheduleHidePopup();
+    if (this.photoRefPopupShowTimer) { clearTimeout(this.photoRefPopupShowTimer); this.photoRefPopupShowTimer = null; }
+    this.scheduleHidePhotoRefPopup();
+  }
   onPopupMouseEnter(): void { if (this.popupHideTimer) { clearTimeout(this.popupHideTimer); this.popupHideTimer = null; } }
   onPopupMouseLeave(): void { this.scheduleHidePopup(); }
 
@@ -1127,6 +1229,8 @@ export class RichTextEditorComponent implements OnInit, AfterViewInit, OnDestroy
     if (this.grammarPopoverVisible() && !target.closest('.rte-grammar-popover')) this.dismissGrammarPopover();
     if (this.ctxMenuVisible() && !target.closest('.rte-ctx-menu')) this.closeCtxMenu();
     if (this.selectedImage() && target.tagName !== 'IMG' && !target.closest('.rte-image-resize-overlay')) this.clearImageSelection();
+    if (this.photoPickerVisible() && !target.closest('.rte-photo-picker') && !target.closest('.rte-formatting-toolbar')) this.closePhotoPicker();
+    if (this.photoRefPopupVisible() && !target.closest('.rte-photo-ref-popup') && !target.closest('.photo-ref-icon')) this.hidePhotoRefPopup();
   }
 
   @HostListener('document:mouseup')
@@ -1146,11 +1250,14 @@ export class RichTextEditorComponent implements OnInit, AfterViewInit, OnDestroy
     const range = sel.getRangeAt(0);
     const rect = range.getBoundingClientRect();
     if (!rect.width) { this.formattingToolbarVisible.set(false); return; }
-    const toolbarWidth = 330;
+    const toolbarWidthCenter = 330;
+    const toolbarWidthMax = 400;
     const off = this.getFixedOffset();
-    const left = (rect.left - off.x) + rect.width / 2 - toolbarWidth / 2;
+    const editorRect = this.editorRef?.nativeElement?.getBoundingClientRect();
+    const containerRight = editorRect ? (editorRect.right - off.x) : window.innerWidth;
+    const left = (rect.left - off.x) + rect.width / 2 - toolbarWidthCenter / 2;
     this.formattingToolbarTop.set(rect.top - off.y - 44);
-    this.formattingToolbarLeft.set(Math.max(8, left));
+    this.formattingToolbarLeft.set(Math.max(8, Math.min(left, containerRight - toolbarWidthMax - 8)));
     this.formattingState.set({
       bold: document.queryCommandState('bold'),
       italic: document.queryCommandState('italic'),
@@ -1187,7 +1294,15 @@ export class RichTextEditorComponent implements OnInit, AfterViewInit, OnDestroy
     this.entityTagSavedRange = sel.getRangeAt(0).cloneRange();
     this.entityTagSearchQuery.set('');
     this.entityTagFocusIndex.set(0);
-    this.entityTagPanelTop.set(this.formattingToolbarTop() + 44 + 6);
+    const PANEL_HEIGHT_EST = 270;
+    const GAP = 6;
+    const toolbarTop = this.formattingToolbarTop();
+    const off = this.getFixedOffset();
+    const belowTop = toolbarTop + 44 + GAP;
+    const panelTop = belowTop + PANEL_HEIGHT_EST > window.innerHeight - off.y
+      ? Math.max(GAP, toolbarTop - PANEL_HEIGHT_EST - GAP)
+      : belowTop;
+    this.entityTagPanelTop.set(panelTop);
     this.entityTagPanelLeft.set(this.formattingToolbarLeft());
     this.entityTagPanelVisible.set(true);
     setTimeout(() => {
@@ -1245,13 +1360,221 @@ export class RichTextEditorComponent implements OnInit, AfterViewInit, OnDestroy
     this.entityTagSavedRange = null;
   }
 
+  // ── Photo picker ──────────────────────────────────────────────────────────
+
+  openPhotoPicker(): void {
+    const sel = window.getSelection();
+    if (!sel || sel.isCollapsed || sel.rangeCount === 0) return;
+    this.photoPickerSavedRange = sel.getRangeAt(0).cloneRange();
+    this.photoPickerChangingEl = null;
+    this.photoPickerEntityQuery.set('');
+    this.photoPickerEntityFocusIndex.set(0);
+    this.photoPickerSelectedEntity.set(null);
+    this.photoPickerStep.set('entity');
+    this.photoPickerUploading.set(false);
+    this.positionPhotoPicker();
+    this.photoPickerVisible.set(true);
+    setTimeout(() => this.photoPickerEntityInputRef?.nativeElement.focus());
+  }
+
+  private positionPhotoPicker(): void {
+    const PANEL_HEIGHT_EST = 300;
+    const PANEL_WIDTH = 280;
+    const GAP = 6;
+    const toolbarTop = this.formattingToolbarTop();
+    const toolbarLeft = this.formattingToolbarLeft();
+    const off = this.getFixedOffset();
+    const belowTop = toolbarTop + 44 + GAP;
+    const above = belowTop + PANEL_HEIGHT_EST > window.innerHeight - off.y;
+    const panelTop = above ? Math.max(GAP, toolbarTop - PANEL_HEIGHT_EST - GAP) : belowTop;
+    const panelLeft = Math.max(GAP, Math.min(toolbarLeft, window.innerWidth - PANEL_WIDTH - GAP));
+    this.photoPickerTop.set(panelTop);
+    this.photoPickerLeft.set(panelLeft);
+    this.photoPickerAbove.set(above);
+  }
+
+  closePhotoPicker(): void {
+    this.photoPickerVisible.set(false);
+    this.photoPickerChangingEl = null;
+    this.photoPickerSavedRange = null;
+  }
+
+  selectPhotoPickerEntity(entity: Entity): void {
+    this.photoPickerSelectedEntity.set(entity);
+    this.photoPickerStep.set('source');
+  }
+
+  openPhotoGallery(): void {
+    this.photoPickerStep.set('gallery');
+  }
+
+  openPhotoUpload(): void {
+    this.photoPickerStep.set('upload');
+  }
+
+  selectPhotoFromGallery(photo: { url: string; thumbnailUrl: string }): void {
+    const entity = this.photoPickerSelectedEntity();
+    if (!entity) return;
+    const thumbUrl = this.proxyUrl(photo.thumbnailUrl) ?? photo.thumbnailUrl;
+    const fullUrl = this.proxyUrl(photo.url) ?? photo.url;
+    this.insertPhotoReference(fullUrl, thumbUrl, entity.id);
+    this.closePhotoPicker();
+  }
+
+  onPhotoFileSelected(event: Event): void {
+    const input = event.target as HTMLInputElement;
+    const file = input.files?.[0];
+    if (!file) return;
+    const entity = this.photoPickerSelectedEntity();
+    if (!entity) return;
+    this.photoPickerUploading.set(true);
+    this.entityService.uploadThumbnail(file).subscribe({
+      next: ({ url, thumbnailUrl }) => {
+        this.entityService.addPhoto(entity.id, url, thumbnailUrl).subscribe({
+          next: (updatedEntity) => {
+            this.entities.update(list => list.map(e => e.id === entity.id ? updatedEntity : e));
+            const thumbUrl = this.proxyUrl(thumbnailUrl) ?? thumbnailUrl;
+            const fullUrl = this.proxyUrl(url) ?? url;
+            this.insertPhotoReference(fullUrl, thumbUrl, entity.id);
+            this.photoPickerUploading.set(false);
+            this.closePhotoPicker();
+          },
+          error: () => { this.photoPickerUploading.set(false); },
+        });
+      },
+      error: () => { this.photoPickerUploading.set(false); },
+    });
+    input.value = '';
+  }
+
+  private insertPhotoReference(photoUrl: string, thumbUrl: string, entityId: string): void {
+    const editorEl = this.editorRef?.nativeElement;
+    if (!editorEl) return;
+    const range = this.photoPickerSavedRange;
+    if (!range || !editorEl.contains(range.commonAncestorContainer)) return;
+
+    if (this.photoPickerChangingEl) {
+      const el = this.photoPickerChangingEl;
+      el.setAttribute('data-photo-url', photoUrl);
+      el.setAttribute('data-photo-thumb', thumbUrl);
+      el.setAttribute('data-entity-id', entityId);
+      const img = el.querySelector('img');
+      if (img) img.src = thumbUrl;
+    } else {
+      range.collapse(false);
+      const span = document.createElement('span');
+      span.className = 'photo-ref-icon';
+      span.setAttribute('contenteditable', 'false');
+      span.setAttribute('data-photo-url', photoUrl);
+      span.setAttribute('data-photo-thumb', thumbUrl);
+      span.setAttribute('data-entity-id', entityId);
+      const img = document.createElement('img');
+      img.src = thumbUrl;
+      img.alt = '';
+      img.setAttribute('aria-hidden', 'true');
+      span.appendChild(img);
+      range.insertNode(span);
+      const nr = document.createRange();
+      nr.setStartAfter(span);
+      nr.collapse(true);
+      const sel = window.getSelection();
+      if (sel) { sel.removeAllRanges(); sel.addRange(nr); }
+    }
+    this.editorContent = editorEl.innerHTML;
+    this.scheduleEmit();
+  }
+
+  onPhotoPickerEntityKeyDown(event: KeyboardEvent): void {
+    const filtered = this.photoPickerFilteredEntities();
+    if (event.key === 'ArrowDown') {
+      event.preventDefault();
+      this.photoPickerEntityFocusIndex.set(Math.min(this.photoPickerEntityFocusIndex() + 1, filtered.length - 1));
+    } else if (event.key === 'ArrowUp') {
+      event.preventDefault();
+      this.photoPickerEntityFocusIndex.set(Math.max(this.photoPickerEntityFocusIndex() - 1, 0));
+    } else if (event.key === 'Enter') {
+      event.preventDefault();
+      const entity = filtered[this.photoPickerEntityFocusIndex()];
+      if (entity) this.selectPhotoPickerEntity(entity);
+    } else if (event.key === 'Escape') {
+      this.closePhotoPicker();
+    }
+  }
+
+  // ── Photo reference hover popup ───────────────────────────────────────────
+
+  private scheduleHidePhotoRefPopup(): void {
+    if (this.photoRefPopupHideTimer) clearTimeout(this.photoRefPopupHideTimer);
+    this.photoRefPopupHideTimer = setTimeout(() => {
+      this.photoRefPopupVisible.set(false);
+      this.photoRefHoveredEl = null;
+      this.photoRefPopupHideTimer = null;
+    }, 150);
+  }
+
+  hidePhotoRefPopup(): void {
+    if (this.photoRefPopupHideTimer) clearTimeout(this.photoRefPopupHideTimer);
+    if (this.photoRefPopupShowTimer) { clearTimeout(this.photoRefPopupShowTimer); this.photoRefPopupShowTimer = null; }
+    this.photoRefPopupVisible.set(false);
+    this.photoRefHoveredEl = null;
+  }
+
+  onPhotoRefPopupMouseEnter(): void {
+    if (this.photoRefPopupHideTimer) { clearTimeout(this.photoRefPopupHideTimer); this.photoRefPopupHideTimer = null; }
+  }
+
+  onPhotoRefPopupMouseLeave(): void {
+    this.scheduleHidePhotoRefPopup();
+  }
+
+  removePhotoReference(): void {
+    const el = this.photoRefHoveredEl;
+    if (!el) return;
+    el.parentNode?.removeChild(el);
+    this.hidePhotoRefPopup();
+    const editorEl = this.editorRef?.nativeElement;
+    if (editorEl) { this.editorContent = editorEl.innerHTML; this.scheduleEmit(); }
+  }
+
+  changePhotoReference(): void {
+    const el = this.photoRefHoveredEl;
+    if (!el) return;
+    this.photoPickerChangingEl = el;
+    const rect = el.getBoundingClientRect();
+    const off = this.getFixedOffset();
+    const PANEL_HEIGHT_EST = 300;
+    const PANEL_WIDTH = 280;
+    const GAP = 6;
+    const above = rect.bottom + GAP + PANEL_HEIGHT_EST > window.innerHeight - off.y;
+    this.photoPickerTop.set(above ? Math.max(GAP, rect.top - PANEL_HEIGHT_EST - GAP - off.y) : rect.bottom + GAP - off.y);
+    this.photoPickerLeft.set(Math.max(GAP, Math.min(rect.left - off.x, window.innerWidth - PANEL_WIDTH - GAP)));
+    this.photoPickerAbove.set(above);
+    this.hidePhotoRefPopup();
+    const entityId = el.getAttribute('data-entity-id') ?? '';
+    const entity = this.entities().find(e => e.id === entityId) ?? null;
+    const range = document.createRange();
+    range.setStartBefore(el);
+    range.collapse(true);
+    this.photoPickerSavedRange = range;
+    this.photoPickerEntityQuery.set('');
+    this.photoPickerEntityFocusIndex.set(0);
+    this.photoPickerSelectedEntity.set(entity);
+    this.photoPickerStep.set(entity ? 'source' : 'entity');
+    this.photoPickerUploading.set(false);
+    this.photoPickerVisible.set(true);
+    if (!entity) setTimeout(() => this.photoPickerEntityInputRef?.nativeElement.focus());
+  }
+
   // ── Image resize ─────────────────────────────────────────────────────────
 
   private showFormattingToolbarForImage(img: HTMLImageElement): void {
     const rect = img.getBoundingClientRect();
     const off = this.getFixedOffset();
-    const toolbarWidth = 330;
-    const left = Math.max(8, Math.min((rect.left - off.x) + rect.width / 2 - toolbarWidth / 2, window.innerWidth - toolbarWidth - 8));
+    const toolbarWidthCenter = 330;
+    const toolbarWidthMax = 400;
+    const editorRect = this.editorRef?.nativeElement?.getBoundingClientRect();
+    const containerRight = editorRect ? (editorRect.right - off.x) : window.innerWidth;
+    const left = Math.max(8, Math.min((rect.left - off.x) + rect.width / 2 - toolbarWidthCenter / 2, containerRight - toolbarWidthMax - 8));
     this.formattingToolbarTop.set(rect.top - off.y - 44);
     this.formattingToolbarLeft.set(left);
     this.formattingState.set({ bold: false, italic: false, underline: false, align: this.readImageAlign(img) });

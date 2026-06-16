@@ -92,6 +92,10 @@
     <button class="fmt-btn" (mousedown)="$event.preventDefault(); openEntityTagPanel()" title="Tag entity">
       <mat-icon style="font-size:16px;width:16px;height:16px;line-height:16px">person_pin</mat-icon>
     </button>
+    <div class="fmt-separator"></div>
+    <button class="fmt-btn" (mousedown)="$event.preventDefault(); openPhotoPicker()" title="Add photo reference">
+      <mat-icon style="font-size:16px;width:16px;height:16px;line-height:16px">photo_camera</mat-icon>
+    </button>
   </div>
 }
 
@@ -130,6 +134,158 @@
       @if (entityTagFilteredEntities().length === 0) {
         <div class="rte-entity-tag-empty">No entities found</div>
       }
+    </div>
+  </div>
+}
+
+<!-- Photo picker panel -->
+@if (photoPickerVisible()) {
+  <div class="rte-photo-picker"
+    [style.top.px]="photoPickerTop()"
+    [style.left.px]="photoPickerLeft()"
+    role="dialog"
+    aria-label="Add photo reference">
+
+    @if (photoPickerStep() === 'entity') {
+      <div class="rte-photo-picker-header">
+        <mat-icon>photo_camera</mat-icon>
+        <span>Photo Reference</span>
+        <button mat-icon-button class="rte-photo-picker-close" (mousedown)="$event.preventDefault(); closePhotoPicker()" title="Close" aria-label="Close">
+          <mat-icon>close</mat-icon>
+        </button>
+      </div>
+      <input #photoPickerEntityInputEl
+        class="rte-photo-picker-input"
+        type="text"
+        placeholder="Search entities…"
+        [value]="photoPickerEntityQuery()"
+        (input)="photoPickerEntityQuery.set($any($event.target).value); photoPickerEntityFocusIndex.set(0)"
+        (keydown)="onPhotoPickerEntityKeyDown($event)"
+        aria-label="Search entities"
+        autocomplete="off" />
+      <div class="rte-photo-picker-list" role="listbox" aria-label="Matching entities">
+        @for (entity of photoPickerFilteredEntities(); track entity.id; let i = $index) {
+          <div class="rte-photo-picker-item"
+            [class.active]="i === photoPickerEntityFocusIndex()"
+            role="option"
+            [attr.aria-selected]="i === photoPickerEntityFocusIndex()"
+            (mousedown)="$event.preventDefault(); selectPhotoPickerEntity(entity)">
+            @if (entity.thumbnailUrl) {
+              <img [src]="proxyUrl(entity.thumbnailUrl)!" class="rte-photo-picker-thumb" alt="" />
+            } @else {
+              <span class="rte-photo-picker-thumb-placeholder" aria-hidden="true"></span>
+            }
+            <span>{{ entity.name }}</span>
+          </div>
+        }
+        @if (photoPickerFilteredEntities().length === 0) {
+          <div class="rte-photo-picker-empty">No entities found</div>
+        }
+      </div>
+    }
+
+    @if (photoPickerStep() === 'source') {
+      <div class="rte-photo-picker-header">
+        <button mat-icon-button class="rte-photo-picker-back" (mousedown)="$event.preventDefault(); photoPickerStep.set('entity')" title="Back" aria-label="Back">
+          <mat-icon>arrow_back</mat-icon>
+        </button>
+        @if (photoPickerSelectedEntity()?.thumbnailUrl) {
+          <img [src]="proxyUrl(photoPickerSelectedEntity()!.thumbnailUrl)!" class="rte-photo-picker-header-thumb" alt="" aria-hidden="true" />
+        }
+        <span>{{ photoPickerSelectedEntity()?.name }}</span>
+        <button mat-icon-button class="rte-photo-picker-close" (mousedown)="$event.preventDefault(); closePhotoPicker()" title="Close" aria-label="Close">
+          <mat-icon>close</mat-icon>
+        </button>
+      </div>
+      <div class="rte-photo-picker-source-options">
+        <button class="rte-photo-picker-source-btn"
+          (mousedown)="$event.preventDefault(); openPhotoGallery()"
+          [disabled]="photoPickerGalleryPhotos().length === 0"
+          [attr.aria-disabled]="photoPickerGalleryPhotos().length === 0">
+          <mat-icon>collections</mat-icon>
+          <span>From gallery</span>
+          <span class="rte-photo-picker-count" aria-label="{{ photoPickerGalleryPhotos().length }} photos">{{ photoPickerGalleryPhotos().length }}</span>
+        </button>
+        <button class="rte-photo-picker-source-btn" (mousedown)="$event.preventDefault(); openPhotoUpload()">
+          <mat-icon>upload</mat-icon>
+          <span>Upload new</span>
+        </button>
+      </div>
+    }
+
+    @if (photoPickerStep() === 'gallery') {
+      <div class="rte-photo-picker-header">
+        <button mat-icon-button class="rte-photo-picker-back" (mousedown)="$event.preventDefault(); photoPickerStep.set('source')" title="Back" aria-label="Back">
+          <mat-icon>arrow_back</mat-icon>
+        </button>
+        <span>Choose photo</span>
+        <button mat-icon-button class="rte-photo-picker-close" (mousedown)="$event.preventDefault(); closePhotoPicker()" title="Close" aria-label="Close">
+          <mat-icon>close</mat-icon>
+        </button>
+      </div>
+      <div class="rte-photo-picker-gallery" role="list" aria-label="Entity photos">
+        @for (photo of photoPickerGalleryPhotos(); track photo.url) {
+          <button class="rte-photo-picker-gallery-item"
+            role="listitem"
+            (mousedown)="$event.preventDefault(); selectPhotoFromGallery(photo)"
+            [attr.aria-label]="photo.caption || 'Photo'">
+            <img [src]="proxyUrl(photo.thumbnailUrl)!" [alt]="photo.caption || ''" />
+          </button>
+        }
+      </div>
+    }
+
+    @if (photoPickerStep() === 'upload') {
+      <div class="rte-photo-picker-header">
+        <button mat-icon-button class="rte-photo-picker-back" (mousedown)="$event.preventDefault(); photoPickerStep.set('source')" title="Back" aria-label="Back">
+          <mat-icon>arrow_back</mat-icon>
+        </button>
+        <span>Upload photo</span>
+        <button mat-icon-button class="rte-photo-picker-close" (mousedown)="$event.preventDefault(); closePhotoPicker()" title="Close" aria-label="Close">
+          <mat-icon>close</mat-icon>
+        </button>
+      </div>
+      @if (photoPickerUploading()) {
+        <div class="rte-photo-picker-uploading" aria-live="polite">
+          <mat-spinner diameter="24"></mat-spinner>
+          <span>Uploading…</span>
+        </div>
+      } @else {
+        <label class="rte-photo-picker-upload-area">
+          <mat-icon>cloud_upload</mat-icon>
+          <span>Click to select a photo</span>
+          <input #photoPickerFileInputEl
+            type="file"
+            accept="image/*"
+            class="rte-photo-picker-file-input"
+            (change)="onPhotoFileSelected($event)"
+            aria-label="Upload photo" />
+        </label>
+      }
+    }
+  </div>
+}
+
+<!-- Photo reference hover popup -->
+@if (photoRefPopupVisible()) {
+  <div class="rte-photo-ref-popup"
+    [class.photo-ref-popup-above]="photoRefPopupAbove()"
+    [style.top.px]="photoRefPopupTop()"
+    [style.left.px]="photoRefPopupLeft()"
+    (mouseenter)="onPhotoRefPopupMouseEnter()"
+    (mouseleave)="onPhotoRefPopupMouseLeave()"
+    role="tooltip"
+    aria-label="Photo reference">
+    <img [src]="photoRefPopupPhotoUrl()" class="rte-photo-ref-popup-img" alt="Referenced photo" />
+    <div class="rte-photo-ref-popup-actions">
+      <button mat-button (click)="changePhotoReference()">
+        <mat-icon>edit</mat-icon>
+        Change
+      </button>
+      <button mat-button class="rte-photo-ref-remove-btn" (click)="removePhotoReference()">
+        <mat-icon>delete</mat-icon>
+        Remove
+      </button>
     </div>
   </div>
 }
