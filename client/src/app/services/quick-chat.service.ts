@@ -1,6 +1,6 @@
 import { Injectable, inject, signal } from '@angular/core';
 import { Router } from '@angular/router';
-import { ChapterCitation, ChatFolder, ChatSession, ChatSessionMessage } from '@shared/models';
+import { ChapterCitation, ChatFolder, ChatSession, ChatSessionMessage, MapPreview } from '@shared/models';
 import { Series } from '@shared/models/series.model';
 
 /**
@@ -87,7 +87,8 @@ export class QuickChatService {
               content?: string;
               error?: string;
               sources?: ChapterCitation[];
-              navigate?: { target: 'chapter' | 'book' | 'series'; id: string; title: string };
+              navigate?: { target: 'chapter' | 'book' | 'series' | 'entity'; id: string; title: string };
+              map?: MapPreview;
             };
             if (parsed.error) {
               this.updateLastAssistantMessage(`Error: ${parsed.error}`);
@@ -98,6 +99,10 @@ export class QuickChatService {
               this.close();
               this.router.navigate(this.routeFor(parsed.navigate.target, parsed.navigate.id));
               return;
+            } else if (parsed.map) {
+              // The assistant surfaced a map: attach it to the message so it
+              // renders inline as a clickable thumbnail (overlay stays open).
+              this.addMapToLastAssistantMessage(parsed.map);
             } else if (parsed.content) {
               this.appendToLastAssistantMessage(parsed.content);
             } else if (parsed.sources) {
@@ -123,11 +128,12 @@ export class QuickChatService {
   }
 
   /** Maps a navigation tool target to its Angular router commands. */
-  private routeFor(target: 'chapter' | 'book' | 'series', id: string): unknown[] {
+  private routeFor(target: 'chapter' | 'book' | 'series' | 'entity', id: string): unknown[] {
     switch (target) {
       case 'chapter': return ['/chapters', id, 'edit'];
       case 'book': return ['/books', id];
       case 'series': return ['/series', id];
+      case 'entity': return ['/entities', id];
     }
   }
 
@@ -214,6 +220,18 @@ export class QuickChatService {
       const copy = [...msgs];
       const last = copy[copy.length - 1];
       copy[copy.length - 1] = { ...last, text: last.text + delta };
+      return copy;
+    });
+  }
+
+  private addMapToLastAssistantMessage(map: MapPreview): void {
+    this.messages.update(msgs => {
+      if (msgs.length === 0) return msgs;
+      const copy = [...msgs];
+      const last = copy[copy.length - 1];
+      // Ignore a duplicate (same map streamed twice in one turn).
+      if (last.maps?.some(m => m.id === map.id)) return msgs;
+      copy[copy.length - 1] = { ...last, maps: [...(last.maps ?? []), map] };
       return copy;
     });
   }

@@ -150,8 +150,54 @@
   &:hover .stamp-delete { display: flex; }
 }
 
-.tool-list, .draw-actions { display: flex; flex-direction: column; gap: 6px; }
-.tool-btn { justify-content: flex-start; }
+.draw-actions { display: flex; flex-direction: column; gap: 6px; }
+
+.tool-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(88px, 1fr));
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.tool-btn {
+  margin: 0;
+  cursor: pointer;
+  border: 1px solid var(--mat-sys-outline-variant, #cac4d0);
+  border-radius: 8px;
+  padding: 6px;
+  background: var(--mat-sys-surface, #fff);
+  text-align: center;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+
+  mat-icon {
+    width: 56px;
+    height: 56px;
+    font-size: 40px;
+    line-height: 56px;
+  }
+
+  .tool-name {
+    font-size: 0.7rem;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    max-width: 100%;
+    color: var(--mat-sys-on-surface, inherit);
+  }
+
+  &:hover { border-color: var(--mat-sys-outline, #79747e); }
+  &:focus-visible { outline: 2px solid var(--mat-sys-primary); }
+
+  @container (max-width: 100px) {
+    padding: 4px;
+    mat-icon { width: 32px; height: 32px; font-size: 24px; line-height: 32px; }
+    .tool-name { display: none; }
+  }
+}
+
 .tool-btn--active { outline: 2px solid var(--mat-sys-primary); }
 
 .draw-hint {

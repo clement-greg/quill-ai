@@ -162,7 +162,6 @@ router.post('/:chapterId', async (req: Request, res: Response) => {
       let chapterContext = '';
       if (retrievalQuery) {
         const chunks = await searchChapterChunks(retrievalQuery, { bookId: resource.bookId, topK: 6 }, req);
-        console.log(`[chat RAG] book=${resource.bookId} retrieved ${chunks.length} chunk(s) for query: ${retrievalQuery.slice(0, 80)}`);
         if (chunks.length > 0) {
           const excerpts = chunks.map(c => c.content).join('\n\n---\n\n');
           chapterContext = `\n\nHere are the most relevant excerpts from the book:\n\n${excerpts}`;
@@ -172,7 +171,6 @@ router.post('/:chapterId', async (req: Request, res: Response) => {
       // Fallback: chapter not yet chunked (lazy migration) or search unavailable —
       // dump the chapter content as before, truncated for context size.
       if (!chapterContext) {
-        console.log(`[chat RAG] chapter=${chapterId} falling back to full-chapter dump (no chunks found)`);
         const rawText = (resource.content ?? '').replace(/<[^>]+>/g, '').trim();
         const plainText = rawText.length > 12000 ? rawText.slice(0, 12000) + '\n[...chapter truncated for context...]' : rawText;
         if (plainText) chapterContext = `\n\nHere is the current chapter content:\n\n${plainText}`;

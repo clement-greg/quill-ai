@@ -179,6 +179,63 @@
   word-break: break-word;
 }
 
+/* ── Inline map thumbnails ───────────────────────────────────────────────── */
+
+.qc-maps {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.qc-map {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 6px;
+  width: 200px;
+  border: 1px solid var(--mat-sys-outline-variant);
+  border-radius: 12px;
+  background: var(--mat-sys-surface-container);
+  color: inherit;
+  cursor: pointer;
+  text-align: left;
+  transition: border-color 0.12s ease-out, box-shadow 0.12s ease-out;
+
+  &:hover {
+    border-color: var(--mat-sys-primary);
+    box-shadow: 0 2px 10px rgba(0, 0, 0, 0.18);
+  }
+
+  &:focus-visible {
+    outline: 2px solid var(--mat-sys-primary);
+    outline-offset: 2px;
+  }
+}
+
+.qc-map-thumb {
+  display: block;
+  width: 100%;
+  aspect-ratio: 16 / 10;
+  object-fit: cover;
+  border-radius: 8px;
+  background: var(--mat-sys-surface-container-high);
+
+  &--empty {
+    display: grid;
+    place-items: center;
+    color: var(--mat-sys-on-surface-variant);
+  }
+}
+
+.qc-map-title {
+  font-size: 0.85em;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 /* ── Input area ──────────────────────────────────────────────────────────── */
 
 .qc-input-area {

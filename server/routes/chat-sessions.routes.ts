@@ -46,7 +46,6 @@ async function buildRagSystemPrompt(
   if (!retrievalQuery) return { systemPrompt, citations };
 
   const chunks = await searchChapterChunks(retrievalQuery, { ...scope, topK: 8 }, req);
-  console.log(`[session RAG] scope=${JSON.stringify(scope)} retrieved ${chunks.length} chunk(s) for query: ${retrievalQuery.slice(0, 80)}`);
   if (chunks.length === 0) return { systemPrompt, citations };
 
   // Number the distinct source chapters and resolve their titles so the
@@ -201,7 +200,7 @@ async function streamChatResponse(
 }
 
 type TitledRecord = { id: string; title?: string };
-type NavTarget = 'chapter' | 'book' | 'series';
+type NavTarget = 'chapter' | 'book' | 'series' | 'entity';
 type TitleMatch = { id: string; title: string; score: number };
 
 /** Scores the best title match (score ≥ 0.5) from a set of titled records. */
@@ -250,12 +249,63 @@ async function resolveByTitle(target: NavTarget, title: string, req: Request): P
   return bestTitleMatch(resources, title);
 }
 
+type EntityNameRecord = { id: string; name?: string; firstName?: string; lastName?: string; nickname?: string };
+
+/** The best human-readable label for an entity, preferring its explicit name. */
+function entityDisplayName(e: EntityNameRecord): string {
+  return (e.name?.trim() || [e.firstName, e.lastName].filter(Boolean).join(' ').trim() || e.nickname?.trim() || '');
+}
+
+/**
+ * Finds the best entity (person/place/thing) match for a name, scoring against
+ * every name form the user might say (full name, first/last, nickname).
+ */
+async function resolveEntityByName(name: string, req: Request): Promise<TitleMatch | null> {
+  const { resources } = await getContainer('entities').items
+    .query<EntityNameRecord>(withOwnerFilter(req, `SELECT c.id, c.name, c.firstName, c.lastName, c.nickname FROM c WHERE ${NOT_HIDDEN}`))
+    .fetchAll();
+  let best: TitleMatch | null = null;
+  for (const e of resources) {
+    const aliases = [e.name, e.firstName, e.lastName, e.nickname, [e.firstName, e.lastName].filter(Boolean).join(' ')]
+      .map(a => (a ?? '').trim())
+      .filter(Boolean);
+    // Reuse the title scorer by treating each alias as a candidate title.
+    const match = bestTitleMatch(aliases.map(a => ({ id: e.id, title: a })), name);
+    if (match && match.score > (best?.score ?? 0)) {
+      best = { id: e.id, title: entityDisplayName(e) || match.title, score: match.score };
+    }
+  }
+  return best;
+}
+
 /** Lists the user's (non-hidden) books as {id, title}. */
 async function listBooks(req: Request): Promise<{ id: string; title: string }[]> {
   const { resources } = await getContainer('books').items
     .query<TitledRecord>(withOwnerFilter(req, `SELECT c.id, c.title FROM c WHERE ${NOT_HIDDEN}`))
     .fetchAll();
   return resources.map(r => ({ id: r.id, title: r.title ?? '' })).filter(b => b.title);
+}
+
+// Maps are filtered on `archived` only, mirroring the maps route's access rule.
+const MAP_NOT_HIDDEN = '(NOT IS_DEFINED(c.archived) OR c.archived = false)';
+type MapRecord = { id: string; title?: string; thumbnailUrl?: string };
+
+/** Finds the user's best-matching map by title, with its thumbnail if any. */
+async function resolveMapByTitle(title: string, req: Request): Promise<(TitleMatch & { thumbnailUrl?: string }) | null> {
+  const { resources } = await getContainer('maps').items
+    .query<MapRecord>(withOwnerFilter(req, `SELECT c.id, c.title, c.thumbnailUrl FROM c WHERE ${MAP_NOT_HIDDEN}`))
+    .fetchAll();
+  const match = bestTitleMatch(resources, title);
+  if (!match) return null;
+  return { ...match, thumbnailUrl: resources.find(m => m.id === match.id)?.thumbnailUrl };
+}
+
+/** Lists the user's (non-archived) maps as {id, title}. */
+async function listMaps(req: Request): Promise<{ id: string; title: string }[]> {
+  const { resources } = await getContainer('maps').items
+    .query<MapRecord>(withOwnerFilter(req, `SELECT c.id, c.title FROM c WHERE ${MAP_NOT_HIDDEN}`))
+    .fetchAll();
+  return resources.map(r => ({ id: r.id, title: r.title ?? '' })).filter(m => m.title);
 }
 
 /** Creates a chapter at the end of the given book and indexes it for search. */
@@ -348,18 +398,20 @@ function quickChatTools(req: Request): Record<string, ChatTool> {
         function: {
           name: 'navigate',
           description:
-            'Navigate/open the user to one of their chapters, books, or series when they ask to go to, open, ' +
-            'take me to, jump to, or show something by name (e.g. "take me to Lithium"). Books and series are ' +
-            'containers; a chapter is a single document inside a book. Provide "type" only when the user is ' +
-            'explicit about the kind (e.g. "the book Lithium" or "the chapter Happy Birthday"); otherwise omit it ' +
-            'and the best match across all kinds is chosen.',
+            'Navigate/open the user to one of their chapters, books, series, or entities when they ask to go to, ' +
+            'open, take me to, jump to, or show something by name (e.g. "take me to Lithium" or "show me Dale\'s ' +
+            'profile"). Books and series are containers; a chapter is a single document inside a book; an entity is ' +
+            'a person, place, or thing in a series (a character, location, or object) — opening it shows its ' +
+            'profile. Provide "type" only when the user is explicit about the kind (e.g. "the book Lithium", "the ' +
+            'chapter Happy Birthday", or "Dale\'s profile" → entity); otherwise omit it and the best match across ' +
+            'all kinds is chosen.',
           parameters: {
             type: 'object',
             properties: {
               name: { type: 'string', description: 'The name/title the user referred to.' },
               type: {
                 type: 'string',
-                enum: ['chapter', 'book', 'series'],
+                enum: ['chapter', 'book', 'series', 'entity'],
                 description: 'Optional kind, only when the user is explicit about it.',
               },
             },
@@ -372,10 +424,12 @@ function quickChatTools(req: Request): Record<string, ChatTool> {
         const hint = args['type'] as NavTarget | undefined;
         // When the kind is hinted, search only that; otherwise search broadest
         // (series) to narrowest (chapter) so ties resolve to the container view.
-        const targets: NavTarget[] = hint ? [hint] : ['series', 'book', 'chapter'];
+        const targets: NavTarget[] = hint ? [hint] : ['series', 'book', 'chapter', 'entity'];
         const candidates: (TitleMatch & { target: NavTarget })[] = [];
         for (const target of targets) {
-          const match = await resolveByTitle(target, name, req);
+          const match = target === 'entity'
+            ? await resolveEntityByName(name, req)
+            : await resolveByTitle(target, name, req);
           if (match) candidates.push({ ...match, target });
         }
         // Highest score wins; stable order above breaks exact-score ties.
@@ -388,6 +442,47 @@ function quickChatTools(req: Request): Record<string, ChatTool> {
           };
         }
         return { toolResult: { found: false, message: `Nothing matching "${name}" was found.` } };
+      },
+    },
+    show_map: {
+      definition: {
+        type: 'function',
+        function: {
+          name: 'show_map',
+          description:
+            'Display one of the user\'s maps inline in the chat as a thumbnail they can click to open at full ' +
+            'size. Use this when the user asks to see, show, display, or pull up a map by name (e.g. "show me the ' +
+            'map of the Northern Kingdoms"). Pass "name" as the map title the user referred to. If no map matches, ' +
+            'the tool returns the list of available maps so you can ask the user which one they meant. Prefer this ' +
+            'over the navigate tool when the user wants to view a map without leaving the chat.',
+          parameters: {
+            type: 'object',
+            properties: {
+              name: { type: 'string', description: 'The map title the user referred to.' },
+            },
+            required: ['name'],
+          },
+        },
+      },
+      execute: async args => {
+        const name = String(args['name'] ?? '').trim();
+        const map = name ? await resolveMapByTitle(name, req) : null;
+        if (!map) {
+          const availableMaps = (await listMaps(req)).map(m => m.title);
+          return {
+            toolResult: {
+              found: false,
+              availableMaps,
+              message: name
+                ? `No map matching "${name}" was found. Ask the user which map they meant, choosing from availableMaps.`
+                : 'No map name was given. Ask the user which map to show, choosing from availableMaps.',
+            },
+          };
+        }
+        return {
+          toolResult: { found: true, mapId: map.id, title: map.title, hasThumbnail: !!map.thumbnailUrl },
+          sse: { map: { id: map.id, title: map.title, thumbnailUrl: map.thumbnailUrl } },
+        };
       },
     },
   };

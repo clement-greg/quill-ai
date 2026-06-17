@@ -16,11 +16,12 @@ import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
 import { MatDialog } from '@angular/material/dialog';
 import { DomSanitizer, SafeHtml } from '@angular/platform-browser';
 import { firstValueFrom } from 'rxjs';
-import { ChatSessionMessage } from '@shared/models';
+import { ChatSessionMessage, MapPreview } from '@shared/models';
 import { Entity } from '@shared/models/entity.model';
 import { QuickChatService } from '../services/quick-chat.service';
 import { EntityService } from '../services/entity.service';
 import { chatMarkdownToHtml, chapterIdFromClick } from '../shared/chat-markdown';
+import { MapPreviewComponent } from '../maps/map-preview/map-preview';
 import { SaveChatDialogComponent } from './save-chat-dialog';
 
 /**
@@ -31,7 +32,7 @@ import { SaveChatDialogComponent } from './save-chat-dialog';
 @Component({
   selector: 'app-quick-chat',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [MatButtonModule, MatIconModule, MatTooltipModule, MatProgressSpinnerModule],
+  imports: [MatButtonModule, MatIconModule, MatTooltipModule, MatProgressSpinnerModule, MapPreviewComponent],
   templateUrl: './quick-chat.html',
   styleUrl: './quick-chat.scss',
   host: {
@@ -47,6 +48,8 @@ export class QuickChatComponent {
 
   readonly input = signal('');
   readonly justSaved = signal(false);
+  /** The map shown in the full-screen read-only viewer, if any. */
+  readonly previewedMap = signal<MapPreview | null>(null);
 
   // ── Entity typeahead ──────────────────────────────────────────────────────
   private readonly entities = signal<Entity[]>([]);
@@ -95,6 +98,25 @@ export class QuickChatComponent {
     event.preventDefault();
     this.quickChat.close();
     this.router.navigate(['/chapters', chapterId, 'edit']);
+  }
+
+  /** Opens the full-screen read-only viewer for a map thumbnail in the chat. */
+  openMapPreview(map: MapPreview): void {
+    this.previewedMap.set(map);
+  }
+
+  /** Jumps from the read-only viewer into the editor, closing both overlays. */
+  editPreviewedMap(): void {
+    const id = this.previewedMap()?.id;
+    this.previewedMap.set(null);
+    this.quickChat.close();
+    if (id) this.router.navigate(['/maps', id]);
+  }
+
+  /** Rewrites a stored upload URL to the same-origin image proxy. */
+  proxyUrl(url: string): string {
+    const filename = url.split('/').pop();
+    return filename ? `/api/image/${filename}` : url;
   }
 
   onKeyDown(event: KeyboardEvent): void {
@@ -242,6 +264,11 @@ export class QuickChatComponent {
   }
 
   onEscape(): void {
+    // The map viewer sits on top of the chat — Escape dismisses it first.
+    if (this.previewedMap()) {
+      this.previewedMap.set(null);
+      return;
+    }
     // Ignore while a dialog (e.g. the save picker) is open on top — Escape
     // should dismiss that first, not the whole conversation.
     if (this.quickChat.isOpen() && this.dialog.openDialogs.length === 0) {

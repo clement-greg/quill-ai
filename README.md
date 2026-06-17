@@ -1,4 +1,4 @@
-# Story Time (Quill AI)
+Quill AI
 
 A full-stack creative writing platform that helps authors plan, draft, and manage their stories. Writers can organize their work into series, books, and chapters, build out a cast of characters and entities, track relationships between those entities, and chat with an AI assistant that has context about their world.
 

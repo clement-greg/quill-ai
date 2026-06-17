@@ -28,6 +28,5 @@ const { chromium } = require('@playwright/test');
   }
 
   await context.storageState({ path: '.claude/auth.json' });
-  console.log('Session saved to .claude/auth.json');
   await browser.close();
 })();

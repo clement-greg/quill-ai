@@ -122,7 +122,6 @@ export async function searchChapterChunks(
     });
 
     const { resources } = await chunksContainer.items.query<ChunkSearchResult>(query).fetchAll();
-    console.log(`[chunk search] ${resources.length} result(s); filters=[${filters.join(', ') || 'owner only'}]`);
     return resources;
   } catch (err) {
     console.error('Chapter chunk search failed:', err);

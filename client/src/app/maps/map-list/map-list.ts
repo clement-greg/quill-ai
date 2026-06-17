@@ -11,6 +11,7 @@ import { MatCardModule } from '@angular/material/card';
 import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
 import { MatTooltipModule } from '@angular/material/tooltip';
 import { SeriesMap } from '@shared/models/map.model';
+import { MapPreviewComponent } from '../map-preview/map-preview';
 import { MapService } from '../map.service';
 import { SeriesService } from '../../series/series.service';
 import { SeriesContextService } from '../../services/series-context.service';
@@ -19,7 +20,7 @@ import { HeaderService } from '../../services/header.service';
 @Component({
   selector: 'app-map-list',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [MatButtonModule, MatIconModule, MatCardModule, MatProgressSpinnerModule, MatTooltipModule],
+  imports: [MatButtonModule, MatIconModule, MatCardModule, MatProgressSpinnerModule, MatTooltipModule, MapPreviewComponent],
   template: `
     <div class="container">
       <div class="list-header">
@@ -70,33 +71,14 @@ import { HeaderService } from '../../services/header.service';
       }
     </div>
 
-    <!-- Full-screen preview lightbox -->
-    @if (previewMap()) {
-      <div class="lightbox" role="dialog" [attr.aria-label]="previewMap()!.title + ' preview'"
-           (click)="closePreview()">
-
-        <!-- Floating action buttons — stop clicks reaching the backdrop -->
-        <div class="lightbox-actions" (click)="$event.stopPropagation()">
-          <span class="lightbox-map-title">{{ previewMap()!.title }}</span>
-          <button mat-mini-fab (click)="edit(previewMap()!)" aria-label="Edit map" matTooltip="Edit map">
-            <mat-icon>edit</mat-icon>
-          </button>
-          <button mat-mini-fab (click)="closePreview()" aria-label="Close preview" matTooltip="Close">
-            <mat-icon>close</mat-icon>
-          </button>
-        </div>
-
-        @if (previewMap()!.thumbnailUrl) {
-          <img class="lightbox-img" [src]="proxyUrl(previewMap()!.thumbnailUrl!)"
-               [alt]="previewMap()!.title" (click)="$event.stopPropagation()" />
-        } @else {
-          <div class="lightbox-placeholder" [style.background]="previewMap()!.background.color"
-               (click)="$event.stopPropagation()">
-            <mat-icon aria-hidden="true">map</mat-icon>
-            <p>No preview yet — open the editor to generate one.</p>
-          </div>
-        }
-      </div>
+    <!-- Full-screen read-only preview -->
+    @if (previewMap(); as map) {
+      <app-map-preview
+        [title]="map.title"
+        [thumbnailUrl]="map.thumbnailUrl"
+        [placeholderColor]="map.background.color"
+        (edit)="edit(map)"
+        (closed)="closePreview()" />
     }
   `,
   styles: `
@@ -177,76 +159,6 @@ import { HeaderService } from '../../services/header.service';
       }
 
       mat-icon { font-size: 48px; width: 48px; height: 48px; color: rgba(255,255,255,0.85); }
-    }
-
-    /* Lightbox — full-screen with floating buttons */
-    .lightbox {
-      position: fixed;
-      inset: 0;
-      z-index: 1000;
-      background: #000;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      animation: lb-in 0.18s ease;
-    }
-
-    @keyframes lb-in {
-      from { opacity: 0; }
-      to   { opacity: 1; }
-    }
-
-    .lightbox-actions {
-      position: absolute;
-      top: 16px;
-      right: 16px;
-      z-index: 10;
-      display: flex;
-      align-items: center;
-      gap: 8px;
-
-      button {
-        background: rgba(0, 0, 0, 0.55) !important;
-        color: #fff !important;
-        backdrop-filter: blur(4px);
-        box-shadow: 0 2px 8px rgba(0,0,0,0.4);
-
-        mat-icon { color: #fff; }
-      }
-    }
-
-    .lightbox-map-title {
-      color: #fff;
-      font-size: 0.9rem;
-      font-weight: 500;
-      text-shadow: 0 1px 4px rgba(0,0,0,0.7);
-      padding: 0 4px;
-      max-width: 300px;
-      overflow: hidden;
-      text-overflow: ellipsis;
-      white-space: nowrap;
-    }
-
-    .lightbox-img {
-      display: block;
-      width: 100%;
-      height: 100%;
-      object-fit: contain;
-      cursor: default;
-    }
-
-    .lightbox-placeholder {
-      width: 100%;
-      height: 100%;
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      justify-content: center;
-      gap: 12px;
-      color: rgba(255,255,255,0.7);
-
-      mat-icon { font-size: 64px; width: 64px; height: 64px; }
-      p { margin: 0; font-size: 0.9rem; text-align: center; }
     }
   `,
 })

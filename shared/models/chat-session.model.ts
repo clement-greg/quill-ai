@@ -12,6 +12,13 @@ export interface ChapterCitation {
   title: string;
 }
 
+/** A map an assistant answer surfaced, shown inline as a clickable thumbnail. */
+export interface MapPreview {
+  id: string;            // open the full map via /maps/:id
+  title: string;
+  thumbnailUrl?: string; // auto-generated snapshot; absent until one is captured
+}
+
 export interface ChatSessionMessage {
   role: 'user' | 'assistant';
   text: string;
@@ -19,6 +26,7 @@ export interface ChatSessionMessage {
   generatingImage?: boolean;
   highlights?: ChatMessageHighlight[];
   sources?: ChapterCitation[];
+  maps?: MapPreview[];
 }
 
 export interface ChatSession {

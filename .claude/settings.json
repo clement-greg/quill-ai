@@ -12,7 +12,10 @@
       "PowerShell(npx jest --silent 2>&1)",
       "PowerShell(npx jest chunking --silent 2>&1)",
       "Bash(node -e ' *)",
-      "Bash(npx ng *)"
+      "Bash(npx ng *)",
+      "Bash(xargs grep -l \"MCP\\\\|mcp\\\\|resolve-entity\")",
+      "Bash(xargs cat)",
+      "Bash(grep -n \"qc-markdown\\\\|qc-message\\\\|\\\\$\\\\|var\\(--\" client/src/app/quick-chat/quick-chat.scss)"
     ]
   }
 }

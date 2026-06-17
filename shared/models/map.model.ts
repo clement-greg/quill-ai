@@ -53,6 +53,8 @@ export interface PathElement extends BaseElement {
   strokeWidth: number;
   /** Konva line tension; > 0 renders a smooth curve (rivers). */
   tension?: number;
+  /** Konva dash pattern [dash, gap, …]; omit for a solid stroke (paths). */
+  dash?: number[];
 }
 
 /**

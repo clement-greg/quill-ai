@@ -52,6 +52,22 @@
             } @else {
               <div class="qc-markdown" (click)="onCitationClick($event)" [innerHTML]="renderHtml(msg)"></div>
             }
+            @if (msg.maps?.length) {
+              <div class="qc-maps">
+                @for (m of msg.maps; track m.id) {
+                  <button type="button" class="qc-map" (click)="openMapPreview(m)"
+                          [attr.aria-label]="'Open map ' + m.title">
+                    @if (m.thumbnailUrl) {
+                      <img class="qc-map-thumb" [src]="proxyUrl(m.thumbnailUrl)"
+                           [alt]="m.title + ' map'" loading="lazy" />
+                    } @else {
+                      <span class="qc-map-thumb qc-map-thumb--empty"><mat-icon aria-hidden="true">map</mat-icon></span>
+                    }
+                    <span class="qc-map-title">{{ m.title }}</span>
+                  </button>
+                }
+              </div>
+            }
           } @else {
             <p class="qc-user-text">{{ msg.text }}</p>
           }
@@ -90,4 +106,12 @@
       </button>
     </div>
   </div>
+
+  @if (previewedMap(); as map) {
+    <app-map-preview
+      [title]="map.title"
+      [thumbnailUrl]="map.thumbnailUrl"
+      (edit)="editPreviewedMap()"
+      (closed)="previewedMap.set(null)" />
+  }
 }

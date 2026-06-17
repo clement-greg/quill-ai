@@ -86,12 +86,12 @@
       }
 
       <h3>Lines</h3>
-      <div class="tool-list">
+      <div class="tool-grid">
         @for (preset of pathPresets; track preset.typeId) {
-          <button mat-stroked-button class="tool-btn" [class.tool-btn--active]="mode() === preset.typeId"
+          <button type="button" class="tool-btn" [class.tool-btn--active]="mode() === preset.typeId"
                   (click)="selectTool(preset.typeId)" [attr.aria-pressed]="mode() === preset.typeId">
-            <mat-icon [style.color]="preset.stroke">{{ preset.icon }}</mat-icon>
-            {{ preset.name }}
+            <mat-icon [style.color]="preset.stroke" aria-hidden="true">{{ preset.icon }}</mat-icon>
+            <span class="tool-name">{{ preset.name }}</span>
           </button>
         }
       </div>

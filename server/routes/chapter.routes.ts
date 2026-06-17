@@ -130,7 +130,6 @@ router.post('/reindex-all', async (req: Request, res: Response) => {
       await reindexChapterChunks(chapter);
       reindexed++;
     }
-    console.log(`[reindex-all] reindexed ${reindexed} chapter(s) for ${req.user!.email}`);
     res.json({ reindexed });
   } catch (err) {
     console.error('Error reindexing chapters:', err);

@@ -20,6 +20,8 @@ export interface PathPreset {
    * widths instead of a uniform stroke, simulating a natural river.
    */
   varyWidth?: boolean;
+  /** Konva dash pattern [dash, gap, …]; omit for a solid stroke. */
+  dash?: number[];
 }
 
 /**
@@ -41,6 +43,7 @@ export class MapElementRegistry {
     { typeId: 'river', name: 'River', icon: 'water', stroke: '#3a7bd5', strokeWidth: 6, tension: 0.5, varyWidth: true },
     { typeId: 'road', name: 'Road', icon: 'route', stroke: '#8d6e4f', strokeWidth: 5, tension: 0 },
     { typeId: 'border', name: 'Border', icon: 'gesture', stroke: '#9c27b0', strokeWidth: 3, tension: 0 },
+    { typeId: 'path', name: 'Path', icon: 'footprint', stroke: '#6d4c2f', strokeWidth: 7, tension: 0.5, dash: [14, 10] },
   ];
 
   pathPreset(typeId: string): PathPreset | undefined {
@@ -75,6 +78,7 @@ export class MapElementRegistry {
       stroke: preset.stroke,
       strokeWidth: preset.strokeWidth,
       tension: preset.tension,
+      ...(preset.dash ? { dash: preset.dash } : {}),
       labelVisible: true,
       z: 0,
     };
