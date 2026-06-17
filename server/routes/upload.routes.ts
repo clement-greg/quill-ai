@@ -6,7 +6,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { uploadFileToBlob } from '../storage';
 
 const router = Router();
-const THUMBNAIL_SIZE = 400; // max width or height in px
+const DEFAULT_THUMBNAIL_SIZE = 400; // max width or height in px for palette stamps
 
 const RASTER_EXTS = ['.jpg', '.jpeg', '.png', '.gif', '.webp'];
 const SVG_EXTS = ['.svg'];
@@ -25,12 +25,18 @@ const upload = multer({
 });
 
 // POST /api/upload  — multipart/form-data with field name "file"
+// Optional query param: ?thumbSize=N overrides the default 400px max dimension (e.g. 1600 for map previews)
 router.post('/', upload.single('file'), async (req: Request, res: Response) => {
   try {
     if (!req.file) {
       res.status(400).json({ error: 'No file provided' });
       return;
     }
+
+    const thumbSize = Math.min(
+      Math.max(parseInt(String(req.query['thumbSize'] ?? ''), 10) || DEFAULT_THUMBNAIL_SIZE, 100),
+      4096
+    );
 
     const ext = path.extname(req.file.originalname).toLowerCase();
     const id = uuidv4();
@@ -47,7 +53,7 @@ router.post('/', upload.single('file'), async (req: Request, res: Response) => {
     } else {
       const thumbnailFilename = `${id}_thumb.webp`;
       const thumbnailBuffer = await sharp(req.file.buffer)
-        .resize(THUMBNAIL_SIZE, THUMBNAIL_SIZE, { fit: 'inside', withoutEnlargement: true })
+        .resize(thumbSize, thumbSize, { fit: 'inside', withoutEnlargement: true })
         .webp({ quality: 85 })
         .toBuffer();
       [originalUrl, thumbnailUrl] = await Promise.all([

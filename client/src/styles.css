@@ -1,5 +1,30 @@
 /* You can add global styles to this file, and also import other style files */
 
+/* Sticky filter input inside mat-select panels (rendered outside component scope) */
+.select-filter {
+  padding: 8px 12px 4px;
+  position: sticky;
+  top: 0;
+  background: var(--mat-sys-surface, #fff);
+  z-index: 1;
+  border-bottom: 1px solid var(--mat-sys-outline-variant, #cac4d0);
+  margin-bottom: 4px;
+}
+.select-filter-input {
+  width: 100%;
+  border: 1px solid var(--mat-sys-outline, #79747e);
+  border-radius: 4px;
+  padding: 6px 10px;
+  font-size: 0.875rem;
+  background: transparent;
+  color: inherit;
+  outline: none;
+  box-sizing: border-box;
+}
+.select-filter-input:focus {
+  border-color: var(--mat-sys-primary, #6750a4);
+}
+
 /* Prevent iOS Safari from zooming on input focus (requires font-size >= 16px) */
 @media (max-width: 768px) {
   input, textarea, select {
@@ -24,6 +49,12 @@
 html, body {
   overscroll-behavior: none;
   overflow-x: hidden;
+}
+
+/* Lock cursor during panel resize drags so it doesn't flicker */
+body.resizing-col, body.resizing-col * {
+  cursor: col-resize !important;
+  user-select: none !important;
 }
 
 /* Portrait lock for iOS PWA — iOS ignores the manifest orientation field,

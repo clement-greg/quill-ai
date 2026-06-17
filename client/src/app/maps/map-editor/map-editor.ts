@@ -10,6 +10,7 @@ import {
   ElementRef,
   NgZone,
 } from '@angular/core';
+import { HttpClient } from '@angular/common/http';
 import { ActivatedRoute, Router } from '@angular/router';
 import { FormsModule } from '@angular/forms';
 import { MatButtonModule } from '@angular/material/button';
@@ -17,15 +18,18 @@ import { MatIconModule } from '@angular/material/icon';
 import { MatFormFieldModule } from '@angular/material/form-field';
 import { MatInputModule } from '@angular/material/input';
 import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
+import { MatSelectModule } from '@angular/material/select';
 import { MatSlideToggleModule } from '@angular/material/slide-toggle';
 import { MatTooltipModule } from '@angular/material/tooltip';
 import Konva from 'konva';
 import { v4 as uuidv4 } from 'uuid';
 import { SeriesMap, MapElement, ImageElement, PathElement } from '@shared/models/map.model';
 import { MapAsset } from '@shared/models/map-asset.model';
+import { Entity } from '@shared/models/entity.model';
 import { MapService } from '../map.service';
 import { MapAssetService } from '../map-asset.service';
 import { MapElementRegistry } from '../map-element.registry';
+import { EntityService } from '../../services/entity.service';
 import { SeriesContextService } from '../../services/series-context.service';
 import { HeaderService } from '../../services/header.service';
 
@@ -41,6 +45,7 @@ type SaveStatus = 'idle' | 'saving' | 'saved' | 'error';
     MatFormFieldModule,
     MatInputModule,
     MatProgressSpinnerModule,
+    MatSelectModule,
     MatSlideToggleModule,
     MatTooltipModule,
   ],
@@ -51,9 +56,11 @@ export class MapEditorComponent implements OnDestroy {
   private route = inject(ActivatedRoute);
   private router = inject(Router);
   private zone = inject(NgZone);
+  private http = inject(HttpClient);
   private mapService = inject(MapService);
   private assetService = inject(MapAssetService);
   private registry = inject(MapElementRegistry);
+  private entityService = inject(EntityService);
   private seriesContext = inject(SeriesContextService);
   private headerService = inject(HeaderService);
 
@@ -71,8 +78,58 @@ export class MapEditorComponent implements OnDestroy {
   readonly saveStatus = signal<SaveStatus>('idle');
   readonly bgColor = signal('#e8dcc0');
   readonly gridSize = signal(50);
+  readonly bgImageUrl = signal<string | null>(null);
+  readonly uploadingBg = signal(false);
+  readonly placeEntities = signal<Entity[]>([]);
+  readonly placeFilter = signal('');
+  readonly filteredPlaces = computed(() => {
+    const q = this.placeFilter().toLowerCase().trim();
+    if (!q) return this.placeEntities();
+    return this.placeEntities().filter(p => p.name.toLowerCase().includes(q));
+  });
 
   readonly pathPresets = this.registry.pathPresets;
+
+  // ----- Panel resize state -----
+  private static readPanelWidth(key: string, fallback: number): number {
+    const v = parseInt(localStorage.getItem(key) ?? '', 10);
+    return isNaN(v) ? fallback : Math.max(56, Math.min(520, v));
+  }
+
+  readonly paletteWidth = signal(MapEditorComponent.readPanelWidth('map-palette-width', 240));
+  readonly propsWidth   = signal(MapEditorComponent.readPanelWidth('map-props-width',   240));
+
+  startResize(e: MouseEvent, panel: 'palette' | 'props'): void {
+    e.preventDefault();
+    const startX = e.clientX;
+    const startWidth = panel === 'palette' ? this.paletteWidth() : this.propsWidth();
+    const storageKey = panel === 'palette' ? 'map-palette-width' : 'map-props-width';
+
+    const onMove = (ev: MouseEvent) => {
+      const delta = ev.clientX - startX;
+      const next = Math.max(56, Math.min(520,
+        panel === 'palette' ? startWidth + delta : startWidth - delta
+      ));
+      this.zone.run(() => {
+        if (panel === 'palette') this.paletteWidth.set(next);
+        else this.propsWidth.set(next);
+      });
+    };
+
+    const onUp = () => {
+      document.removeEventListener('mousemove', onMove);
+      document.removeEventListener('mouseup', onUp);
+      document.body.classList.remove('resizing-col');
+      localStorage.setItem(storageKey, String(
+        panel === 'palette' ? this.paletteWidth() : this.propsWidth()
+      ));
+    };
+
+    document.addEventListener('mousemove', onMove);
+    document.addEventListener('mouseup', onUp);
+    document.body.classList.add('resizing-col');
+  }
+
   // Elements listed top-of-stack first for the accessible element list.
   readonly elementsByZ = computed(() =>
     [...this.elements()].sort((a, b) => b.z - a.z),
@@ -98,6 +155,8 @@ export class MapEditorComponent implements OnDestroy {
   private stageReady = false;
   private saveTimer?: ReturnType<typeof setTimeout>;
   private destroyed = false;
+  private lastThumbnailMs = 0;
+  private readonly THUMBNAIL_INTERVAL_MS = 30_000;
 
   constructor() {
     const id = this.route.snapshot.paramMap.get('id');
@@ -109,6 +168,7 @@ export class MapEditorComponent implements OnDestroy {
           this.elements.set(map.elements ?? []);
           this.bgColor.set(map.background.color);
           this.gridSize.set(map.background.gridSize ?? 0);
+          this.bgImageUrl.set(map.background.imageUrl ?? null);
           this.loading.set(false);
           this.seriesContext.set(map.seriesId);
           this.headerService.set([
@@ -116,6 +176,7 @@ export class MapEditorComponent implements OnDestroy {
             { label: map.title },
           ]);
           this.loadAssets(map.seriesId);
+          this.loadPlaces(map.seriesId);
           this.tryRender();
         },
         error: () => {
@@ -213,7 +274,26 @@ export class MapEditorComponent implements OnDestroy {
     if (!this.bgLayer || !this.map) return;
     this.bgLayer.destroyChildren();
     const { width, height } = this.map;
+
+    // Base fill (always drawn so the canvas has a colour even while the image loads).
     this.bgLayer.add(new Konva.Rect({ x: 0, y: 0, width, height, fill: this.bgColor(), listening: false }));
+
+    const imageUrl = this.bgImageUrl();
+    if (imageUrl) {
+      void this.loadImage(this.proxyUrl(imageUrl)).then(img => {
+        if (!this.bgLayer || !this.map) return;
+        const bgImage = new Konva.Image({
+          image: img,
+          x: 0, y: 0,
+          width, height,
+          listening: false,
+        });
+        // Insert behind grid lines (index 1, after the colour rect).
+        this.bgLayer.add(bgImage);
+        bgImage.zIndex(1);
+        this.bgLayer.batchDraw();
+      });
+    }
 
     const grid = this.gridSize();
     if (grid > 0) {
@@ -292,6 +372,12 @@ export class MapEditorComponent implements OnDestroy {
   }
 
   private addPathNode(element: PathElement): void {
+    const preset = this.registry.pathPreset(element.typeId);
+    if (preset?.varyWidth && element.points.length >= 2) {
+      this.addVariableWidthPathNode(element);
+      return;
+    }
+
     const flat = element.points.flatMap(p => [p.x, p.y]);
     const line = new Konva.Line({
       points: flat,
@@ -320,6 +406,100 @@ export class MapEditorComponent implements OnDestroy {
     const label = this.makeLabel(element);
     if (label) this.elementLayer!.add(label);
     this.nodes.set(element.id, { node: line, label });
+    this.positionLabel(element.id);
+  }
+
+  /**
+   * Renders a river as a filled polygon whose width varies organically at each
+   * point. Each side of the river is a smooth quadratic-bezier curve drawn
+   * through perpendicular offset points; the widths are determined by a stable
+   * deterministic function of the point coordinates so the shape never changes
+   * on re-render.
+   */
+  private addVariableWidthPathNode(element: PathElement): void {
+    const pts = element.points;
+    const baseHalf = element.strokeWidth / 2;
+
+    // Stable pseudo-random half-width per point, range 0.35×–1.65× base.
+    const halfWidths = pts.map((p, i) =>
+      baseHalf * (0.35 + (Math.sin(i * 2.399 + p.x * 0.017 + p.y * 0.023) * 0.5 + 0.5) * 1.3),
+    );
+
+    // Perpendicular unit normal at each point (averaged over neighbouring segments).
+    const normals = pts.map((_, i) => {
+      const prev = pts[i - 1] ?? pts[i];
+      const next = pts[i + 1] ?? pts[i];
+      const dx = next.x - prev.x;
+      const dy = next.y - prev.y;
+      const len = Math.sqrt(dx * dx + dy * dy) || 1;
+      return { nx: -dy / len, ny: dx / len };
+    });
+
+    const left  = pts.map((p, i) => ({ x: p.x + normals[i].nx * halfWidths[i], y: p.y + normals[i].ny * halfWidths[i] }));
+    const right = pts.map((p, i) => ({ x: p.x - normals[i].nx * halfWidths[i], y: p.y - normals[i].ny * halfWidths[i] }));
+
+    /** Draw a smooth open curve through a set of points using quadratic beziers. */
+    const curveThroughPoints = (ctx: CanvasRenderingContext2D, curve: { x: number; y: number }[]) => {
+      ctx.moveTo(curve[0].x, curve[0].y);
+      for (let i = 0; i < curve.length - 1; i++) {
+        const mx = (curve[i].x + curve[i + 1].x) / 2;
+        const my = (curve[i].y + curve[i + 1].y) / 2;
+        ctx.quadraticCurveTo(curve[i].x, curve[i].y, mx, my);
+      }
+      ctx.lineTo(curve[curve.length - 1].x, curve[curve.length - 1].y);
+    };
+
+    const shape = new Konva.Shape({
+      sceneFunc: (ctx) => {
+        const raw = ctx as unknown as CanvasRenderingContext2D;
+        raw.beginPath();
+        curveThroughPoints(raw, left);
+        // Continue backward along the right side to close the polygon.
+        const rightReversed = [...right].reverse();
+        for (let i = 0; i < rightReversed.length - 1; i++) {
+          const mx = (rightReversed[i].x + rightReversed[i + 1].x) / 2;
+          const my = (rightReversed[i].y + rightReversed[i + 1].y) / 2;
+          raw.quadraticCurveTo(rightReversed[i].x, rightReversed[i].y, mx, my);
+        }
+        raw.lineTo(right[0].x, right[0].y);
+        raw.closePath();
+        raw.fillStyle = element.stroke;
+        raw.fill();
+      },
+      hitFunc: (ctx) => {
+        // Hit region: a generous rect around the bounding box of all points.
+        const xs = pts.map(p => p.x);
+        const ys = pts.map(p => p.y);
+        const pad = element.strokeWidth * 2;
+        const x = Math.min(...xs) - pad;
+        const y = Math.min(...ys) - pad;
+        const w = Math.max(...xs) - Math.min(...xs) + pad * 2;
+        const h = Math.max(...ys) - Math.min(...ys) + pad * 2;
+        (ctx as unknown as CanvasRenderingContext2D).beginPath();
+        (ctx as unknown as CanvasRenderingContext2D).rect(x, y, w, h);
+        (ctx as unknown as CanvasRenderingContext2D).fill();
+      },
+      draggable: true,
+      name: element.id,
+    });
+
+    shape.on('click tap', () => this.zone.run(() => this.select(element.id)));
+    shape.on('dragmove', () => this.positionLabel(element.id));
+    shape.on('dragend', () => {
+      const dx = shape.x();
+      const dy = shape.y();
+      shape.position({ x: 0, y: 0 });
+      const moved = element.points.map(p => ({ x: p.x + dx, y: p.y + dy }));
+      this.updateElementModel(element.id, { points: moved });
+      this.positionLabel(element.id);
+      // Re-render so the offset polygons reflect the new coords.
+      this.renderElements();
+    });
+
+    this.elementLayer!.add(shape);
+    const label = this.makeLabel(element);
+    if (label) this.elementLayer!.add(label);
+    this.nodes.set(element.id, { node: shape, label });
     this.positionLabel(element.id);
   }
 
@@ -525,6 +705,21 @@ export class MapEditorComponent implements OnDestroy {
     this.assetService.getBySeries(seriesId).subscribe(assets => this.assets.set(assets));
   }
 
+  private loadPlaces(seriesId: string): void {
+    this.entityService.getBySeries(seriesId).subscribe(entities =>
+      this.placeEntities.set(entities.filter(e => e.type === 'PLACE').sort((a, b) => a.name.localeCompare(b.name)))
+    );
+  }
+
+  linkEntity(elementId: string, entityId: string | null): void {
+    this.elements.update(els => els.map(el =>
+      el.id === elementId && el.kind === 'image'
+        ? { ...el, entityId: entityId ?? undefined }
+        : el
+    ));
+    this.markDirty();
+  }
+
   onAssetDragStart(ev: DragEvent, asset: MapAsset): void {
     ev.dataTransfer?.setData('text/plain', asset.id);
   }
@@ -594,6 +789,36 @@ export class MapEditorComponent implements OnDestroy {
     this.markDirty();
   }
 
+  onBgImageFile(ev: Event): void {
+    const input = ev.target as HTMLInputElement;
+    const file = input.files?.[0];
+    if (!file || !this.map) return;
+    this.uploadingBg.set(true);
+    const formData = new FormData();
+    formData.append('file', file);
+    this.http.post<{ url: string; thumbnailUrl: string }>('/api/upload', formData).subscribe({
+      next: ({ url }) => {
+        this.bgImageUrl.set(url);
+        if (this.map) this.map.background.imageUrl = url;
+        this.uploadingBg.set(false);
+        this.markDirty();
+        this.zone.runOutsideAngular(() => this.renderBackground());
+        input.value = '';
+      },
+      error: () => {
+        this.uploadingBg.set(false);
+        input.value = '';
+      },
+    });
+  }
+
+  clearBgImage(): void {
+    this.bgImageUrl.set(null);
+    if (this.map) this.map.background.imageUrl = undefined;
+    this.markDirty();
+    this.zone.runOutsideAngular(() => this.renderBackground());
+  }
+
   // ===================== View transforms =====================
 
   private onWheel(e: Konva.KonvaEventObject<WheelEvent>): void {
@@ -661,9 +886,10 @@ export class MapEditorComponent implements OnDestroy {
       elements: this.elements(),
       background: {
         ...this.map.background,
-        kind: 'color',
+        kind: this.bgImageUrl() ? 'image' : 'color',
         color: this.bgColor(),
         gridSize: this.gridSize(),
+        imageUrl: this.bgImageUrl() ?? undefined,
       },
     };
     this.mapService.update(updated).subscribe({
@@ -673,6 +899,85 @@ export class MapEditorComponent implements OnDestroy {
       },
       error: () => this.saveStatus.set('error'),
     });
+  }
+
+  readonly savingPreview = signal(false);
+
+  /** Deselects everything, captures a clean snapshot, uploads it as the map thumbnail. */
+  savePreview(): void {
+    if (this.savingPreview()) return;
+    this.savingPreview.set(true);
+
+    this.zone.runOutsideAngular(() => {
+      // Hide selection handles and overlay for a clean capture.
+      this.transformer?.hide();
+      this.overlayLayer?.hide();
+      this.elementLayer?.batchDraw();
+
+      const dataUrl = this.captureSnapshot(0.8);
+
+      this.transformer?.show();
+      this.overlayLayer?.show();
+      this.elementLayer?.batchDraw();
+
+      if (!dataUrl) {
+        this.zone.run(() => this.savingPreview.set(false));
+        return;
+      }
+
+      const blob = this.dataUrlToBlob(dataUrl);
+      const file = new File([blob], 'map-snapshot.png', { type: 'image/png' });
+      const formData = new FormData();
+      formData.append('file', file);
+      this.zone.run(() => {
+        this.http.post<{ url: string; thumbnailUrl: string }>('/api/upload?thumbSize=1600', formData).subscribe({
+          next: ({ thumbnailUrl }) => {
+            if (!this.map) return;
+            const withThumb: SeriesMap = { ...this.map, thumbnailUrl };
+            this.mapService.update(withThumb).subscribe({
+              next: saved => { this.map = saved; this.savingPreview.set(false); },
+              error: () => this.savingPreview.set(false),
+            });
+          },
+          error: () => this.savingPreview.set(false),
+        });
+      });
+    });
+  }
+
+  /** Renders the full logical map to a data URL at the given pixel ratio,
+   *  temporarily overriding the stage's current pan/zoom. */
+  private captureSnapshot(pixelRatio: number): string | null {
+    if (!this.stage || !this.map) return null;
+    const { width, height } = this.map;
+    const prevScale = this.stage.scaleX();
+    const prevPos = this.stage.position();
+    const prevW = this.stage.width();
+    const prevH = this.stage.height();
+    try {
+      this.stage.scale({ x: 1, y: 1 });
+      this.stage.position({ x: 0, y: 0 });
+      this.stage.width(width);
+      this.stage.height(height);
+      return this.stage.toDataURL({ pixelRatio });
+    } catch {
+      return null;
+    } finally {
+      this.stage.width(prevW);
+      this.stage.height(prevH);
+      this.stage.scale({ x: prevScale, y: prevScale });
+      this.stage.position(prevPos);
+      this.stage.batchDraw();
+    }
+  }
+
+  private dataUrlToBlob(dataUrl: string): Blob {
+    const [header, data] = dataUrl.split(',');
+    const mime = header.match(/:(.*?);/)![1];
+    const binary = atob(data);
+    const bytes = new Uint8Array(binary.length);
+    for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+    return new Blob([bytes], { type: mime });
   }
 
   // ===================== Keyboard =====================

@@ -15,6 +15,11 @@ export interface PathPreset {
   strokeWidth: number;
   /** Konva line tension; > 0 produces a smooth curve. */
   tension: number;
+  /**
+   * When true the renderer draws a filled polygon with organically varying
+   * widths instead of a uniform stroke, simulating a natural river.
+   */
+  varyWidth?: boolean;
 }
 
 /**
@@ -33,7 +38,7 @@ export class MapElementRegistry {
   readonly defaultImageSize = 96;
 
   readonly pathPresets: readonly PathPreset[] = [
-    { typeId: 'river', name: 'River', icon: 'water', stroke: '#3a7bd5', strokeWidth: 6, tension: 0.5 },
+    { typeId: 'river', name: 'River', icon: 'water', stroke: '#3a7bd5', strokeWidth: 6, tension: 0.5, varyWidth: true },
     { typeId: 'road', name: 'Road', icon: 'route', stroke: '#8d6e4f', strokeWidth: 5, tension: 0 },
     { typeId: 'border', name: 'Border', icon: 'gesture', stroke: '#9c27b0', strokeWidth: 3, tension: 0 },
   ];

@@ -1,20 +1,30 @@
 <div class="editor">
   <!-- Top toolbar -->
   <div class="toolbar">
-    <button mat-icon-button (click)="back()" aria-label="Back to maps">
-      <mat-icon>arrow_back</mat-icon>
-    </button>
-
     <input class="title-input" [value]="title()" (input)="onTitle($any($event.target).value)"
            aria-label="Map title" placeholder="Map title" />
 
     <span class="toolbar-spacer"></span>
 
     <label class="bg-control">
-      <span>Background</span>
+      <span>Color</span>
       <input type="color" [value]="bgColor()" (input)="onBgColor($any($event.target).value)"
              aria-label="Background color" />
     </label>
+
+    <div class="bg-control">
+      <span>Background image</span>
+      @if (bgImageUrl()) {
+        <button mat-icon-button (click)="clearBgImage()" aria-label="Remove background image" matTooltip="Remove background image">
+          <mat-icon>hide_image</mat-icon>
+        </button>
+      } @else {
+        <button mat-icon-button (click)="bgFileInput.click()" [disabled]="uploadingBg()" aria-label="Upload background image" matTooltip="Upload background image">
+          @if (uploadingBg()) { <mat-spinner diameter="18" /> } @else { <mat-icon>add_photo_alternate</mat-icon> }
+        </button>
+      }
+      <input #bgFileInput type="file" accept="image/*,.svg" hidden (change)="onBgImageFile($event)" />
+    </div>
 
     <label class="bg-control">
       <span>Grid</span>
@@ -24,6 +34,16 @@
 
     <button mat-stroked-button (click)="resetView()">
       <mat-icon>fit_screen</mat-icon> Fit
+    </button>
+
+    <button mat-stroked-button (click)="savePreview()" [disabled]="savingPreview()"
+            aria-label="Save preview image" matTooltip="Capture a clean preview image for the map list">
+      @if (savingPreview()) {
+        <mat-spinner diameter="16" />
+      } @else {
+        <mat-icon>photo_camera</mat-icon>
+      }
+      Save preview
     </button>
 
     <span class="save-status" aria-live="polite">
@@ -37,7 +57,8 @@
 
   <div class="body">
     <!-- Palette -->
-    <aside class="palette" aria-label="Map element palette">
+    <aside class="palette" aria-label="Map element palette"
+          [style.width.px]="paletteWidth()" [style.flex-basis.px]="paletteWidth()">
       <h3>Stamps</h3>
       <button mat-stroked-button class="upload-btn" (click)="fileInput.click()" [disabled]="uploading()">
         @if (uploading()) { <mat-spinner diameter="18" /> } @else { <mat-icon>upload</mat-icon> }
@@ -86,13 +107,20 @@
       }
     </aside>
 
+    <div class="resizer" role="separator" aria-orientation="vertical" aria-label="Resize stamps panel"
+         (mousedown)="startResize($event, 'palette')"></div>
+
     <!-- Canvas -->
     <div #stageContainer class="stage" role="application"
          aria-label="Map canvas. Drag stamps from the palette, or use the element list to edit by keyboard."
          [class.stage--drawing]="drawing()"></div>
 
+    <div class="resizer" role="separator" aria-orientation="vertical" aria-label="Resize elements panel"
+         (mousedown)="startResize($event, 'props')"></div>
+
     <!-- Properties -->
-    <aside class="props" aria-label="Map element properties">
+    <aside class="props" aria-label="Map element properties"
+          [style.width.px]="propsWidth()" [style.flex-basis.px]="propsWidth()">
       <h3>Elements</h3>
       @if (elementsByZ().length === 0) {
         <p class="hint">No elements yet.</p>
@@ -122,6 +150,29 @@
                             (change)="toggleLabelVisible(sel.id, $event.checked)">
             Show label
           </mat-slide-toggle>
+
+          @if (sel.kind === 'image') {
+            <mat-form-field appearance="outline" class="full entity-link-field">
+              <mat-label>Linked place</mat-label>
+              <mat-select [value]="sel.entityId ?? null"
+                          (selectionChange)="linkEntity(sel.id, $event.value)"
+                          (openedChange)="!$event && placeFilter.set('')">
+                <div class="select-filter" (click)="$event.stopPropagation()">
+                  <input class="select-filter-input" placeholder="Filter places…"
+                         [value]="placeFilter()"
+                         (input)="placeFilter.set($any($event.target).value)"
+                         (keydown)="$event.stopPropagation()" />
+                </div>
+                <mat-option [value]="null">— None —</mat-option>
+                @for (place of filteredPlaces(); track place.id) {
+                  <mat-option [value]="place.id">{{ place.name }}</mat-option>
+                }
+              </mat-select>
+              @if (placeEntities().length === 0) {
+                <mat-hint>No Place entities in this series yet.</mat-hint>
+              }
+            </mat-form-field>
+          }
 
           <div class="prop-actions">
             <button mat-icon-button (click)="bringForward(sel.id)" aria-label="Bring forward" matTooltip="Bring forward">

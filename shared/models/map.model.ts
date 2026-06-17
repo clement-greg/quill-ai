@@ -41,6 +41,8 @@ export interface ImageElement extends BaseElement {
   /** Rotation in degrees, clockwise. */
   rotation: number;
   imageUrl: string;
+  /** Optional link to a Place entity in the same series. */
+  entityId?: string;
 }
 
 /** A multi-point line for rivers, roads, borders, etc. */
@@ -71,5 +73,7 @@ export interface SeriesMap extends AuditedRecord {
   height: number;
   background: MapBackground;
   elements: MapElement[];
+  /** Auto-generated snapshot URL (400px thumbnail via the shared /api/upload pipeline). */
+  thumbnailUrl?: string;
   archived?: boolean;
 }
