@@ -2,6 +2,7 @@ import {
   Component, inject, signal, computed, untracked, ViewChild, ElementRef, AfterViewChecked, OnInit, OnDestroy, HostListener, effect,
 } from '@angular/core';
 import { DomSanitizer, SafeHtml } from '@angular/platform-browser';
+import { Router } from '@angular/router';
 import { parse as parseMarkdown } from 'marked';
 import { FormsModule } from '@angular/forms';
 import { MatButtonModule } from '@angular/material/button';
@@ -12,7 +13,7 @@ import { MatSelectModule } from '@angular/material/select';
 import { AiAssistantService } from '../services/ai-assistant.service';
 import { SeriesContextService } from '../services/series-context.service';
 import { EditorBridgeService } from '../services/editor-bridge.service';
-import { ChatFolder, ChatMessageHighlight, ChatSessionMessage, ChatSessionSummary, FolderFile, FolderNote } from '@shared/models';
+import { ChapterCitation, ChatFolder, ChatMessageHighlight, ChatSessionMessage, ChatSessionSummary, FolderFile, FolderNote } from '@shared/models';
 import { RichTextEditorComponent } from '../shared/rich-text-editor/rich-text-editor';
 
 type SidebarItem = { kind: 'folder'; folder: ChatFolder; depth: number; trackId: string };
@@ -29,6 +30,7 @@ export class AiAssistantComponent implements OnInit, AfterViewChecked, OnDestroy
 
   readonly aiAssistant = inject(AiAssistantService);
   private sanitizer = inject(DomSanitizer);
+  private router = inject(Router);
   readonly seriesContext = inject(SeriesContextService);
   readonly editorBridge = inject(EditorBridgeService);
 
@@ -1018,16 +1020,62 @@ export class AiAssistantComponent implements OnInit, AfterViewChecked, OnDestroy
 
   renderMessageHtml(msg: ChatSessionMessage, absoluteIndex: number): SafeHtml {
     const highlights = msg.highlights ?? [];
-    const cacheKey = `${absoluteIndex}:${msg.text}:${JSON.stringify(highlights)}`;
+    const sources = msg.sources ?? [];
+    const cacheKey = `${absoluteIndex}:${msg.text}:${JSON.stringify(highlights)}:${JSON.stringify(sources)}`;
     const cached = this.renderCache.get(cacheKey);
     if (cached) return cached;
     const rawHtml = parseMarkdown(msg.text) as string;
-    const html = highlights.length
+    let html = highlights.length
       ? this.applyHighlightsToHtml(rawHtml, highlights, absoluteIndex)
       : rawHtml;
+    if (sources.length) html = this.decorateCitations(html, sources);
     const result = this.sanitizer.bypassSecurityTrustHtml(html);
     this.renderCache.set(cacheKey, result);
     return result;
+  }
+
+  /**
+   * Turns inline `[n]` markers into clickable citation links and appends a
+   * Sources footer, both navigating to the referenced chapter. Links carry a
+   * data-chapter-id consumed by onCitationClick via event delegation.
+   */
+  private decorateCitations(html: string, sources: ChapterCitation[]): string {
+    const byNumber = new Map(sources.map(s => [s.n, s]));
+    // Match a single [1] or grouped [1][2] / [1, 2] citations and link each number.
+    const withInline = html.replace(/\[(\d+(?:\s*,\s*\d+)*)\](?:\s*\[(\d+(?:\s*,\s*\d+)*)\])*/g, match => {
+      const numbers = match.match(/\d+/g) ?? [];
+      const links = numbers
+        .map(digits => {
+          const source = byNumber.get(Number(digits));
+          if (!source) return `[${digits}]`;
+          const title = this.escapeHtml(source.title);
+          return `<a class="chapter-citation" data-chapter-id="${this.escapeHtml(source.chapterId)}" title="Go to ${title}">[${digits}]</a>`;
+        })
+        .join('');
+      return links;
+    });
+    const links = sources
+      .map(s => `<a class="chapter-citation" data-chapter-id="${this.escapeHtml(s.chapterId)}">${s.n}. ${this.escapeHtml(s.title)}</a>`)
+      .join('');
+    return `${withInline}<div class="chat-sources"><span class="chat-sources-label">Sources</span>${links}</div>`;
+  }
+
+  private escapeHtml(value: string): string {
+    return value
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;');
+  }
+
+  /** Event delegation for citation links rendered via [innerHTML]. */
+  onCitationClick(event: MouseEvent): void {
+    const target = (event.target as HTMLElement | null)?.closest('[data-chapter-id]') as HTMLElement | null;
+    if (!target) return;
+    const chapterId = target.dataset['chapterId'];
+    if (!chapterId) return;
+    event.preventDefault();
+    this.router.navigate(['/chapters', chapterId, 'edit']);
   }
 
   private applyHighlightsToHtml(rawHtml: string, highlights: ChatMessageHighlight[], msgIndex: number): string {

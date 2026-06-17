@@ -1,6 +1,6 @@
 import { Router, Request, Response } from 'express';
 import { getContainer } from '../cosmos';
-import { generateEmbedding } from '../embeddings';
+import { reindexChapterChunks, deleteChapterChunks } from '../chapter-chunks';
 import { Chapter } from '../../shared/models/chapter.model';
 import { Book } from '../../shared/models/book.model';
 import { Series } from '../../shared/models/series.model';
@@ -100,13 +100,6 @@ router.post('/', async (req: Request, res: Response) => {
       res.status(400).json({ error: 'Book is required' });
       return;
     }
-    if (chapter.content) {
-      try {
-        chapter.contentVector = await generateEmbedding(chapter.content);
-      } catch (embErr) {
-        console.error('Failed to generate embedding for new chapter:', embErr);
-      }
-    }
     const now = new Date().toISOString();
     chapter.owner = chapter.owner || req.user!.email;
     chapter.createdBy = req.user!.email;
@@ -114,10 +107,34 @@ router.post('/', async (req: Request, res: Response) => {
     chapter.modifiedBy = req.user!.email;
     chapter.modifiedAt = now;
     const { resource } = await container.items.create<Chapter>(chapter);
+    if (resource) await reindexChapterChunks(resource);
     res.status(201).json(resource);
   } catch (err) {
     console.error('Error creating chapter:', err);
     res.status(500).json({ error: 'Failed to create chapter' });
+  }
+});
+
+// POST reindex-all — (re)build chunk embeddings for every chapter the user owns.
+// One-time backfill / repair so semantic search has consistent, fully-populated
+// chunks (owner, bookId, seriesId, vectors). Runs sequentially to avoid hammering
+// the embedding service.
+router.post('/reindex-all', async (req: Request, res: Response) => {
+  try {
+    const { resources } = await container.items
+      .query<Chapter>(withOwnerFilter(req, 'SELECT * FROM c'))
+      .fetchAll();
+
+    let reindexed = 0;
+    for (const chapter of resources) {
+      await reindexChapterChunks(chapter);
+      reindexed++;
+    }
+    console.log(`[reindex-all] reindexed ${reindexed} chapter(s) for ${req.user!.email}`);
+    res.json({ reindexed });
+  } catch (err) {
+    console.error('Error reindexing chapters:', err);
+    res.status(500).json({ error: 'Failed to reindex chapters' });
   }
 });
 
@@ -145,16 +162,11 @@ router.put('/:id', async (req: Request, res: Response) => {
   try {
     const id = req.params['id'] as string;
     const chapter: Chapter = { ...req.body, id, owner: req.body.owner || req.user!.email, modifiedBy: req.user!.email, modifiedAt: new Date().toISOString() };
-    if (chapter.content) {
-      try {
-        chapter.contentVector = await generateEmbedding(chapter.content);
-      } catch (embErr) {
-        console.error('Failed to generate embedding for chapter update:', embErr);
-      }
-    } else {
-      delete chapter.contentVector;
-    }
+    // Embeddings now live in the chapter-chunks container; strip any legacy
+    // whole-chapter vector so it doesn't linger on the document (lazy migration).
+    delete (chapter as { contentVector?: unknown }).contentVector;
     const { resource } = await container.item(id, id).replace<Chapter>(chapter);
+    if (resource) await reindexChapterChunks(resource);
     res.json(resource);
   } catch (err) {
     console.error('Error updating chapter:', err);
@@ -213,6 +225,7 @@ router.delete('/:id', async (req: Request, res: Response) => {
   try {
     const id = req.params['id'] as string;
     await container.item(id, id).delete();
+    await deleteChapterChunks(id);
     res.status(204).send();
   } catch (err) {
     console.error('Error deleting chapter:', err);

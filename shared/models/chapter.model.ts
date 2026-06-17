@@ -21,7 +21,6 @@ export interface Chapter extends AuditedRecord {
     id: string;
     bookId: string;
     content?: string;
-    contentVector?: number[];
     notes?: ChapterNote[];
     sortOrder?: number;
     imageUrl?: string;

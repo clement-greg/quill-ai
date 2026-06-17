@@ -5,12 +5,20 @@ export interface ChatMessageHighlight {
   color: string;
 }
 
+/** A retrieved chapter that an assistant answer drew on, for clickable citations. */
+export interface ChapterCitation {
+  n: number;         // citation number referenced inline as [n]
+  chapterId: string; // navigate to /chapters/:chapterId/edit
+  title: string;
+}
+
 export interface ChatSessionMessage {
   role: 'user' | 'assistant';
   text: string;
   imageUrl?: string;
   generatingImage?: boolean;
   highlights?: ChatMessageHighlight[];
+  sources?: ChapterCitation[];
 }
 
 export interface ChatSession {

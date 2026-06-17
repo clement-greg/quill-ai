@@ -14,3 +14,19 @@ export async function generateEmbedding(text: string): Promise<number[]> {
   });
   return response.data[0].embedding;
 }
+
+/**
+ * Generates embeddings for many texts in a single request. The embeddings API
+ * accepts an array input and returns one vector per input, preserving order.
+ * Returns an empty array if given no texts.
+ */
+export async function generateEmbeddings(texts: string[]): Promise<number[][]> {
+  if (texts.length === 0) return [];
+  const response = await client.embeddings.create({
+    model: config.foundry.embeddingModel,
+    input: texts,
+  });
+  return response.data
+    .sort((a, b) => a.index - b.index)
+    .map(d => d.embedding);
+}

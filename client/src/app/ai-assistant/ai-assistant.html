@@ -413,7 +413,7 @@
                   </a>
                 </div>
               } @else {
-                <div class="chat-markdown" [innerHTML]="renderMessageHtml(msg, $index)"></div>
+                <div class="chat-markdown" (click)="onCitationClick($event)" [innerHTML]="renderMessageHtml(msg, $index)"></div>
               }
             } @else {
               <p>{{ msg.text }}</p>

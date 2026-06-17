@@ -14,12 +14,17 @@ import { UserSettingsService } from './services/user-settings.service';
 import { ExplorerService } from './services/explorer.service';
 import { BreadcrumbDropdownComponent } from './shared/breadcrumb-dropdown/breadcrumb-dropdown';
 import { AppExplorerComponent } from './shared/app-explorer/app-explorer';
+import { QuickChatComponent } from './quick-chat/quick-chat';
+import { QuickChatService } from './services/quick-chat.service';
 
 @Component({
   selector: 'app-root',
-  imports: [RouterOutlet, RouterLink, MatToolbarModule, MatButtonModule, MatIconModule, AiAssistantComponent, BreadcrumbDropdownComponent, AppExplorerComponent],
+  imports: [RouterOutlet, RouterLink, MatToolbarModule, MatButtonModule, MatIconModule, AiAssistantComponent, BreadcrumbDropdownComponent, AppExplorerComponent, QuickChatComponent],
   templateUrl: './app.html',
-  styleUrl: './app.scss'
+  styleUrl: './app.scss',
+  host: {
+    '(document:keydown)': 'onGlobalKeyDown($event)',
+  },
 })
 export class App implements OnInit, OnDestroy {
   auth = inject(AuthService);
@@ -28,8 +33,18 @@ export class App implements OnInit, OnDestroy {
   aiAssistant = inject(AiAssistantService);
   explorer = inject(ExplorerService);
   private router = inject(Router);
+  private quickChat = inject(QuickChatService);
   settings = inject(UserSettingsService);
   readonly isResizing = signal(false);
+
+  /** Global shortcut: Ctrl/Cmd+I toggles the quick-launch "Ask Quill" chat. */
+  onGlobalKeyDown(event: KeyboardEvent): void {
+    if ((event.ctrlKey || event.metaKey) && !event.altKey && !event.shiftKey && event.key.toLowerCase() === 'i') {
+      if (!this.auth.currentUser()) return;
+      event.preventDefault();
+      this.quickChat.toggle();
+    }
+  }
 
   private panelWidthEffect = effect(() => {
     document.documentElement.style.setProperty(

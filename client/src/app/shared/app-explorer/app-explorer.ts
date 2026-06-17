@@ -6,6 +6,7 @@ import { MatDividerModule } from '@angular/material/divider';
 import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
 import { ExplorerService } from '../../services/explorer.service';
 import { AiAssistantService } from '../../services/ai-assistant.service';
+import { QuickChatService } from '../../services/quick-chat.service';
 import { AuthService } from '../../auth/auth.service';
 import { HeaderService } from '../../services/header.service';
 import { SeriesContextService } from '../../services/series-context.service';
@@ -27,6 +28,7 @@ export class AppExplorerComponent {
   readonly explorer = inject(ExplorerService);
   readonly header = inject(HeaderService);
   private readonly aiAssistant = inject(AiAssistantService);
+  private readonly quickChat = inject(QuickChatService);
   private readonly auth = inject(AuthService);
   private readonly seriesContext = inject(SeriesContextService);
   private readonly router = inject(Router);
@@ -48,6 +50,7 @@ export class AppExplorerComponent {
   readonly primaryActions = computed<ExplorerAction[]>(() =>
     this.byQuery([
       { icon: 'smart_toy', label: 'Resource Manager', run: () => this.openResourceManager() },
+      { icon: 'forum', label: 'Ask Quill', run: () => this.openQuickChat() },
       { icon: 'people', label: 'Entities', run: () => this.navigateTo(['/entities']) },
       { icon: 'account_tree', label: 'Relationships', run: () => this.navigateToRelationships() },
       { icon: 'photo_library', label: 'Photo Gallery', run: () => this.navigateTo(['/gallery']) },
@@ -95,6 +98,10 @@ export class AppExplorerComponent {
 
   openResourceManager(): void {
     this.closeThen(() => this.aiAssistant.togglePanel());
+  }
+
+  openQuickChat(): void {
+    this.closeThen(() => this.quickChat.open());
   }
 
   navigateToRelationships(): void {

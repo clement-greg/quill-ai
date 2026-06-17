@@ -1,0 +1,93 @@
+@if (quickChat.isOpen()) {
+  <div class="qc-backdrop" (click)="quickChat.close()"></div>
+
+  <div class="qc-card" role="dialog" aria-label="Ask Quill" animate.enter="qc-pop-in">
+    <header class="qc-header">
+      <div class="qc-title-group">
+        <mat-icon class="qc-title-icon">forum</mat-icon>
+        <div>
+          <div class="qc-title">Ask Quill</div>
+          <div class="qc-subtitle">Answers grounded in all your stories</div>
+        </div>
+      </div>
+      <div class="qc-header-actions">
+        <button mat-icon-button (click)="newChat()" matTooltip="New chat" aria-label="New chat"
+                [disabled]="quickChat.messages().length === 0">
+          <mat-icon>add_comment</mat-icon>
+        </button>
+        <button mat-icon-button (click)="openSaveDialog()" matTooltip="Save conversation" aria-label="Save conversation"
+                [disabled]="!canSave()">
+          <mat-icon>save</mat-icon>
+        </button>
+        <button mat-icon-button (click)="quickChat.close()" matTooltip="Close (Esc)" aria-label="Close">
+          <mat-icon>close</mat-icon>
+        </button>
+      </div>
+    </header>
+
+    @if (justSaved()) {
+      <div class="qc-saved-banner" role="status">
+        <mat-icon>check_circle</mat-icon>
+        <span>Saved to the Resource Manager.</span>
+      </div>
+    }
+
+    <div class="qc-messages" #messagesEl>
+      @if (quickChat.messages().length === 0) {
+        <div class="qc-empty">
+          <mat-icon class="qc-empty-icon">auto_stories</mat-icon>
+          <p class="qc-empty-title">Ask anything about your books</p>
+          <p class="qc-empty-hint">e.g. “What do we know about the protagonist's backstory?” or a general writing question.</p>
+        </div>
+      }
+      @for (msg of quickChat.messages(); track $index; let last = $last) {
+        <div class="qc-message"
+             [class.user]="msg.role === 'user'"
+             [class.assistant]="msg.role === 'assistant'"
+             [class.streaming]="last && msg.role === 'assistant' && quickChat.streaming()">
+          <span class="qc-role">{{ msg.role === 'user' ? 'You' : 'Quill' }}</span>
+          @if (msg.role === 'assistant') {
+            @if (last && quickChat.streaming() && !msg.text) {
+              <div class="qc-thinking"><mat-spinner diameter="16"></mat-spinner><span>Thinking…</span></div>
+            } @else {
+              <div class="qc-markdown" (click)="onCitationClick($event)" [innerHTML]="renderHtml(msg)"></div>
+            }
+          } @else {
+            <p class="qc-user-text">{{ msg.text }}</p>
+          }
+        </div>
+      }
+    </div>
+
+    <div class="qc-input-area">
+      @if (acOpen() && acItems().length > 0) {
+        <ul class="qc-autocomplete" role="listbox" aria-label="Entity suggestions">
+          @for (e of acItems(); track e.id; let i = $index) {
+            <li class="qc-ac-item" role="option"
+                [class.active]="i === acIndex()"
+                [attr.aria-selected]="i === acIndex()"
+                (mouseenter)="acIndex.set(i)"
+                (mousedown)="onItemMouseDown($event, e)">
+              <mat-icon class="qc-ac-icon">{{ entityIcon(e) }}</mat-icon>
+              <span class="qc-ac-name">{{ e.name }}</span>
+              <span class="qc-ac-type">{{ entityTypeLabel(e) }}</span>
+            </li>
+          }
+        </ul>
+      }
+      <textarea class="qc-textarea" #inputEl
+                placeholder="Ask about your books… (Enter to send, Shift+Enter for new line)"
+                rows="2"
+                aria-label="Message Quill"
+                [value]="input()"
+                (input)="onInput($any($event.target).value)"
+                (keydown)="onKeyDown($event)"
+                (blur)="closeAutocomplete()"></textarea>
+      <button mat-icon-button class="qc-send" aria-label="Send"
+              [disabled]="quickChat.streaming() || !input().trim()"
+              (click)="send()">
+        <mat-icon>{{ quickChat.streaming() ? 'hourglass_top' : 'send' }}</mat-icon>
+      </button>
+    </div>
+  </div>
+}

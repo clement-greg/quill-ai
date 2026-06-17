@@ -1,5 +1,5 @@
 import { Injectable, inject, signal, computed } from '@angular/core';
-import { ChatFolder, ChatMessageHighlight, ChatSession, ChatSessionMessage, ChatSessionSummary, FolderFile, FolderNote } from '@shared/models';
+import { ChapterCitation, ChatFolder, ChatMessageHighlight, ChatSession, ChatSessionMessage, ChatSessionSummary, FolderFile, FolderNote } from '@shared/models';
 import { Series } from '@shared/models/series.model';
 import { SeriesContextService } from './series-context.service';
 
@@ -458,11 +458,13 @@ export class AiAssistantService {
           const data = line.slice(6);
           if (data === '[DONE]') continue;
           try {
-            const parsed = JSON.parse(data) as { content?: string; error?: string };
+            const parsed = JSON.parse(data) as { content?: string; error?: string; sources?: ChapterCitation[] };
             if (parsed.error) {
               this.updateLastAssistantMessage(`Error: ${parsed.error}`);
             } else if (parsed.content) {
               this.appendToLastAssistantMessage(parsed.content);
+            } else if (parsed.sources) {
+              this.setLastAssistantSources(parsed.sources);
             }
           } catch {
             // Skip malformed SSE chunk
@@ -525,11 +527,12 @@ export class AiAssistantService {
     if (!finalSession) return;
     const persistMessages = finalSession.messages
       .filter(m => m.text || m.imageUrl)
-      .map(({ role, text, imageUrl, highlights }) => ({
+      .map(({ role, text, imageUrl, highlights, sources }) => ({
         role,
         text,
         ...(imageUrl ? { imageUrl } : {}),
         ...(highlights?.length ? { highlights } : {}),
+        ...(sources?.length ? { sources } : {}),
       }));
     try {
       await this.authFetch(`/api/chat-sessions/${sessionId}`, {
@@ -608,6 +611,16 @@ export class AiAssistantService {
       const msgs = [...s.messages];
       const last = msgs[msgs.length - 1];
       msgs[msgs.length - 1] = { ...last, text: last.text + delta };
+      return { ...s, messages: msgs };
+    });
+  }
+
+  private setLastAssistantSources(sources: ChapterCitation[]): void {
+    this.activeSession.update(s => {
+      if (!s) return s;
+      const msgs = [...s.messages];
+      const last = msgs[msgs.length - 1];
+      msgs[msgs.length - 1] = { ...last, sources };
       return { ...s, messages: msgs };
     });
   }

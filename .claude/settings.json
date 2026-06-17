@@ -3,7 +3,16 @@
     "allow": [
       "Bash(grep -E \"\\\\.\\(ts|html\\)$\")",
       "Bash(xargs grep -l \"entity.*detail\\\\|entity.*view\")",
-      "Bash(grep -E \"\\\\.ts$\")"
+      "Bash(grep -E \"\\\\.ts$\")",
+      "Bash(xargs -0 grep -l \"VectorDistance\\\\|semantic.*search\\\\|similarity\")",
+      "Bash(grep -r \"contentVector\" /c/Users/gregb/source/repros/personal/quill-ai --include=\"*.ts\" --include=\"*.js\" ! -path \"*/node_modules/*\" ! -path \"*/.angular/*\" -B 2 -A 2)",
+      "Bash(grep -r \"contentVector\" /c/Users/gregb/source/repros/personal/quill-ai --include=\"*.ts\" ! -path \"*/node_modules/*\" -n)",
+      "Bash(git log *)",
+      "PowerShell(npx tsc --noEmit)",
+      "PowerShell(npx jest --silent 2>&1)",
+      "PowerShell(npx jest chunking --silent 2>&1)",
+      "Bash(node -e ' *)",
+      "Bash(npx ng *)"
     ]
   }
 }

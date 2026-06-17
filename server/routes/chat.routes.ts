@@ -2,6 +2,7 @@ import { Router, Request, Response } from 'express';
 import { AzureOpenAI } from 'openai';
 import config from '../config';
 import { getContainer } from '../cosmos';
+import { searchChapterChunks } from '../chapter-chunks';
 import { Chapter } from '../../shared/models/chapter.model';
 import { Book } from '../../shared/models/book.model';
 import { Entity } from '../../shared/models/entity.model';
@@ -150,13 +151,34 @@ router.post('/:chapterId', async (req: Request, res: Response) => {
     const container = getContainer('chapters');
     const { resource } = await container.item(chapterId, chapterId).read<Chapter>();
     if (resource) {
-      const rawText = (resource.content ?? '').replace(/<[^>]+>/g, '').trim();
-      const plainText = rawText.length > 12000 ? rawText.slice(0, 12000) + '\n[...chapter truncated for context...]' : rawText;
-      systemPrompt =
-        `You are a helpful writing assistant helping an author with their story chapter titled "${resource.title}". Provide only the requested content in plain text. Do not use markdown, HTML, or any formatting. Do not include conversational filler, preamble, or meta-commentary such as "Sure, here you go" or "Let me generate that for you."` +
-        (plainText
-          ? `\n\nHere is the current chapter content:\n\n${plainText}`
-          : '');
+      const basePrompt = `You are a helpful writing assistant helping an author with their story chapter titled "${resource.title}". Provide only the requested content in plain text. Do not use markdown, HTML, or any formatting. Do not include conversational filler, preamble, or meta-commentary such as "Sure, here you go" or "Let me generate that for you."`;
+
+      // RAG: retrieve the passages from across this book most relevant to the
+      // request, instead of dumping the whole chapter into the prompt. Book-wide
+      // scope lets the assistant answer questions whose answer lives in another
+      // chapter; relevance ranking still surfaces the current chapter when apt.
+      const lastUserMessage = [...messages].reverse().find(m => m.role === 'user');
+      const retrievalQuery = [selectedText, lastUserMessage?.content].filter(Boolean).join('\n\n').trim();
+      let chapterContext = '';
+      if (retrievalQuery) {
+        const chunks = await searchChapterChunks(retrievalQuery, { bookId: resource.bookId, topK: 6 }, req);
+        console.log(`[chat RAG] book=${resource.bookId} retrieved ${chunks.length} chunk(s) for query: ${retrievalQuery.slice(0, 80)}`);
+        if (chunks.length > 0) {
+          const excerpts = chunks.map(c => c.content).join('\n\n---\n\n');
+          chapterContext = `\n\nHere are the most relevant excerpts from the book:\n\n${excerpts}`;
+        }
+      }
+
+      // Fallback: chapter not yet chunked (lazy migration) or search unavailable —
+      // dump the chapter content as before, truncated for context size.
+      if (!chapterContext) {
+        console.log(`[chat RAG] chapter=${chapterId} falling back to full-chapter dump (no chunks found)`);
+        const rawText = (resource.content ?? '').replace(/<[^>]+>/g, '').trim();
+        const plainText = rawText.length > 12000 ? rawText.slice(0, 12000) + '\n[...chapter truncated for context...]' : rawText;
+        if (plainText) chapterContext = `\n\nHere is the current chapter content:\n\n${plainText}`;
+      }
+
+      systemPrompt = basePrompt + chapterContext;
 
       // When rewording selected text, find the speaker and use their personality profile
       if (selectedText) {
