@@ -3,7 +3,7 @@ import { getContainer } from '../cosmos';
 import { RecentChapter } from '../../shared/models/recent-chapter.model';
 
 const router = Router();
-const MAX_ITEMS = 5;
+const MAX_ITEMS = 4;
 
 // GET /api/recent-chapters
 router.get('/', async (req: Request, res: Response): Promise<void> => {

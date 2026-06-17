@@ -5,17 +5,18 @@ import { RecentChapter } from '@shared/models/recent-chapter.model';
 
 export type { RecentChapter };
 
-const MAX_ITEMS = 5;
+const MAX_ITEMS = 4;
 
 @Injectable({ providedIn: 'root' })
 export class RecentChaptersService {
   private http = inject(HttpClient);
   private readonly _items = signal<RecentChapter[]>([]);
+  private readonly _loaded: Promise<void>;
 
   readonly recentChapters = this._items.asReadonly();
 
   constructor() {
-    this.loadFromServer();
+    this._loaded = this.loadFromServer();
   }
 
   private async loadFromServer(): Promise<void> {
@@ -27,7 +28,8 @@ export class RecentChaptersService {
     }
   }
 
-  record(entry: Omit<RecentChapter, 'visitedAt'>): void {
+  async record(entry: Omit<RecentChapter, 'visitedAt'>): Promise<void> {
+    await this._loaded;
     const updated = [
       { ...entry, visitedAt: Date.now() },
       ...this._items().filter(i => i.chapterId !== entry.chapterId),

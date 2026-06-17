@@ -56,6 +56,14 @@ import { HeaderService } from '../../services/header.service';
                   {{ map.elements.length }} {{ map.elements.length === 1 ? 'element' : 'elements' }}
                 </mat-card-subtitle>
               </mat-card-header>
+              <button class="card-delete"
+                      [class.card-delete--armed]="pendingDeleteId() === map.id"
+                      (click)="requestDelete($event, map.id)"
+                      [attr.aria-label]="pendingDeleteId() === map.id ? 'Confirm delete ' + map.title : 'Delete ' + map.title"
+                      [matTooltip]="pendingDeleteId() === map.id ? 'Click again to confirm' : 'Delete map'"
+                      type="button">
+                <mat-icon aria-hidden="true">{{ pendingDeleteId() === map.id ? 'warning' : 'delete' }}</mat-icon>
+              </button>
             </mat-card>
           }
         </div>
@@ -106,11 +114,49 @@ import { HeaderService } from '../../services/header.service';
 
     .map-card {
       cursor: pointer;
-      overflow: hidden;
+      overflow: visible;
+      position: relative;
       transition: box-shadow 0.18s ease, transform 0.18s ease;
 
       &:hover { box-shadow: 0 6px 18px rgba(0,0,0,0.25); transform: translateY(-2px); }
       &:focus-visible { outline: 2px solid var(--mat-sys-primary); outline-offset: 2px; }
+
+      .card-delete {
+        display: none;
+        position: absolute;
+        top: -8px;
+        right: -8px;
+        width: 28px;
+        height: 28px;
+        padding: 0;
+        border: none;
+        border-radius: 50%;
+        background: rgba(0,0,0,0.55);
+        color: #fff;
+        cursor: pointer;
+        align-items: center;
+        justify-content: center;
+        z-index: 2;
+        transition: background 0.15s;
+
+        mat-icon { font-size: 16px; width: 16px; height: 16px; line-height: 16px; }
+
+        &--armed {
+          display: flex;
+          background: var(--mat-sys-error, #b3261e);
+          animation: armed-pulse 0.6s ease infinite alternate;
+        }
+
+        &:hover { background: var(--mat-sys-error, #b3261e); }
+        &:focus-visible { outline: 2px solid var(--mat-sys-primary); display: flex; }
+      }
+
+      &:hover .card-delete { display: flex; }
+    }
+
+    @keyframes armed-pulse {
+      from { box-shadow: 0 0 0 0 rgba(179,38,30,0.6); }
+      to   { box-shadow: 0 0 0 6px rgba(179,38,30,0); }
     }
 
     .map-card-thumb {
@@ -120,6 +166,7 @@ import { HeaderService } from '../../services/header.service';
       justify-content: center;
       overflow: hidden;
       position: relative;
+      border-radius: 12px 12px 0 0;
 
       img {
         position: absolute;
@@ -217,6 +264,8 @@ export class MapListComponent implements OnInit, OnDestroy {
   readonly loading = signal(true);
   readonly creating = signal(false);
   readonly previewMap = signal<SeriesMap | null>(null);
+  readonly pendingDeleteId = signal<string | null>(null);
+  private deleteConfirmTimer?: ReturnType<typeof setTimeout>;
 
   @HostListener('document:keydown.escape')
   onEscape(): void {
@@ -246,6 +295,7 @@ export class MapListComponent implements OnInit, OnDestroy {
   ngOnDestroy(): void {
     this.sub?.unsubscribe();
     this.headerService.clearAll();
+    clearTimeout(this.deleteConfirmTimer);
   }
 
   private load(seriesId: string): void {
@@ -295,6 +345,23 @@ export class MapListComponent implements OnInit, OnDestroy {
 
   edit(map: SeriesMap): void {
     this.router.navigate(['/maps', map.id]);
+  }
+
+  requestDelete(event: Event, mapId: string): void {
+    event.stopPropagation();
+    if (this.pendingDeleteId() === mapId) {
+      // Second click — confirmed
+      clearTimeout(this.deleteConfirmTimer);
+      this.pendingDeleteId.set(null);
+      this.mapService.delete(mapId).subscribe({
+        next: () => this.maps.update(list => list.filter(m => m.id !== mapId)),
+      });
+    } else {
+      // First click — arm the confirmation, auto-cancel after 3 s
+      this.pendingDeleteId.set(mapId);
+      clearTimeout(this.deleteConfirmTimer);
+      this.deleteConfirmTimer = setTimeout(() => this.pendingDeleteId.set(null), 3000);
+    }
   }
 
   proxyUrl(url: string): string {
