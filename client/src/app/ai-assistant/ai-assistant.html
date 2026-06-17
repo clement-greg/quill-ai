@@ -403,16 +403,34 @@
                   <mat-spinner diameter="20"></mat-spinner>
                   <span>Generating image…</span>
                 </div>
-              } @else if (msg.imageUrl) {
+              }
+              @if (msg.imageUrl) {
                 <div class="chat-image-container">
-                  <img [src]="proxyUrl(msg.imageUrl)" alt="Generated image" class="chat-generated-image" />
-                  <a [href]="proxyUrl(msg.imageUrl)" download="generated-image.png"
-                     mat-stroked-button class="chat-image-download">
-                    <mat-icon>download</mat-icon>
-                    Download
-                  </a>
+                  <button type="button" class="chat-image-button"
+                          (click)="openLightbox(msg.imageUrl!)"
+                          matTooltip="View full resolution">
+                    <img [src]="proxyUrl(msg.thumbnailUrl || msg.imageUrl)" alt="Generated image" class="chat-generated-image" />
+                  </button>
+                  <div class="chat-image-actions">
+                    <a [href]="proxyUrl(msg.imageUrl)" download="generated-image.png"
+                       mat-stroked-button class="chat-image-action" matTooltip="Download">
+                      <mat-icon>download</mat-icon>
+                      Download
+                    </a>
+                    <button mat-stroked-button class="chat-image-action"
+                            (click)="saveToGallery(msg)" matTooltip="Save to an entity's gallery">
+                      <mat-icon>collections</mat-icon>
+                      Save to gallery
+                    </button>
+                    <button mat-stroked-button class="chat-image-action"
+                            (click)="saveToResourceManager(msg)" matTooltip="Save to a Resource Manager folder">
+                      <mat-icon>folder</mat-icon>
+                      Save to files
+                    </button>
+                  </div>
                 </div>
-              } @else {
+              }
+              @if (msg.text) {
                 <div class="chat-markdown" (click)="onCitationClick($event)" [innerHTML]="renderMessageHtml(msg, $index)"></div>
               }
             } @else {
@@ -500,6 +518,22 @@
 <!-- Backdrop -->
 @if (aiAssistant.isOpen()) {
   <div class="ai-backdrop" (click)="aiAssistant.closePanel()"></div>
+}
+
+<!-- Full-resolution image lightbox -->
+@if (lightboxUrl()) {
+  <div class="image-lightbox" (click)="closeLightbox()">
+    <button mat-icon-button class="image-lightbox-close" (click)="closeLightbox()" matTooltip="Close">
+      <mat-icon>close</mat-icon>
+    </button>
+    <img class="image-lightbox-img" [src]="lightboxUrl()" alt="Generated image, full resolution"
+         (click)="$event.stopPropagation()" />
+  </div>
+}
+
+<!-- Transient save confirmation -->
+@if (imageToast()) {
+  <div class="image-toast" role="status">{{ imageToast() }}</div>
 }
 
 <!-- Folder context menu (outside sidebar to avoid overflow clipping) -->

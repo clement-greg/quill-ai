@@ -363,11 +363,6 @@ export class AiAssistantService {
 
   private abortController: AbortController | null = null;
 
-  private isImageRequest(text: string): boolean {
-    return /\b(generate|create|draw|make|produce|illustrate)\b[\s\S]{0,60}\b(image|picture|illustration|artwork|photo|painting|photograph)\b/i.test(text) ||
-           /\b(image|draw|illustrate|paint|photo)\s*:/i.test(text);
-  }
-
   async sendMessage(text: string): Promise<void> {
     let session = this.activeSession();
     if (!session || this.streaming()) return;
@@ -385,40 +380,9 @@ export class AiAssistantService {
     const userMsg: ChatSessionMessage = { role: 'user', text };
     const updatedMessages: ChatSessionMessage[] = [...session.messages, userMsg];
 
-    // ── Image generation path ────────────────────────────────────────────────
-    if (this.isImageRequest(text)) {
-      const generatingPlaceholder: ChatSessionMessage = { role: 'assistant', text: 'Generating image…', generatingImage: true };
-      this.activeSession.set({ ...session, messages: [...updatedMessages, generatingPlaceholder] });
-      this.streaming.set(true);
-
-      try {
-        const imgRes = await this.authFetch('/api/image/generate', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ prompt: text }),
-        });
-        if (imgRes.ok) {
-          const imgData = await imgRes.json() as { url: string; thumbnailUrl: string };
-          this.updateLastAssistantMessage('');
-          this.setLastAssistantImageUrl(imgData.url);
-        } else {
-          this.updateLastAssistantMessage('Error: image generation failed.');
-          this.clearLastAssistantGenerating();
-        }
-      } catch {
-        this.updateLastAssistantMessage('Error: could not connect to image generation service.');
-        this.clearLastAssistantGenerating();
-      } finally {
-        this.streaming.set(false);
-        await this.persistSessionMessages(session.id);
-        if (session.name === 'New Chat' && updatedMessages.length === 1) {
-          this.autoNameSession(session.id, updatedMessages.map(m => ({ role: m.role, content: m.text })));
-        }
-      }
-      return;
-    }
-
-    // ── Text streaming path ──────────────────────────────────────────────────
+    // ── Streaming path ─────────────────────────────────────────────────────
+    // The model decides whether to answer with text or call the image-generation
+    // tool; image results arrive as an `image` SSE side-effect mid-stream.
     const assistantPlaceholder: ChatSessionMessage = { role: 'assistant', text: '' };
 
     this.activeSession.set({ ...session, messages: [...updatedMessages, assistantPlaceholder] });
@@ -458,9 +422,22 @@ export class AiAssistantService {
           const data = line.slice(6);
           if (data === '[DONE]') continue;
           try {
-            const parsed = JSON.parse(data) as { content?: string; error?: string; sources?: ChapterCitation[] };
+            const parsed = JSON.parse(data) as {
+              content?: string;
+              error?: string;
+              sources?: ChapterCitation[];
+              generatingImage?: boolean;
+              image?: { url: string; thumbnailUrl: string; prompt?: string };
+              imageError?: boolean;
+            };
             if (parsed.error) {
               this.updateLastAssistantMessage(`Error: ${parsed.error}`);
+            } else if (parsed.generatingImage) {
+              this.setLastAssistantGenerating(true);
+            } else if (parsed.image) {
+              this.setLastAssistantImage(parsed.image.url, parsed.image.thumbnailUrl);
+            } else if (parsed.imageError) {
+              this.setLastAssistantGenerating(false);
             } else if (parsed.content) {
               this.appendToLastAssistantMessage(parsed.content);
             } else if (parsed.sources) {
@@ -527,10 +504,11 @@ export class AiAssistantService {
     if (!finalSession) return;
     const persistMessages = finalSession.messages
       .filter(m => m.text || m.imageUrl)
-      .map(({ role, text, imageUrl, highlights, sources }) => ({
+      .map(({ role, text, imageUrl, thumbnailUrl, highlights, sources }) => ({
         role,
         text,
         ...(imageUrl ? { imageUrl } : {}),
+        ...(thumbnailUrl ? { thumbnailUrl } : {}),
         ...(highlights?.length ? { highlights } : {}),
         ...(sources?.length ? { sources } : {}),
       }));
@@ -549,20 +527,22 @@ export class AiAssistantService {
     );
   }
 
-  private setLastAssistantImageUrl(imageUrl: string): void {
+  /** Attaches a generated image to the last assistant message, preserving any
+   * streamed caption text and clearing the generating flag. */
+  private setLastAssistantImage(imageUrl: string, thumbnailUrl: string): void {
     this.activeSession.update(s => {
       if (!s) return s;
       const msgs = [...s.messages];
-      msgs[msgs.length - 1] = { role: 'assistant', text: '', imageUrl, generatingImage: false };
+      msgs[msgs.length - 1] = { ...msgs[msgs.length - 1], imageUrl, thumbnailUrl, generatingImage: false };
       return { ...s, messages: msgs };
     });
   }
 
-  private clearLastAssistantGenerating(): void {
+  private setLastAssistantGenerating(generating: boolean): void {
     this.activeSession.update(s => {
       if (!s) return s;
       const msgs = [...s.messages];
-      msgs[msgs.length - 1] = { ...msgs[msgs.length - 1], generatingImage: false };
+      msgs[msgs.length - 1] = { ...msgs[msgs.length - 1], generatingImage: generating };
       return { ...s, messages: msgs };
     });
   }

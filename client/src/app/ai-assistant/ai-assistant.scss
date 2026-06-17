@@ -1095,14 +1095,80 @@ mark.chat-highlight.highlight-flash {
   gap: 8px;
 }
 
+.chat-image-button {
+  align-self: flex-start;
+  padding: 0;
+  border: none;
+  background: none;
+  cursor: zoom-in;
+  border-radius: 8px;
+  line-height: 0;
+}
+
 .chat-generated-image {
   max-width: 320px;
   border-radius: 8px;
   border: 1px solid var(--mat-sys-outline-variant);
+  transition: filter 0.15s ease;
 }
 
-.chat-image-download {
+.chat-image-button:hover .chat-generated-image {
+  filter: brightness(1.04);
+}
+
+.chat-image-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.chat-image-action {
   align-self: flex-start;
+}
+
+/* ── Full-resolution lightbox ───────────────────────────────────────────── */
+
+.image-lightbox {
+  position: fixed;
+  inset: 0;
+  z-index: 1200;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.82);
+  padding: 32px;
+  cursor: zoom-out;
+}
+
+.image-lightbox-img {
+  max-width: 95vw;
+  max-height: 95vh;
+  border-radius: 8px;
+  box-shadow: 0 8px 40px rgba(0, 0, 0, 0.5);
+  cursor: default;
+}
+
+.image-lightbox-close {
+  position: absolute;
+  top: 16px;
+  right: 16px;
+  color: #fff;
+}
+
+/* ── Save confirmation toast ────────────────────────────────────────────── */
+
+.image-toast {
+  position: fixed;
+  bottom: 24px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 1300;
+  background: var(--mat-sys-inverse-surface);
+  color: var(--mat-sys-inverse-on-surface);
+  padding: 10px 18px;
+  border-radius: 20px;
+  font-size: 0.88rem;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3);
 }
 
 /* ── Input area ─────────────────────────────────────────────────────────── */

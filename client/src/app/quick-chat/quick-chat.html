@@ -47,9 +47,35 @@
              [class.streaming]="last && msg.role === 'assistant' && quickChat.streaming()">
           <span class="qc-role">{{ msg.role === 'user' ? 'You' : 'Quill' }}</span>
           @if (msg.role === 'assistant') {
-            @if (last && quickChat.streaming() && !msg.text) {
+            @if (msg.generatingImage) {
+              <div class="qc-thinking"><mat-spinner diameter="16"></mat-spinner><span>Generating image…</span></div>
+            } @else if (last && quickChat.streaming() && !msg.text && !msg.imageUrl) {
               <div class="qc-thinking"><mat-spinner diameter="16"></mat-spinner><span>Thinking…</span></div>
-            } @else {
+            }
+            @if (msg.imageUrl) {
+              <div class="qc-image-container">
+                <button type="button" class="qc-image-button" (click)="openLightbox(msg.imageUrl!)"
+                        matTooltip="View full resolution">
+                  <img class="qc-generated-image" [src]="proxyUrl(msg.thumbnailUrl || msg.imageUrl)"
+                       alt="Generated image" loading="lazy" />
+                </button>
+                <div class="qc-image-actions">
+                  <a [href]="proxyUrl(msg.imageUrl)" download="generated-image.png"
+                     mat-stroked-button class="qc-image-action" matTooltip="Download">
+                    <mat-icon>download</mat-icon> Download
+                  </a>
+                  <button mat-stroked-button class="qc-image-action"
+                          (click)="saveToGallery(msg)" matTooltip="Save to an entity's gallery">
+                    <mat-icon>collections</mat-icon> Save to gallery
+                  </button>
+                  <button mat-stroked-button class="qc-image-action"
+                          (click)="saveToResourceManager(msg)" matTooltip="Save to a Resource Manager folder">
+                    <mat-icon>folder</mat-icon> Save to files
+                  </button>
+                </div>
+              </div>
+            }
+            @if (msg.text) {
               <div class="qc-markdown" (click)="onCitationClick($event)" [innerHTML]="renderHtml(msg)"></div>
             }
             @if (msg.maps?.length) {
@@ -113,5 +139,19 @@
       [thumbnailUrl]="map.thumbnailUrl"
       (edit)="editPreviewedMap()"
       (closed)="previewedMap.set(null)" />
+  }
+
+  @if (lightboxUrl()) {
+    <div class="qc-lightbox" (click)="closeLightbox()">
+      <button mat-icon-button class="qc-lightbox-close" (click)="closeLightbox()" matTooltip="Close">
+        <mat-icon>close</mat-icon>
+      </button>
+      <img class="qc-lightbox-img" [src]="lightboxUrl()" alt="Generated image, full resolution"
+           (click)="$event.stopPropagation()" />
+    </div>
+  }
+
+  @if (imageToast()) {
+    <div class="qc-image-toast" role="status">{{ imageToast() }}</div>
   }
 }

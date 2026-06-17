@@ -89,6 +89,9 @@ export class QuickChatService {
               sources?: ChapterCitation[];
               navigate?: { target: 'chapter' | 'book' | 'series' | 'entity'; id: string; title: string };
               map?: MapPreview;
+              generatingImage?: boolean;
+              image?: { url: string; thumbnailUrl: string; prompt?: string };
+              imageError?: boolean;
             };
             if (parsed.error) {
               this.updateLastAssistantMessage(`Error: ${parsed.error}`);
@@ -103,6 +106,12 @@ export class QuickChatService {
               // The assistant surfaced a map: attach it to the message so it
               // renders inline as a clickable thumbnail (overlay stays open).
               this.addMapToLastAssistantMessage(parsed.map);
+            } else if (parsed.generatingImage) {
+              this.setLastAssistantGenerating(true);
+            } else if (parsed.image) {
+              this.setLastAssistantImage(parsed.image.url, parsed.image.thumbnailUrl);
+            } else if (parsed.imageError) {
+              this.setLastAssistantGenerating(false);
             } else if (parsed.content) {
               this.appendToLastAssistantMessage(parsed.content);
             } else if (parsed.sources) {
@@ -170,10 +179,12 @@ export class QuickChatService {
    */
   async saveToResourceManager(seriesId: string, folderId: string | null): Promise<boolean> {
     const persistMessages = this.messages()
-      .filter(m => m.text)
-      .map(({ role, text, sources }) => ({
+      .filter(m => m.text || m.imageUrl)
+      .map(({ role, text, imageUrl, thumbnailUrl, sources }) => ({
         role,
         text,
+        ...(imageUrl ? { imageUrl } : {}),
+        ...(thumbnailUrl ? { thumbnailUrl } : {}),
         ...(sources?.length ? { sources } : {}),
       }));
     if (persistMessages.length === 0) return false;
@@ -234,6 +245,38 @@ export class QuickChatService {
       copy[copy.length - 1] = { ...last, maps: [...(last.maps ?? []), map] };
       return copy;
     });
+  }
+
+  private setLastAssistantGenerating(generating: boolean): void {
+    this.messages.update(msgs => {
+      if (msgs.length === 0) return msgs;
+      const copy = [...msgs];
+      copy[copy.length - 1] = { ...copy[copy.length - 1], generatingImage: generating };
+      return copy;
+    });
+  }
+
+  /** Attaches a generated image to the last assistant message, keeping any
+   * streamed caption text and clearing the generating flag. */
+  private setLastAssistantImage(imageUrl: string, thumbnailUrl: string): void {
+    this.messages.update(msgs => {
+      if (msgs.length === 0) return msgs;
+      const copy = [...msgs];
+      copy[copy.length - 1] = { ...copy[copy.length - 1], imageUrl, thumbnailUrl, generatingImage: false };
+      return copy;
+    });
+  }
+
+  /** Uploads an image file into a Resource Manager folder. Returns true on success. */
+  async uploadImageToFolder(folderId: string, file: File): Promise<boolean> {
+    try {
+      const form = new FormData();
+      form.append('file', file);
+      const res = await this.authFetch(`/api/folder-files/${folderId}`, { method: 'POST', body: form });
+      return res.ok;
+    } catch {
+      return false;
+    }
   }
 
   private setLastAssistantSources(sources: ChapterCitation[]): void {

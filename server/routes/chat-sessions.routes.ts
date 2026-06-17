@@ -7,12 +7,16 @@ import { withOwnerFilter } from '../owner-guard';
 import { searchChapterChunks, reindexChapterChunks } from '../chapter-chunks';
 import { Chapter } from '../../shared/models/chapter.model';
 import { ChapterCitation } from '../../shared/models/chat-session.model';
+import { generateImage } from '../image-generation';
 
 /** A tool the model may call. `execute` returns the result fed back to the
  * model, plus an optional `sse` payload streamed to the client as a side effect
- * (e.g. a client-side navigation instruction). */
+ * (e.g. a client-side navigation instruction). `pending`, when set, is streamed
+ * to the client immediately before `execute` runs — useful for long-running
+ * tools (e.g. image generation) so the UI can show progress. */
 interface ChatTool {
   definition: unknown;
+  pending?: object;
   execute: (args: Record<string, unknown>) => Promise<{ toolResult: unknown; sse?: object }>;
 }
 
@@ -26,6 +30,17 @@ const client = new AzureOpenAI({
 
 const BASE_SYSTEM_PROMPT =
   'You are a helpful writing assistant. Help the author with their creative writing, worldbuilding, character development, plot structure, dialogue, and any other writing-related questions. Format responses using markdown where appropriate.';
+
+// Appended whenever the image tool is available. gpt-4.1-mini will happily
+// answer "draw me X" with prose unless told, unambiguously, to use the tool.
+const IMAGE_TOOL_GUIDANCE =
+  '\n\nIMAGE GENERATION: You can create images with the generate_image tool. ' +
+  'Whenever the user asks you to draw, sketch, paint, illustrate, render, design, or otherwise ' +
+  'create/generate a picture, image, drawing, illustration, or artwork of something, you MUST call ' +
+  'generate_image — never reply with a text description instead, and never echo the request back. ' +
+  'Treat the verb "draw" (and "sketch"/"illustrate"/"paint") as an explicit request to generate an ' +
+  'image. Build the tool\'s "prompt" from the user\'s description, enriching it with helpful visual ' +
+  'detail while staying faithful to what they asked for.';
 
 /**
  * Builds a RAG-grounded system prompt for a chat turn. Embeds the last user
@@ -178,6 +193,9 @@ async function streamChatResponse(
         } catch {
           // Leave args empty if the model produced invalid JSON.
         }
+        // Long-running tools announce themselves before executing so the UI can
+        // show progress (e.g. a "generating image" spinner).
+        if (tool?.pending) res.write(`data: ${JSON.stringify(tool.pending)}\n\n`);
         const { toolResult, sse } = tool
           ? await tool.execute(parsedArgs)
           : { toolResult: { error: `Unknown tool ${c.name}` }, sse: undefined };
@@ -485,6 +503,61 @@ function quickChatTools(req: Request): Record<string, ChatTool> {
         };
       },
     },
+    generate_image: generateImageTool(),
+  };
+}
+
+/** The image-generation tool, shared by series and quick chats. */
+function generateImageTool(): ChatTool {
+  return {
+    definition: {
+      type: 'function',
+      function: {
+        name: 'generate_image',
+        description:
+          'Generate an image from a text description and display it inline in the chat. Use this ' +
+          'whenever the user asks you to draw, create, generate, paint, illustrate, or make a ' +
+          'picture/image/illustration/artwork of something (e.g. "create me a drawing of the sun", ' +
+          '"draw my character", "generate an image of a castle at dusk"). Pass "prompt" as a vivid, ' +
+          'self-contained description of the image to create; expand terse requests into a richer ' +
+          'visual description while staying faithful to what the user asked for.',
+        parameters: {
+          type: 'object',
+          properties: {
+            prompt: { type: 'string', description: 'A detailed description of the image to generate.' },
+          },
+          required: ['prompt'],
+        },
+      },
+    },
+    // Image generation takes ~10–20s; tell the client to show a spinner first.
+    pending: { generatingImage: true },
+    execute: async args => {
+      const prompt = String(args['prompt'] ?? '').trim();
+      if (!prompt) {
+        return { toolResult: { generated: false, message: 'No image description was provided.' } };
+      }
+      try {
+        const { url, thumbnailUrl } = await generateImage(prompt);
+        return {
+          toolResult: { generated: true, message: 'The image has been generated and shown to the user.' },
+          sse: { image: { url, thumbnailUrl, prompt } },
+        };
+      } catch (err) {
+        console.error('generate_image tool error:', err);
+        return {
+          toolResult: { generated: false, message: 'Image generation failed. Apologize briefly to the user.' },
+          sse: { imageError: true },
+        };
+      }
+    },
+  };
+}
+
+/** Tools available to the series-scoped Resource Manager chat. */
+function seriesChatTools(): Record<string, ChatTool> {
+  return {
+    generate_image: generateImageTool(),
   };
 }
 
@@ -707,7 +780,7 @@ router.post('/:id/chat', async (req: Request, res: Response) => {
   res.setHeader('Connection', 'keep-alive');
   res.flushHeaders();
 
-  await streamChatResponse(res, systemPrompt, messages, citations);
+  await streamChatResponse(res, systemPrompt + IMAGE_TOOL_GUIDANCE, messages, citations, seriesChatTools());
 });
 
 // POST /quick-chat — stateless, cross-series RAG chat for the quick-launch
@@ -728,7 +801,7 @@ router.post('/quick-chat', async (req: Request, res: Response) => {
   res.setHeader('Connection', 'keep-alive');
   res.flushHeaders();
 
-  await streamChatResponse(res, systemPrompt, messages, citations, quickChatTools(req));
+  await streamChatResponse(res, systemPrompt + IMAGE_TOOL_GUIDANCE, messages, citations, quickChatTools(req));
 });
 
 // POST /:id/name — ask the LLM to generate a session name, then persist it

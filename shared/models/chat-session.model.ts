@@ -23,6 +23,7 @@ export interface ChatSessionMessage {
   role: 'user' | 'assistant';
   text: string;
   imageUrl?: string;
+  thumbnailUrl?: string;
   generatingImage?: boolean;
   highlights?: ChatMessageHighlight[];
   sources?: ChapterCitation[];

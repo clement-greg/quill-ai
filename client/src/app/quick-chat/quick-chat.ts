@@ -23,6 +23,8 @@ import { EntityService } from '../services/entity.service';
 import { chatMarkdownToHtml, chapterIdFromClick } from '../shared/chat-markdown';
 import { MapPreviewComponent } from '../maps/map-preview/map-preview';
 import { SaveChatDialogComponent } from './save-chat-dialog';
+import { EntityPickerDialogComponent, EntityPickerData } from '../entity-edit/entity-picker-dialog';
+import { FolderLocationPickerDialogComponent, FolderLocation, FolderLocationPickerData } from '../ai-assistant/folder-location-picker-dialog';
 
 /**
  * The quick-launch "Ask Quill" overlay (Ctrl/Cmd+I). A centered, spotlight-style
@@ -50,6 +52,11 @@ export class QuickChatComponent {
   readonly justSaved = signal(false);
   /** The map shown in the full-screen read-only viewer, if any. */
   readonly previewedMap = signal<MapPreview | null>(null);
+
+  // Generated-image actions
+  readonly lightboxUrl = signal<string | null>(null);
+  readonly imageToast = signal<string | null>(null);
+  private imageToastTimer: ReturnType<typeof setTimeout> | null = null;
 
   // ── Entity typeahead ──────────────────────────────────────────────────────
   private readonly entities = signal<Entity[]>([]);
@@ -117,6 +124,61 @@ export class QuickChatComponent {
   proxyUrl(url: string): string {
     const filename = url.split('/').pop();
     return filename ? `/api/image/${filename}` : url;
+  }
+
+  // ── Generated-image actions ─────────────────────────────────────────────
+
+  openLightbox(imageUrl: string): void {
+    this.lightboxUrl.set(this.proxyUrl(imageUrl));
+  }
+
+  closeLightbox(): void {
+    this.lightboxUrl.set(null);
+  }
+
+  private showImageToast(message: string): void {
+    this.imageToast.set(message);
+    if (this.imageToastTimer) clearTimeout(this.imageToastTimer);
+    this.imageToastTimer = setTimeout(() => this.imageToast.set(null), 3000);
+  }
+
+  /** Save a generated image into a chosen entity's photo gallery. */
+  async saveToGallery(msg: ChatSessionMessage): Promise<void> {
+    if (!msg.imageUrl) return;
+    const ref = this.dialog.open(EntityPickerDialogComponent, {
+      data: { seriesId: null } satisfies EntityPickerData,
+      autoFocus: false,
+    });
+    const entity = await firstValueFrom(ref.afterClosed());
+    if (!entity) return;
+    try {
+      await firstValueFrom(
+        this.entityService.addPhoto(entity.id, msg.imageUrl, msg.thumbnailUrl ?? msg.imageUrl),
+      );
+      this.showImageToast(`Saved to ${entity.name}'s gallery.`);
+    } catch {
+      this.showImageToast('Could not save to gallery.');
+    }
+  }
+
+  /** Save a generated image as a file in a chosen Resource Manager folder. */
+  async saveToResourceManager(msg: ChatSessionMessage): Promise<void> {
+    if (!msg.imageUrl) return;
+    const ref = this.dialog.open(FolderLocationPickerDialogComponent, {
+      data: { seriesId: null, requireFolder: true } satisfies FolderLocationPickerData,
+      autoFocus: false,
+    });
+    const location: FolderLocation | undefined = await firstValueFrom(ref.afterClosed());
+    if (!location?.folderId) return;
+    try {
+      const url = this.proxyUrl(msg.imageUrl);
+      const blob = await (await fetch(url)).blob();
+      const file = new File([blob], 'generated-image.png', { type: blob.type || 'image/png' });
+      const ok = await this.quickChat.uploadImageToFolder(location.folderId, file);
+      this.showImageToast(ok ? 'Saved to Resource Manager.' : 'Could not save to Resource Manager.');
+    } catch {
+      this.showImageToast('Could not save to Resource Manager.');
+    }
   }
 
   onKeyDown(event: KeyboardEvent): void {
@@ -264,6 +326,11 @@ export class QuickChatComponent {
   }
 
   onEscape(): void {
+    // The image lightbox sits on top of everything — Escape dismisses it first.
+    if (this.lightboxUrl()) {
+      this.closeLightbox();
+      return;
+    }
     // The map viewer sits on top of the chat — Escape dismisses it first.
     if (this.previewedMap()) {
       this.previewedMap.set(null);

@@ -10,11 +10,16 @@ import { MatIconModule } from '@angular/material/icon';
 import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
 import { MatTooltipModule } from '@angular/material/tooltip';
 import { MatSelectModule } from '@angular/material/select';
+import { MatDialog } from '@angular/material/dialog';
+import { firstValueFrom } from 'rxjs';
 import { AiAssistantService } from '../services/ai-assistant.service';
 import { SeriesContextService } from '../services/series-context.service';
 import { EditorBridgeService } from '../services/editor-bridge.service';
+import { EntityService } from '../services/entity.service';
 import { ChapterCitation, ChatFolder, ChatMessageHighlight, ChatSessionMessage, ChatSessionSummary, FolderFile, FolderNote } from '@shared/models';
 import { RichTextEditorComponent } from '../shared/rich-text-editor/rich-text-editor';
+import { EntityPickerDialogComponent, EntityPickerData } from '../entity-edit/entity-picker-dialog';
+import { FolderLocationPickerDialogComponent, FolderLocation, FolderLocationPickerData } from './folder-location-picker-dialog';
 
 type SidebarItem = { kind: 'folder'; folder: ChatFolder; depth: number; trackId: string };
 
@@ -33,6 +38,13 @@ export class AiAssistantComponent implements OnInit, AfterViewChecked, OnDestroy
   private router = inject(Router);
   readonly seriesContext = inject(SeriesContextService);
   readonly editorBridge = inject(EditorBridgeService);
+  private dialog = inject(MatDialog);
+  private entityService = inject(EntityService);
+
+  // Generated-image actions
+  readonly lightboxUrl = signal<string | null>(null);
+  readonly imageToast = signal<string | null>(null);
+  private imageToastTimer: ReturnType<typeof setTimeout> | null = null;
 
   readonly input = signal('');
   readonly renamingSessionId = signal<string | null>(null);
@@ -237,6 +249,11 @@ export class AiAssistantComponent implements OnInit, AfterViewChecked, OnDestroy
 
   @HostListener('document:keydown', ['$event'])
   onDocumentKeyDown(event: KeyboardEvent): void {
+    if (event.key === 'Escape' && this.lightboxUrl()) {
+      event.preventDefault();
+      this.closeLightbox();
+      return;
+    }
     if (event.key !== 'Delete') return;
     // Delete selected file
     const fileId = this.selectedFileId();
@@ -288,6 +305,7 @@ export class AiAssistantComponent implements OnInit, AfterViewChecked, OnDestroy
     this.stopStreamScroll();
     const url = this.previewObjectUrl();
     if (url) URL.revokeObjectURL(url);
+    if (this.imageToastTimer) clearTimeout(this.imageToastTimer);
   }
 
   ngAfterViewChecked(): void {
@@ -867,6 +885,64 @@ export class AiAssistantComponent implements OnInit, AfterViewChecked, OnDestroy
   proxyUrl(azureUrl: string | undefined): string | null {    if (!azureUrl) return null;
     const filename = azureUrl.split('/').pop();
     return filename ? `/api/image/${filename}` : null;
+  }
+
+  // ── Generated-image actions ─────────────────────────────────────────────
+
+  openLightbox(imageUrl: string): void {
+    this.lightboxUrl.set(this.proxyUrl(imageUrl));
+  }
+
+  closeLightbox(): void {
+    this.lightboxUrl.set(null);
+  }
+
+  private showImageToast(message: string): void {
+    this.imageToast.set(message);
+    if (this.imageToastTimer) clearTimeout(this.imageToastTimer);
+    this.imageToastTimer = setTimeout(() => this.imageToast.set(null), 3000);
+  }
+
+  /** Save a generated image into a chosen entity's photo gallery. */
+  async saveToGallery(msg: ChatSessionMessage): Promise<void> {
+    if (!msg.imageUrl) return;
+    const seriesId = this.aiAssistant.activeSession()?.seriesId ?? this.aiAssistant.selectedSeriesId();
+    const ref = this.dialog.open(EntityPickerDialogComponent, {
+      data: { seriesId } satisfies EntityPickerData,
+      autoFocus: false,
+    });
+    const entity = await firstValueFrom(ref.afterClosed());
+    if (!entity) return;
+    try {
+      await firstValueFrom(
+        this.entityService.addPhoto(entity.id, msg.imageUrl, msg.thumbnailUrl ?? msg.imageUrl),
+      );
+      this.showImageToast(`Saved to ${entity.name}'s gallery.`);
+    } catch {
+      this.showImageToast('Could not save to gallery.');
+    }
+  }
+
+  /** Save a generated image as a file in a chosen Resource Manager folder. */
+  async saveToResourceManager(msg: ChatSessionMessage): Promise<void> {
+    if (!msg.imageUrl) return;
+    const seriesId = this.aiAssistant.activeSession()?.seriesId ?? this.aiAssistant.selectedSeriesId();
+    const ref = this.dialog.open(FolderLocationPickerDialogComponent, {
+      data: { seriesId, requireFolder: true } satisfies FolderLocationPickerData,
+      autoFocus: false,
+    });
+    const location: FolderLocation | undefined = await firstValueFrom(ref.afterClosed());
+    if (!location?.folderId) return;
+    try {
+      const url = this.proxyUrl(msg.imageUrl);
+      if (!url) return;
+      const blob = await (await fetch(url)).blob();
+      const file = new File([blob], 'generated-image.png', { type: blob.type || 'image/png' });
+      const saved = await this.aiAssistant.uploadFolderFile(location.folderId, file);
+      this.showImageToast(saved ? 'Saved to Resource Manager.' : 'Could not save to Resource Manager.');
+    } catch {
+      this.showImageToast('Could not save to Resource Manager.');
+    }
   }
 
   // ── Highlight summary navigation ────────────────────────────────────────
