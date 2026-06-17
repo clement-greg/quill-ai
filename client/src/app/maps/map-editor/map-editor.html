@@ -1,0 +1,143 @@
+<div class="editor">
+  <!-- Top toolbar -->
+  <div class="toolbar">
+    <button mat-icon-button (click)="back()" aria-label="Back to maps">
+      <mat-icon>arrow_back</mat-icon>
+    </button>
+
+    <input class="title-input" [value]="title()" (input)="onTitle($any($event.target).value)"
+           aria-label="Map title" placeholder="Map title" />
+
+    <span class="toolbar-spacer"></span>
+
+    <label class="bg-control">
+      <span>Background</span>
+      <input type="color" [value]="bgColor()" (input)="onBgColor($any($event.target).value)"
+             aria-label="Background color" />
+    </label>
+
+    <label class="bg-control">
+      <span>Grid</span>
+      <input type="number" min="0" max="200" step="10" [value]="gridSize()"
+             (change)="onGridSize(+$any($event.target).value)" aria-label="Grid size in pixels" />
+    </label>
+
+    <button mat-stroked-button (click)="resetView()">
+      <mat-icon>fit_screen</mat-icon> Fit
+    </button>
+
+    <span class="save-status" aria-live="polite">
+      @switch (saveStatus()) {
+        @case ('saving') { Saving… }
+        @case ('saved') { Saved }
+        @case ('error') { <span class="save-error">Save failed</span> }
+      }
+    </span>
+  </div>
+
+  <div class="body">
+    <!-- Palette -->
+    <aside class="palette" aria-label="Map element palette">
+      <h3>Stamps</h3>
+      <button mat-stroked-button class="upload-btn" (click)="fileInput.click()" [disabled]="uploading()">
+        @if (uploading()) { <mat-spinner diameter="18" /> } @else { <mat-icon>upload</mat-icon> }
+        Upload stamp
+      </button>
+      <input #fileInput type="file" accept="image/*,.svg" hidden (change)="onUploadFile($event)" />
+
+      @if (assets().length === 0) {
+        <p class="hint">Upload images (mountains, towns, lakes…) to drag onto the map.</p>
+      } @else {
+        <div class="stamp-grid">
+          @for (asset of assets(); track asset.id) {
+            <figure class="stamp" draggable="true" (dragstart)="onAssetDragStart($event, asset)"
+                    [title]="'Drag ' + asset.name + ' onto the map'">
+              <img [src]="proxyUrl(asset.thumbnailUrl)" [alt]="asset.name" />
+              <figcaption>{{ asset.name }}</figcaption>
+              <button class="stamp-delete" (click)="deleteAsset(asset.id)"
+                      [attr.aria-label]="'Remove ' + asset.name + ' from palette'"
+                      matTooltip="Remove stamp" type="button">
+                <mat-icon aria-hidden="true">close</mat-icon>
+              </button>
+            </figure>
+          }
+        </div>
+      }
+
+      <h3>Lines</h3>
+      <div class="tool-list">
+        @for (preset of pathPresets; track preset.typeId) {
+          <button mat-stroked-button class="tool-btn" [class.tool-btn--active]="mode() === preset.typeId"
+                  (click)="selectTool(preset.typeId)" [attr.aria-pressed]="mode() === preset.typeId">
+            <mat-icon [style.color]="preset.stroke">{{ preset.icon }}</mat-icon>
+            {{ preset.name }}
+          </button>
+        }
+      </div>
+
+      @if (drawing()) {
+        <div class="draw-hint">
+          <p>Click to add points. Double-click or Enter to finish.</p>
+          <div class="draw-actions">
+            <button mat-flat-button (click)="finishPath()">Finish</button>
+            <button mat-button (click)="cancelPath()">Cancel</button>
+          </div>
+        </div>
+      }
+    </aside>
+
+    <!-- Canvas -->
+    <div #stageContainer class="stage" role="application"
+         aria-label="Map canvas. Drag stamps from the palette, or use the element list to edit by keyboard."
+         [class.stage--drawing]="drawing()"></div>
+
+    <!-- Properties -->
+    <aside class="props" aria-label="Map element properties">
+      <h3>Elements</h3>
+      @if (elementsByZ().length === 0) {
+        <p class="hint">No elements yet.</p>
+      } @else {
+        <ul class="element-list">
+          @for (el of elementsByZ(); track el.id) {
+            <li>
+              <button class="element-row" [class.element-row--selected]="el.id === selectedId()"
+                      (click)="select(el.id)" [attr.aria-pressed]="el.id === selectedId()">
+                <mat-icon aria-hidden="true">{{ el.kind === 'path' ? 'timeline' : 'image' }}</mat-icon>
+                <span class="element-name">{{ el.label || (el.kind === 'path' ? 'Line' : 'Stamp') }}</span>
+              </button>
+            </li>
+          }
+        </ul>
+      }
+
+      @if (selectedElement(); as sel) {
+        <div class="prop-editor">
+          <h3>Selected</h3>
+          <mat-form-field appearance="outline" class="full">
+            <mat-label>Place name</mat-label>
+            <input matInput [value]="sel.label ?? ''" (input)="setLabel(sel.id, $any($event.target).value)" />
+          </mat-form-field>
+
+          <mat-slide-toggle [checked]="sel.labelVisible !== false"
+                            (change)="toggleLabelVisible(sel.id, $event.checked)">
+            Show label
+          </mat-slide-toggle>
+
+          <div class="prop-actions">
+            <button mat-icon-button (click)="bringForward(sel.id)" aria-label="Bring forward" matTooltip="Bring forward">
+              <mat-icon>flip_to_front</mat-icon>
+            </button>
+            <button mat-icon-button (click)="sendBackward(sel.id)" aria-label="Send backward" matTooltip="Send backward">
+              <mat-icon>flip_to_back</mat-icon>
+            </button>
+            <button mat-icon-button color="warn" (click)="deleteSelected()" aria-label="Delete element" matTooltip="Delete">
+              <mat-icon>delete</mat-icon>
+            </button>
+          </div>
+
+          <p class="hint">Arrow keys nudge the selection (Shift = larger steps). Delete removes it.</p>
+        </div>
+      }
+    </aside>
+  </div>
+</div>

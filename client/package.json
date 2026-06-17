@@ -23,6 +23,7 @@
     "@angular/service-worker": "^21.2.8",
     "chart.js": "^4.5.1",
     "diff": "^9.0.0",
+    "konva": "^10.3.0",
     "marked": "^18.0.1",
     "material-symbols": "^0.44.2",
     "rxjs": "~7.8.0",

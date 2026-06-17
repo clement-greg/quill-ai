@@ -1,0 +1,190 @@
+:host {
+  display: block;
+  height: 100%;
+}
+
+.editor {
+  display: flex;
+  flex-direction: column;
+  height: calc(100vh - 64px); // below the app toolbar
+}
+
+.toolbar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--mat-sys-outline-variant, #cac4d0);
+  flex: 0 0 auto;
+
+  .title-input {
+    font-size: 1.1rem;
+    font-weight: 600;
+    border: none;
+    background: transparent;
+    color: inherit;
+    padding: 4px 6px;
+    border-radius: 6px;
+    min-width: 180px;
+
+    &:focus-visible { outline: 2px solid var(--mat-sys-primary); }
+  }
+
+  .toolbar-spacer { flex: 1 1 auto; }
+
+  .bg-control {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 0.8rem;
+
+    input[type='color'] { width: 32px; height: 28px; padding: 0; border: none; background: none; }
+    input[type='number'] { width: 64px; }
+  }
+
+  .save-status { font-size: 0.8rem; color: var(--mat-sys-on-surface-variant, #49454f); min-width: 64px; }
+  .save-error { color: var(--mat-sys-error, #b3261e); }
+}
+
+.body {
+  flex: 1 1 auto;
+  display: flex;
+  min-height: 0;
+}
+
+.palette, .props {
+  width: 240px;
+  flex: 0 0 240px;
+  padding: 12px;
+  overflow-y: auto;
+  background: var(--mat-sys-surface-container-low, #f5f0f7);
+
+  h3 { margin: 12px 0 8px; font-size: 0.9rem; }
+  h3:first-child { margin-top: 0; }
+}
+
+.props { border-left: 1px solid var(--mat-sys-outline-variant, #cac4d0); }
+.palette { border-right: 1px solid var(--mat-sys-outline-variant, #cac4d0); }
+
+.hint { font-size: 0.8rem; color: var(--mat-sys-on-surface-variant, #49454f); margin: 8px 0; }
+
+.upload-btn { width: 100%; }
+
+.stamp-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.stamp {
+  margin: 0;
+  cursor: grab;
+  border: 1px solid var(--mat-sys-outline-variant, #cac4d0);
+  border-radius: 8px;
+  padding: 6px;
+  background: var(--mat-sys-surface, #fff);
+  text-align: center;
+  position: relative;
+
+  &:active { cursor: grabbing; }
+
+  img { width: 100%; height: 56px; object-fit: contain; }
+  figcaption {
+    font-size: 0.7rem;
+    margin-top: 4px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .stamp-delete {
+    display: none;
+    position: absolute;
+    top: 2px;
+    right: 2px;
+    width: 20px;
+    height: 20px;
+    padding: 0;
+    border: none;
+    border-radius: 50%;
+    background: rgba(0, 0, 0, 0.55);
+    color: #fff;
+    cursor: pointer;
+    align-items: center;
+    justify-content: center;
+
+    mat-icon {
+      font-size: 14px;
+      width: 14px;
+      height: 14px;
+      line-height: 14px;
+    }
+
+    &:hover { background: var(--mat-sys-error, #b3261e); }
+    &:focus-visible { outline: 2px solid var(--mat-sys-primary); display: flex; }
+  }
+
+  &:hover .stamp-delete { display: flex; }
+}
+
+.tool-list, .draw-actions { display: flex; flex-direction: column; gap: 6px; }
+.tool-btn { justify-content: flex-start; }
+.tool-btn--active { outline: 2px solid var(--mat-sys-primary); }
+
+.draw-hint {
+  margin-top: 12px;
+  padding: 10px;
+  border-radius: 8px;
+  background: var(--mat-sys-surface-container-high, #e6e0e9);
+
+  p { font-size: 0.8rem; margin: 0 0 8px; }
+  .draw-actions { flex-direction: row; }
+}
+
+.stage {
+  flex: 1 1 auto;
+  min-width: 0;
+  background:
+    repeating-conic-gradient(#e9e9e9 0% 25%, #f6f6f6 0% 50%) 50% / 24px 24px;
+
+  &--drawing { cursor: crosshair; }
+}
+
+.element-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.element-row {
+  all: unset;
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 6px 8px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 0.85rem;
+
+  &:hover { background: var(--mat-sys-surface-container-high, #e6e0e9); }
+  &:focus-visible { outline: 2px solid var(--mat-sys-primary); }
+  &--selected { background: color-mix(in srgb, var(--mat-sys-primary) 16%, transparent); }
+
+  .element-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  mat-icon { font-size: 18px; width: 18px; height: 18px; }
+}
+
+.prop-editor {
+  margin-top: 16px;
+  border-top: 1px solid var(--mat-sys-outline-variant, #cac4d0);
+  padding-top: 12px;
+
+  .full { width: 100%; }
+  .prop-actions { display: flex; gap: 4px; margin-top: 8px; }
+}

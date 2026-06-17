@@ -17,6 +17,8 @@ import { UserSettingsComponent } from './user-settings/user-settings';
 import { PhotoGalleryComponent } from './photo-gallery/photo-gallery';
 import { WritingStatsComponent } from './writing-stats/writing-stats';
 import { EntityPageComponent } from './entity-page/entity-page';
+import { MapListComponent } from './maps/map-list/map-list';
+import { MapEditorComponent } from './maps/map-editor/map-editor';
 import { authGuard } from './auth/auth.guard';
 import { authInterceptor } from './auth/auth.interceptor';
 
@@ -36,6 +38,9 @@ const routes: Routes = [
   { path: 'writing-stats', component: WritingStatsComponent, canActivate: [authGuard] },
   { path: 'entities', component: EntityPageComponent, canActivate: [authGuard] },
   { path: 'entities/:id', component: EntityPageComponent, canActivate: [authGuard] },
+  { path: 'series/:seriesId/maps', component: MapListComponent, canActivate: [authGuard] },
+  { path: 'maps', component: MapListComponent, canActivate: [authGuard] },
+  { path: 'maps/:id', component: MapEditorComponent, canActivate: [authGuard] },
   { path: 'home', component: Home, canActivate: [authGuard] },
   { path: '', redirectTo: 'home', pathMatch: 'full' },
 ];

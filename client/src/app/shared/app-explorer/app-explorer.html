@@ -10,52 +10,61 @@
     </header>
 
     <div class="explorer-body">
-      <!-- Actions (combined from the former apps + user menus) -->
+      <!-- Single filter, narrows both the action menus and the library tree -->
+      <div class="explorer-filter">
+        <mat-icon class="explorer-filter-icon">search</mat-icon>
+        <input
+          type="text"
+          class="explorer-filter-input"
+          placeholder="Filter…"
+          aria-label="Filter explorer"
+          [value]="explorer.filter()"
+          (input)="explorer.setFilter($any($event.target).value)" />
+        @if (explorer.filter()) {
+          <button mat-icon-button class="explorer-filter-clear" (click)="explorer.clearFilter()"
+            aria-label="Clear filter">
+            <mat-icon>close</mat-icon>
+          </button>
+        }
+      </div>
+
+      <!-- Actions (combined from the former apps + user menus), filterable -->
       <nav class="explorer-actions">
-        @if (header.menuActions().length > 0) {
-          @for (item of header.menuActions(); track item.label) {
-            <button class="explorer-item" (click)="runAction(item.action)">
+        @for (item of contextActions(); track item.label) {
+          <button class="explorer-item" (click)="item.run()">
+            <mat-icon>{{ item.icon }}</mat-icon>
+            <span>{{ item.label }}</span>
+          </button>
+        }
+
+        @if (primaryActions().length > 0) {
+          @if (contextActions().length > 0) {
+            <mat-divider></mat-divider>
+          }
+          @for (item of primaryActions(); track item.label) {
+            <button class="explorer-item" (click)="item.run()">
               <mat-icon>{{ item.icon }}</mat-icon>
               <span>{{ item.label }}</span>
             </button>
           }
-          <mat-divider></mat-divider>
         }
 
-        <button class="explorer-item" (click)="openResourceManager()">
-          <mat-icon>smart_toy</mat-icon>
-          <span>Resource Manager</span>
-        </button>
-        <button class="explorer-item" (click)="navigateTo(['/entities'])">
-          <mat-icon>people</mat-icon>
-          <span>Entities</span>
-        </button>
-        <button class="explorer-item" (click)="navigateToRelationships()">
-          <mat-icon>account_tree</mat-icon>
-          <span>Relationships</span>
-        </button>
-        <button class="explorer-item" (click)="navigateTo(['/gallery'])">
-          <mat-icon>photo_library</mat-icon>
-          <span>Photo Gallery</span>
-        </button>
-        <button class="explorer-item" (click)="navigateTo(['/archived'])">
-          <mat-icon>archive</mat-icon>
-          <span>Archived Items</span>
-        </button>
-
-        <mat-divider></mat-divider>
-
-        <button class="explorer-item" (click)="navigateTo(['/writing-stats'])">
-          <mat-icon>bar_chart</mat-icon>
-          <span>Writing Stats</span>
-        </button>
-        <button class="explorer-item" (click)="navigateTo(['/settings'])">
-          <mat-icon>settings</mat-icon>
-          <span>Settings</span>
-        </button>
+        @if (secondaryActions().length > 0) {
+          @if (contextActions().length > 0 || primaryActions().length > 0) {
+            <mat-divider></mat-divider>
+          }
+          @for (item of secondaryActions(); track item.label) {
+            <button class="explorer-item" (click)="item.run()">
+              <mat-icon>{{ item.icon }}</mat-icon>
+              <span>{{ item.label }}</span>
+            </button>
+          }
+        }
       </nav>
 
-      <mat-divider></mat-divider>
+      @if (hasMenuActions()) {
+        <mat-divider></mat-divider>
+      }
 
       <!-- Series → Book → Chapter tree -->
       <div class="explorer-tree">
@@ -66,15 +75,15 @@
             <mat-spinner diameter="18"></mat-spinner>
             <span>Loading…</span>
           </div>
-        } @else if (explorer.series().length === 0) {
-          <div class="tree-empty">No series yet</div>
+        } @else if (explorer.filteredSeries().length === 0) {
+          <div class="tree-empty">{{ explorer.filter() ? 'No matches' : 'No series yet' }}</div>
         }
 
-        @for (s of explorer.series(); track s.id) {
+        @for (s of explorer.filteredSeries(); track s.id) {
           <div class="tree-row level-0">
             <button mat-icon-button class="tree-toggle" (click)="explorer.toggleSeries(s.id)"
               aria-label="Expand series">
-              <mat-icon>{{ explorer.expandedSeries().has(s.id) ? 'expand_more' : 'chevron_right' }}</mat-icon>
+              <mat-icon>{{ explorer.isSeriesExpanded(s.id) ? 'expand_more' : 'chevron_right' }}</mat-icon>
             </button>
             <button class="tree-label" (click)="navigateTo(['/series', s.id])">
               @if (proxyUrl(s.thumnailUrl || s.originalUrl); as src) {
@@ -86,21 +95,21 @@
             </button>
           </div>
 
-          @if (explorer.expandedSeries().has(s.id)) {
+          @if (explorer.isSeriesExpanded(s.id)) {
             @if (explorer.loadingChildren().has(s.id)) {
               <div class="tree-loading level-1">
                 <mat-spinner diameter="16"></mat-spinner>
                 <span>Loading…</span>
               </div>
-            } @else if (explorer.booksFor(s.id).length === 0) {
+            } @else if (explorer.filteredBooksFor(s.id).length === 0) {
               <div class="tree-empty level-1">No books</div>
             }
 
-            @for (b of explorer.booksFor(s.id); track b.id) {
+            @for (b of explorer.filteredBooksFor(s.id); track b.id) {
               <div class="tree-row level-1">
                 <button mat-icon-button class="tree-toggle" (click)="explorer.toggleBook(b.id)"
                   aria-label="Expand book">
-                  <mat-icon>{{ explorer.expandedBooks().has(b.id) ? 'expand_more' : 'chevron_right' }}</mat-icon>
+                  <mat-icon>{{ explorer.isBookExpanded(b.id) ? 'expand_more' : 'chevron_right' }}</mat-icon>
                 </button>
                 <button class="tree-label" (click)="navigateTo(['/books', b.id])">
                   @if (proxyUrl(b.thumnailUrl || b.originalUrl); as src) {
@@ -112,17 +121,17 @@
                 </button>
               </div>
 
-              @if (explorer.expandedBooks().has(b.id)) {
+              @if (explorer.isBookExpanded(b.id)) {
                 @if (explorer.loadingChildren().has(b.id)) {
                   <div class="tree-loading level-2">
                     <mat-spinner diameter="16"></mat-spinner>
                     <span>Loading…</span>
                   </div>
-                } @else if (explorer.chaptersFor(b.id).length === 0) {
+                } @else if (explorer.filteredChaptersFor(b.id).length === 0) {
                   <div class="tree-empty level-2">No chapters</div>
                 }
 
-                @for (c of explorer.chaptersFor(b.id); track c.id) {
+                @for (c of explorer.filteredChaptersFor(b.id); track c.id) {
                   <div class="tree-row level-2">
                     <span class="tree-toggle-spacer"></span>
                     <button class="tree-label" (click)="navigateTo(['/chapters', c.id, 'edit'])">
@@ -141,14 +150,18 @@
         }
       </div>
 
-      <mat-divider></mat-divider>
+      @if (accountActions().length > 0) {
+        <mat-divider></mat-divider>
 
-      <nav class="explorer-actions">
-        <button class="explorer-item" (click)="signOut()">
-          <mat-icon>logout</mat-icon>
-          <span>Sign out</span>
-        </button>
-      </nav>
+        <nav class="explorer-actions">
+          @for (item of accountActions(); track item.label) {
+            <button class="explorer-item" (click)="item.run()">
+              <mat-icon>{{ item.icon }}</mat-icon>
+              <span>{{ item.label }}</span>
+            </button>
+          }
+        </nav>
+      }
     </div>
   </aside>
 }

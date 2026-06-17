@@ -65,8 +65,6 @@ interface CollageTile {
       overflow: hidden;
       grid-column: span var(--span);
       grid-row: span var(--span);
-      // Casually-placed-photo look: a slight per-tile rotation, scaled just
-      // past the grid cell so neighbors overlap, with varied stacking order.
       transform: rotate(var(--rotation)) scale(1.07);
       z-index: var(--z);
       box-shadow: 0 2px 8px rgba(0, 0, 0, 0.35);

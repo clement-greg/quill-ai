@@ -99,6 +99,57 @@ mat-divider {
   color: var(--mat-sys-on-surface-variant);
 }
 
+.explorer-filter {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 16px 8px;
+  padding: 4px 4px 4px 10px;
+  border: 1px solid var(--mat-sys-outline-variant);
+  border-radius: 8px;
+  background-color: var(--mat-sys-surface-container-high);
+
+  &:focus-within {
+    border-color: var(--mat-sys-primary);
+  }
+}
+
+.explorer-filter-icon {
+  font-size: 18px;
+  width: 18px;
+  height: 18px;
+  flex-shrink: 0;
+  color: var(--mat-sys-on-surface-variant);
+}
+
+.explorer-filter-input {
+  flex: 1 1 auto;
+  min-width: 0;
+  border: none;
+  background: none;
+  outline: none;
+  font: inherit;
+  font-size: 0.9rem;
+  color: var(--mat-sys-on-surface);
+
+  &::placeholder {
+    color: var(--mat-sys-on-surface-variant);
+  }
+}
+
+.explorer-filter-clear {
+  flex-shrink: 0;
+  width: 28px;
+  height: 28px;
+  line-height: 28px;
+
+  mat-icon {
+    font-size: 18px;
+    width: 18px;
+    height: 18px;
+  }
+}
+
 .tree-row {
   display: flex;
   align-items: center;

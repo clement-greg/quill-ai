@@ -8,13 +8,15 @@ import { uploadFileToBlob } from '../storage';
 const router = Router();
 const THUMBNAIL_SIZE = 400; // max width or height in px
 
+const RASTER_EXTS = ['.jpg', '.jpeg', '.png', '.gif', '.webp'];
+const SVG_EXTS = ['.svg'];
+
 const upload = multer({
   storage: multer.memoryStorage(),
   limits: { fileSize: 10 * 1024 * 1024 }, // 10 MB
   fileFilter: (_req, file, cb) => {
-    const allowed = ['.jpg', '.jpeg', '.png', '.gif', '.webp'];
     const ext = path.extname(file.originalname).toLowerCase();
-    if (allowed.includes(ext)) {
+    if ([...RASTER_EXTS, ...SVG_EXTS].includes(ext)) {
       cb(null, true);
     } else {
       cb(new Error('Only image files are allowed'));
@@ -33,18 +35,26 @@ router.post('/', upload.single('file'), async (req: Request, res: Response) => {
     const ext = path.extname(req.file.originalname).toLowerCase();
     const id = uuidv4();
     const originalFilename = `${id}${ext}`;
-    const thumbnailFilename = `${id}_thumb.webp`;
+    const mimeType = ext === '.svg' ? 'image/svg+xml' : req.file.mimetype;
 
-    // Upload original and thumbnail in parallel
-    const thumbnailBuffer = await sharp(req.file.buffer)
-      .resize(THUMBNAIL_SIZE, THUMBNAIL_SIZE, { fit: 'inside', withoutEnlargement: true })
-      .webp({ quality: 85 })
-      .toBuffer();
+    let originalUrl: string;
+    let thumbnailUrl: string;
 
-    const [originalUrl, thumbnailUrl] = await Promise.all([
-      uploadFileToBlob(req.file.buffer, originalFilename, req.file.mimetype),
-      uploadFileToBlob(thumbnailBuffer, thumbnailFilename, 'image/webp'),
-    ]);
+    if (SVG_EXTS.includes(ext)) {
+      // SVGs are already scalable — upload once and use for both url and thumbnailUrl.
+      originalUrl = await uploadFileToBlob(req.file.buffer, originalFilename, mimeType);
+      thumbnailUrl = originalUrl;
+    } else {
+      const thumbnailFilename = `${id}_thumb.webp`;
+      const thumbnailBuffer = await sharp(req.file.buffer)
+        .resize(THUMBNAIL_SIZE, THUMBNAIL_SIZE, { fit: 'inside', withoutEnlargement: true })
+        .webp({ quality: 85 })
+        .toBuffer();
+      [originalUrl, thumbnailUrl] = await Promise.all([
+        uploadFileToBlob(req.file.buffer, originalFilename, mimeType),
+        uploadFileToBlob(thumbnailBuffer, thumbnailFilename, 'image/webp'),
+      ]);
+    }
 
     res.json({ url: originalUrl, thumbnailUrl });
   } catch (err) {

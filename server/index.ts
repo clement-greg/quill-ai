@@ -29,6 +29,8 @@ import userSettingsRoutes from './routes/user-settings.routes';
 import avatarRoutes from './routes/avatar.routes';
 import userStatsRoutes from './routes/user-stats.routes';
 import recentChaptersRoutes from './routes/recent-chapters.routes';
+import mapRoutes from './routes/map.routes';
+import mapAssetRoutes from './routes/map-asset.routes';
 
 const app = express();
 const PORT = process.env['PORT'] || 3200;
@@ -89,6 +91,8 @@ app.use('/api/folder-notes', folderNotesRoutes);
 app.use('/api/user-settings', userSettingsRoutes);
 app.use('/api/user-stats', userStatsRoutes);
 app.use('/api/recent-chapters', recentChaptersRoutes);
+app.use('/api/maps', mapRoutes);
+app.use('/api/map-assets', mapAssetRoutes);
 
 // Serve Angular static files
 app.use(express.static(path.join(__dirname, '../../client/dist/client/browser')));

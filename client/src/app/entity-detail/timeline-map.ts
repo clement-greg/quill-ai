@@ -5,6 +5,7 @@ import {
   output,
   signal,
   computed,
+  effect,
   afterNextRender,
   OnDestroy,
   ChangeDetectionStrategy,
@@ -222,9 +223,12 @@ export class TimelineMapComponent implements OnDestroy {
 
   isExpanded = signal(false);
 
+  private maps: typeof google.maps | undefined;
   private map: google.maps.Map | undefined;
   private geocoder: google.maps.Geocoder | undefined;
   private infoWindow: google.maps.InfoWindow | undefined;
+  private markers: google.maps.Marker[] = [];
+  private loadToken = 0;
   private destroyed = false;
   private geocodeCache = new Map<string, google.maps.LatLngLiteral | null>();
   private onKeyDown = (e: KeyboardEvent) => {
@@ -240,11 +244,20 @@ export class TimelineMapComponent implements OnDestroy {
       document.addEventListener('keydown', this.onKeyDown);
       this.zone.runOutsideAngular(() => void this.setup());
     });
+
+    // Reload markers whenever the selected entity's events change (or once the
+    // map becomes ready). Reading both signals registers them as dependencies.
+    effect(() => {
+      this.events();
+      if (!this.ready() || !this.maps || !this.map) return;
+      this.zone.runOutsideAngular(() => void this.loadMarkers(this.maps!));
+    });
   }
 
   ngOnDestroy(): void {
     this.destroyed = true;
     this.infoWindow?.close();
+    this.clearMarkers();
     this.map = undefined;
     document.removeEventListener('keydown', this.onKeyDown);
     if (this.isExpanded()) {
@@ -290,23 +303,33 @@ export class TimelineMapComponent implements OnDestroy {
       fullscreenControl: false,
       ...(isDark ? { styles: DARK_MAP_STYLES } : {}),
     });
+    this.maps = maps;
     this.geocoder = new maps.Geocoder();
     this.infoWindow = new maps.InfoWindow();
+    // Flipping ready triggers the effect, which performs the initial marker load.
     this.zone.run(() => this.ready.set(true));
-
-    await this.loadMarkers(maps);
   }
 
   private async loadMarkers(maps: typeof google.maps): Promise<void> {
+    // Cancel any in-flight load (e.g. rapid entity switching) and reset state.
+    const token = ++this.loadToken;
+    this.clearMarkers();
+    this.infoWindow?.close();
+
     const eventsWithLocations = this.events().filter(e => e.location?.trim());
-    this.zone.run(() => this.geocodingRemaining.set(eventsWithLocations.length));
+    this.zone.run(() => {
+      this.geocodeError.set(null);
+      this.pinCount.set(0);
+      this.geocodingRemaining.set(eventsWithLocations.length);
+    });
 
     const bounds = new maps.LatLngBounds();
     let placed = 0;
 
     for (const event of eventsWithLocations) {
-      if (this.destroyed || !this.map) return;
+      if (this.destroyed || !this.map || token !== this.loadToken) return;
       const coords = await this.geocode(event.location!.trim());
+      if (token !== this.loadToken) return;
       this.zone.run(() => this.geocodingRemaining.update(n => Math.max(0, n - 1)));
       if (!coords || this.destroyed || !this.map) continue;
 
@@ -326,11 +349,12 @@ export class TimelineMapComponent implements OnDestroy {
       marker.addListener('mouseout', () => {
         this.zone.run(() => this.eventHovered.emit(null));
       });
+      this.markers.push(marker);
       bounds.extend(coords);
       placed++;
     }
 
-    if (this.destroyed || !this.map) return;
+    if (this.destroyed || !this.map || token !== this.loadToken) return;
     this.zone.run(() => this.pinCount.set(placed));
 
     if (placed === 1) {
@@ -339,6 +363,14 @@ export class TimelineMapComponent implements OnDestroy {
     } else if (placed > 1) {
       this.map.fitBounds(bounds, 48);
     }
+  }
+
+  private clearMarkers(): void {
+    for (const marker of this.markers) {
+      google.maps.event.clearInstanceListeners(marker);
+      marker.setMap(null);
+    }
+    this.markers = [];
   }
 
   private geocode(location: string): Promise<google.maps.LatLngLiteral | null> {

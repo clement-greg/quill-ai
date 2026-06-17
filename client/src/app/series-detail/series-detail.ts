@@ -142,6 +142,11 @@ export class SeriesDetailComponent implements OnInit, OnDestroy {
     this.router.navigate(['/books', book.id]);
   }
 
+  openMaps(): void {
+    const id = this.series()?.id;
+    if (id) this.router.navigate(['/series', id, 'maps']);
+  }
+
   onPanelChanged(open: boolean): void {
     this.showPanel.set(open);
     if (!open) {
