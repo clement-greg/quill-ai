@@ -1288,8 +1288,15 @@ export class RichTextEditorComponent implements OnInit, AfterViewInit, OnDestroy
 
   onEditorKeyDown(event: KeyboardEvent): void {
     // Grammar popover
-    if (this.grammarPopoverVisible() && event.key === 'Escape') {
-      event.preventDefault(); this.dismissGrammarPopover(); return;
+    if (this.grammarPopoverVisible()) {
+      if (event.key === 'Escape') {
+        event.preventDefault(); this.dismissGrammarPopover(); return;
+      }
+      const isNavKey = ['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'Home', 'End'].includes(event.key);
+      const isTypingKey = !event.ctrlKey && !event.metaKey && !event.altKey && event.key.length === 1;
+      if (isNavKey || isTypingKey) {
+        this.dismissGrammarPopover();
+      }
     }
 
     // Ctrl+. context menu
