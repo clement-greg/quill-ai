@@ -67,6 +67,7 @@ export class EntityPageComponent implements OnInit, OnDestroy {
     this.route.paramMap.pipe(map(p => p.get('id')))
   );
 
+  showPanel = signal(false);
   isCollapsed = computed(() => !!this.selectedEntityId());
   // Browsing = nothing selected and not editing; on mobile the content panel
   // is hidden in this state so the entity list gets the full viewport.
@@ -302,6 +303,10 @@ export class EntityPageComponent implements OnInit, OnDestroy {
       error: () => this.uploadingEntityId.set(null),
       complete: () => this.uploadingEntityId.set(null),
     });
+  }
+
+  togglePanel(): void {
+    this.showPanel.update(v => !v);
   }
 
   groupLabel(type: string): string {

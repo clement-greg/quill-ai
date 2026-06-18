@@ -9,6 +9,7 @@
   display: flex;
   height: 100%;
   overflow: hidden;
+  position: relative;
 }
 
 // ── Left panel ────────────────────────────────────────────
@@ -32,6 +33,10 @@
   min-width: 72px;
   padding: 8px 6px;
   overflow-x: hidden;
+}
+
+.entity-list-panel--hidden {
+  display: none;
 }
 
 // ── Panel header ──────────────────────────────────────────
@@ -416,6 +421,17 @@
   opacity: 0.7;
 }
 
+// ── Panel toggle button ───────────────────────────────────
+.panel-toggle-btn {
+  position: absolute;
+  top: 8px;
+  left: 8px;
+  z-index: 10;
+  background: color-mix(in srgb, var(--mat-sys-surface-container) 90%, transparent);
+  backdrop-filter: blur(4px);
+  border-radius: 8px;
+}
+
 // ── Mobile ────────────────────────────────────────────────
 @media (max-width: 599px) {
   .entities-page {
@@ -469,5 +485,15 @@
       flex: 1;
       border-bottom: none;
     }
+  }
+
+  // On mobile the panel is always visible and the toggle button is not needed.
+  .panel-toggle-btn {
+    display: none;
+  }
+
+  // Override hidden state — panel always shows on mobile.
+  .entity-list-panel--hidden {
+    display: flex;
   }
 }

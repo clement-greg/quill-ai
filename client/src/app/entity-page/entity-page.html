@@ -3,6 +3,7 @@
   <!-- ── Left panel: entity list ── -->
   <div class="entity-list-panel"
        [class.entity-list-panel--collapsed]="isCollapsed()"
+       [class.entity-list-panel--hidden]="!showPanel()"
        #entityListPanel
        (dragover)="onListDragOver($event)"
        (dragleave)="onListDragLeave($event)"
@@ -234,5 +235,15 @@
     }
 
   </div>
+
+  <!-- ── Panel toggle button (desktop only) ── -->
+  <button mat-icon-button
+          class="panel-toggle-btn"
+          (click)="togglePanel()"
+          [matTooltip]="showPanel() ? 'Hide entities panel' : 'Show entities panel'"
+          matTooltipPosition="right"
+          [attr.aria-label]="showPanel() ? 'Hide entities panel' : 'Show entities panel'">
+    <mat-icon>{{ showPanel() ? 'menu_open' : 'menu' }}</mat-icon>
+  </button>
 
 </div>

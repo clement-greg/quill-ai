@@ -222,6 +222,28 @@
   max-width: 200px;
 }
 
+@media (max-width: 599px) {
+  .recent-chapters-list {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .recent-chapter-chip {
+    display: flex;
+    min-width: 0;
+  }
+
+  .recent-chip-main {
+    flex: 1;
+    min-width: 0;
+  }
+
+  .recent-chip-title,
+  .recent-chip-sub {
+    max-width: none;
+  }
+}
+
 /* ── Feature links ────────────────────────────────────────────────────────── */
 
 .feature-links {
