@@ -12,6 +12,16 @@ import { Book } from '../../shared/models/book.model';
 import { Entity } from '../../shared/models/entity.model';
 import { generateImage } from '../image-generation';
 import { buildChapterContextPrompt } from '../chapter-ai-context';
+import { buildChapterDraftingContext, generateChapterBeatSheet } from '../chapter-drafting-context';
+
+/** True when the author is asking to draft a whole chapter (vs. a small inline
+ * edit/insert), e.g. "write the chapter based on the outline and notes" or
+ * "give me a first draft". Routes the request to the rich drafting context. */
+function isWholeChapterDraftRequest(text: string): boolean {
+  const t = (text ?? '').toLowerCase();
+  if (/\b(first|rough|initial)\s+draft\b/.test(t)) return true;
+  return /\b(write|draft|generate|compose|create|flesh out|expand)\b[^.?!]{0,60}\bchapter\b/.test(t);
+}
 
 /** A tool the model may call. `execute` returns the result fed back to the
  * model, plus an optional `sse` payload streamed to the client as a side effect
@@ -140,6 +150,7 @@ async function streamChatResponse(
   messages: { role: 'user' | 'assistant'; content: string }[],
   citations: ChapterCitation[],
   tools?: Record<string, ChatTool>,
+  model: string = config.foundry.miniModel,
 ): Promise<void> {
   // The running conversation; grows as tool calls/results are appended.
   const convo: unknown[] = [{ role: 'system', content: systemPrompt }, ...messages];
@@ -149,7 +160,7 @@ async function streamChatResponse(
     // Bounded loop: model turn → optional tool calls → model turn → … → answer.
     for (let turn = 0; turn < 4; turn++) {
       const stream = await client.chat.completions.create({
-        model: config.foundry.miniModel,
+        model,
         messages: convo as never,
         ...(toolDefinitions ? { tools: toolDefinitions as never } : {}),
         stream: true,
@@ -1241,7 +1252,7 @@ router.post('/:id/chat', async (req: Request, res: Response) => {
 router.post('/quick-chat', async (req: Request, res: Response) => {
   const messages: { role: 'user' | 'assistant'; content: string }[] = req.body.messages;
   const chapterContext = req.body.chapterContext as
-    | { chapterId: string; surroundingText?: string; selectedText?: string }
+    | { chapterId: string; surroundingText?: string; selectedText?: string; outline?: OutlineItem[]; notes?: ChapterNote[] }
     | undefined;
 
   if (!messages || !Array.isArray(messages)) {
@@ -1252,8 +1263,43 @@ router.post('/quick-chat', async (req: Request, res: Response) => {
   let systemPrompt: string;
   let citations: ChapterCitation[] = [];
 
+  // Whole-chapter drafting: when the author asks to "write the chapter", assemble
+  // the rich continuity-aware context (prior chapters, cast, voice, canon) and
+  // draft with the full model, no tools — just polished prose to insert.
   if (chapterContext?.chapterId) {
-    const { surroundingText, selectedText } = chapterContext;
+    const lastUser = [...messages].reverse().find(m => m.role === 'user');
+    if (isWholeChapterDraftRequest(lastUser?.content ?? '')) {
+      const { systemPrompt: draftPrompt } = await buildChapterDraftingContext(
+        chapterContext.chapterId,
+        { outline: chapterContext.outline, notes: chapterContext.notes, instructionText: lastUser?.content ?? '' },
+        req,
+      );
+
+      res.setHeader('Content-Type', 'text/event-stream');
+      res.setHeader('Cache-Control', 'no-cache');
+      res.setHeader('Connection', 'keep-alive');
+      res.flushHeaders();
+
+      // Flag the message as a chapter draft so the client offers
+      // Insert / Replace chapter / Revise actions.
+      res.write(`data: ${JSON.stringify({ chapterDraft: true })}\n\n`);
+
+      // Stage 1: beat sheet (scene plan), surfaced to the client and fed into
+      // the prose generation for structural coherence.
+      const beats = await generateChapterBeatSheet(draftPrompt, lastUser?.content ?? '');
+      if (beats) res.write(`data: ${JSON.stringify({ beats })}\n\n`);
+
+      // Stage 2: full-model prose draft, grounded in the beat sheet.
+      const prosePrompt = beats
+        ? `${draftPrompt}\n\nFollow this beat sheet, expanding each beat into immersive prose:\n${beats}`
+        : draftPrompt;
+      await streamChatResponse(res, prosePrompt, messages, [], undefined, config.foundry.fullModel);
+      return;
+    }
+  }
+
+  if (chapterContext?.chapterId) {
+    const { surroundingText, selectedText, outline, notes } = chapterContext;
     const lastUserMessage = [...messages].reverse().find(m => m.role === 'user');
     const retrievalQuery = [selectedText, surroundingText, lastUserMessage?.content]
       .filter(Boolean).join('\n\n').trim();
@@ -1270,6 +1316,23 @@ router.post('/quick-chat', async (req: Request, res: Response) => {
       'prose — no markdown, no preamble, and no meta-commentary such as "Sure, here you go". The author ' +
       'will insert your answer directly into the chapter at their cursor.' +
       contextSuffix;
+
+    if (outline && outline.length > 0) {
+      const outlineText = outline.map(item => {
+        const indent = item.level === 1 ? '  - ' : '- ';
+        return `${indent}${item.text}`;
+      }).join('\n');
+      systemPrompt += `\n\nThe author has created the following outline for this chapter:\n${outlineText}`;
+    }
+
+    if (notes && notes.length > 0) {
+      const notesText = notes.map(n =>
+        n.selectedText
+          ? `- [on "${n.selectedText}"]: ${n.noteText}`
+          : `- ${n.noteText}`,
+      ).join('\n');
+      systemPrompt += `\n\nThe author has written the following notes for this chapter:\n${notesText}`;
+    }
 
     if (surroundingText) {
       systemPrompt +=

@@ -28,6 +28,12 @@ export interface ChatSessionMessage {
   highlights?: ChatMessageHighlight[];
   sources?: ChapterCitation[];
   maps?: MapPreview[];
+  /** Marks an assistant message as a full chapter draft, enabling the
+   * Insert / Replace chapter / Revise actions in the UI. */
+  kind?: 'chapter-draft';
+  /** The beat sheet (scene plan) produced before a chapter draft, shown as a
+   * collapsible "Story plan" above the prose. */
+  beats?: string;
 }
 
 export interface ChatSession {

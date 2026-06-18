@@ -306,9 +306,52 @@ export class QuickChatComponent {
   insertAtCursor(msg: ChatSessionMessage): void {
     if (!msg.text) return;
     const text = this.pendingInsertSelection || msg.text;
+    const insertedWholeDraft = msg.kind === 'chapter-draft' && !this.pendingInsertSelection;
     this.pendingInsertSelection = null;
     this.editorBridge.insertText(text);
     this.quickChat.minimize();
+    // Accepting a full chapter draft updates canon — run extraction on it.
+    if (insertedWholeDraft) this.editorBridge.notifyDraftAccepted();
+  }
+
+  // ── Chapter-draft actions ─────────────────────────────────────────────────
+
+  /** Indices of draft messages whose beat sheet ("Story plan") is expanded. */
+  readonly openBeats = signal<ReadonlySet<number>>(new Set());
+
+  isBeatsOpen(index: number): boolean {
+    return this.openBeats().has(index);
+  }
+
+  toggleBeats(index: number): void {
+    this.openBeats.update(set => {
+      const next = new Set(set);
+      if (next.has(index)) next.delete(index); else next.add(index);
+      return next;
+    });
+  }
+
+  /** Renders a draft's beat sheet (markdown) for display. */
+  renderBeats(msg: ChatSessionMessage): SafeHtml {
+    return this.sanitizer.bypassSecurityTrustHtml(chatMarkdownToHtml(msg.beats ?? ''));
+  }
+
+  /** Replaces the entire chapter with the draft prose, after confirmation. */
+  replaceChapter(msg: ChatSessionMessage): void {
+    if (!msg.text) return;
+    const ok = window.confirm('Replace the entire chapter with this draft? Your current text will be overwritten (you can undo, and version history is kept).');
+    if (!ok) return;
+    this.editorBridge.replaceContent(msg.text);
+    this.quickChat.minimize();
+    // Replacing the chapter with a draft updates canon — run extraction on it.
+    this.editorBridge.notifyDraftAccepted();
+  }
+
+  /** Seeds the composer with a revision instruction so the author can refine the
+   *  draft in a follow-up turn. */
+  reviseDraft(): void {
+    this.input.set('Revise the draft: ');
+    this.inputEl()?.nativeElement.focus();
   }
 
   /** Collapses the panel and returns focus to the editor at the cursor position

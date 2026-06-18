@@ -98,7 +98,13 @@ export class QuickChatService {
     // the text surrounding the cursor (so it's suitable to insert there).
     const captured = this.editorBridge.captureContext();
     const chapterContext = captured
-      ? { chapterId: captured.chapterId, surroundingText: captured.surroundingText, selectedText: captured.selectedText }
+      ? {
+          chapterId: captured.chapterId,
+          surroundingText: captured.surroundingText,
+          selectedText: captured.selectedText,
+          outline: captured.outline,
+          notes: captured.notes,
+        }
       : undefined;
 
     this.abortController = new AbortController();
@@ -142,9 +148,15 @@ export class QuickChatService {
               image?: { url: string; thumbnailUrl: string; prompt?: string };
               imageError?: boolean;
               chapterUpdated?: ChapterExternalUpdate;
+              chapterDraft?: boolean;
+              beats?: string;
             };
             if (parsed.error) {
               this.updateLastAssistantMessage(`Error: ${parsed.error}`);
+            } else if (parsed.chapterDraft) {
+              this.markLastAssistantAsDraft();
+            } else if (parsed.beats) {
+              this.setLastAssistantBeats(parsed.beats);
             } else if (parsed.navigate) {
               // The assistant invoked a navigation tool. Show a confirmation
               // message in the bubble (so it's never blank), navigate, and
@@ -259,11 +271,13 @@ export class QuickChatService {
   private async persistToSession(sessionId: string): Promise<void> {
     const messages = this.messages()
       .filter(m => m.text || m.imageUrl)
-      .map(({ role, text, imageUrl, thumbnailUrl, sources }) => ({
+      .map(({ role, text, imageUrl, thumbnailUrl, sources, kind, beats }) => ({
         role, text,
         ...(imageUrl ? { imageUrl } : {}),
         ...(thumbnailUrl ? { thumbnailUrl } : {}),
         ...(sources?.length ? { sources } : {}),
+        ...(kind ? { kind } : {}),
+        ...(beats ? { beats } : {}),
       }));
     try {
       await this.authFetch(`/api/chat-sessions/${sessionId}`, {
@@ -380,6 +394,24 @@ export class QuickChatService {
     } catch {
       return false;
     }
+  }
+
+  private markLastAssistantAsDraft(): void {
+    this.messages.update(msgs => {
+      if (msgs.length === 0) return msgs;
+      const copy = [...msgs];
+      copy[copy.length - 1] = { ...copy[copy.length - 1], kind: 'chapter-draft' };
+      return copy;
+    });
+  }
+
+  private setLastAssistantBeats(beats: string): void {
+    this.messages.update(msgs => {
+      if (msgs.length === 0) return msgs;
+      const copy = [...msgs];
+      copy[copy.length - 1] = { ...copy[copy.length - 1], beats };
+      return copy;
+    });
   }
 
   private setLastAssistantSources(sources: ChapterCitation[]): void {

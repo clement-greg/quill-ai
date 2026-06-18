@@ -261,6 +261,22 @@
       flex-direction: column;
     }
   }
+
+  &.sidebar-tab-content-details {
+    padding: 16px;
+    gap: 4px;
+    overflow-y: auto;
+
+    .details-hint {
+      margin: 0 0 12px;
+      font-size: 0.85em;
+      opacity: 0.7;
+    }
+
+    .details-field {
+      width: 100%;
+    }
+  }
 }
 
 /* Mobile close button (absolute, top-right of sidebar) */

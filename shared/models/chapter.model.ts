@@ -27,6 +27,18 @@ export interface Chapter extends AuditedRecord {
     imageThumbnailUrl?: string;
     archived?: boolean;
     outline?: OutlineItem[];
+    /** AI-generated 2-3 sentence synopsis of what happens in this chapter.
+     * Regenerated on save; powers the "story so far" continuity context. */
+    summary?: string;
+    /** Hash of the content the current summary was generated from, so we can
+     * skip regeneration when the prose hasn't meaningfully changed. */
+    summarySourceHash?: string;
+    /** Entity (character) whose point of view this chapter is told from. */
+    povEntityId?: string;
+    /** Where the chapter takes place (free-form: real or fictional place). */
+    setting?: string;
+    /** When the chapter takes place in story-time (free-form, e.g. "Three days later"). */
+    inStoryTime?: string;
 }
 
 export interface ChapterVersion {

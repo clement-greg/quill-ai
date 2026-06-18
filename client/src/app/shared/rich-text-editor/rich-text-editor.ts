@@ -420,6 +420,30 @@ export class RichTextEditorComponent implements OnInit, AfterViewInit, OnDestroy
     this.scheduleEmit();
   }
 
+  /** Replaces the ENTIRE editor content with the given plain text, split into
+   *  paragraphs on blank lines and entity-annotated (used by "Replace chapter"
+   *  on an AI draft). */
+  replaceWithText(text: string): void {
+    const editorEl = this.editorRef?.nativeElement;
+    if (!editorEl) return;
+
+    editorEl.innerHTML = '';
+    const paragraphs = text.split(/\n\s*\n/).map(p => p.trim()).filter(Boolean);
+    for (const para of paragraphs) {
+      const p = document.createElement('p');
+      p.setAttribute('data-ai-generated', 'true');
+      // Collapse single newlines inside a paragraph to spaces for clean prose.
+      p.appendChild(this.buildEntityAnnotatedFragment(para.replace(/\n+/g, ' ')));
+      editorEl.appendChild(p);
+    }
+
+    editorEl.focus();
+    this.wordCount.set(this.countWords(editorEl.textContent ?? ''));
+    this.editorContent = editorEl.innerHTML;
+    this.scheduleEmit();
+    setTimeout(() => this.scheduleMinimap());
+  }
+
   /** Captures the cursor surroundings for an AI request: the selected text and
    *  the ±300-char context around the caret (with a [CURSOR] marker). Uses the
    *  live selection when it's inside the editor, else the last tracked range. */

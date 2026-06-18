@@ -1,6 +1,7 @@
 import { Router, Request, Response } from 'express';
 import { getContainer } from '../cosmos';
 import { reindexChapterChunks, deleteChapterChunks } from '../chapter-chunks';
+import { refreshChapterSummary } from '../chapter-summary';
 import { Chapter } from '../../shared/models/chapter.model';
 import { Book } from '../../shared/models/book.model';
 import { Series } from '../../shared/models/series.model';
@@ -107,7 +108,10 @@ router.post('/', async (req: Request, res: Response) => {
     chapter.modifiedBy = req.user!.email;
     chapter.modifiedAt = now;
     const { resource } = await container.items.create<Chapter>(chapter);
-    if (resource) await reindexChapterChunks(resource);
+    if (resource) {
+      await reindexChapterChunks(resource);
+      void refreshChapterSummary(resource);
+    }
     res.status(201).json(resource);
   } catch (err) {
     console.error('Error creating chapter:', err);
@@ -165,7 +169,12 @@ router.put('/:id', async (req: Request, res: Response) => {
     // whole-chapter vector so it doesn't linger on the document (lazy migration).
     delete (chapter as { contentVector?: unknown }).contentVector;
     const { resource } = await container.item(id, id).replace<Chapter>(chapter);
-    if (resource) await reindexChapterChunks(resource);
+    if (resource) {
+      await reindexChapterChunks(resource);
+      // Regenerate the continuity summary in the background — never block the
+      // save on the AI service (mirrors reindex's fire-and-forget tolerance).
+      void refreshChapterSummary(resource);
+    }
     res.json(resource);
   } catch (err) {
     console.error('Error updating chapter:', err);

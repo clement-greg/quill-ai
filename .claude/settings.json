@@ -19,7 +19,9 @@
       "Bash(npx jest *)",
       "Bash(grep -E \"\\\\.\\(ts|d\\\\.ts\\)$\")",
       "Bash(Remove-Item \"c:\\\\Users\\\\gregb\\\\source\\\\repros\\\\personal\\\\quill-ai\\\\client\\\\src\\\\app\\\\quick-chat\\\\save-chat-dialog.ts\")",
-      "Bash(tasklist)"
+      "Bash(tasklist)",
+      "Read(//c/c/Users/gregb/source/repros/personal/quill-ai/server/**)",
+      "Bash(xargs grep -l \"ChatSessionMessage\")"
     ]
   }
 }

@@ -8,6 +8,7 @@ import { MatButtonModule } from '@angular/material/button';
 import { MatIconModule } from '@angular/material/icon';
 import { MatInputModule } from '@angular/material/input';
 import { MatFormFieldModule } from '@angular/material/form-field';
+import { MatSelectModule } from '@angular/material/select';
 import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
 import { MatTabsModule } from '@angular/material/tabs';
 import { MatMenuModule } from '@angular/material/menu';
@@ -50,7 +51,7 @@ interface DiffParagraph { hasChanges: boolean; segments: DiffWord[]; }
   imports: [
     FormsModule,
     MatButtonModule, MatIconModule, MatInputModule, MatFormFieldModule,
-    MatProgressSpinnerModule, MatTabsModule, MatDialogModule, MatMenuModule,
+    MatProgressSpinnerModule, MatTabsModule, MatDialogModule, MatMenuModule, MatSelectModule,
     SlideOutPanelContainer, EntityEditComponent, RichTextEditorComponent, AiStatsComponent, ChapterOutlineComponent,
   ],
   templateUrl: './chapter-edit.html',
@@ -84,12 +85,15 @@ export class ChapterEditComponent implements OnInit, OnDestroy {
   private recentChapters = inject(RecentChaptersService);
   private routeSub?: Subscription;
   private chapterSyncSub?: Subscription;
+  private draftAcceptedSub?: Subscription;
 
   // ── Chapter state ────────────────────────────────────────────────────────
   chapter = signal<Chapter | null>(null);
   saving = signal(false);
   hasDraft = signal(false);
   entities = signal<Entity[]>([]);
+  /** PERSON entities only, for the chapter point-of-view picker. */
+  personEntities = computed(() => this.entities().filter(e => e.type === 'PERSON'));
   seriesId = signal('');
   private bookTitle = signal('');
   private seriesTitle = signal('');
@@ -218,6 +222,14 @@ export class ChapterEditComponent implements OnInit, OnDestroy {
         }
       });
     });
+
+    // Keep the editor bridge current when outline or notes change so the
+    // quick-chat panel always has the latest chapter context.
+    effect(() => {
+      const outline = this.outline();
+      const notes = this.notes();
+      untracked(() => this.editorBridge.updateChapterOutlineAndNotes(outline, notes));
+    });
   }
 
   ngOnInit(): void {
@@ -324,6 +336,13 @@ export class ChapterEditComponent implements OnInit, OnDestroy {
       const content = this.editorRef?.getContent() ?? current.content ?? '';
       await this.draftService.saveDraft(current.id, content, this.notes(), this.outline());
     });
+
+    // When an AI chapter draft is accepted from the Ask Quill panel, analyze the
+    // new content so timeline/relationship canon stays in sync (closes the loop).
+    // setTimeout lets the editor's content settle before we read it.
+    this.draftAcceptedSub = this.editorBridge.draftAccepted$.subscribe(() => {
+      setTimeout(() => this.analyzeChapter());
+    });
   }
 
   ngOnDestroy(): void {
@@ -331,6 +350,7 @@ export class ChapterEditComponent implements OnInit, OnDestroy {
     this.editorBridge.unregister();
     this.routeSub?.unsubscribe();
     this.chapterSyncSub?.unsubscribe();
+    this.draftAcceptedSub?.unsubscribe();
     this.headerService.clear();
     if (this.autoSaveTimer) clearTimeout(this.autoSaveTimer);
     this.stopPeriodicSave();
@@ -521,6 +541,33 @@ export class ChapterEditComponent implements OnInit, OnDestroy {
   updateTitle(value: string): void {
     const current = this.chapter();
     if (current) this.chapter.set({ ...current, title: value });
+  }
+
+  // ── Chapter details (POV / setting / story-time) ──────────────────────────
+
+  /** Updates a free-text detail field locally; persisted on blur via persistMeta. */
+  updateMetaField(field: 'setting' | 'inStoryTime', value: string): void {
+    const current = this.chapter();
+    if (current) this.chapter.set({ ...current, [field]: value });
+  }
+
+  /** Sets the POV character and persists immediately (selects don't blur predictably). */
+  updatePov(entityId: string): void {
+    const current = this.chapter();
+    if (!current) return;
+    this.chapter.set({ ...current, povEntityId: entityId || undefined });
+    this.persistMeta();
+  }
+
+  /** Persists detail fields without creating a version snapshot, preserving the
+   *  live editor content/notes/outline (mirrors save() minus the version). */
+  persistMeta(): void {
+    const current = this.chapter();
+    if (!current) return;
+    const content = this.editorRef?.getContent() ?? current.content ?? '';
+    this.chapterService.update({ ...current, content, notes: this.notes(), outline: this.outline() }).subscribe({
+      error: () => this.snackBar.open('Failed to save chapter details — click Save to retry', undefined, { duration: 4000 }),
+    });
   }
 
   async save(): Promise<void> {
