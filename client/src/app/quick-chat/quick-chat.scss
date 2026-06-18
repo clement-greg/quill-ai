@@ -228,10 +228,17 @@
   font-size: 0.85rem;
 }
 
-.qc-markdown {
+.qc-assistant-bubble {
+  display: flex;
+  flex-direction: column;
   background: var(--mat-sys-surface-container);
   border-radius: 16px 16px 16px 4px;
   padding: 10px 14px;
+  gap: 8px;
+  overflow: hidden;
+}
+
+.qc-markdown {
   line-height: 1.6;
   word-break: break-word;
 }

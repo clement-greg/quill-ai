@@ -1,6 +1,7 @@
 import {
   ChangeDetectionStrategy,
   Component,
+  CUSTOM_ELEMENTS_SCHEMA,
   ElementRef,
   computed,
   effect,
@@ -40,6 +41,7 @@ import { FolderLocationPickerDialogComponent, FolderLocation, FolderLocationPick
   imports: [MatButtonModule, MatIconModule, MatTooltipModule, MatProgressSpinnerModule, MapPreviewComponent],
   templateUrl: './quick-chat.html',
   styleUrl: './quick-chat.scss',
+  schemas: [CUSTOM_ELEMENTS_SCHEMA],
   host: {
     '(document:keydown.escape)': 'onEscape()',
     '(document:mousedown)': 'onDocumentMouseDown($event)',

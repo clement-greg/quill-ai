@@ -34,6 +34,8 @@ export interface ChatSessionMessage {
   /** The beat sheet (scene plan) produced before a chapter draft, shown as a
    * collapsible "Story plan" above the prose. */
   beats?: string;
+  /** URL of a lottie animation to display inline after a successful action. */
+  lottieUrl?: string;
 }
 
 export interface ChatSession {

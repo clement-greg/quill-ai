@@ -125,38 +125,48 @@
                 }
               </div>
             }
-            @if (msg.text) {
-              <div class="qc-markdown" [attr.data-msg-index]="$index" (click)="onCitationClick($event)" [innerHTML]="renderHtml(msg, $index)"></div>
-              @if (editorBridge.hasChapterContext() && !(last && quickChat.streaming())) {
-                @if (msg.kind === 'chapter-draft') {
-                  <div class="qc-insert-row">
-                    <button mat-stroked-button class="qc-insert-btn"
-                            (mousedown)="onInsertMouseDown($event, msg)"
-                            (click)="insertAtCursor(msg)"
-                            matTooltip="Insert at the cursor in your chapter">
-                      <mat-icon>edit_note</mat-icon> Insert
-                    </button>
-                    <button mat-stroked-button class="qc-insert-btn"
-                            (click)="replaceChapter(msg)"
-                            matTooltip="Replace the whole chapter with this draft">
-                      <mat-icon>find_replace</mat-icon> Replace chapter
-                    </button>
-                    <button mat-stroked-button class="qc-insert-btn"
-                            (click)="reviseDraft()"
-                            matTooltip="Ask for changes to this draft">
-                      <mat-icon>autorenew</mat-icon> Revise
-                    </button>
-                  </div>
-                } @else {
-                  <div class="qc-insert-row">
-                    <button mat-stroked-button class="qc-insert-btn"
-                            (mousedown)="onInsertMouseDown($event, msg)"
-                            (click)="insertAtCursor(msg)"
-                            matTooltip="Insert at the cursor in your chapter">
-                      <mat-icon>edit_note</mat-icon> Insert at cursor
-                    </button>
-                  </div>
+            @if (msg.lottieUrl || msg.text) {
+              <div class="qc-assistant-bubble">
+                @if (msg.lottieUrl) {
+                  <lottie-player [src]="msg.lottieUrl" background="transparent"
+                                 speed="1" style="width:100px;height:100px;align-self:center" autoplay
+                                 aria-hidden="true">
+                  </lottie-player>
                 }
+                @if (msg.text) {
+                  <div class="qc-markdown" [attr.data-msg-index]="$index" (click)="onCitationClick($event)" [innerHTML]="renderHtml(msg, $index)"></div>
+                }
+              </div>
+            }
+            @if (msg.text && editorBridge.hasChapterContext() && !(last && quickChat.streaming())) {
+              @if (msg.kind === 'chapter-draft') {
+                <div class="qc-insert-row">
+                  <button mat-stroked-button class="qc-insert-btn"
+                          (mousedown)="onInsertMouseDown($event, msg)"
+                          (click)="insertAtCursor(msg)"
+                          matTooltip="Insert at the cursor in your chapter">
+                    <mat-icon>edit_note</mat-icon> Insert
+                  </button>
+                  <button mat-stroked-button class="qc-insert-btn"
+                          (click)="replaceChapter(msg)"
+                          matTooltip="Replace the whole chapter with this draft">
+                    <mat-icon>find_replace</mat-icon> Replace chapter
+                  </button>
+                  <button mat-stroked-button class="qc-insert-btn"
+                          (click)="reviseDraft()"
+                          matTooltip="Ask for changes to this draft">
+                    <mat-icon>autorenew</mat-icon> Revise
+                  </button>
+                </div>
+              } @else {
+                <div class="qc-insert-row">
+                  <button mat-stroked-button class="qc-insert-btn"
+                          (mousedown)="onInsertMouseDown($event, msg)"
+                          (click)="insertAtCursor(msg)"
+                          matTooltip="Insert at the cursor in your chapter">
+                    <mat-icon>edit_note</mat-icon> Insert at cursor
+                  </button>
+                </div>
               }
             }
             @if (msg.maps?.length) {

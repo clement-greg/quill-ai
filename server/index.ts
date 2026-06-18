@@ -31,6 +31,7 @@ import userStatsRoutes from './routes/user-stats.routes';
 import recentChaptersRoutes from './routes/recent-chapters.routes';
 import mapRoutes from './routes/map.routes';
 import mapAssetRoutes from './routes/map-asset.routes';
+import chapterEditorReviewRoutes from './routes/chapter-editor-review.routes';
 
 const app = express();
 const PORT = process.env['PORT'] || 3200;
@@ -93,6 +94,7 @@ app.use('/api/user-stats', userStatsRoutes);
 app.use('/api/recent-chapters', recentChaptersRoutes);
 app.use('/api/maps', mapRoutes);
 app.use('/api/map-assets', mapAssetRoutes);
+app.use('/api/chapter-editor-review', chapterEditorReviewRoutes);
 
 // Serve Angular static files
 app.use(express.static(path.join(__dirname, '../../client/dist/client/browser')));

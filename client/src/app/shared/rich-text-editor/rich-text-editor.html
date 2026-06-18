@@ -371,3 +371,47 @@
     </div>
   </div>
 }
+
+<!-- Quill Editor inline accept/reject popover -->
+@if (reviewPopoverVisible() && reviewPopoverData(); as s) {
+  <div class="rte-review-popover"
+    [class.review-popover-above]="reviewPopoverAbove()"
+    [style.top.px]="reviewPopoverTop()"
+    [style.left.px]="reviewPopoverLeft()"
+    (keydown.escape)="hideReviewPopover()"
+    role="dialog"
+    aria-label="Suggested edit">
+    <div class="rte-review-popover-badges">
+      @if (s.type === 'comment') {
+        <mat-icon class="rte-review-comment-icon">chat_bubble_outline</mat-icon>
+      }
+      <span class="rte-review-cat">{{ s.category }}</span>
+      <span class="rte-review-sev">{{ s.severity }}</span>
+    </div>
+    @if (s.type === 'comment') {
+      <p class="rte-review-reason">{{ s.reason }}</p>
+      <div class="rte-review-actions">
+        <button mat-button (click)="emitReviewAction('reject')">
+          <mat-icon>close</mat-icon> Dismiss
+        </button>
+      </div>
+    } @else {
+      <div class="rte-review-popover-diff">
+        <span class="rte-review-old">{{ s.originalText }}</span>
+        <mat-icon class="rte-review-arrow">arrow_forward</mat-icon>
+        <span class="rte-review-new">{{ s.replacementText }}</span>
+      </div>
+      @if (s.reason) {
+        <p class="rte-review-reason">{{ s.reason }}</p>
+      }
+      <div class="rte-review-actions">
+        <button mat-flat-button class="rte-review-accept" (click)="emitReviewAction('accept')">
+          <mat-icon>check</mat-icon> Accept
+        </button>
+        <button mat-button (click)="emitReviewAction('reject')">
+          <mat-icon>close</mat-icon> Reject
+        </button>
+      </div>
+    }
+  </div>
+}

@@ -10,4 +10,5 @@ export * from './map.model';
 export * from './map-asset.model';
 export * from './entity-quote.model';
 export * from './chat-session.model';
+export * from './editor-review.model';
 export * from './folder-note.model';

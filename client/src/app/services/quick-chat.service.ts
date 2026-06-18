@@ -150,6 +150,7 @@ export class QuickChatService {
               chapterUpdated?: ChapterExternalUpdate;
               chapterDraft?: boolean;
               beats?: string;
+              lottie?: string;
             };
             if (parsed.error) {
               this.updateLastAssistantMessage(`Error: ${parsed.error}`);
@@ -174,6 +175,8 @@ export class QuickChatService {
               this.setLastAssistantImage(parsed.image.url, parsed.image.thumbnailUrl);
             } else if (parsed.imageError) {
               this.setLastAssistantGenerating(false);
+            } else if (parsed.lottie) {
+              this.setLastAssistantLottie(parsed.lottie);
             } else if (parsed.chapterUpdated) {
               this.chapterSync.notify(parsed.chapterUpdated);
             } else if (parsed.content) {
@@ -271,13 +274,14 @@ export class QuickChatService {
   private async persistToSession(sessionId: string): Promise<void> {
     const messages = this.messages()
       .filter(m => m.text || m.imageUrl)
-      .map(({ role, text, imageUrl, thumbnailUrl, sources, kind, beats }) => ({
+      .map(({ role, text, imageUrl, thumbnailUrl, sources, kind, beats, lottieUrl }) => ({
         role, text,
         ...(imageUrl ? { imageUrl } : {}),
         ...(thumbnailUrl ? { thumbnailUrl } : {}),
         ...(sources?.length ? { sources } : {}),
         ...(kind ? { kind } : {}),
         ...(beats ? { beats } : {}),
+        ...(lottieUrl ? { lottieUrl } : {}),
       }));
     try {
       await this.authFetch(`/api/chat-sessions/${sessionId}`, {
@@ -401,6 +405,15 @@ export class QuickChatService {
       if (msgs.length === 0) return msgs;
       const copy = [...msgs];
       copy[copy.length - 1] = { ...copy[copy.length - 1], kind: 'chapter-draft' };
+      return copy;
+    });
+  }
+
+  private setLastAssistantLottie(lottieUrl: string): void {
+    this.messages.update(msgs => {
+      if (msgs.length === 0) return msgs;
+      const copy = [...msgs];
+      copy[copy.length - 1] = { ...copy[copy.length - 1], lottieUrl };
       return copy;
     });
   }

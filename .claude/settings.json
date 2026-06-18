@@ -21,7 +21,13 @@
       "Bash(Remove-Item \"c:\\\\Users\\\\gregb\\\\source\\\\repros\\\\personal\\\\quill-ai\\\\client\\\\src\\\\app\\\\quick-chat\\\\save-chat-dialog.ts\")",
       "Bash(tasklist)",
       "Read(//c/c/Users/gregb/source/repros/personal/quill-ai/server/**)",
-      "Bash(xargs grep -l \"ChatSessionMessage\")"
+      "Bash(xargs grep -l \"ChatSessionMessage\")",
+      "Bash(npm install *)",
+      "PowerShell($f='c:\\\\Users\\\\gregb\\\\source\\\\repros\\\\personal\\\\quill-ai\\\\client\\\\src\\\\app\\\\shared\\\\rich-text-editor\\\\rich-text-editor.ts'; $lines=Get-Content $f; foreach\\($ln in 583,654\\){ $s=$lines[$ln-1]; $idx=$s.IndexOf\\('replace\\(/'\\); $ch=$s[$idx+9]; \"line $ln char-code after /: $\\([int][char]$ch\\)\" })",
+      "Read(//c/c/Users/gregb/source/repros/personal/quill-ai/client/src/app/**)",
+      "Bash(node -e \"const c=require\\('./client/package.json'\\).scripts, s=require\\('./server/package.json'\\).scripts; console.log\\('CLIENT:',JSON.stringify\\(c,null,0\\)\\); console.log\\('SERVER:',JSON.stringify\\(s,null,0\\)\\);\")",
+      "Bash(node -e \"console.log\\(JSON.stringify\\(require\\('./client/package.json'\\).scripts\\)\\)\")",
+      "Bash(node -e \"console.log\\(JSON.stringify\\(require\\('./package.json'\\).scripts\\)\\)\")"
     ]
   }
 }

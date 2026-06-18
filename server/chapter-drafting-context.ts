@@ -112,6 +112,23 @@ export async function buildChapterDraftingContext(
   opts: DraftingContextOptions,
   req: Request,
 ): Promise<{ systemPrompt: string; chapterTitle: string }> {
+  const { contextText, chapterTitle } = await buildChapterContext(chapterId, opts, req);
+  const systemPrompt = baseDraftingInstructions(chapterTitle) +
+    (contextText ? `\n\n${contextText}` : '');
+  return { systemPrompt, chapterTitle };
+}
+
+/**
+ * Builds just the grounding CONTEXT for a chapter (no task-specific preamble):
+ * series & book direction, authorial intent, narrative continuity (story-so-far
+ * summaries + prior-chapter tail), POV voice, cast bios & voice samples, and
+ * RAG-retrieved passages. Shared by chapter drafting and the Quill Editor pass.
+ */
+export async function buildChapterContext(
+  chapterId: string,
+  opts: DraftingContextOptions,
+  req: Request,
+): Promise<{ contextText: string; chapterTitle: string }> {
   const sections: string[] = [];
   let chapterTitle = '';
 
@@ -119,7 +136,7 @@ export async function buildChapterDraftingContext(
     const chaptersContainer = getContainer('chapters');
     const { resource: chapter } = await chaptersContainer.item(chapterId, chapterId).read<Chapter>();
     if (!chapter) {
-      return { systemPrompt: baseDraftingInstructions(''), chapterTitle: '' };
+      return { contextText: '', chapterTitle: '' };
     }
     chapterTitle = chapter.title ?? '';
 
@@ -269,12 +286,10 @@ export async function buildChapterDraftingContext(
       }
     }
   } catch (err) {
-    console.error('Failed to build chapter drafting context:', err);
+    console.error('Failed to build chapter context:', err);
   }
 
-  const systemPrompt = baseDraftingInstructions(chapterTitle) +
-    (sections.length ? `\n\n${sections.join('\n\n')}` : '');
-  return { systemPrompt, chapterTitle };
+  return { contextText: sections.length ? sections.join('\n\n') : '', chapterTitle };
 }
 
 const beatSheetClient = new AzureOpenAI({

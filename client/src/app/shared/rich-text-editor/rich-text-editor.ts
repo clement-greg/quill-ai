@@ -13,6 +13,19 @@ import { EntityService } from '../../services/entity.service';
 import { GrammarCheckService, GrammarError, SuggestedEntity } from '../../services/grammar-check.service';
 import { UserSettingsService } from '../../services/user-settings.service';
 
+/** Minimal shape the editor needs to decorate/act on a Quill Editor suggestion.
+ *  Structurally compatible with the review service's `ReviewSuggestion`. */
+export interface ReviewDecoration {
+  id: string;
+  blockIndex: number;
+  originalText: string;
+  replacementText?: string;
+  type?: string;
+  category?: string;
+  severity?: string;
+  reason?: string;
+}
+
 export interface SuggestedEntityCard {
   name: string;
   type: 'PERSON' | 'PLACE' | 'THING';
@@ -69,6 +82,11 @@ export class RichTextEditorComponent implements OnInit, AfterViewInit, OnDestroy
    *  opens the Ask Quill overlay; the captured cursor context travels via the
    *  editor bridge. */
   aiAssistRequested = output<{ selectedText: string; surroundingText: string }>();
+
+  /** Quill Editor: the suggestion currently hovered in the document (or null). */
+  reviewSuggestionHovered = output<string | null>();
+  /** Quill Editor: accept/reject invoked from a decoration's inline popover. */
+  reviewSuggestionAction = output<{ id: string; action: 'accept' | 'reject' }>();
 
   // ── Internal entity state ────────────────────────────────────────────────
   readonly entities = signal<Entity[]>([]);
@@ -557,6 +575,325 @@ export class RichTextEditorComponent implements OnInit, AfterViewInit, OnDestroy
 
   getEditorElement(): HTMLDivElement | null {
     return this.editorRef?.nativeElement ?? null;
+  }
+
+  // ── Quill Editor review (AI editorial pass) ───────────────────────────────
+
+  private reviewHighlightEl: HTMLElement | null = null;
+  /** Full suggestion data for each decoration currently in the document. */
+  private reviewSuggestions = new Map<string, ReviewDecoration>();
+  /** The suggestion id last reported as hovered, to debounce repeat emits. */
+  private hoveredReviewId: string | null = null;
+
+  // Inline accept/reject popover (mirrors the grammar popover pattern).
+  reviewPopoverVisible = signal(false);
+  reviewPopoverTop = signal(0);
+  reviewPopoverLeft = signal(0);
+  reviewPopoverAbove = signal(false);
+  reviewPopoverData = signal<ReviewDecoration | null>(null);
+
+  /** Lock/unlock the editor. The chapter is made read-only while a review run
+   *  is active so suggestion anchors can't drift under the author's cursor. */
+  setEditable(editable: boolean): void {
+    const el = this.editorRef?.nativeElement;
+    if (el) el.setAttribute('contenteditable', editable ? 'true' : 'false');
+  }
+
+  /** Wraps a suggestion's target text in a decoration span (text content is
+   *  left untouched, so anchoring stays stable as more decorations are added).
+   *  Returns false when the anchor can't be located or wrapped. */
+  decorateSuggestion(s: ReviewDecoration): boolean {
+    const el = this.editorRef?.nativeElement;
+    const block = el?.children[s.blockIndex];
+    if (!el || !block) return false;
+    if (block.querySelector(`.quill-suggestion-mark[data-suggestion-id="${s.id}"]`)) {
+      this.reviewSuggestions.set(s.id, s);
+      return true; // already decorated
+    }
+    const range = this.locateRangeInBlock(block, s.originalText);
+    if (!range) return false;
+    const span = document.createElement('span');
+    span.className = 'quill-suggestion-mark';
+    span.setAttribute('data-suggestion-id', s.id);
+    span.setAttribute('data-severity', s.severity ?? 'medium');
+    span.setAttribute('data-type', s.type === 'comment' ? 'comment' : 'replace');
+    try {
+      range.surroundContents(span);
+    } catch {
+      return false; // range crosses element boundaries
+    }
+    this.reviewSuggestions.set(s.id, s);
+    return true;
+  }
+
+  /** Removes a decoration, restoring the original text unchanged. */
+  undecorateSuggestion(id: string): void {
+    this.reviewSuggestions.delete(id);
+    if (this.reviewPopoverData()?.id === id) this.hideReviewPopover();
+    const span = this.editorRef?.nativeElement
+      .querySelector<HTMLElement>(`.quill-suggestion-mark[data-suggestion-id="${id}"]`);
+    if (span) this.unwrapElement(span);
+  }
+
+  /** Applies a suggestion's replacement and removes its decoration. Falls back
+   *  to a fresh locate when the decoration is missing. Returns success. */
+  acceptSuggestionEdit(s: ReviewDecoration): boolean {
+    const el = this.editorRef?.nativeElement;
+    if (!el) return false;
+    this.reviewSuggestions.delete(s.id);
+    if (this.reviewPopoverData()?.id === s.id) this.hideReviewPopover();
+    const span = el.querySelector<HTMLElement>(`.quill-suggestion-mark[data-suggestion-id="${s.id}"]`);
+    if (span) {
+      span.textContent = s.replacementText ?? '';
+      this.unwrapElement(span);
+    } else {
+      const block = el.children[s.blockIndex];
+      if (!block) return false;
+      const range = this.locateRangeInBlock(block, s.originalText);
+      if (!range) return false;
+      range.deleteContents();
+      range.insertNode(document.createTextNode(s.replacementText ?? ''));
+    }
+    this.commitCleanContent();
+    return true;
+  }
+
+  /** Returns the normalized text of a review block (matches extractReviewBlocks),
+   *  used as context when refining a suggestion. */
+  getReviewBlockText(blockIndex: number): string {
+    const block = this.editorRef?.nativeElement.children[blockIndex];
+    return (block?.textContent ?? '').replace(/ /g, ' ').trim();
+  }
+
+  /** Refreshes the stored data for a decoration after it's been refined, so the
+   *  inline popover reflects the new replacement/reason. */
+  updateReviewSuggestion(s: ReviewDecoration): void {
+    if (this.reviewSuggestions.has(s.id)) this.reviewSuggestions.set(s.id, s);
+    if (this.reviewPopoverData()?.id === s.id) this.reviewPopoverData.set(s);
+    const span = this.editorRef?.nativeElement
+      .querySelector<HTMLElement>(`.quill-suggestion-mark[data-suggestion-id="${s.id}"]`);
+    if (span) span.setAttribute('data-type', s.type === 'comment' ? 'comment' : 'replace');
+  }
+
+  /** Strips every review decoration (e.g. when the review is dismissed). */
+  clearAllReviewDecorations(): void {
+    this.reviewSuggestions.clear();
+    this.hideReviewPopover();
+    this.editorRef?.nativeElement
+      .querySelectorAll<HTMLElement>('.quill-suggestion-mark')
+      .forEach(span => this.unwrapElement(span));
+  }
+
+  /** Visually emphasizes a decoration in place, without scrolling (hover sync). */
+  emphasizeDecoration(id: string): void {
+    const el = this.editorRef?.nativeElement;
+    if (!el) return;
+    this.clearEmphasis();
+    el.querySelector<HTMLElement>(`.quill-suggestion-mark[data-suggestion-id="${id}"]`)
+      ?.classList.add('is-emphasized');
+  }
+
+  /** Emphasizes a decoration and scrolls it into view (sidebar card click). */
+  scrollToDecoration(id: string): void {
+    const el = this.editorRef?.nativeElement;
+    if (!el) return;
+    this.clearEmphasis();
+    const span = el.querySelector<HTMLElement>(`.quill-suggestion-mark[data-suggestion-id="${id}"]`);
+    if (span) {
+      span.classList.add('is-emphasized');
+      span.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }
+  }
+
+  /** Reverts an accepted edit by swapping the replacement back to the original.
+   *  Best-effort: returns false if the replacement text can't be located. */
+  revertSuggestionEdit(s: ReviewDecoration): boolean {
+    const el = this.editorRef?.nativeElement;
+    const block = el?.children[s.blockIndex];
+    if (!el || !block || !s.replacementText) return false;
+    const range = this.locateRangeInBlock(block, s.replacementText);
+    if (!range) return false;
+    range.deleteContents();
+    range.insertNode(document.createTextNode(s.originalText));
+    block.normalize();
+    this.commitCleanContent();
+    return true;
+  }
+
+  clearEmphasis(): void {
+    this.editorRef?.nativeElement
+      .querySelectorAll('.quill-suggestion-mark.is-emphasized')
+      .forEach(s => s.classList.remove('is-emphasized'));
+  }
+
+  hideReviewPopover(): void {
+    this.reviewPopoverVisible.set(false);
+    this.reviewPopoverData.set(null);
+  }
+
+  /** Emits the action from the inline popover; the host applies it. */
+  emitReviewAction(action: 'accept' | 'reject'): void {
+    const data = this.reviewPopoverData();
+    if (!data) return;
+    this.hideReviewPopover();
+    this.reviewSuggestionAction.emit({ id: data.id, action });
+  }
+
+  /** Unwraps an element, splicing its children into its parent. */
+  private unwrapElement(el: HTMLElement): void {
+    const parent = el.parentNode;
+    if (!parent) return;
+    while (el.firstChild) parent.insertBefore(el.firstChild, el);
+    parent.removeChild(el);
+    parent.normalize();
+  }
+
+  /** Recomputes the clean (decoration-free) content string and emits it so the
+   *  accepted edit reaches autosave without leaking any review markup. */
+  private commitCleanContent(): void {
+    const el = this.editorRef?.nativeElement;
+    if (!el) return;
+    const clone = el.cloneNode(true) as HTMLElement;
+    clone.querySelectorAll<HTMLElement>('.quill-suggestion-mark, mark.quill-review-highlight')
+      .forEach(s => {
+        const parent = s.parentNode!;
+        while (s.firstChild) parent.insertBefore(s.firstChild, s);
+        parent.removeChild(s);
+      });
+    clone.normalize();
+    this.editorContent = clone.innerHTML;
+    this.wordCount.set(this.countWords(clone.textContent ?? ''));
+    this.scheduleEmit();
+    this.scheduleMinimap();
+  }
+
+  /** Opens the inline accept/reject popover anchored to a decoration. */
+  private showReviewPopover(span: HTMLElement, data: ReviewDecoration): void {
+    const rect = span.getBoundingClientRect();
+    const off = this.getFixedOffset();
+    const GAP = 6;
+    const POPUP_HEIGHT_EST = 160;
+    const above = rect.bottom + GAP + POPUP_HEIGHT_EST > window.innerHeight;
+    this.reviewPopoverAbove.set(above);
+    this.reviewPopoverTop.set(above ? rect.top - GAP - off.y : rect.bottom + GAP - off.y);
+    this.reviewPopoverLeft.set(Math.max(8, rect.left - off.x));
+    this.reviewPopoverData.set(data);
+    this.reviewPopoverVisible.set(true);
+  }
+
+  /** Reports decoration hover to the host (doc→sidebar sync). */
+  private updateReviewHover(target: HTMLElement): void {
+    const mark = target.closest?.('.quill-suggestion-mark') as HTMLElement | null;
+    const id = mark?.getAttribute('data-suggestion-id') ?? null;
+    if (id !== this.hoveredReviewId) {
+      this.hoveredReviewId = id;
+      this.reviewSuggestionHovered.emit(id);
+    }
+  }
+
+  /** Returns the chapter as ordered top-level blocks for an AI review pass.
+   *  `index` is the positional index within the editor's children and stays
+   *  stable while the editor is locked, so a suggestion can be anchored back to
+   *  exactly the block it came from. Empty blocks are skipped but their position
+   *  is preserved in `index`. */
+  extractReviewBlocks(): { index: number; text: string }[] {
+    const el = this.editorRef?.nativeElement;
+    if (!el) return [];
+    const blocks: { index: number; text: string }[] = [];
+    Array.from(el.children).forEach((child, index) => {
+      const text = (child.textContent ?? '').replace(/ /g, ' ').trim();
+      if (text) blocks.push({ index, text });
+    });
+    return blocks;
+  }
+
+  /** Applies a copy-edit replacement by locating `originalText` within the given
+   *  block and swapping it for `replacementText`. Returns false (no-op) when the
+   *  anchor can't be found — e.g. the text drifted. */
+  applyReviewReplacement(blockIndex: number, originalText: string, replacementText: string): boolean {
+    const el = this.editorRef?.nativeElement;
+    const block = el?.children[blockIndex];
+    if (!el || !block) return false;
+    this.clearReviewHighlight();
+    const range = this.locateRangeInBlock(block, originalText);
+    if (!range) return false;
+    range.deleteContents();
+    range.insertNode(document.createTextNode(replacementText));
+    block.normalize();
+    this.editorContent = el.innerHTML;
+    this.wordCount.set(this.countWords(el.textContent ?? ''));
+    this.scheduleEmit();
+    this.scheduleMinimap();
+    return true;
+  }
+
+  /** Briefly highlights the text a suggestion targets and scrolls it into view. */
+  highlightReviewAnchor(blockIndex: number, originalText: string): void {
+    const el = this.editorRef?.nativeElement;
+    const block = el?.children[blockIndex] as HTMLElement | undefined;
+    if (!block) return;
+    this.clearReviewHighlight();
+    const range = this.locateRangeInBlock(block, originalText);
+    if (range) {
+      const mark = document.createElement('mark');
+      mark.className = 'quill-review-highlight';
+      try {
+        range.surroundContents(mark);
+        this.reviewHighlightEl = mark;
+      } catch {
+        // Range crosses element boundaries; skip the wrap but still scroll.
+      }
+    }
+    block.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  }
+
+  /** Removes the transient review highlight without dirtying saved content. */
+  clearReviewHighlight(): void {
+    const mark = this.reviewHighlightEl;
+    this.reviewHighlightEl = null;
+    if (!mark || !mark.isConnected) return;
+    const parent = mark.parentNode!;
+    while (mark.firstChild) parent.insertBefore(mark.firstChild, mark);
+    parent.removeChild(mark);
+    parent.normalize();
+  }
+
+  /** Locates an exact substring within a block and returns a Range spanning it,
+   *  walking text nodes so the match survives inline spans (entity refs, etc.).
+   *  Treats &nbsp; as a regular space to mirror how block text is extracted. */
+  private locateRangeInBlock(block: Element, target: string): Range | null {
+    if (!target) return null;
+    const walker = document.createTreeWalker(block, NodeFilter.SHOW_TEXT);
+    const nodes: Text[] = [];
+    let concat = '';
+    let node: Node | null;
+    while ((node = walker.nextNode())) {
+      const t = node as Text;
+      nodes.push(t);
+      concat += t.textContent ?? '';
+    }
+    const start = concat.replace(/ /g, ' ').indexOf(target);
+    if (start === -1) return null;
+    const startPos = this.flatOffsetToNode(nodes, start);
+    const endPos = this.flatOffsetToNode(nodes, start + target.length);
+    if (!startPos || !endPos) return null;
+    const range = document.createRange();
+    range.setStart(startPos.node, startPos.offset);
+    range.setEnd(endPos.node, endPos.offset);
+    return range;
+  }
+
+  /** Maps a flat character offset across concatenated text nodes to a concrete
+   *  (node, offset) position. */
+  private flatOffsetToNode(nodes: Text[], offset: number): { node: Text; offset: number } | null {
+    let remaining = offset;
+    for (const node of nodes) {
+      const len = node.textContent?.length ?? 0;
+      if (remaining <= len) return { node, offset: remaining };
+      remaining -= len;
+    }
+    const last = nodes[nodes.length - 1];
+    return last ? { node: last, offset: last.textContent?.length ?? 0 } : null;
   }
 
   // ── Search (find-in-page) ────────────────────────────────────────────────
@@ -1118,6 +1455,19 @@ export class RichTextEditorComponent implements OnInit, AfterViewInit, OnDestroy
     this.lastEjectedSpan = null; // user repositioned cursor manually
     const target = event.target as HTMLElement;
 
+    // Quill Editor decoration — open its inline accept/reject popover.
+    const reviewMark = target.closest?.('.quill-suggestion-mark') as HTMLElement | null;
+    if (reviewMark) {
+      const id = reviewMark.getAttribute('data-suggestion-id');
+      const data = id ? this.reviewSuggestions.get(id) : null;
+      if (data) {
+        this.showReviewPopover(reviewMark, data);
+        event.preventDefault();
+        event.stopPropagation();
+        return;
+      }
+    }
+
     // Photo reference icon — show popup on tap/click (touch support)
     const photoRefEl = target.closest?.('.photo-ref-icon') as HTMLElement | null;
     if (photoRefEl) {
@@ -1168,6 +1518,9 @@ export class RichTextEditorComponent implements OnInit, AfterViewInit, OnDestroy
 
   onEditorMouseMove(event: MouseEvent): void {
     const target = event.target as HTMLElement;
+
+    // Quill Editor: report which decoration (if any) is under the cursor.
+    this.updateReviewHover(target);
 
     // Photo reference icon hover
     const photoRefEl = target.closest?.('.photo-ref-icon') as HTMLElement | null;
@@ -1230,6 +1583,10 @@ export class RichTextEditorComponent implements OnInit, AfterViewInit, OnDestroy
     this.scheduleHidePopup();
     if (this.photoRefPopupShowTimer) { clearTimeout(this.photoRefPopupShowTimer); this.photoRefPopupShowTimer = null; }
     this.scheduleHidePhotoRefPopup();
+    if (this.hoveredReviewId !== null) {
+      this.hoveredReviewId = null;
+      this.reviewSuggestionHovered.emit(null);
+    }
   }
   onPopupMouseEnter(): void { if (this.popupHideTimer) { clearTimeout(this.popupHideTimer); this.popupHideTimer = null; } }
   onPopupMouseLeave(): void { this.scheduleHidePopup(); }

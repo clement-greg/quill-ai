@@ -40,6 +40,7 @@ import { EditorBridgeService } from '../services/editor-bridge.service';
 import { QuickChatService } from '../services/quick-chat.service';
 import { ChapterSyncService } from '../services/chapter-sync.service';
 import { RecentChaptersService } from '../services/recent-chapters.service';
+import { EditorReviewService, ReviewSuggestion } from '../services/editor-review.service';
 import { diffWords } from 'diff';
 import { forkJoin, Subscription } from 'rxjs';
 
@@ -83,6 +84,8 @@ export class ChapterEditComponent implements OnInit, OnDestroy {
   private quickChat = inject(QuickChatService);
   private chapterSync = inject(ChapterSyncService);
   private recentChapters = inject(RecentChaptersService);
+  /** Public so the template can read the streamed review suggestions. */
+  readonly editorReview = inject(EditorReviewService);
   private routeSub?: Subscription;
   private chapterSyncSub?: Subscription;
   private draftAcceptedSub?: Subscription;
@@ -157,6 +160,26 @@ export class ChapterEditComponent implements OnInit, OnDestroy {
   sidebarTabIndex = signal(0);
   sidebarWidth = signal(350);
 
+  // ── Quill Editor (AI review pass) ─────────────────────────────────────────
+  /** Index of the "Quill Editor" sidebar tab. */
+  static readonly QUILL_REVIEW_TAB = 5;
+  /** When false, low-severity suggestions are hidden (the default). */
+  quillShowLow = signal(false);
+  /** Suggestions filtered by the current severity toggle. */
+  quillSuggestions = computed(() => this.editorReview.visible(this.quillShowLow()));
+  quillOpenCount = computed(() =>
+    this.quillSuggestions().filter(s => s.status === 'open').length,
+  );
+  /** Suggestion id currently hovered in the document (doc→sidebar highlight). */
+  quillHoveredId = signal<string | null>(null);
+  /** Ids of suggestions currently decorated in the document. */
+  private decoratedReviewIds = new Set<string>();
+  /** Suggestion whose free-form refine box is open. */
+  quillRefineOpenId = signal<string | null>(null);
+  /** Suggestion currently being refined (shows a spinner). */
+  quillRefiningId = signal<string | null>(null);
+  quillRefineText = signal('');
+
   // Track emails whose avatar endpoint returned an error so we fall back to the placeholder icon
   private _avatarErrors = signal<ReadonlySet<string>>(new Set());
   avatarFailed(email: string): boolean { return this._avatarErrors().has(email); }
@@ -198,6 +221,13 @@ export class ChapterEditComponent implements OnInit, OnDestroy {
   ];
 
   constructor() {
+    // Keep the document's inline review decorations in sync with the streamed,
+    // severity-filtered, still-open suggestions.
+    effect(() => {
+      this.quillSuggestions(); // track changes (stream, filter toggle, accept/reject)
+      untracked(() => this.reconcileReviewDecorations());
+    });
+
     // Auto-load version history when history tab becomes active
     effect(() => {
       const idx = this.sidebarTabIndex();
@@ -351,6 +381,8 @@ export class ChapterEditComponent implements OnInit, OnDestroy {
     this.routeSub?.unsubscribe();
     this.chapterSyncSub?.unsubscribe();
     this.draftAcceptedSub?.unsubscribe();
+    this.editorReview.clear();
+    this.decoratedReviewIds.clear();
     this.headerService.clear();
     if (this.autoSaveTimer) clearTimeout(this.autoSaveTimer);
     this.stopPeriodicSave();
@@ -983,6 +1015,182 @@ export class ChapterEditComponent implements OnInit, OnDestroy {
     this.showAiStats.set(true);
   }
   closeAiStats(): void { this.showAiStats.set(false); }
+
+  // ── Quill Editor (AI review pass) ─────────────────────────────────────────
+
+  /** Starts an AI editorial pass: snapshots the chapter into blocks, locks the
+   *  editor so anchors can't drift, and streams suggestions into the sidebar. */
+  startQuillReview(): void {
+    const chapter = this.chapter();
+    if (!chapter || !this.editorRef || this.editorReview.running()) return;
+    const blocks = this.editorRef.extractReviewBlocks();
+    if (blocks.length === 0) {
+      this.snackBar.open('Nothing to review yet — write some prose first.', 'OK', { duration: 3000 });
+      return;
+    }
+    this.decoratedReviewIds.clear();
+    this.editorRef.setEditable(false);
+    this.onSidebarTabChange(ChapterEditComponent.QUILL_REVIEW_TAB);
+    void this.editorReview.run(chapter.id, blocks);
+  }
+
+  acceptQuillSuggestion(s: ReviewSuggestion): void {
+    // Comments are informational — acknowledging one just resolves it (no edit).
+    if (s.type === 'comment') {
+      this.editorRef?.undecorateSuggestion(s.id);
+      this.editorReview.markAccepted(s.id);
+      this.maybeUnlockEditor();
+      return;
+    }
+    const applied = this.editorRef?.acceptSuggestionEdit(s);
+    if (applied) {
+      this.editorReview.markAccepted(s.id);
+    } else {
+      this.editorReview.markRejected(s.id);
+      this.snackBar.open("Couldn't locate that text — it may have changed.", 'OK', { duration: 3000 });
+    }
+    this.maybeUnlockEditor();
+  }
+
+  rejectQuillSuggestion(s: ReviewSuggestion): void {
+    this.editorReview.markRejected(s.id);
+    this.maybeUnlockEditor();
+  }
+
+  /** Applies every still-open visible text edit. Comments are left for the
+   *  author to read and dismiss individually (there's nothing to apply). */
+  acceptAllQuillSuggestions(): void {
+    for (const s of this.quillSuggestions()) {
+      if (s.status !== 'open' || s.type === 'comment') continue;
+      const applied = this.editorRef?.acceptSuggestionEdit(s);
+      if (applied) this.editorReview.markAccepted(s.id);
+      else this.editorReview.markRejected(s.id);
+    }
+    this.maybeUnlockEditor();
+  }
+
+  rejectAllQuillSuggestions(): void {
+    for (const s of this.quillSuggestions()) {
+      if (s.status === 'open') this.editorReview.markRejected(s.id);
+    }
+    this.maybeUnlockEditor();
+  }
+
+  /** Ends the review entirely and unlocks the editor. */
+  dismissQuillReview(): void {
+    this.editorReview.clear();
+    this.editorRef?.clearAllReviewDecorations();
+    this.decoratedReviewIds.clear();
+    this.editorRef?.setEditable(true);
+  }
+
+  onQuillSuggestionHover(s: ReviewSuggestion): void {
+    if (s.status !== 'open') return;
+    this.editorRef?.emphasizeDecoration(s.id);
+  }
+
+  onQuillSuggestionLeave(): void {
+    this.editorRef?.clearEmphasis();
+  }
+
+  /** Clicking a card scrolls the document to its highlight. */
+  scrollToQuillSuggestion(s: ReviewSuggestion): void {
+    if (s.status !== 'open') return;
+    this.editorRef?.scrollToDecoration(s.id);
+  }
+
+  /** Re-opens a resolved suggestion; reverts the edit if it was accepted. */
+  undoQuillSuggestion(s: ReviewSuggestion): void {
+    if (s.status === 'accepted' && s.type !== 'comment') {
+      const reverted = this.editorRef?.revertSuggestionEdit(s);
+      if (!reverted) {
+        this.snackBar.open("Couldn't undo — the text has changed since.", 'OK', { duration: 3000 });
+        return;
+      }
+    }
+    this.editorReview.markOpen(s.id);
+    this.editorRef?.setEditable(false); // re-lock while it's open again
+  }
+
+  /** Toggles the free-form refine box for a suggestion. */
+  toggleQuillRefine(s: ReviewSuggestion): void {
+    if (this.quillRefineOpenId() === s.id) {
+      this.quillRefineOpenId.set(null);
+    } else {
+      this.quillRefineOpenId.set(s.id);
+      this.quillRefineText.set('');
+    }
+  }
+
+  /** Sends the author's free-form instruction and updates the suggestion in place. */
+  async submitQuillRefine(s: ReviewSuggestion): Promise<void> {
+    const instruction = this.quillRefineText().trim();
+    const chapter = this.chapter();
+    if (!instruction || !chapter || this.quillRefiningId()) return;
+    this.quillRefiningId.set(s.id);
+    const blockText = this.editorRef?.getReviewBlockText(s.blockIndex) ?? '';
+    const result = await this.editorReview.refineSuggestion({
+      chapterId: chapter.id,
+      blockText,
+      originalText: s.originalText,
+      currentReplacement: s.replacementText ?? '',
+      reason: s.reason,
+      instruction,
+      category: s.category,
+      severity: s.severity,
+    });
+    this.quillRefiningId.set(null);
+    if (!result) {
+      this.snackBar.open('Could not refine that suggestion — try rephrasing.', 'OK', { duration: 3000 });
+      return;
+    }
+    this.editorReview.updateSuggestion(s.id, result);
+    const updated = this.editorReview.suggestions().find(x => x.id === s.id);
+    if (updated) this.editorRef?.updateReviewSuggestion(updated);
+    this.quillRefineOpenId.set(null);
+    this.quillRefineText.set('');
+  }
+
+  /** Document→sidebar hover sync (from the editor's hover output). */
+  onInlineReviewHovered(id: string | null): void {
+    this.quillHoveredId.set(id);
+  }
+
+  /** Accept/reject invoked from a decoration's inline popover. */
+  onInlineReviewAction(event: { id: string; action: 'accept' | 'reject' }): void {
+    const s = this.editorReview.suggestions().find(x => x.id === event.id);
+    if (!s) return;
+    if (event.action === 'accept') this.acceptQuillSuggestion(s);
+    else this.rejectQuillSuggestion(s);
+  }
+
+  /** Reconciles document decorations to match the visible, open suggestions. */
+  private reconcileReviewDecorations(): void {
+    const editor = this.editorRef;
+    if (!editor) return;
+    const desired = new Map(
+      this.quillSuggestions().filter(s => s.status === 'open').map(s => [s.id, s] as const),
+    );
+    for (const id of [...this.decoratedReviewIds]) {
+      if (!desired.has(id)) {
+        editor.undecorateSuggestion(id);
+        this.decoratedReviewIds.delete(id);
+      }
+    }
+    for (const [id, s] of desired) {
+      if (!this.decoratedReviewIds.has(id)) {
+        editor.decorateSuggestion(s);
+        this.decoratedReviewIds.add(id);
+      }
+    }
+  }
+
+  /** Re-enables editing once nothing is left awaiting a decision. */
+  private maybeUnlockEditor(): void {
+    if (!this.editorReview.running() && !this.editorReview.hasOpenSuggestions()) {
+      this.editorRef?.setEditable(true);
+    }
+  }
 
   onRightPanelChange(open: boolean): void {
     if (!open) { this.editingEntity.set(null); this.showAiStats.set(false); }

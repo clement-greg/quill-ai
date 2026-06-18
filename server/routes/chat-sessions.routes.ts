@@ -31,7 +31,9 @@ function isWholeChapterDraftRequest(text: string): boolean {
 interface ChatTool {
   definition: unknown;
   pending?: object;
-  execute: (args: Record<string, unknown>) => Promise<{ toolResult: unknown; sse?: object }>;
+  /** Lottie animation URL to emit after the model's final text response when this tool succeeds. */
+  successLottie?: string;
+  execute: (args: Record<string, unknown>) => Promise<{ toolResult: unknown; sse?: object; success?: boolean }>;
 }
 
 const router = Router();
@@ -55,6 +57,7 @@ const IMAGE_TOOL_GUIDANCE =
   'Treat the verb "draw" (and "sketch"/"illustrate"/"paint") as an explicit request to generate an ' +
   'image. Build the tool\'s "prompt" from the user\'s description, enriching it with helpful visual ' +
   'detail while staying faithful to what they asked for.';
+
 
 /**
  * Builds a RAG-grounded system prompt for a chat turn. Embeds the last user
@@ -155,6 +158,8 @@ async function streamChatResponse(
   // The running conversation; grows as tool calls/results are appended.
   const convo: unknown[] = [{ role: 'system', content: systemPrompt }, ...messages];
   const toolDefinitions = tools ? Object.values(tools).map(t => t.definition) : undefined;
+  // Lottie URL to emit after the model's final text response (set when a tool with successLottie succeeds).
+  let pendingLottie: string | null = null;
 
   try {
     // Bounded loop: model turn → optional tool calls → model turn → … → answer.
@@ -185,6 +190,7 @@ async function streamChatResponse(
 
       const calls = toolCalls.filter(Boolean);
       if (calls.length === 0 || !tools) {
+        if (pendingLottie) res.write(`data: ${JSON.stringify({ lottie: pendingLottie })}\n\n`);
         emitUsedCitations(res, answer, citations);
         res.write('data: [DONE]\n\n');
         return;
@@ -211,10 +217,11 @@ async function streamChatResponse(
         // Long-running tools announce themselves before executing so the UI can
         // show progress (e.g. a "generating image" spinner).
         if (tool?.pending) res.write(`data: ${JSON.stringify(tool.pending)}\n\n`);
-        const { toolResult, sse } = tool
+        const { toolResult, sse, success } = tool
           ? await tool.execute(parsedArgs)
-          : { toolResult: { error: `Unknown tool ${c.name}` }, sse: undefined };
+          : { toolResult: { error: `Unknown tool ${c.name}` }, sse: undefined, success: false };
         if (sse) res.write(`data: ${JSON.stringify(sse)}\n\n`);
+        if (success && tool?.successLottie) pendingLottie = tool.successLottie;
         convo.push({ role: 'tool', tool_call_id: c.id, content: JSON.stringify(toolResult) });
       }
     }
@@ -654,6 +661,7 @@ function quickChatTools(req: Request): Record<string, ChatTool> {
       },
     },
     add_book_note: {
+      successLottie: 'https://lottie.host/883c202e-9be4-4254-9dba-3fdc86a4ac69/7iuM3NQkyu.json',
       definition: {
         type: 'function',
         function: {
@@ -726,10 +734,12 @@ function quickChatTools(req: Request): Record<string, ChatTool> {
 
         return {
           toolResult: { added: true, book: book.title, message: `Note added to "${book.title}" successfully.` },
+          success: true,
         };
       },
     },
     add_chapter_note: {
+      successLottie: 'https://lottie.host/883c202e-9be4-4254-9dba-3fdc86a4ac69/7iuM3NQkyu.json',
       definition: {
         type: 'function',
         function: {
@@ -808,10 +818,12 @@ function quickChatTools(req: Request): Record<string, ChatTool> {
         return {
           toolResult: { added: true, chapter: chapter.title, message: `Note added to "${chapter.title}" successfully.` },
           sse: { chapterUpdated: { id: chapter.id, notes: updated.notes } },
+          success: true,
         };
       },
     },
     add_book_outline_item: {
+      successLottie: 'https://lottie.host/883c202e-9be4-4254-9dba-3fdc86a4ac69/7iuM3NQkyu.json',
       definition: {
         type: 'function',
         function: {
@@ -881,10 +893,12 @@ function quickChatTools(req: Request): Record<string, ChatTool> {
 
         return {
           toolResult: { added: true, book: book.title, item: itemText, level, message: `Outline item added to "${book.title}" successfully.` },
+          success: true,
         };
       },
     },
     add_chapter_outline_item: {
+      successLottie: 'https://lottie.host/883c202e-9be4-4254-9dba-3fdc86a4ac69/7iuM3NQkyu.json',
       definition: {
         type: 'function',
         function: {
@@ -960,6 +974,7 @@ function quickChatTools(req: Request): Record<string, ChatTool> {
         return {
           toolResult: { added: true, chapter: chapter.title, item: itemText, level, message: `Outline item added to "${chapter.title}" successfully.` },
           sse: { chapterUpdated: { id: chapter.id, outline: updated.outline } },
+          success: true,
         };
       },
     },

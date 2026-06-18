@@ -982,3 +982,126 @@
   50% { opacity: 0; }
 }
 
+
+// Transient highlight shown when hovering a Quill Editor suggestion.
+mark.quill-review-highlight {
+  background: #fff3c4;
+  border-radius: 2px;
+  box-shadow: 0 0 0 2px #ffe082;
+}
+
+// ── Quill Editor inline decorations ───────────────────────────────────────
+// Decorations are created via the DOM API (not the template), so they carry no
+// Angular encapsulation attribute — styles must pierce with :host ::ng-deep.
+:host ::ng-deep .quill-suggestion-mark {
+  border-radius: 2px;
+  cursor: pointer;
+  background: rgba(251, 140, 0, 0.22);
+  box-shadow: inset 0 -2px 0 rgba(251, 140, 0, 0.75);
+  transition: background 0.15s, box-shadow 0.15s;
+
+  &[data-severity='high'] {
+    background: rgba(229, 57, 53, 0.14);
+    box-shadow: inset 0 -2px 0 rgba(229, 57, 53, 0.65);
+  }
+  &[data-severity='low'] {
+    background: rgba(120, 120, 120, 0.12);
+    box-shadow: inset 0 -2px 0 rgba(120, 120, 120, 0.5);
+  }
+
+  &:hover,
+  &.is-emphasized {
+    background: rgba(251, 140, 0, 0.3);
+  }
+  &[data-severity='high']:hover,
+  &[data-severity='high'].is-emphasized {
+    background: rgba(229, 57, 53, 0.3);
+  }
+  &.is-emphasized {
+    outline: 2px solid rgba(103, 80, 164, 0.5);
+    outline-offset: 1px;
+  }
+}
+
+// ── Quill Editor inline popover ───────────────────────────────────────────
+.rte-review-popover {
+  position: fixed;
+  z-index: 40;
+  width: 280px;
+  max-width: 90vw;
+  background: var(--mat-sys-surface, #fff);
+  border: 1px solid var(--mat-sys-outline-variant, #e0e0e0);
+  border-radius: 10px;
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.18);
+  padding: 10px 12px;
+  transform: translateY(0);
+
+  &.review-popover-above { transform: translateY(-100%); }
+}
+.rte-review-popover-badges {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 6px;
+}
+.rte-review-cat,
+.rte-review-sev {
+  font-size: 0.62rem;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  padding: 1px 6px;
+  border-radius: 10px;
+  background: var(--mat-sys-surface-container, #eee);
+  color: var(--mat-sys-on-surface-variant, #555);
+}
+.rte-review-sev { font-weight: 600; }
+.rte-review-popover-diff {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+  font-size: 0.85rem;
+  line-height: 1.4;
+}
+.rte-review-old {
+  background: #ffcdd2;
+  color: #b71c1c;
+  text-decoration: line-through;
+  border-radius: 2px;
+  padding: 0 3px;
+}
+.rte-review-new {
+  background: #c8e6c9;
+  color: #1b5e20;
+  border-radius: 2px;
+  padding: 0 3px;
+}
+.rte-review-arrow { font-size: 16px; width: 16px; height: 16px; color: #9e9e9e; }
+.rte-review-reason {
+  margin: 6px 0 0;
+  font-size: 0.78rem;
+  color: var(--mat-sys-on-surface-variant, #555);
+  line-height: 1.4;
+}
+.rte-review-actions {
+  display: flex;
+  gap: 6px;
+  margin-top: 8px;
+  .mat-icon { margin-right: 2px; }
+}
+.rte-review-accept { --mdc-filled-button-container-color: #2e7d32; }
+
+// Comment-type decorations read as margin notes, not edits.
+:host ::ng-deep .quill-suggestion-mark[data-type='comment'] {
+  background: rgba(33, 150, 243, 0.16);
+  box-shadow: none;
+  border-bottom: 2px dotted rgba(33, 150, 243, 0.8);
+
+  &:hover,
+  &.is-emphasized { background: rgba(33, 150, 243, 0.3); }
+}
+.rte-review-comment-icon {
+  font-size: 16px;
+  width: 16px;
+  height: 16px;
+  color: #1976d2;
+}
