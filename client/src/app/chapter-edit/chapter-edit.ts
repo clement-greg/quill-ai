@@ -37,6 +37,7 @@ import { AuthService } from '../auth/auth.service';
 import { SeriesContextService } from '../services/series-context.service';
 import { EditorBridgeService } from '../services/editor-bridge.service';
 import { QuickChatService } from '../services/quick-chat.service';
+import { ChapterSyncService } from '../services/chapter-sync.service';
 import { RecentChaptersService } from '../services/recent-chapters.service';
 import { diffWords } from 'diff';
 import { forkJoin, Subscription } from 'rxjs';
@@ -79,8 +80,10 @@ export class ChapterEditComponent implements OnInit, OnDestroy {
   private seriesContext = inject(SeriesContextService);
   private editorBridge = inject(EditorBridgeService);
   private quickChat = inject(QuickChatService);
+  private chapterSync = inject(ChapterSyncService);
   private recentChapters = inject(RecentChaptersService);
   private routeSub?: Subscription;
+  private chapterSyncSub?: Subscription;
 
   // ── Chapter state ────────────────────────────────────────────────────────
   chapter = signal<Chapter | null>(null);
@@ -233,12 +236,16 @@ export class ChapterEditComponent implements OnInit, OnDestroy {
       this.chapterService.getById(id).subscribe({
       next: async (data) => {
         const draft = await this.draftService.getDraft(data.id);
-        const contentDiffers = draft !== null && draft.content !== (data.content ?? '');
-        const outlineDiffers = draft !== null && JSON.stringify(draft.outline ?? []) !== JSON.stringify(data.outline ?? []);
+        // Prefer server data when the server was modified more recently than the
+        // draft (e.g. an external tool updated the chapter while the user was away).
+        const serverMs = data.modifiedAt ? new Date(data.modifiedAt).getTime() : 0;
+        const draftIsStale = draft !== null && serverMs > draft.savedAt;
+        const contentDiffers = draft !== null && !draftIsStale && draft.content !== (data.content ?? '');
+        const outlineDiffers = draft !== null && !draftIsStale && JSON.stringify(draft.outline ?? []) !== JSON.stringify(data.outline ?? []);
         const hasDraft = contentDiffers || outlineDiffers;
         const content = hasDraft ? draft!.content : (data.content ?? '');
         const notes = hasDraft ? draft!.notes : (data.notes ?? []);
-        const outline = draft !== null ? (draft.outline ?? data.outline ?? []) : (data.outline ?? []);
+        const outline = hasDraft ? draft!.outline : (data.outline ?? []);
         if (hasDraft) this.hasDraft.set(true);
         this.chapter.set({ ...data, content });
         this.notes.set(notes);
@@ -306,12 +313,24 @@ export class ChapterEditComponent implements OnInit, OnDestroy {
       },
     });
     });
+
+    this.chapterSyncSub = this.chapterSync.updates$.subscribe(async update => {
+      const current = this.chapter();
+      if (!current || current.id !== update.id) return;
+      if (update.outline !== undefined) this.outline.set(update.outline);
+      if (update.notes !== undefined) this.notes.set(update.notes);
+      // Persist the externally-applied change into the draft so a subsequent
+      // page refresh also shows the new data instead of the stale draft.
+      const content = this.editorRef?.getContent() ?? current.content ?? '';
+      await this.draftService.saveDraft(current.id, content, this.notes(), this.outline());
+    });
   }
 
   ngOnDestroy(): void {
     document.removeEventListener('keydown', this.onDocumentKeyDown);
     this.editorBridge.unregister();
     this.routeSub?.unsubscribe();
+    this.chapterSyncSub?.unsubscribe();
     this.headerService.clear();
     if (this.autoSaveTimer) clearTimeout(this.autoSaveTimer);
     this.stopPeriodicSave();

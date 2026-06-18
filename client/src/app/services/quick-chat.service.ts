@@ -3,6 +3,7 @@ import { Router } from '@angular/router';
 import { ChapterCitation, ChatMessageHighlight, ChatSession, ChatSessionMessage, MapPreview } from '@shared/models';
 import { EditorBridgeService } from './editor-bridge.service';
 import { AiAssistantService } from './ai-assistant.service';
+import { ChapterSyncService, ChapterExternalUpdate } from './chapter-sync.service';
 
 
 /**
@@ -15,6 +16,7 @@ export class QuickChatService {
   private readonly router = inject(Router);
   private readonly editorBridge = inject(EditorBridgeService);
   private readonly aiAssistant = inject(AiAssistantService);
+  private readonly chapterSync = inject(ChapterSyncService);
 
   /** The panel is always present — it cannot be fully closed, only minimized. */
   readonly isOpen = signal(true);
@@ -139,6 +141,7 @@ export class QuickChatService {
               generatingImage?: boolean;
               image?: { url: string; thumbnailUrl: string; prompt?: string };
               imageError?: boolean;
+              chapterUpdated?: ChapterExternalUpdate;
             };
             if (parsed.error) {
               this.updateLastAssistantMessage(`Error: ${parsed.error}`);
@@ -159,6 +162,8 @@ export class QuickChatService {
               this.setLastAssistantImage(parsed.image.url, parsed.image.thumbnailUrl);
             } else if (parsed.imageError) {
               this.setLastAssistantGenerating(false);
+            } else if (parsed.chapterUpdated) {
+              this.chapterSync.notify(parsed.chapterUpdated);
             } else if (parsed.content) {
               this.appendToLastAssistantMessage(parsed.content);
             } else if (parsed.sources) {

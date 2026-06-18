@@ -9,6 +9,7 @@ export interface ChapterDraft {
   content: string;
   notes: ChapterNote[];
   outline: OutlineItem[];
+  savedAt: number; // Date.now() ms
 }
 
 @Injectable({ providedIn: 'root' })
@@ -51,7 +52,7 @@ export class ChapterDraftService {
       request.onsuccess = () => {
         const result = request.result;
         if (!result) { resolve(null); return; }
-        resolve({ content: result.content ?? '', notes: result.notes ?? [], outline: result.outline ?? [] });
+        resolve({ content: result.content ?? '', notes: result.notes ?? [], outline: result.outline ?? [], savedAt: result.savedAt ?? 0 });
       };
       request.onerror = () => reject(request.error);
     });

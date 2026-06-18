@@ -179,6 +179,23 @@
           <span class="qc-ghost-tab-badge" aria-hidden="true">Tab</span>
         }
       </div>
+      @if (speech.supported) {
+        <button mat-icon-button type="button" class="qc-mic"
+                [class.qc-mic-recording]="speech.recording()"
+                [attr.aria-pressed]="speech.recording()"
+                [disabled]="quickChat.streaming()"
+                [matTooltip]="speech.recording() ? 'Release to stop' : 'Hold to talk'"
+                aria-label="Push to talk"
+                (pointerdown)="startDictation($event)"
+                (pointerup)="stopDictation()"
+                (pointerleave)="stopDictation()"
+                (pointercancel)="stopDictation()"
+                (keydown)="onMicKeyDown($event)"
+                (keyup)="onMicKeyUp($event)"
+                (contextmenu)="$event.preventDefault()">
+          <mat-icon>{{ speech.recording() ? 'mic' : 'mic_none' }}</mat-icon>
+        </button>
+      }
       <button mat-icon-button class="qc-send" aria-label="Send"
               [disabled]="quickChat.streaming() || !input().trim()"
               (click)="send()">

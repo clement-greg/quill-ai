@@ -5,8 +5,11 @@ import config from '../config';
 import { getContainer } from '../cosmos';
 import { withOwnerFilter } from '../owner-guard';
 import { searchChapterChunks, reindexChapterChunks } from '../chapter-chunks';
-import { Chapter } from '../../shared/models/chapter.model';
+import { Chapter, ChapterNote, OutlineItem } from '../../shared/models/chapter.model';
 import { ChapterCitation } from '../../shared/models/chat-session.model';
+import { BookNote } from '../../shared/models/book-note.model';
+import { Book } from '../../shared/models/book.model';
+import { Entity } from '../../shared/models/entity.model';
 import { generateImage } from '../image-generation';
 import { buildChapterContextPrompt } from '../chapter-ai-context';
 
@@ -327,8 +330,131 @@ async function listMaps(req: Request): Promise<{ id: string; title: string }[]> 
   return resources.map(r => ({ id: r.id, title: r.title ?? '' })).filter(m => m.title);
 }
 
+type ChapterEntityRecord = Pick<Entity, 'id' | 'name' | 'firstName' | 'lastName' | 'nickname' | 'personality' | 'isNarrator'>;
+
+function escapeHtml(text: string): string {
+  return text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+
+/**
+ * Converts plain generated text (paragraphs separated by double newlines) into
+ * chapter HTML. Each paragraph becomes a <p> wrapping a data-ai-generated span.
+ * Entity names are annotated inline with entity-reference spans.
+ */
+function buildAnnotatedChapterHtml(plainText: string, entities: ChapterEntityRecord[]): string {
+  type NameEntry = { name: string; entityId: string; refType: string };
+  const entries: NameEntry[] = [];
+  for (const entity of entities) {
+    const fullName = entity.name?.trim();
+    const firstName = entity.firstName?.trim();
+    const lastName = entity.lastName?.trim();
+    const nickname = entity.nickname?.trim();
+    if (fullName) entries.push({ name: fullName, entityId: entity.id, refType: 'full-name' });
+    if (firstName && firstName !== fullName) entries.push({ name: firstName, entityId: entity.id, refType: 'first-name' });
+    if (lastName && lastName !== fullName) entries.push({ name: lastName, entityId: entity.id, refType: 'last-name' });
+    if (nickname && nickname !== fullName) entries.push({ name: nickname, entityId: entity.id, refType: 'nickname' });
+  }
+  entries.sort((a, b) => b.name.length - a.name.length);
+
+  const annotate = (text: string): string => {
+    if (entries.length === 0) return escapeHtml(text);
+    const escapedNames = entries.map(e => e.name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
+    const pattern = new RegExp(`\\b(${escapedNames.join('|')})\\b`, 'g');
+    let out = '';
+    let lastIndex = 0;
+    let match: RegExpExecArray | null;
+    while ((match = pattern.exec(text)) !== null) {
+      if (match.index > lastIndex) out += escapeHtml(text.slice(lastIndex, match.index));
+      const entry = entries.find(e => e.name === match![0]);
+      if (entry) {
+        out += `<span data-id="${escapeHtml(entry.entityId)}" data-reference-type="${entry.refType}" class="entity-reference">${escapeHtml(match![0])}</span>`;
+      } else {
+        out += escapeHtml(match![0]);
+      }
+      lastIndex = match.index + match[0].length;
+    }
+    if (lastIndex < text.length) out += escapeHtml(text.slice(lastIndex));
+    return out;
+  };
+
+  return plainText
+    .split(/\n\n+/)
+    .map(p => p.trim())
+    .filter(Boolean)
+    .map(p => `<p><span data-ai-generated="true">${annotate(p)}</span></p>`)
+    .join('');
+}
+
+/**
+ * Generates HTML content for a new chapter using the AI, grounded in the
+ * book's narrator voice and entity list. Returns empty string on failure.
+ */
+async function generateChapterContent(bookId: string, title: string, description: string, req: Request): Promise<string> {
+  let seriesId: string | undefined;
+  try {
+    const { resource: book } = await getContainer('books').item(bookId, bookId).read<Book>();
+    seriesId = book?.seriesId;
+  } catch {
+    // proceed without series context
+  }
+
+  let entities: ChapterEntityRecord[] = [];
+  if (seriesId) {
+    const { resources } = await getContainer('entities').items
+      .query<ChapterEntityRecord>(withOwnerFilter(req, {
+        query:
+          'SELECT c.id, c.name, c.firstName, c.lastName, c.nickname, c.personality, c.isNarrator ' +
+          'FROM c WHERE c.seriesId = @seriesId ' +
+          'AND (NOT IS_DEFINED(c.archived) OR c.archived = false) ' +
+          'AND (NOT IS_DEFINED(c.deleted) OR c.deleted = false)',
+        parameters: [{ name: '@seriesId', value: seriesId }],
+      }))
+      .fetchAll();
+    entities = resources;
+  }
+
+  const narrator = entities.find(e => e.isNarrator);
+  const nonNarrators = entities.filter(e => !e.isNarrator);
+  const entityNames = nonNarrators
+    .map(e => e.name?.trim() || [e.firstName, e.lastName].filter(Boolean).join(' ').trim() || '')
+    .filter(Boolean);
+
+  let systemPrompt =
+    'You are a creative writing assistant helping an author write chapter content. Write in flowing narrative prose with vivid details.';
+  if (narrator?.personality) {
+    systemPrompt +=
+      '\n\nThe story uses a specific narrative voice. Use the following narrator profile to guide the prose style and tone:\n\n' +
+      narrator.personality;
+  }
+  if (entityNames.length > 0) {
+    systemPrompt +=
+      '\n\nKnown characters and places in this story (use these exact names when referencing them): ' +
+      entityNames.join(', ') + '.';
+  }
+  systemPrompt +=
+    '\n\nReturn ONLY the chapter text as plain paragraphs separated by double newlines. ' +
+    'Do not include HTML, markdown, or a chapter title heading — write only narrative content.';
+
+  try {
+    const response = await client.chat.completions.create({
+      model: config.foundry.fullModel,
+      messages: [
+        { role: 'system', content: systemPrompt },
+        { role: 'user', content: `Write the content for a chapter titled "${title}" based on the following description:\n\n${description}` },
+      ],
+      stream: false,
+    });
+    const generatedText = response.choices[0]?.message?.content?.trim() ?? '';
+    if (!generatedText) return '';
+    return buildAnnotatedChapterHtml(generatedText, entities);
+  } catch (err) {
+    console.error('Error generating chapter content:', err);
+    return '';
+  }
+}
+
 /** Creates a chapter at the end of the given book and indexes it for search. */
-async function createChapterInBook(bookId: string, title: string, req: Request): Promise<{ id: string; title: string }> {
+async function createChapterInBook(bookId: string, title: string, req: Request, description?: string): Promise<{ id: string; title: string }> {
   const chaptersContainer = getContainer('chapters');
   // New chapters go at the end of the book: next sortOrder after the current max.
   const { resources } = await chaptersContainer.items
@@ -343,11 +469,12 @@ async function createChapterInBook(bookId: string, title: string, req: Request):
 
   const now = new Date().toISOString();
   const email = req.user!.email;
+  const content = description ? await generateChapterContent(bookId, title, description, req) : '';
   const chapter: Chapter = {
     id: randomUUID(),
     title,
     bookId,
-    content: '',
+    content,
     sortOrder,
     owner: email,
     createdBy: email,
@@ -371,23 +498,34 @@ function quickChatTools(req: Request): Record<string, ChatTool> {
           description:
             'Create a new chapter for the user and open it. Extract details from the user\'s phrasing: pass ' +
             '"title" when they name the chapter (e.g. "create a chapter called \'Joining the Fray\'" → title ' +
-            '"Joining the Fray"), and "bookName" when they say which book (e.g. "...in Lithium" → bookName ' +
-            '"Lithium"). If the user did NOT indicate a book, call this WITHOUT bookName — the tool will return ' +
-            'the list of books so you can ask the user which one, then call it again with their choice. Do not ' +
-            'invent a title the user did not provide.',
+            '"Joining the Fray"), "bookName" when they say which book (e.g. "...in Lithium" → bookName ' +
+            '"Lithium"), and "description" when the user describes what should happen in the chapter (e.g. ' +
+            '"where Dale confronts the mayor about the missing funds" → description "Dale confronts the mayor ' +
+            'about the missing funds"). When description is provided the chapter will be pre-populated with ' +
+            'AI-generated content based on it. If the user did NOT indicate a book, call this WITHOUT bookName ' +
+            '— the tool will return the list of books so you can ask the user which one, then call it again ' +
+            'with their choice. Do not invent a title or description the user did not provide.',
           parameters: {
             type: 'object',
             properties: {
               title: { type: 'string', description: 'The chapter title, if the user provided one.' },
               bookName: { type: 'string', description: 'The book to create the chapter in, if the user indicated one.' },
+              description: {
+                type: 'string',
+                description:
+                  'What should happen in the chapter — plot points, events, characters involved — if the user described it. ' +
+                  'Used to pre-populate the chapter with AI-generated content.',
+              },
             },
             required: [],
           },
         },
       },
+      pending: { generatingChapter: true },
       execute: async args => {
         const title = String(args['title'] ?? '').trim();
         const bookName = String(args['bookName'] ?? '').trim();
+        const description = String(args['description'] ?? '').trim();
 
         const book = bookName ? await resolveByTitle('book', bookName, req) : null;
         if (!book) {
@@ -404,9 +542,9 @@ function quickChatTools(req: Request): Record<string, ChatTool> {
           };
         }
 
-        const created = await createChapterInBook(book.id, title || 'Untitled Chapter', req);
+        const created = await createChapterInBook(book.id, title || 'Untitled Chapter', req, description || undefined);
         return {
-          toolResult: { created: true, chapterId: created.id, title: created.title, book: book.title },
+          toolResult: { created: true, chapterId: created.id, title: created.title, book: book.title, hasContent: !!description },
           sse: { navigate: { target: 'chapter', id: created.id, title: created.title } },
         };
       },
@@ -501,6 +639,316 @@ function quickChatTools(req: Request): Record<string, ChatTool> {
         return {
           toolResult: { found: true, mapId: map.id, title: map.title, hasThumbnail: !!map.thumbnailUrl },
           sse: { map: { id: map.id, title: map.title, thumbnailUrl: map.thumbnailUrl } },
+        };
+      },
+    },
+    add_book_note: {
+      definition: {
+        type: 'function',
+        function: {
+          name: 'add_book_note',
+          description:
+            'Add a note to one of the user\'s books (book-level notes, NOT chapter notes). Use this ONLY when ' +
+            'the user explicitly refers to a book title (e.g. "add a note to the book Lithium"). If the user ' +
+            'mentions a chapter name, use add_chapter_note instead. Extract "bookName" from the book they ' +
+            'mention and "note" from the content they want to save. If the book is not specified, call WITHOUT ' +
+            'bookName to get the list of books and ask the user which one. If the note content is not specified, ' +
+            'ask for it before calling.',
+          parameters: {
+            type: 'object',
+            properties: {
+              bookName: { type: 'string', description: 'The book to add the note to, if the user specified one.' },
+              note: { type: 'string', description: 'The note content to add.' },
+            },
+            required: [],
+          },
+        },
+      },
+      execute: async args => {
+        const bookName = String(args['bookName'] ?? '').trim();
+        const noteContent = String(args['note'] ?? '').trim();
+
+        if (!noteContent) {
+          return {
+            toolResult: {
+              added: false,
+              needNote: true,
+              message: 'No note content was provided. Ask the user what they would like the note to say.',
+            },
+          };
+        }
+
+        const book = bookName ? await resolveByTitle('book', bookName, req) : null;
+        if (!book) {
+          const availableBooks = (await listBooks(req)).map(b => b.title);
+          return {
+            toolResult: {
+              added: false,
+              needBook: true,
+              availableBooks,
+              message: bookName
+                ? `No book matching "${bookName}" was found. Ask the user which book to use, choosing from availableBooks.`
+                : 'No book was specified. Ask the user which book to add the note to, choosing from availableBooks.',
+            },
+          };
+        }
+
+        const now = new Date().toISOString();
+        const email = req.user!.email;
+        const { resources: existing } = await getContainer('book-notes').items
+          .query({ query: 'SELECT VALUE MAX(c.sortOrder) FROM c WHERE c.bookId = @bookId', parameters: [{ name: '@bookId', value: book.id }] })
+          .fetchAll();
+        const maxSort = typeof existing[0] === 'number' ? existing[0] : -1;
+
+        const note: BookNote = {
+          id: randomUUID(),
+          bookId: book.id,
+          content: noteContent,
+          sortOrder: maxSort + 1,
+          owner: email,
+          createdBy: email,
+          createdAt: now,
+          modifiedBy: email,
+          modifiedAt: now,
+        };
+        await getContainer('book-notes').items.create<BookNote>(note);
+
+        return {
+          toolResult: { added: true, book: book.title, message: `Note added to "${book.title}" successfully.` },
+        };
+      },
+    },
+    add_chapter_note: {
+      definition: {
+        type: 'function',
+        function: {
+          name: 'add_chapter_note',
+          description:
+            'Add a note to one of the user\'s chapters. Use this when the user mentions a chapter name — ' +
+            'e.g. "add a note to the chapter Archimedes Fire that says tacos are the best", or when they ' +
+            'clarify that a name they gave is a chapter (not a book). Extract "chapterName" from the chapter ' +
+            'they mention and "note" from the content they want to save. If the chapter is not specified, ask ' +
+            'the user which chapter. If the note content is not specified, ask for it before calling.',
+          parameters: {
+            type: 'object',
+            properties: {
+              chapterName: { type: 'string', description: 'The chapter to add the note to, if specified.' },
+              note: { type: 'string', description: 'The note content to add.' },
+            },
+            required: [],
+          },
+        },
+      },
+      execute: async args => {
+        const chapterName = String(args['chapterName'] ?? '').trim();
+        const noteContent = String(args['note'] ?? '').trim();
+
+        if (!noteContent) {
+          return {
+            toolResult: {
+              added: false,
+              needNote: true,
+              message: 'No note content was provided. Ask the user what they would like the note to say.',
+            },
+          };
+        }
+
+        const chapter = chapterName ? await resolveByTitle('chapter', chapterName, req) : null;
+        if (!chapter) {
+          return {
+            toolResult: {
+              added: false,
+              needChapter: true,
+              message: chapterName
+                ? `No chapter matching "${chapterName}" was found. Ask the user which chapter to use.`
+                : 'No chapter was specified. Ask the user which chapter to add the note to.',
+            },
+          };
+        }
+
+        const { resource: fullChapter } = await getContainer('chapters').item(chapter.id, chapter.id).read<Chapter>();
+        if (!fullChapter) {
+          return { toolResult: { added: false, message: 'Could not load the chapter.' } };
+        }
+
+        const now = new Date().toISOString();
+        const email = req.user!.email;
+        const newNote: ChapterNote = {
+          id: randomUUID(),
+          noteText: noteContent,
+          selectedText: '',
+          createdAt: now,
+          createdBy: email,
+        };
+        const updated: Chapter = {
+          ...fullChapter,
+          notes: [...(fullChapter.notes ?? []), newNote],
+          modifiedBy: email,
+          modifiedAt: now,
+        };
+        delete (updated as { contentVector?: unknown }).contentVector;
+        try {
+          await getContainer('chapters').item(chapter.id, chapter.id).replace<Chapter>(updated);
+        } catch (err) {
+          console.error('add_chapter_note replace failed:', err);
+          return { toolResult: { added: false, message: 'Failed to save the note. Please try again.' } };
+        }
+
+        return {
+          toolResult: { added: true, chapter: chapter.title, message: `Note added to "${chapter.title}" successfully.` },
+          sse: { chapterUpdated: { id: chapter.id, notes: updated.notes } },
+        };
+      },
+    },
+    add_book_outline_item: {
+      definition: {
+        type: 'function',
+        function: {
+          name: 'add_book_outline_item',
+          description:
+            'Add an outline item to one of the user\'s books. Use this when the user says "add to the outline ' +
+            'of <book>" or "add <item> to the <book> outline". Extract "bookName" from the book they mention, ' +
+            '"item" from the text they want to add, and "level" (0 for a section heading, 1 for a sub-point — ' +
+            'default 0). If the book is not specified, call WITHOUT bookName to get the list of books and ask ' +
+            'the user which one. If the item text is not specified, ask for it before calling.',
+          parameters: {
+            type: 'object',
+            properties: {
+              bookName: { type: 'string', description: 'The book to add the outline item to, if specified.' },
+              item: { type: 'string', description: 'The outline item text to add.' },
+              level: { type: 'number', description: '0 for a section heading, 1 for a sub-point. Defaults to 0.' },
+            },
+            required: [],
+          },
+        },
+      },
+      execute: async args => {
+        const bookName = String(args['bookName'] ?? '').trim();
+        const itemText = String(args['item'] ?? '').trim();
+        const level = args['level'] === 1 ? 1 : 0;
+
+        if (!itemText) {
+          return {
+            toolResult: {
+              added: false,
+              needItem: true,
+              message: 'No outline item text was provided. Ask the user what text to add to the outline.',
+            },
+          };
+        }
+
+        const book = bookName ? await resolveByTitle('book', bookName, req) : null;
+        if (!book) {
+          const availableBooks = (await listBooks(req)).map(b => b.title);
+          return {
+            toolResult: {
+              added: false,
+              needBook: true,
+              availableBooks,
+              message: bookName
+                ? `No book matching "${bookName}" was found. Ask the user which book to use, choosing from availableBooks.`
+                : 'No book was specified. Ask the user which book to add the outline item to, choosing from availableBooks.',
+            },
+          };
+        }
+
+        const { resource: fullBook } = await getContainer('books').item(book.id, book.id).read<Book>();
+        if (!fullBook) {
+          return { toolResult: { added: false, message: 'Could not load the book.' } };
+        }
+
+        const now = new Date().toISOString();
+        const email = req.user!.email;
+        const newItem: OutlineItem = { id: randomUUID(), text: itemText, level };
+        const updated: Book = {
+          ...fullBook,
+          outline: [...(fullBook.outline ?? []), newItem],
+          modifiedBy: email,
+          modifiedAt: now,
+        };
+        await getContainer('books').item(book.id, book.id).replace<Book>(updated);
+
+        return {
+          toolResult: { added: true, book: book.title, item: itemText, level, message: `Outline item added to "${book.title}" successfully.` },
+        };
+      },
+    },
+    add_chapter_outline_item: {
+      definition: {
+        type: 'function',
+        function: {
+          name: 'add_chapter_outline_item',
+          description:
+            'Add an outline item to one of the user\'s chapters. Use this when the user says "add to the outline ' +
+            'of <chapter>" or "add <item> to the <chapter> outline". Extract "chapterName" from the chapter they ' +
+            'mention, "item" from the text they want to add, and "level" (0 for a section heading, 1 for a ' +
+            'sub-point — default 1). If the chapter is not specified, ask the user which chapter. If the item ' +
+            'text is not specified, ask for it before calling.',
+          parameters: {
+            type: 'object',
+            properties: {
+              chapterName: { type: 'string', description: 'The chapter to add the outline item to, if specified.' },
+              item: { type: 'string', description: 'The outline item text to add.' },
+              level: { type: 'number', description: '0 for a section heading, 1 for a sub-point. Defaults to 0.' },
+            },
+            required: [],
+          },
+        },
+      },
+      execute: async args => {
+        const chapterName = String(args['chapterName'] ?? '').trim();
+        const itemText = String(args['item'] ?? '').trim();
+        const level = args['level'] === 1 ? 1 : 0;
+
+        if (!itemText) {
+          return {
+            toolResult: {
+              added: false,
+              needItem: true,
+              message: 'No outline item text was provided. Ask the user what text to add to the outline.',
+            },
+          };
+        }
+
+        const chapter = chapterName ? await resolveByTitle('chapter', chapterName, req) : null;
+        if (!chapter) {
+          return {
+            toolResult: {
+              added: false,
+              needChapter: true,
+              message: chapterName
+                ? `No chapter matching "${chapterName}" was found. Ask the user which chapter to use.`
+                : 'No chapter was specified. Ask the user which chapter to add the outline item to.',
+            },
+          };
+        }
+
+        const { resource: fullChapter } = await getContainer('chapters').item(chapter.id, chapter.id).read<Chapter>();
+        if (!fullChapter) {
+          return { toolResult: { added: false, message: 'Could not load the chapter.' } };
+        }
+
+        const now = new Date().toISOString();
+        const email = req.user!.email;
+        const newItem: OutlineItem = { id: randomUUID(), text: itemText, level };
+        const updated: Chapter = {
+          ...fullChapter,
+          outline: [...(fullChapter.outline ?? []), newItem],
+          modifiedBy: email,
+          modifiedAt: now,
+        };
+        // Strip legacy whole-chapter vector (matches chapter PUT route behaviour).
+        delete (updated as { contentVector?: unknown }).contentVector;
+        try {
+          await getContainer('chapters').item(chapter.id, chapter.id).replace<Chapter>(updated);
+        } catch (err) {
+          console.error('add_chapter_outline_item replace failed:', err);
+          return { toolResult: { added: false, message: 'Failed to save the outline item. Please try again.' } };
+        }
+
+        return {
+          toolResult: { added: true, chapter: chapter.title, item: itemText, level, message: `Outline item added to "${chapter.title}" successfully.` },
+          sse: { chapterUpdated: { id: chapter.id, outline: updated.outline } },
         };
       },
     },

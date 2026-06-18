@@ -19,6 +19,7 @@ import { firstValueFrom } from 'rxjs';
 import { ChatMessageHighlight, ChatSessionMessage, MapPreview } from '@shared/models';
 import { Entity } from '@shared/models/entity.model';
 import { QuickChatService } from '../services/quick-chat.service';
+import { SpeechRecognitionService } from '../services/speech-recognition.service';
 import { AiAssistantService } from '../services/ai-assistant.service';
 import { EntityService } from '../services/entity.service';
 import { EditorBridgeService } from '../services/editor-bridge.service';
@@ -46,6 +47,7 @@ import { FolderLocationPickerDialogComponent, FolderLocation, FolderLocationPick
 })
 export class QuickChatComponent {
   readonly quickChat = inject(QuickChatService);
+  readonly speech = inject(SpeechRecognitionService);
   private readonly aiAssistant = inject(AiAssistantService);
   private readonly sanitizer = inject(DomSanitizer);
   private readonly router = inject(Router);
@@ -335,6 +337,51 @@ export class QuickChatComponent {
     this.closeAutocomplete();
     this.input.set('');
     void this.quickChat.sendMessage(text);
+  }
+
+  // ── Push-to-talk dictation ────────────────────────────────────────────────
+
+  /** Text in the input when dictation began; the transcript is appended to it. */
+  private speechBaseText = '';
+  /** Prevents late-arriving speech callbacks from overwriting the input after send. */
+  private dictationActive = false;
+
+  /** Begins listening; live transcript is appended to whatever was already typed. */
+  startDictation(event: Event): void {
+    event.preventDefault(); // keep the mic button from stealing focus / scrolling
+    if (!this.speech.supported || this.speech.recording() || this.quickChat.streaming()) return;
+    this.closeAutocomplete();
+    const existing = this.input().trimEnd();
+    this.speechBaseText = existing ? existing + ' ' : '';
+    this.dictationActive = true;
+    this.speech.start(transcript => {
+      if (this.dictationActive) this.input.set(this.speechBaseText + transcript);
+    });
+  }
+
+  /** Stops listening and sends the transcribed message if there's content. */
+  stopDictation(): void {
+    if (!this.speech.recording()) return;
+    this.dictationActive = false; // block any final async speech callbacks before send clears input
+    this.speech.stop();
+    this.send();
+  }
+
+  /** Space/Enter held on the mic button starts dictation (keyboard push-to-talk). */
+  onMicKeyDown(event: KeyboardEvent): void {
+    if (event.repeat) return;
+    if (event.key === ' ' || event.key === 'Enter') {
+      event.preventDefault();
+      this.startDictation(event);
+    }
+  }
+
+  /** Releasing the held key ends dictation. */
+  onMicKeyUp(event: KeyboardEvent): void {
+    if (event.key === ' ' || event.key === 'Enter') {
+      event.preventDefault();
+      this.stopDictation();
+    }
   }
 
   newChat(): void {
