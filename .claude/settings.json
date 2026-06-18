@@ -16,7 +16,10 @@
       "Bash(xargs grep -l \"MCP\\\\|mcp\\\\|resolve-entity\")",
       "Bash(xargs cat)",
       "Bash(grep -n \"qc-markdown\\\\|qc-message\\\\|\\\\$\\\\|var\\(--\" client/src/app/quick-chat/quick-chat.scss)",
-      "Bash(npx jest *)"
+      "Bash(npx jest *)",
+      "Bash(grep -E \"\\\\.\\(ts|d\\\\.ts\\)$\")",
+      "Bash(Remove-Item \"c:\\\\Users\\\\gregb\\\\source\\\\repros\\\\personal\\\\quill-ai\\\\client\\\\src\\\\app\\\\quick-chat\\\\save-chat-dialog.ts\")",
+      "Bash(tasklist)"
     ]
   }
 }

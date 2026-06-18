@@ -67,8 +67,27 @@
       }
 
       <!-- Series → Book → Chapter tree -->
-      <div class="explorer-tree">
-        <div class="tree-heading">Library</div>
+      <div [class]="'explorer-tree view-' + viewMode()">
+        <div class="tree-heading">
+          <span>Library</span>
+          <div class="tree-view-toggle" role="group" aria-label="View options">
+            <button mat-icon-button class="view-btn" [class.active]="viewMode() === 'list'"
+              [attr.aria-pressed]="viewMode() === 'list'"
+              (click)="setViewMode('list')" aria-label="List view">
+              <mat-icon>view_list</mat-icon>
+            </button>
+            <button mat-icon-button class="view-btn" [class.active]="viewMode() === 'tiles'"
+              [attr.aria-pressed]="viewMode() === 'tiles'"
+              (click)="setViewMode('tiles')" aria-label="Tiles view">
+              <mat-icon>grid_view</mat-icon>
+            </button>
+            <button mat-icon-button class="view-btn" [class.active]="viewMode() === 'large'"
+              [attr.aria-pressed]="viewMode() === 'large'"
+              (click)="setViewMode('large')" aria-label="Large icons">
+              <mat-icon>apps</mat-icon>
+            </button>
+          </div>
+        </div>
 
         @if (explorer.seriesLoading()) {
           <div class="tree-loading">
@@ -80,7 +99,8 @@
         }
 
         @for (s of explorer.filteredSeries(); track s.id) {
-          <div class="tree-row level-0">
+          <!-- Series row: always full-width regardless of view mode -->
+          <div class="tree-row tree-series-row">
             <button mat-icon-button class="tree-toggle" (click)="explorer.toggleSeries(s.id)"
               aria-label="Expand series">
               <mat-icon>{{ explorer.isSeriesExpanded(s.id) ? 'expand_more' : 'chevron_right' }}</mat-icon>
@@ -96,56 +116,66 @@
           </div>
 
           @if (explorer.isSeriesExpanded(s.id)) {
-            @if (explorer.loadingChildren().has(s.id)) {
-              <div class="tree-loading level-1">
-                <mat-spinner diameter="16"></mat-spinner>
-                <span>Loading…</span>
-              </div>
-            } @else if (explorer.filteredBooksFor(s.id).length === 0) {
-              <div class="tree-empty level-1">No books</div>
-            }
+            <!-- Books grid/list container -->
+            <div class="tree-children tree-books">
+              @if (explorer.loadingChildren().has(s.id)) {
+                <div class="tree-child-full tree-loading">
+                  <mat-spinner diameter="16"></mat-spinner>
+                  <span>Loading…</span>
+                </div>
+              } @else if (explorer.filteredBooksFor(s.id).length === 0) {
+                <div class="tree-child-full tree-empty">No books</div>
+              } @else {
+                @for (b of explorer.filteredBooksFor(s.id); track b.id) {
+                  <div class="tree-child-item">
+                    <div class="tree-row">
+                      <button mat-icon-button class="tree-toggle" (click)="explorer.toggleBook(b.id)"
+                        aria-label="Expand book">
+                        <mat-icon>{{ explorer.isBookExpanded(b.id) ? 'expand_more' : 'chevron_right' }}</mat-icon>
+                      </button>
+                      <button class="tree-label" (click)="navigateTo(['/books', b.id])">
+                        @if (proxyUrl(b.thumnailUrl || b.originalUrl); as src) {
+                          <img class="tree-thumb" [src]="src" alt="" />
+                        } @else {
+                          <mat-icon class="tree-icon">menu_book</mat-icon>
+                        }
+                        <span class="tree-text">{{ b.title }}</span>
+                      </button>
+                    </div>
 
-            @for (b of explorer.filteredBooksFor(s.id); track b.id) {
-              <div class="tree-row level-1">
-                <button mat-icon-button class="tree-toggle" (click)="explorer.toggleBook(b.id)"
-                  aria-label="Expand book">
-                  <mat-icon>{{ explorer.isBookExpanded(b.id) ? 'expand_more' : 'chevron_right' }}</mat-icon>
-                </button>
-                <button class="tree-label" (click)="navigateTo(['/books', b.id])">
-                  @if (proxyUrl(b.thumnailUrl || b.originalUrl); as src) {
-                    <img class="tree-thumb" [src]="src" alt="" />
-                  } @else {
-                    <mat-icon class="tree-icon">menu_book</mat-icon>
-                  }
-                  <span class="tree-text">{{ b.title }}</span>
-                </button>
-              </div>
-
-              @if (explorer.isBookExpanded(b.id)) {
-                @if (explorer.loadingChildren().has(b.id)) {
-                  <div class="tree-loading level-2">
-                    <mat-spinner diameter="16"></mat-spinner>
-                    <span>Loading…</span>
-                  </div>
-                } @else if (explorer.filteredChaptersFor(b.id).length === 0) {
-                  <div class="tree-empty level-2">No chapters</div>
-                }
-
-                @for (c of explorer.filteredChaptersFor(b.id); track c.id) {
-                  <div class="tree-row level-2">
-                    <span class="tree-toggle-spacer"></span>
-                    <button class="tree-label" (click)="navigateTo(['/chapters', c.id, 'edit'])">
-                      @if (proxyUrl(c.imageThumbnailUrl || c.imageUrl); as src) {
-                        <img class="tree-thumb" [src]="src" alt="" />
-                      } @else {
-                        <mat-icon class="tree-icon">description</mat-icon>
-                      }
-                      <span class="tree-text">{{ c.title }}</span>
-                    </button>
+                    @if (explorer.isBookExpanded(b.id)) {
+                      <!-- Chapters grid/list container -->
+                      <div class="tree-children tree-chapters">
+                        @if (explorer.loadingChildren().has(b.id)) {
+                          <div class="tree-child-full tree-loading">
+                            <mat-spinner diameter="16"></mat-spinner>
+                            <span>Loading…</span>
+                          </div>
+                        } @else if (explorer.filteredChaptersFor(b.id).length === 0) {
+                          <div class="tree-child-full tree-empty">No chapters</div>
+                        } @else {
+                          @for (c of explorer.filteredChaptersFor(b.id); track c.id) {
+                            <div class="tree-child-item">
+                              <div class="tree-row">
+                                <span class="tree-toggle-spacer"></span>
+                                <button class="tree-label" (click)="navigateTo(['/chapters', c.id, 'edit'])">
+                                  @if (proxyUrl(c.imageThumbnailUrl || c.imageUrl); as src) {
+                                    <img class="tree-thumb" [src]="src" alt="" />
+                                  } @else {
+                                    <mat-icon class="tree-icon">description</mat-icon>
+                                  }
+                                  <span class="tree-text">{{ c.title }}</span>
+                                </button>
+                              </div>
+                            </div>
+                          }
+                        }
+                      </div>
+                    }
                   </div>
                 }
               }
-            }
+            </div>
           }
         }
       </div>

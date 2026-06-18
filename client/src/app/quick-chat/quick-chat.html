@@ -1,13 +1,24 @@
-@if (quickChat.isOpen()) {
-  <div class="qc-backdrop" (click)="quickChat.close()"></div>
+@if (quickChat.isOpen() && quickChat.minimized()) {
+  <!-- Minimized: a non-intrusive bar in the bottom-left corner -->
+  <button type="button" class="qc-minimized" animate.enter="qc-slide-up"
+          (click)="restorePanel()" aria-label="Expand Ask Quill">
+    <mat-icon class="qc-title-icon">forum</mat-icon>
+    @if (quickChat.streaming()) {
+      <mat-spinner class="qc-minimized-spinner" diameter="16"></mat-spinner>
+    }
+  </button>
+}
 
-  <div class="qc-card" role="dialog" aria-label="Ask Quill" animate.enter="qc-pop-in">
+@if (quickChat.isOpen() && !quickChat.minimized()) {
+  <div #cardEl class="qc-card" role="dialog" aria-modal="false" aria-label="Ask Quill" animate.enter="qc-slide-up">
     <header class="qc-header">
       <div class="qc-title-group">
         <mat-icon class="qc-title-icon">forum</mat-icon>
-        <div>
+        <div class="qc-title-text">
           <div class="qc-title">Ask Quill</div>
-          <div class="qc-subtitle">Answers grounded in all your stories</div>
+          @if (quickChat.activeSessionId()) {
+            <div class="qc-session-name">{{ sessionName() }}</div>
+          }
         </div>
       </div>
       <div class="qc-header-actions">
@@ -15,24 +26,51 @@
                 [disabled]="quickChat.messages().length === 0">
           <mat-icon>add_comment</mat-icon>
         </button>
-        <button mat-icon-button (click)="openSaveDialog()" matTooltip="Save conversation" aria-label="Save conversation"
-                [disabled]="!canSave()">
-          <mat-icon>save</mat-icon>
-        </button>
-        <button mat-icon-button (click)="quickChat.close()" matTooltip="Close (Esc)" aria-label="Close">
-          <mat-icon>close</mat-icon>
+@if (allHighlights().length > 0) {
+          <button mat-icon-button class="qc-highlights-btn"
+                  [class.qc-highlights-active]="showHighlightsSummary()"
+                  (click)="showHighlightsSummary.set(!showHighlightsSummary())"
+                  [matTooltip]="showHighlightsSummary() ? 'Hide highlights' : allHighlights().length + ' highlight' + (allHighlights().length === 1 ? '' : 's')"
+                  aria-label="Toggle highlights">
+            <mat-icon>bookmark</mat-icon>
+            <span class="qc-highlights-badge">{{ allHighlights().length }}</span>
+          </button>
+        }
+        <button mat-icon-button (click)="minimize()" matTooltip="Minimize" aria-label="Minimize">
+          <mat-icon>remove</mat-icon>
         </button>
       </div>
     </header>
 
-    @if (justSaved()) {
-      <div class="qc-saved-banner" role="status">
-        <mat-icon>check_circle</mat-icon>
-        <span>Saved to the Resource Manager.</span>
+
+@if (showHighlightsSummary() && allHighlights().length > 0) {
+      <div class="qc-highlights-tray">
+        <div class="qc-highlights-tray-header">
+          <span class="qc-highlights-tray-title">Highlights</span>
+          <div class="qc-highlights-nav">
+            <button mat-icon-button class="qc-hl-nav-btn" (click)="navigateToPrevHighlight()" matTooltip="Previous">
+              <mat-icon>keyboard_arrow_up</mat-icon>
+            </button>
+            <button mat-icon-button class="qc-hl-nav-btn" (click)="navigateToNextHighlight()" matTooltip="Next">
+              <mat-icon>keyboard_arrow_down</mat-icon>
+            </button>
+          </div>
+        </div>
+        <div class="qc-highlights-list">
+          @for (entry of allHighlights(); track entry.highlight.id) {
+            <button type="button" class="qc-highlight-entry"
+                    [class.qc-highlight-entry-active]="activeHighlightId() === entry.highlight.id"
+                    (click)="navigateToHighlight(entry.messageIndex, entry.highlight.id)">
+              <span class="qc-highlight-swatch" [style.background]="entry.highlight.color"></span>
+              <span class="qc-highlight-excerpt">{{ entry.excerpt }}</span>
+              <mat-icon class="qc-highlight-goto">chevron_right</mat-icon>
+            </button>
+          }
+        </div>
       </div>
     }
 
-    <div class="qc-messages" #messagesEl>
+    <div class="qc-messages" #messagesEl (mouseup)="onMessagesMouseUp()">
       @if (quickChat.messages().length === 0) {
         <div class="qc-empty">
           <mat-icon class="qc-empty-icon">auto_stories</mat-icon>
@@ -76,7 +114,17 @@
               </div>
             }
             @if (msg.text) {
-              <div class="qc-markdown" (click)="onCitationClick($event)" [innerHTML]="renderHtml(msg)"></div>
+              <div class="qc-markdown" [attr.data-msg-index]="$index" (click)="onCitationClick($event)" [innerHTML]="renderHtml(msg, $index)"></div>
+              @if (editorBridge.hasChapterContext() && !(last && quickChat.streaming())) {
+                <div class="qc-insert-row">
+                  <button mat-stroked-button class="qc-insert-btn"
+                          (mousedown)="onInsertMouseDown($event, msg)"
+                          (click)="insertAtCursor(msg)"
+                          matTooltip="Insert at the cursor in your chapter">
+                    <mat-icon>edit_note</mat-icon> Insert at cursor
+                  </button>
+                </div>
+              }
             }
             @if (msg.maps?.length) {
               <div class="qc-maps">
@@ -117,14 +165,20 @@
           }
         </ul>
       }
-      <textarea class="qc-textarea" #inputEl
-                placeholder="Ask about your books… (Enter to send, Shift+Enter for new line)"
-                rows="2"
-                aria-label="Message Quill"
-                [value]="input()"
-                (input)="onInput($any($event.target).value)"
-                (keydown)="onKeyDown($event)"
-                (blur)="closeAutocomplete()"></textarea>
+      <div class="qc-textarea-wrap">
+        <textarea class="qc-textarea" #inputEl
+                  placeholder=""
+                  rows="2"
+                  aria-label="Message Quill"
+                  [value]="input()"
+                  (input)="onInput($any($event.target).value)"
+                  (keydown)="onKeyDown($event)"
+                  (blur)="closeAutocomplete()"></textarea>
+        @if (ghostSuffix()) {
+          <div class="qc-ghost-overlay" aria-hidden="true"><span class="qc-ghost-typed">{{ input() }}</span><span class="qc-ghost-suffix">{{ ghostSuffix() }}</span></div>
+          <span class="qc-ghost-tab-badge" aria-hidden="true">Tab</span>
+        }
+      </div>
       <button mat-icon-button class="qc-send" aria-label="Send"
               [disabled]="quickChat.streaming() || !input().trim()"
               (click)="send()">
@@ -153,5 +207,27 @@
 
   @if (imageToast()) {
     <div class="qc-image-toast" role="status">{{ imageToast() }}</div>
+  }
+
+  @if (highlightToolbar()) {
+    <div class="qc-highlight-toolbar"
+         [style.left.px]="highlightToolbar()!.x"
+         [style.top.px]="highlightToolbar()!.y">
+      @for (c of highlightColors; track c.value) {
+        <button class="qc-highlight-color-btn"
+                [style.background]="c.value"
+                [title]="c.label"
+                (mousedown)="$event.preventDefault()"
+                (click)="applyHighlight(c.value)">
+        </button>
+      }
+      <div class="qc-highlight-toolbar-divider"></div>
+      <button class="qc-highlight-erase-btn"
+              title="Remove highlights in selection"
+              (mousedown)="$event.preventDefault()"
+              (click)="eraseHighlights()">
+        <mat-icon>format_color_reset</mat-icon>
+      </button>
+    </div>
   }
 }

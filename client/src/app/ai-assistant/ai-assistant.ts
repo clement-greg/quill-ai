@@ -13,6 +13,7 @@ import { MatSelectModule } from '@angular/material/select';
 import { MatDialog } from '@angular/material/dialog';
 import { firstValueFrom } from 'rxjs';
 import { AiAssistantService } from '../services/ai-assistant.service';
+import { QuickChatService } from '../services/quick-chat.service';
 import { SeriesContextService } from '../services/series-context.service';
 import { EditorBridgeService } from '../services/editor-bridge.service';
 import { EntityService } from '../services/entity.service';
@@ -22,6 +23,7 @@ import { EntityPickerDialogComponent, EntityPickerData } from '../entity-edit/en
 import { FolderLocationPickerDialogComponent, FolderLocation, FolderLocationPickerData } from './folder-location-picker-dialog';
 
 type SidebarItem = { kind: 'folder'; folder: ChatFolder; depth: number; trackId: string };
+type FileViewMode = 'list' | 'tiles' | 'large';
 
 @Component({
   selector: 'app-ai-assistant',
@@ -34,6 +36,7 @@ export class AiAssistantComponent implements OnInit, AfterViewChecked, OnDestroy
   @ViewChild('chatInputEl') chatInputEl?: ElementRef<HTMLTextAreaElement>;
 
   readonly aiAssistant = inject(AiAssistantService);
+  readonly quickChat = inject(QuickChatService);
   private sanitizer = inject(DomSanitizer);
   private router = inject(Router);
   readonly seriesContext = inject(SeriesContextService);
@@ -94,6 +97,41 @@ export class AiAssistantComponent implements OnInit, AfterViewChecked, OnDestroy
   readonly renameNoteValue = signal('');
   readonly noteContextMenu = signal<{ x: number; y: number; note: FolderNote } | null>(null);
   private noteAutoSaveTimer: ReturnType<typeof setTimeout> | null = null;
+
+  // Session context menu
+  readonly sessionContextMenu = signal<{ x: number; y: number; sessionId: string } | null>(null);
+
+
+  // Per-folder view mode (persisted in localStorage)
+  private readonly folderViewModes = signal<Map<string, FileViewMode>>(
+    (() => {
+      try {
+        const stored = localStorage.getItem('quill-fe-view-modes');
+        return stored ? new Map(Object.entries(JSON.parse(stored))) as Map<string, FileViewMode> : new Map();
+      } catch { return new Map(); }
+    })(),
+  );
+
+  readonly fileViewMode = computed<FileViewMode>(() => {
+    const id = this.selectedFolderId();
+    return this.folderViewModes().get(id ?? '') ?? 'list';
+  });
+
+  setFileViewMode(mode: FileViewMode): void {
+    const id = this.selectedFolderId();
+    if (!id) return;
+    const map = new Map(this.folderViewModes());
+    map.set(id, mode);
+    this.folderViewModes.set(map);
+    try {
+      localStorage.setItem('quill-fe-view-modes', JSON.stringify(Object.fromEntries(map)));
+    } catch { /* quota exceeded — ignore */ }
+  }
+
+  // Multi-select and rubber-band drag-to-select
+  readonly selectedItemIds = signal(new Set<string>());
+  private rbStart: { clientX: number; clientY: number } | null = null;
+  private rbEl: HTMLDivElement | null = null;
 
   // Flat ordered list of sidebar items (folders only)
   readonly sidebarItems = computed((): SidebarItem[] => {
@@ -245,6 +283,11 @@ export class AiAssistantComponent implements OnInit, AfterViewChecked, OnDestroy
     if (noteMenuEl && !noteMenuEl.contains(event.target as Node)) {
       this.noteContextMenu.set(null);
     }
+    // Close session context menu when clicking outside it
+    const sessionMenuEl = document.querySelector('.session-context-menu');
+    if (sessionMenuEl && !sessionMenuEl.contains(event.target as Node)) {
+      this.sessionContextMenu.set(null);
+    }
   }
 
   @HostListener('document:keydown', ['$event'])
@@ -328,21 +371,143 @@ export class AiAssistantComponent implements OnInit, AfterViewChecked, OnDestroy
   }
 
   async openSession(id: string): Promise<void> {
-    await this.aiAssistant.openSession(id);
-    // Keep the session's folder selected so it stays highlighted in the sidebar
-    const session = this.aiAssistant.activeSession();
-    this.selectedFolderId.set(session?.folderId ?? null);
-    this.input.set('');
+    // Load the session into Ask Quill (the single unified chat surface).
+    await this.quickChat.loadSession(id);
     this.mobileSidebarOpen.set(false);
-    this.showHighlightsSummary.set(false);
-    this.activeHighlightId.set(null);
-    // First pass: scroll after Angular renders the messages
-    setTimeout(() => {
-      this.scrollToBottom(true);
-      this.chatInputEl?.nativeElement.focus();
-      // Second pass: scroll again after images/layout settle
-      setTimeout(() => this.scrollToBottom(true), 400);
+  }
+
+  onSessionContextMenu(event: MouseEvent, session: ChatSessionSummary): void {
+    event.preventDefault();
+    event.stopPropagation();
+    this.folderContextMenu.set(null);
+    this.fileContextMenu.set(null);
+    this.noteContextMenu.set(null);
+    this.sessionContextMenu.set({ x: event.clientX, y: event.clientY, sessionId: session.id });
+  }
+
+  async deleteSessionFromPanel(sessionId: string): Promise<void> {
+    this.sessionContextMenu.set(null);
+    await this.aiAssistant.deleteSession(sessionId);
+    if (this.quickChat.activeSessionId() === sessionId) {
+      this.quickChat.reset();
+    }
+    void this.aiAssistant.loadSessions();
+  }
+
+  openNewAskQuill(): void {
+    this.quickChat.reset();
+    this.quickChat.restore();
+  }
+
+  // ── Multi-select ────────────────────────────────────────────────────────
+
+  toggleItemSelect(id: string): void {
+    this.selectedItemIds.update(ids => {
+      const next = new Set(ids);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
     });
+  }
+
+  clearSelection(): void {
+    this.selectedItemIds.set(new Set());
+  }
+
+  onSessionItemClick(event: MouseEvent, sessionId: string): void {
+    if (event.ctrlKey || event.metaKey) { this.toggleItemSelect(sessionId); return; }
+    this.selectedItemIds.set(new Set());
+    void this.openSession(sessionId);
+  }
+
+  onNoteItemClick(event: MouseEvent, note: FolderNote): void {
+    if (event.ctrlKey || event.metaKey) { this.toggleItemSelect(note.id); return; }
+    this.selectedItemIds.set(new Set());
+    void this.openNote(note);
+  }
+
+  onFileItemClick(event: MouseEvent, file: FolderFile): void {
+    if (event.ctrlKey || event.metaKey) { this.toggleItemSelect(file.id); return; }
+    this.selectedItemIds.set(new Set());
+    this.selectFile(file);
+  }
+
+  async deleteSelectedItems(): Promise<void> {
+    const ids = new Set(this.selectedItemIds());
+    const folderId = this.selectedFolderId();
+    this.clearSelection();
+    for (const id of ids) {
+      if (this.aiAssistant.sessions().some(s => s.id === id)) {
+        await this.aiAssistant.deleteSession(id);
+        if (this.quickChat.activeSessionId() === id) this.quickChat.reset();
+        continue;
+      }
+      const note = this.folderNotes().find(n => n.id === id);
+      if (note) {
+        await this.aiAssistant.deleteFolderNote(note.folderId, note.id);
+        this.folderNotes.update(list => list.filter(n => n.id !== id));
+        if (this.activeNote()?.id === id) this.activeNote.set(null);
+        continue;
+      }
+      if (folderId && this.folderFiles().some(f => f.id === id)) {
+        await this.aiAssistant.deleteFolderFile(folderId, id);
+        this.folderFiles.update(list => list.filter(f => f.id !== id));
+        if (this.selectedFileId() === id) { this.selectedFileId.set(null); this.previewFile.set(null); }
+      }
+    }
+    void this.aiAssistant.loadSessions();
+  }
+
+  onGridMouseDown(event: MouseEvent): void {
+    const target = event.target as HTMLElement;
+    if (target.closest('.fe-item') || target.closest('.fe-action-buttons') || target.closest('.fe-selection-bar')) return;
+    if (event.button !== 0) return;
+    event.preventDefault();
+    this.clearSelection();
+    this.rbStart = { clientX: event.clientX, clientY: event.clientY };
+    // Append to body to escape any CSS transform on ancestor panels
+    this.rbEl = document.createElement('div');
+    Object.assign(this.rbEl.style, {
+      position: 'fixed', pointerEvents: 'none', display: 'none', zIndex: '9000',
+      border: '1px solid var(--mat-sys-primary)',
+      background: 'color-mix(in srgb, var(--mat-sys-primary) 12%, transparent)',
+    });
+    document.body.appendChild(this.rbEl);
+  }
+
+  @HostListener('document:mousemove', ['$event'])
+  onDocMouseMove(event: MouseEvent): void {
+    if (!this.rbStart || !this.rbEl) return;
+    const x = Math.min(this.rbStart.clientX, event.clientX);
+    const y = Math.min(this.rbStart.clientY, event.clientY);
+    const w = Math.abs(event.clientX - this.rbStart.clientX);
+    const h = Math.abs(event.clientY - this.rbStart.clientY);
+    if (w > 4 || h > 4) {
+      Object.assign(this.rbEl.style, {
+        display: 'block', left: x + 'px', top: y + 'px', width: w + 'px', height: h + 'px',
+      });
+      this.updateRubberBandSelection(x, y, x + w, y + h);
+    }
+  }
+
+  @HostListener('document:mouseup')
+  onDocMouseUp(): void {
+    if (!this.rbStart) return;
+    this.rbStart = null;
+    this.rbEl?.remove();
+    this.rbEl = null;
+  }
+
+  private updateRubberBandSelection(left: number, top: number, right: number, bottom: number): void {
+    const items = document.querySelectorAll<HTMLElement>('[data-fe-id]');
+    const newSelected = new Set<string>();
+    items.forEach(item => {
+      const r = item.getBoundingClientRect();
+      if (r.left < right && r.right > left && r.top < bottom && r.bottom > top) {
+        const id = item.dataset['feId'];
+        if (id) newSelected.add(id);
+      }
+    });
+    this.selectedItemIds.set(newSelected);
   }
 
   async send(): Promise<void> {
@@ -718,6 +883,7 @@ export class AiAssistantComponent implements OnInit, AfterViewChecked, OnDestroy
     this.folderFiles.set(files);
     this.filesLoading.set(false);
   }
+
 
   triggerFileUpload(): void {
     if (!this.fileInputEl) {

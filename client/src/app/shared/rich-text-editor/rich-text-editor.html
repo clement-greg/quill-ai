@@ -350,66 +350,6 @@
   </div>
 }
 
-<!-- Inline AI prompt -->
-@if (inlineAiVisible()) {
-  <div #inlineAiPanelEl class="rte-inline-ai-prompt"
-    [class.inline-ai-above]="inlineAiAbove()"
-    [style.top.px]="inlineAiTop()"
-    [style.left.px]="inlineAiLeft()">
-    <div class="rte-inline-ai-header">
-      <mat-icon>auto_awesome</mat-icon>
-      <span>{{ inlineAiSelectedText() ? 'AI Reword' : 'AI Insert' }}</span>
-      <button mat-icon-button class="rte-inline-ai-close-btn" (click)="dismissInlineAiPrompt()" title="Dismiss">
-        <mat-icon>close</mat-icon>
-      </button>
-    </div>
-    @if (inlineAiSelectedText()) {
-      <div class="rte-inline-ai-selection-preview">{{ inlineAiSelectedText() }}</div>
-    }
-    <div class="rte-inline-ai-input-row">
-      <div class="rte-inline-ai-input-wrap">
-        <input #inlineAiInputEl class="rte-inline-ai-input" type="text"
-          [placeholder]="inlineAiSelectedText() ? 'Optional: describe how to reword… (Enter to send)' : 'Describe what to insert… (Enter to send)'"
-          [value]="inlineAiInput()"
-          (input)="onInlineAiInputChange($any($event.target).value)"
-          (keydown)="onInlineAiKeyDown($event)"
-          [disabled]="inlineAiStreaming()" />
-        @if (ghostSuffix()) {
-          <div class="rte-ghost-complete-overlay" aria-hidden="true">
-            <span class="rte-ghost-typed">{{ inlineAiInput() }}</span><span class="rte-ghost-suffix">{{ ghostSuffix() }}</span>
-          </div>
-          <span class="rte-ghost-tab-badge" aria-hidden="true">Tab</span>
-        }
-      </div>
-      <button mat-icon-button
-        [disabled]="inlineAiStreaming() || (!inlineAiInput().trim() && !inlineAiSelectedText())"
-        (click)="submitInlineAiPrompt()" title="Send">
-        <mat-icon>{{ inlineAiStreaming() ? 'hourglass_top' : 'send' }}</mat-icon>
-      </button>
-    </div>
-    @if (inlineAiStreaming() || inlineAiResponse() || inlineAiImageUrl()) {
-      @if (inlineAiGeneratingImage()) {
-        <div class="rte-inline-ai-image-generating">
-          <mat-spinner diameter="20"></mat-spinner>
-          <span>Generating image…</span>
-        </div>
-      } @else if (inlineAiImageUrl()) {
-        <div class="rte-inline-ai-image-preview">
-          <img [src]="proxyUrl(inlineAiImageUrl()!)!" alt="Generated image" class="rte-inline-ai-generated-image" />
-        </div>
-      } @else {
-        <div class="rte-inline-ai-response" [class.streaming]="inlineAiStreaming()">{{ inlineAiResponse() }}</div>
-      }
-      @if (!inlineAiStreaming() && (inlineAiResponse() || inlineAiImageUrl())) {
-        <div class="rte-inline-ai-actions">
-          <button mat-flat-button (click)="acceptInlineAiResponse()">Accept <kbd>Alt+A</kbd></button>
-          <button mat-button (click)="dismissInlineAiPrompt()">Discard</button>
-        </div>
-      }
-    }
-  </div>
-}
-
 <!-- Grammar popover -->
 @if (grammarPopoverVisible()) {
   <div class="rte-grammar-popover"

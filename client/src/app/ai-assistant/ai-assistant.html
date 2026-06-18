@@ -15,8 +15,7 @@
               [matTooltip]="selectedFolderId() ? 'New subfolder inside selected folder' : 'New folder'">
         <mat-icon>create_new_folder</mat-icon>
       </button>
-      <button mat-icon-button class="new-chat-btn" (click)="newChat()"
-              [disabled]="!aiAssistant.selectedSeriesId()"
+      <button mat-icon-button class="new-chat-btn" (click)="openNewAskQuill()"
               matTooltip="New chat">
         <mat-icon>add</mat-icon>
       </button>
@@ -152,7 +151,7 @@
       </div>
     }
 
-    @if (selectedFolderId() && !aiAssistant.activeSession()) {
+    @if (selectedFolderId()) {
       <!-- ── File explorer ── -->
         <div class="file-explorer"
              [class.file-explorer-drag-over]="fileDragOver()"
@@ -164,6 +163,50 @@
           <div class="file-explorer-toolbar">
             <mat-icon class="file-explorer-folder-icon">folder_open</mat-icon>
             <span class="file-explorer-folder-name">{{ selectedFolderName() }}</span>
+
+            @if (selectedItemIds().size > 0) {
+              <div class="fe-selection-bar">
+                <span class="fe-selection-count">{{ selectedItemIds().size }} selected</span>
+                <button mat-icon-button (click)="clearSelection()" matTooltip="Clear selection" aria-label="Clear selection">
+                  <mat-icon>close</mat-icon>
+                </button>
+                <button mat-icon-button class="fe-delete-btn" (click)="deleteSelectedItems()" matTooltip="Delete selected" aria-label="Delete selected">
+                  <mat-icon>delete</mat-icon>
+                </button>
+              </div>
+            } @else {
+              <div class="fe-toolbar-actions">
+                <button mat-icon-button (click)="triggerFileUpload()" matTooltip="Upload" aria-label="Upload">
+                  <mat-icon>upload_file</mat-icon>
+                </button>
+                <button mat-icon-button (click)="newNote()" matTooltip="New note" aria-label="New note">
+                  <mat-icon>note_add</mat-icon>
+                </button>
+                <button mat-icon-button (click)="openNewAskQuill()" matTooltip="New chat" aria-label="New chat">
+                  <mat-icon>add_comment</mat-icon>
+                </button>
+              </div>
+            }
+
+            <div class="fe-toolbar-divider"></div>
+
+            <div class="fe-view-toggle" role="group" aria-label="View options">
+              <button mat-icon-button class="fe-view-btn" [class.active]="fileViewMode() === 'list'"
+                [attr.aria-pressed]="fileViewMode() === 'list'"
+                (click)="setFileViewMode('list')" aria-label="List view">
+                <mat-icon>view_list</mat-icon>
+              </button>
+              <button mat-icon-button class="fe-view-btn" [class.active]="fileViewMode() === 'tiles'"
+                [attr.aria-pressed]="fileViewMode() === 'tiles'"
+                (click)="setFileViewMode('tiles')" aria-label="Tiles view">
+                <mat-icon>grid_view</mat-icon>
+              </button>
+              <button mat-icon-button class="fe-view-btn" [class.active]="fileViewMode() === 'large'"
+                [attr.aria-pressed]="fileViewMode() === 'large'"
+                (click)="setFileViewMode('large')" aria-label="Large icons">
+                <mat-icon>apps</mat-icon>
+              </button>
+            </div>
           </div>
 
           <!-- Loading -->
@@ -201,22 +244,8 @@
           } @else {
             <!-- Split: file grid on left, preview on right -->
             <div class="fe-body">
-              <div class="fe-grid">
-                <!-- Action buttons -->
-                <div class="fe-action-buttons">
-                  <button mat-stroked-button class="fe-action-btn" (click)="triggerFileUpload()" matTooltip="Upload" aria-label="Upload">
-                    <mat-icon>upload_file</mat-icon>
-                    <span class="fe-action-label">Upload</span>
-                  </button>
-                  <button mat-stroked-button class="fe-action-btn" (click)="newNote()" matTooltip="New note" aria-label="New note">
-                    <mat-icon>note_add</mat-icon>
-                    <span class="fe-action-label">New Note</span>
-                  </button>
-                  <button mat-stroked-button class="fe-action-btn" (click)="newChat()" matTooltip="New chat" aria-label="New chat">
-                    <mat-icon>add_comment</mat-icon>
-                    <span class="fe-action-label">New Chat</span>
-                  </button>
-                </div>
+              <div [class]="'fe-grid view-' + fileViewMode() + (selectedItemIds().size > 0 ? ' fe-grid-selecting' : '')"
+                   (mousedown)="onGridMouseDown($event)">
 
                 <!-- Drop hint when dragging -->
                 @if (fileDragOver()) {
@@ -226,7 +255,7 @@
                   </div>
                 }
 
-                <!-- Sub-folders -->
+                <!-- Sub-folders (not selectable) -->
                 @for (folder of aiAssistant.folders(); track folder.id) {
                   @if ((folder.parentFolderId ?? null) === selectedFolderId()) {
                     <div class="fe-item fe-item-folder"
@@ -247,9 +276,16 @@
                   @if (session.folderId === selectedFolderId()) {
                     <div class="fe-item fe-item-chat"
                          [class.fe-item-selected]="activeSessionId() === session.id"
+                         [class.fe-item-in-quill]="quickChat.activeSessionId() === session.id"
+                         [class.fe-item-checked]="selectedItemIds().has(session.id)"
+                         [attr.data-fe-id]="session.id"
                          draggable="true"
                          (dragstart)="onDragStart($event, session.id)"
-                         (click)="openSession(session.id)">
+                         (click)="onSessionItemClick($event, session.id)"
+                         (contextmenu)="onSessionContextMenu($event, session)">
+                      <div class="fe-item-check" (click)="toggleItemSelect(session.id); $event.stopPropagation()" role="checkbox" [attr.aria-checked]="selectedItemIds().has(session.id)" aria-label="Select item">
+                        <mat-icon>{{ selectedItemIds().has(session.id) ? 'check_circle' : 'radio_button_unchecked' }}</mat-icon>
+                      </div>
                       <mat-icon class="fe-item-icon">chat</mat-icon>
                       <span class="fe-item-name">{{ session.name }}</span>
                     </div>
@@ -260,8 +296,13 @@
                 @for (note of folderNotes(); track note.id) {
                   <div class="fe-item fe-item-note"
                        [class.fe-item-selected]="activeNote()?.id === note.id"
-                       (click)="openNote(note)"
+                       [class.fe-item-checked]="selectedItemIds().has(note.id)"
+                       [attr.data-fe-id]="note.id"
+                       (click)="onNoteItemClick($event, note)"
                        (contextmenu)="onNoteContextMenu($event, note)">
+                    <div class="fe-item-check" (click)="toggleItemSelect(note.id); $event.stopPropagation()" role="checkbox" [attr.aria-checked]="selectedItemIds().has(note.id)" aria-label="Select item">
+                      <mat-icon>{{ selectedItemIds().has(note.id) ? 'check_circle' : 'radio_button_unchecked' }}</mat-icon>
+                    </div>
                     <mat-icon class="fe-item-icon">text_snippet</mat-icon>
                     @if (renamingNoteId() === note.id) {
                       <input class="fe-rename-input note-rename-input"
@@ -281,10 +322,16 @@
                 @for (file of folderFiles(); track file.id) {
                   <div class="fe-item"
                        [class.fe-item-selected]="selectedFileId() === file.id"
+                       [class.fe-item-checked]="selectedItemIds().has(file.id)"
+                       [class.fe-item-image]="file.contentType.startsWith('image/')"
+                       [attr.data-fe-id]="file.id"
                        draggable="true"
                        (dragstart)="onFileDragStart($event, file.id)"
-                       (click)="selectFile(file)"
+                       (click)="onFileItemClick($event, file)"
                        (contextmenu)="onFileContextMenu($event, file)">
+                    <div class="fe-item-check" (click)="toggleItemSelect(file.id); $event.stopPropagation()" role="checkbox" [attr.aria-checked]="selectedItemIds().has(file.id)" aria-label="Select item">
+                      <mat-icon>{{ selectedItemIds().has(file.id) ? 'check_circle' : 'radio_button_unchecked' }}</mat-icon>
+                    </div>
                     <mat-icon class="fe-item-icon">{{ fileIcon(file.contentType) }}</mat-icon>
                     @if (renamingFileId() === file.id) {
                       <input class="fe-rename-input file-rename-input"
@@ -309,6 +356,7 @@
                     <p>Drag files here or click Upload</p>
                   </div>
                 }
+
               </div>
 
               <!-- Note editor pane (legacy location removed — moved above fe-body) -->
@@ -352,108 +400,6 @@
             </div>
           }
         </div>
-    } @else if (aiAssistant.activeSession()) {
-      <!-- Highlights summary tray -->
-      @if (showHighlightsSummary() && allHighlights().length > 0) {
-        <div class="ai-highlights-tray">
-          <div class="ai-highlights-tray-header">
-            <span class="ai-highlights-tray-title">Highlights</span>
-            <div class="ai-highlights-nav">
-              <button mat-icon-button class="hl-nav-btn" (click)="navigateToPrevHighlight()" matTooltip="Previous">
-                <mat-icon>keyboard_arrow_up</mat-icon>
-              </button>
-              <button mat-icon-button class="hl-nav-btn" (click)="navigateToNextHighlight()" matTooltip="Next">
-                <mat-icon>keyboard_arrow_down</mat-icon>
-              </button>
-            </div>
-          </div>
-          <div class="ai-highlights-list">
-            @for (entry of allHighlights(); track entry.highlight.id) {
-              <div class="highlight-entry"
-                   [class.highlight-entry-active]="activeHighlightId() === entry.highlight.id"
-                   (click)="navigateToHighlight(entry.messageIndex, entry.highlight.id)">
-                <span class="highlight-entry-swatch" [style.background]="entry.highlight.color"></span>
-                <span class="highlight-entry-text">{{ entry.excerpt }}</span>
-                <mat-icon class="highlight-entry-goto">chevron_right</mat-icon>
-                <button mat-icon-button class="highlight-entry-delete" matTooltip="Delete highlight"
-                        (click)="deleteHighlight(entry.messageIndex, entry.highlight.id, $event)">
-                  <mat-icon>close</mat-icon>
-                </button>
-              </div>
-            }
-          </div>
-        </div>
-      }
-
-      <!-- Messages -->
-      <div class="ai-chat-messages" #messagesEl (mouseup)="onMessagesMouseUp()" (scroll)="onMessagesScroll()">
-        @if (aiAssistant.activeSession()!.messages.length === 0) {
-          <p class="chat-empty">Ask anything about your writing…</p>
-        }
-        @for (msg of aiAssistant.activeSession()!.messages; track $index; let last = $last) {
-          <div class="chat-message"
-               [attr.data-msg-index]="$index"
-               [class.user]="msg.role === 'user'"
-               [class.assistant]="msg.role === 'assistant'"
-               [class.streaming]="last && msg.role === 'assistant' && aiAssistant.streaming()">
-            <span class="chat-role">{{ msg.role === 'user' ? 'You' : 'AI' }}</span>
-            @if (msg.role === 'assistant') {
-              @if (msg.generatingImage) {
-                <div class="chat-image-generating">
-                  <mat-spinner diameter="20"></mat-spinner>
-                  <span>Generating image…</span>
-                </div>
-              }
-              @if (msg.imageUrl) {
-                <div class="chat-image-container">
-                  <button type="button" class="chat-image-button"
-                          (click)="openLightbox(msg.imageUrl!)"
-                          matTooltip="View full resolution">
-                    <img [src]="proxyUrl(msg.thumbnailUrl || msg.imageUrl)" alt="Generated image" class="chat-generated-image" />
-                  </button>
-                  <div class="chat-image-actions">
-                    <a [href]="proxyUrl(msg.imageUrl)" download="generated-image.png"
-                       mat-stroked-button class="chat-image-action" matTooltip="Download">
-                      <mat-icon>download</mat-icon>
-                      Download
-                    </a>
-                    <button mat-stroked-button class="chat-image-action"
-                            (click)="saveToGallery(msg)" matTooltip="Save to an entity's gallery">
-                      <mat-icon>collections</mat-icon>
-                      Save to gallery
-                    </button>
-                    <button mat-stroked-button class="chat-image-action"
-                            (click)="saveToResourceManager(msg)" matTooltip="Save to a Resource Manager folder">
-                      <mat-icon>folder</mat-icon>
-                      Save to files
-                    </button>
-                  </div>
-                </div>
-              }
-              @if (msg.text) {
-                <div class="chat-markdown" (click)="onCitationClick($event)" [innerHTML]="renderMessageHtml(msg, $index)"></div>
-              }
-            } @else {
-              <p>{{ msg.text }}</p>
-            }
-          </div>
-        }
-      </div>
-
-      <!-- Input area -->
-      <div class="ai-chat-input-area">
-        <textarea class="chat-textarea" #chatInputEl
-                  placeholder="Message AI… (Enter to send, Shift+Enter for new line)"
-                  rows="3"
-                  [value]="input()"
-                  (input)="input.set($any($event.target).value)"
-                  (keydown)="onKeyDown($event)"></textarea>
-        <button mat-icon-button class="chat-send-btn"
-                [disabled]="aiAssistant.streaming() || !input().trim()"
-                (click)="send()">
-          <mat-icon>{{ aiAssistant.streaming() ? 'hourglass_top' : 'send' }}</mat-icon>
-        </button>
-      </div>
     } @else {
       <!-- Welcome state (no folder selected, no active session) -->
       <div class="ai-welcome">
@@ -468,7 +414,7 @@
             <mat-icon>note_add</mat-icon>
             <span class="fe-action-label">New Note</span>
           </button>
-          <button mat-stroked-button class="fe-action-btn" (click)="newChat()" matTooltip="New chat" aria-label="New chat">
+          <button mat-stroked-button class="fe-action-btn" (click)="openNewAskQuill()" matTooltip="New chat" aria-label="New chat">
             <mat-icon>add_comment</mat-icon>
             <span class="fe-action-label">New Chat</span>
           </button>
@@ -587,6 +533,18 @@
     <div class="folder-ctx-divider"></div>
     <button class="folder-ctx-item folder-ctx-danger"
             (mousedown)="deleteNote(noteContextMenu()!.note)">
+      <mat-icon>delete</mat-icon> Delete
+    </button>
+  </div>
+}
+
+<!-- Session context menu -->
+@if (sessionContextMenu()) {
+  <div class="folder-context-menu session-context-menu"
+       [style.left.px]="sessionContextMenu()!.x"
+       [style.top.px]="sessionContextMenu()!.y">
+    <button class="folder-ctx-item folder-ctx-danger"
+            (mousedown)="deleteSessionFromPanel(sessionContextMenu()!.sessionId)">
       <mat-icon>delete</mat-icon> Delete
     </button>
   </div>

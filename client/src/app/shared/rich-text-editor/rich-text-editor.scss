@@ -22,7 +22,13 @@
   overflow-y: auto;
   border: 1px solid var(--mat-sys-outline, #bdbdbd);
   border-radius: 8px;
-  padding: 24px 108px 24px 24px; /* right side leaves room for minimap */
+  /* right side leaves room for minimap; extra bottom keeps the last line clear of
+     the minimized Ask Quill bar docked in the bottom-left corner */
+  padding: 24px 108px 50px 24px;
+  /* when the cursor moves to a new line, the browser auto-scrolls to show it;
+     scroll-padding-bottom reserves the same 50px so the cursor never lands
+     behind the minimized Ask Quill bar */
+  scroll-padding-bottom: 50px;
   scrollbar-width: none; /* hide native scrollbar — minimap replaces it */
   &::-webkit-scrollbar { display: none; }
   font-size: var(--editor-font-size, 1rem);

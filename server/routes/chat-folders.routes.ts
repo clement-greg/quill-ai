@@ -12,7 +12,7 @@ router.get('/', async (req: Request, res: Response) => {
     const params: any[] = [{ name: '@owner', value: req.user!.email }];
     let seriesFilter = '';
     if (seriesId) {
-      seriesFilter = ' AND c.seriesId = @seriesId';
+      seriesFilter = ' AND (c.seriesId = @seriesId OR IS_NULL(c.seriesId) OR NOT IS_DEFINED(c.seriesId))';
       params.push({ name: '@seriesId', value: seriesId });
     }
     const { resources } = await container.items

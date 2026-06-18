@@ -8,6 +8,7 @@ import { searchChapterChunks, reindexChapterChunks } from '../chapter-chunks';
 import { Chapter } from '../../shared/models/chapter.model';
 import { ChapterCitation } from '../../shared/models/chat-session.model';
 import { generateImage } from '../image-generation';
+import { buildChapterContextPrompt } from '../chapter-ai-context';
 
 /** A tool the model may call. `execute` returns the result fed back to the
  * model, plus an optional `sse` payload streamed to the client as a side effect
@@ -29,7 +30,7 @@ const client = new AzureOpenAI({
 });
 
 const BASE_SYSTEM_PROMPT =
-  'You are a helpful writing assistant. Help the author with their creative writing, worldbuilding, character development, plot structure, dialogue, and any other writing-related questions. Format responses using markdown where appropriate.';
+  'You are Quill Assistant, a helpful writing assistant. If the user asks your name, respond that you are Quill Assistant. Help the author with their creative writing, worldbuilding, character development, plot structure, dialogue, and any other writing-related questions. Format responses using markdown where appropriate.';
 
 // Appended whenever the image tool is available. gpt-4.1-mini will happily
 // answer "draw me X" with prose unless told, unambiguously, to use the tool.
@@ -569,7 +570,7 @@ router.get('/', async (req: Request, res: Response) => {
     const params: any[] = [{ name: '@owner', value: req.user!.email }];
     let seriesFilter = '';
     if (seriesId) {
-      seriesFilter = ' AND c.seriesId = @seriesId';
+      seriesFilter = ' AND (c.seriesId = @seriesId OR IS_NULL(c.seriesId) OR NOT IS_DEFINED(c.seriesId))';
       params.push({ name: '@seriesId', value: seriesId });
     }
     const { resources } = await container.items
@@ -783,18 +784,57 @@ router.post('/:id/chat', async (req: Request, res: Response) => {
   await streamChatResponse(res, systemPrompt + IMAGE_TOOL_GUIDANCE, messages, citations, seriesChatTools());
 });
 
-// POST /quick-chat — stateless, cross-series RAG chat for the quick-launch
-// overlay. Searches every chapter the user owns (no series scope) and never
-// persists; the client decides whether to save the conversation afterwards.
+// POST /quick-chat — stateless RAG chat for the quick-launch overlay. Normally
+// searches every chapter the user owns (no series scope) and never persists.
+// When `chapterContext` is supplied (the overlay was opened from the chapter
+// editor), it instead grounds the answer in the current chapter — book-scoped
+// RAG, character voice, and the text surrounding the cursor — so the answer is
+// suitable for inserting at the cursor, mirroring the old inline AI Insert.
 router.post('/quick-chat', async (req: Request, res: Response) => {
   const messages: { role: 'user' | 'assistant'; content: string }[] = req.body.messages;
+  const chapterContext = req.body.chapterContext as
+    | { chapterId: string; surroundingText?: string; selectedText?: string }
+    | undefined;
 
   if (!messages || !Array.isArray(messages)) {
     res.status(400).json({ error: 'messages array required' });
     return;
   }
 
-  const { systemPrompt, citations } = await buildRagSystemPrompt(messages, {}, req);
+  let systemPrompt: string;
+  let citations: ChapterCitation[] = [];
+
+  if (chapterContext?.chapterId) {
+    const { surroundingText, selectedText } = chapterContext;
+    const lastUserMessage = [...messages].reverse().find(m => m.role === 'user');
+    const retrievalQuery = [selectedText, surroundingText, lastUserMessage?.content]
+      .filter(Boolean).join('\n\n').trim();
+    const { chapterTitle, contextSuffix } = await buildChapterContextPrompt(
+      chapterContext.chapterId,
+      { selectedText, retrievalQuery, instructionText: lastUserMessage?.content ?? '' },
+      req,
+    );
+
+    const titlePart = chapterTitle ? ` chapter titled "${chapterTitle}"` : '';
+    systemPrompt =
+      `You are a helpful writing assistant helping an author with their story${titlePart}. ` +
+      'When the author asks you to write or insert prose, provide only the requested content as plain ' +
+      'prose — no markdown, no preamble, and no meta-commentary such as "Sure, here you go". The author ' +
+      'will insert your answer directly into the chapter at their cursor.' +
+      contextSuffix;
+
+    if (surroundingText) {
+      systemPrompt +=
+        `\n\nThe text surrounding the author's cursor (the insertion point is marked [CURSOR]):\n` +
+        `"${surroundingText}"\n\nUse it only as context. Do NOT repeat any of the surrounding text — ` +
+        `return ONLY the new content to insert at the cursor.`;
+    }
+    if (selectedText) {
+      systemPrompt += `\n\nThe author currently has this text selected:\n"${selectedText}"`;
+    }
+  } else {
+    ({ systemPrompt, citations } = await buildRagSystemPrompt(messages, {}, req));
+  }
 
   res.setHeader('Content-Type', 'text/event-stream');
   res.setHeader('Cache-Control', 'no-cache');
@@ -844,9 +884,12 @@ router.post('/:id/name', async (req: Request, res: Response) => {
 
     const name = response.choices[0]?.message?.content?.trim() ?? 'New Chat';
 
+    // Re-read before upserting so we don't clobber messages that were saved
+    // concurrently by persistToSession (which runs in parallel with this call).
     const container = getContainer('chat-sessions');
+    const { resource: freshResource } = await container.item(id, id).read<any>();
     await container.items.upsert({
-      ...existingResource,
+      ...(freshResource ?? existingResource),
       name,
       updatedAt: new Date().toISOString(),
     });

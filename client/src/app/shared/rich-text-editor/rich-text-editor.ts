@@ -11,7 +11,7 @@ import { MatTooltipModule } from '@angular/material/tooltip';
 import { Entity, EntityReference } from '@shared/models/entity.model';
 import { EntityService } from '../../services/entity.service';
 import { GrammarCheckService, GrammarError, SuggestedEntity } from '../../services/grammar-check.service';
-import { UserSettingsService, GhostCompleteItem } from '../../services/user-settings.service';
+import { UserSettingsService } from '../../services/user-settings.service';
 
 export interface SuggestedEntityCard {
   name: string;
@@ -34,8 +34,6 @@ export interface SuggestedEntityCard {
 })
 export class RichTextEditorComponent implements OnInit, AfterViewInit, OnDestroy {
   @ViewChild('editorEl') editorRef!: ElementRef<HTMLDivElement>;
-  @ViewChild('inlineAiInputEl') inlineAiInputEl?: ElementRef<HTMLInputElement>;
-  @ViewChild('inlineAiPanelEl') inlineAiPanelRef?: ElementRef<HTMLElement>;
   @ViewChild('minimapCanvas') minimapCanvasRef?: ElementRef<HTMLCanvasElement>;
   @ViewChild('entityTagInputEl') entityTagInputRef?: ElementRef<HTMLInputElement>;
   @ViewChild('photoPickerEntityInputEl') photoPickerEntityInputRef?: ElementRef<HTMLInputElement>;
@@ -67,6 +65,10 @@ export class RichTextEditorComponent implements OnInit, AfterViewInit, OnDestroy
   noteRequest = output<void>();
   /** An extra ctx-menu item was selected; includes captured text context. */
   ctxMenuExtraItemSelected = output<{ id: string; captureText: string; narratorCaptureText: string; surroundingText: string }>();
+  /** User invoked AI assist (long-press or ctx-menu "AI Insert/Reword"). The host
+   *  opens the Ask Quill overlay; the captured cursor context travels via the
+   *  editor bridge. */
+  aiAssistRequested = output<{ selectedText: string; surroundingText: string }>();
 
   // ── Internal entity state ────────────────────────────────────────────────
   readonly entities = signal<Entity[]>([]);
@@ -134,39 +136,6 @@ export class RichTextEditorComponent implements OnInit, AfterViewInit, OnDestroy
   private ctxMenuCaptureText = '';
   private ctxMenuNarratorCaptureText = '';
   private _ctxMenuSurroundingText = '';
-
-  // ── Inline AI ────────────────────────────────────────────────────────────
-  inlineAiVisible = signal(false);
-  inlineAiTop = signal(0);
-  inlineAiLeft = signal(0);
-  inlineAiAbove = signal(false);
-  inlineAiInput = signal('');
-  inlineAiResponse = signal('');
-  inlineAiStreaming = signal(false);
-  inlineAiSelectedText = signal('');
-  inlineAiImageUrl = signal<string | null>(null);
-  inlineAiGeneratingImage = signal(false);
-
-  ghostSuggestion = computed(() => {
-    const inputVal = this.inlineAiInput();
-    if (!inputVal || this.inlineAiSelectedText()) return null;
-    const lower = inputVal.toLowerCase();
-    return this.userSettings.ghostCompleteItems().find(
-      item => item.prompt.toLowerCase().startsWith(lower) && item.prompt.length > inputVal.length,
-    ) ?? null;
-  });
-  ghostSuffix = computed(() => {
-    const s = this.ghostSuggestion();
-    return s ? s.prompt.slice(this.inlineAiInput().length) : '';
-  });
-
-  private inlineAiCursorRange: Range | null = null;
-  private inlineAiCharBefore = '';
-  private inlineAiCharAfter = '';
-  private inlineAiSurroundingText = '';
-  private inlineAiAbortController: AbortController | null = null;
-  private inlineAiAnchorRect: DOMRect | null = null;
-  private inlineAiResizeObserver: ResizeObserver | null = null;
 
   private externalInsertRange: Range | null = null;
   private readonly onDocumentSelectionChange = (): void => {
@@ -380,8 +349,6 @@ export class RichTextEditorComponent implements OnInit, AfterViewInit, OnDestroy
     if (this.photoRefPopupHideTimer) clearTimeout(this.photoRefPopupHideTimer);
     if (this.photoRefPopupShowTimer) clearTimeout(this.photoRefPopupShowTimer);
     this.grammarAbortController?.abort();
-    this.inlineAiAbortController?.abort();
-    this.inlineAiResizeObserver?.disconnect();
     this.minimapResizeObserver?.disconnect();
     document.removeEventListener('selectionchange', this.onDocumentSelectionChange);
     if (this.resizeDrag) {
@@ -419,18 +386,21 @@ export class RichTextEditorComponent implements OnInit, AfterViewInit, OnDestroy
     const editorEl = this.editorRef?.nativeElement;
     if (!editorEl) return;
 
-    let range = this.externalInsertRange;
+    let range = this.externalInsertRange?.cloneRange() ?? null;
     if (!range || !editorEl.contains(range.commonAncestorContainer)) {
       range = document.createRange();
       range.selectNodeContents(editorEl);
       range.collapse(false);
     }
+    // Insert at the cursor without replacing any selection: if the tracked range
+    // spans a selection, collapse to its end and insert there.
+    range.collapse(false);
 
     const wrapper = document.createElement('span');
     wrapper.setAttribute('data-ai-generated', 'true');
-    wrapper.textContent = text;
+    // Annotate entity names inside the inserted text (matches the old AI Insert).
+    wrapper.appendChild(this.buildEntityAnnotatedFragment(text));
 
-    range.deleteContents();
     range.insertNode(wrapper);
 
     const ar = document.createRange();
@@ -439,10 +409,52 @@ export class RichTextEditorComponent implements OnInit, AfterViewInit, OnDestroy
     const sel = window.getSelection();
     if (sel) { sel.removeAllRanges(); sel.addRange(ar); }
 
+    // Arm the eject guard so the user's next keystroke after the span isn't
+    // snapped back into it (mirrors the old accept path).
+    this.lastEjectedSpan = wrapper;
+    this.lastEjectedSpanTextLength = wrapper.textContent?.length ?? 0;
+
     editorEl.focus();
     this.scrollCursorIntoView();
     this.editorContent = editorEl.innerHTML;
     this.scheduleEmit();
+  }
+
+  /** Captures the cursor surroundings for an AI request: the selected text and
+   *  the ±300-char context around the caret (with a [CURSOR] marker). Uses the
+   *  live selection when it's inside the editor, else the last tracked range. */
+  captureAiContext(): { surroundingText: string; selectedText: string } {
+    const editorEl = this.editorRef?.nativeElement;
+    let range: Range | null = null;
+    const sel = window.getSelection();
+    if (sel && sel.rangeCount > 0) {
+      const r = sel.getRangeAt(0);
+      if (editorEl?.contains(r.commonAncestorContainer)) range = r;
+    }
+    if (!range) range = this.externalInsertRange;
+    if (!range) return { surroundingText: '', selectedText: '' };
+    return { surroundingText: this.extractSurroundingText(range), selectedText: range.toString() };
+  }
+
+  /** Emits the AI-assist request with captured cursor context. The host (chapter
+   *  editor) opens the Ask Quill overlay in response. */
+  requestAiAssist(): void {
+    const { surroundingText, selectedText } = this.captureAiContext();
+    this.aiAssistRequested.emit({ selectedText, surroundingText });
+  }
+
+  /** Returns focus to the editor at the cursor position it held before focus
+   *  moved away (e.g. when an external overlay was dismissed without inserting).
+   *  No-op if the editor was never the active caret. */
+  restoreFocus(): void {
+    const editorEl = this.editorRef?.nativeElement;
+    const range = this.externalInsertRange;
+    if (!editorEl || !range || !editorEl.contains(range.commonAncestorContainer)) return;
+    // preventScroll: focusing a contenteditable otherwise jumps the scroll to the
+    // top; the caret is already where the user left it, so keep the viewport put.
+    editorEl.focus({ preventScroll: true });
+    const sel = window.getSelection();
+    if (sel) { sel.removeAllRanges(); sel.addRange(range.cloneRange()); }
   }
 
   /** Wrap all occurrences of the given entity's names in entity-reference spans.
@@ -1213,7 +1225,7 @@ export class RichTextEditorComponent implements OnInit, AfterViewInit, OnDestroy
     this.longPressTimer = setTimeout(() => {
       this.longPressTimer = null;
       event.preventDefault();
-      this.openInlineAiPrompt();
+      this.requestAiAssist();
     }, 600);
   }
 
@@ -1225,7 +1237,6 @@ export class RichTextEditorComponent implements OnInit, AfterViewInit, OnDestroy
     const target = event.target as HTMLElement;
     if (!target.closest('.rte-autocomplete-dropdown')) { this.autocompleteItems.set([]); this.currentWordRange = null; }
     if (!target.closest('.rte-formatting-toolbar')) { this.formattingToolbarVisible.set(false); }
-    if (this.inlineAiVisible() && !target.closest('.rte-inline-ai-prompt')) this.dismissInlineAiPrompt();
     if (this.grammarPopoverVisible() && !target.closest('.rte-grammar-popover')) this.dismissGrammarPopover();
     if (this.ctxMenuVisible() && !target.closest('.rte-ctx-menu')) this.closeCtxMenu();
     if (this.selectedImage() && target.tagName !== 'IMG' && !target.closest('.rte-image-resize-overlay')) this.clearImageSelection();
@@ -1706,288 +1717,10 @@ export class RichTextEditorComponent implements OnInit, AfterViewInit, OnDestroy
     if (!item) return;
     this.closeCtxMenu();
     if (item.id === 'ai-action') {
-      this.openInlineAiPrompt();
+      this.requestAiAssist();
     } else {
       this.ctxMenuExtraItemSelected.emit({ id: item.id, captureText: this.ctxMenuCaptureText, narratorCaptureText: this.ctxMenuNarratorCaptureText, surroundingText: this._ctxMenuSurroundingText });
     }
-  }
-
-  // ── Inline AI prompt ─────────────────────────────────────────────────────
-
-  openInlineAiPrompt(): void {
-    const sel = window.getSelection();
-    this.inlineAiCharBefore = '';
-    this.inlineAiCharAfter = '';
-    this.inlineAiSurroundingText = '';
-    if (sel && sel.rangeCount > 0) {
-      const r = sel.getRangeAt(0);
-      this.inlineAiCursorRange = r.cloneRange();
-      this.inlineAiSelectedText.set(sel.toString());
-      const sc = r.startContainer;
-      if (sc.nodeType === Node.TEXT_NODE && r.startOffset > 0) this.inlineAiCharBefore = (sc.textContent ?? '')[r.startOffset - 1] ?? '';
-      const ec = r.endContainer;
-      if (ec.nodeType === Node.TEXT_NODE) this.inlineAiCharAfter = (ec.textContent ?? '')[r.endOffset] ?? '';
-      this.inlineAiSurroundingText = this.extractSurroundingText(r);
-    } else {
-      this.inlineAiCursorRange = null;
-      this.inlineAiSelectedText.set('');
-    }
-    this.inlineAiInput.set('');
-    this.inlineAiResponse.set('');
-    this.inlineAiVisible.set(true);
-    this.insertAiMarker();
-    const marker = this.editorRef?.nativeElement?.querySelector('.ai-insertion-marker');
-    const rect = marker?.getBoundingClientRect() ?? this.getCursorRect();
-    const PANEL_WIDTH = 388;
-    const PANEL_HEIGHT_EST = 140;
-    const GAP = 10;
-    const off = this.getFixedOffset();
-    let top: number, left: number, above = false;
-    if (rect && (rect.top !== 0 || rect.left !== 0 || rect.width !== 0 || rect.height !== 0)) {
-      // Prefer to open below and to the right of the cursor
-      const anchorX = rect.left + rect.width - off.x;
-      const anchorBottom = rect.bottom - off.y;
-      const anchorTop = rect.top - off.y;
-
-      // Horizontal: start at cursor position, clamp to viewport
-      left = anchorX;
-      if (left + PANEL_WIDTH + GAP > window.innerWidth - off.x) {
-        // Not enough room to the right — align right edge to cursor
-        left = anchorX - PANEL_WIDTH;
-      }
-      left = Math.max(GAP, Math.min(left, window.innerWidth - off.x - PANEL_WIDTH - GAP));
-
-      // Vertical: prefer below cursor, flip above if not enough room
-      if (anchorBottom + GAP + PANEL_HEIGHT_EST <= window.innerHeight - off.y) {
-        top = anchorBottom + GAP;
-        above = false;
-      } else {
-        top = anchorTop - GAP;
-        above = true;
-      }
-      top = Math.max(GAP, top);
-    } else {
-      const editorRect = this.editorRef?.nativeElement?.getBoundingClientRect();
-      top = editorRect ? editorRect.top + 60 - off.y : 200;
-      left = editorRect ? editorRect.left + 40 - off.x : 200;
-    }
-    this.inlineAiAnchorRect = rect ?? null;
-    this.inlineAiTop.set(top);
-    this.inlineAiLeft.set(left);
-    this.inlineAiAbove.set(above);
-    setTimeout(() => {
-      this.inlineAiInputEl?.nativeElement?.focus();
-      const panelEl = this.inlineAiPanelRef?.nativeElement;
-      if (panelEl) {
-        this.inlineAiResizeObserver?.disconnect();
-        this.inlineAiResizeObserver = new ResizeObserver(() => this.repositionInlineAiPanel());
-        this.inlineAiResizeObserver.observe(panelEl);
-      }
-    });
-  }
-
-  private repositionInlineAiPanel(): void {
-    const rect = this.inlineAiAnchorRect;
-    const panelEl = this.inlineAiPanelRef?.nativeElement;
-    if (!rect || !panelEl) return;
-    const GAP = 10;
-    const off = this.getFixedOffset();
-    const panelHeight = panelEl.offsetHeight;
-    let top: number, above: boolean;
-    if (rect.bottom + GAP + panelHeight <= window.innerHeight) { top = rect.bottom + GAP - off.y; above = false; }
-    else { top = rect.top - GAP - off.y; above = true; }
-    this.inlineAiTop.set(Math.max(GAP, top));
-    this.inlineAiAbove.set(above);
-  }
-
-  onInlineAiKeyDown(event: KeyboardEvent): void {
-    if (event.key === 'Tab' && this.ghostSuggestion()) { event.preventDefault(); this.applyGhostComplete(this.ghostSuggestion()!); return; }
-    if (event.key === 'Enter') { event.preventDefault(); this.submitInlineAiPrompt(); }
-    else if (event.key === 'Escape') { this.dismissInlineAiPrompt(); }
-    else if (event.key === 'a' && event.altKey && !this.inlineAiStreaming() && (this.inlineAiResponse() || this.inlineAiImageUrl())) { event.preventDefault(); this.acceptInlineAiResponse(); }
-  }
-
-  applyGhostComplete(item: GhostCompleteItem): void { this.inlineAiInput.set(item.prompt); }
-  onInlineAiInputChange(value: string): void { this.inlineAiInput.set(value); }
-
-  async submitInlineAiPrompt(): Promise<void> {
-    const text = this.inlineAiInput().trim();
-    const selectedText = this.inlineAiSelectedText();
-    if ((!text && !selectedText) || this.inlineAiStreaming()) return;
-
-    this.inlineAiResponse.set('');
-    this.inlineAiImageUrl.set(null);
-    this.inlineAiStreaming.set(true);
-
-    if (!selectedText && this.isImageRequest(text)) {
-      this.inlineAiGeneratingImage.set(true);
-      try {
-        const imgResponse = await this.authFetch('/api/image/generate', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ prompt: text }) });
-        if (imgResponse.ok) {
-          const imgData = await imgResponse.json() as { url: string; thumbnailUrl: string };
-          this.inlineAiImageUrl.set(imgData.url);
-        } else {
-          this.inlineAiResponse.set('Error: image generation failed.');
-        }
-      } catch {
-        this.inlineAiResponse.set('Error: could not connect to image generation service.');
-      } finally {
-        this.inlineAiGeneratingImage.set(false);
-        this.inlineAiStreaming.set(false);
-      }
-      return;
-    }
-
-    let content: string;
-    if (selectedText) {
-      content = text ? `Selected text:\n"${selectedText}"\n\n${text}` : `Selected text:\n"${selectedText}"`;
-    } else {
-      content = this.inlineAiSurroundingText
-        ? `The following is the text surrounding the cursor position (marked with [CURSOR]). Use it ONLY as context. Do NOT repeat any surrounding text — return ONLY the new content to insert.\n\nSurrounding text:\n"${this.inlineAiSurroundingText}"\n\nInstruction: ${text}`
-        : text;
-    }
-
-    const apiMessages = [{ role: 'user' as const, content }];
-    this.inlineAiAbortController = new AbortController();
-
-    const endpoint = this.aiEndpoint() || '/api/chat/general';
-    const isGeneral = !this.aiEndpoint() || this.aiEndpoint() === '/api/chat/general';
-    const bodyPayload = isGeneral
-      ? JSON.stringify({ messages: apiMessages, seriesId: this.seriesId(), selectedText: selectedText || undefined })
-      : JSON.stringify({ messages: apiMessages, selectedText: selectedText || undefined });
-
-    try {
-      const response = await this.authFetch(endpoint, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: bodyPayload,
-        signal: this.inlineAiAbortController.signal,
-      });
-
-      if (!response.ok || !response.body) { this.inlineAiResponse.set('Error: failed to get a response.'); return; }
-
-      const reader = response.body.getReader();
-      const decoder = new TextDecoder();
-      let buffer = '';
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        buffer += decoder.decode(value, { stream: true });
-        const lines = buffer.split('\n');
-        buffer = lines.pop() ?? '';
-        for (const line of lines) {
-          if (!line.startsWith('data: ')) continue;
-          const data = line.slice(6);
-          if (data === '[DONE]') continue;
-          try {
-            const parsed = JSON.parse(data) as { content?: string; error?: string };
-            if (parsed.error) this.inlineAiResponse.set(`Error: ${parsed.error}`);
-            else if (parsed.content) this.inlineAiResponse.update(r => r + parsed.content);
-          } catch { /* skip */ }
-        }
-      }
-    } catch (err: unknown) {
-      if (err instanceof Error && err.name !== 'AbortError') this.inlineAiResponse.set('Error: could not connect to AI.');
-    } finally {
-      this.inlineAiStreaming.set(false);
-      this.inlineAiAbortController = null;
-      setTimeout(() => this.inlineAiInputEl?.nativeElement?.focus());
-    }
-  }
-
-  acceptInlineAiResponse(): void {
-    const imageUrl = this.inlineAiImageUrl();
-    if (imageUrl) {
-      if (!this.inlineAiCursorRange) return;
-      const range = this.inlineAiCursorRange;
-      const sel = window.getSelection();
-      if (sel) { sel.removeAllRanges(); sel.addRange(range); }
-      range.deleteContents();
-      const img = document.createElement('img');
-      img.src = this.proxyUrl(imageUrl) ?? imageUrl;
-      img.style.maxWidth = '100%';
-      range.insertNode(img);
-      const ar = document.createRange();
-      ar.setStartAfter(img);
-      ar.collapse(true);
-      if (sel) { sel.removeAllRanges(); sel.addRange(ar); }
-      this.scrollCursorIntoView();
-      if (this.editorRef) { this.editorContent = this.editorRef.nativeElement.innerHTML; this.scheduleEmit(); }
-      this.dismissInlineAiPrompt(false);
-      return;
-    }
-
-    let text = this.inlineAiResponse();
-    if (!text || !this.inlineAiCursorRange) return;
-
-    const QUOTE_CHARS = new Set(['"', "'", '\u201C', '\u201D', '\u2018', '\u2019']);
-    if (QUOTE_CHARS.has(this.inlineAiCharBefore) && QUOTE_CHARS.has(text[0])) text = text.slice(1);
-    if (QUOTE_CHARS.has(this.inlineAiCharAfter) && text.length > 0 && QUOTE_CHARS.has(text[text.length - 1])) text = text.slice(0, -1);
-
-    const range = this.inlineAiCursorRange;
-    const sel = window.getSelection();
-    if (sel) { sel.removeAllRanges(); sel.addRange(range); }
-    range.deleteContents();
-    const fragment = this.buildEntityAnnotatedFragment(text);
-    const wrapper = document.createElement('span');
-    wrapper.setAttribute('data-ai-generated', 'true');
-    wrapper.appendChild(fragment);
-    range.insertNode(wrapper);
-    const ar = document.createRange();
-    ar.setStartAfter(wrapper);
-    ar.collapse(true);
-    if (sel) { sel.removeAllRanges(); sel.addRange(ar); }
-    // Arm the eject guard: the caret sits right after the AI span, so Chrome
-    // will snap the user's first keystroke back into the end of the span. Let
-    // the existing overflow-extraction logic move that text out on the next
-    // input event instead of falsely marking the span as 'modified'.
-    this.lastEjectedSpan = wrapper;
-    this.lastEjectedSpanTextLength = wrapper.textContent?.length ?? 0;
-    this.scrollCursorIntoView();
-    if (this.editorRef) { this.editorContent = this.editorRef.nativeElement.innerHTML; this.scheduleEmit(); }
-    this.dismissInlineAiPrompt(false);
-  }
-
-  dismissInlineAiPrompt(restoreFocus = true): void {
-    this.removeAiMarker();
-    this.inlineAiResizeObserver?.disconnect();
-    this.inlineAiResizeObserver = null;
-    this.inlineAiAnchorRect = null;
-    this.inlineAiAbortController?.abort();
-    this.inlineAiAbortController = null;
-    this.inlineAiVisible.set(false);
-    this.inlineAiInput.set('');
-    this.inlineAiResponse.set('');
-    this.inlineAiImageUrl.set(null);
-    this.inlineAiGeneratingImage.set(false);
-    this.inlineAiSelectedText.set('');
-    if (restoreFocus && this.inlineAiCursorRange && this.editorRef) {
-      const range = this.inlineAiCursorRange;
-      this.editorRef.nativeElement.focus();
-      const sel = window.getSelection();
-      if (sel) { sel.removeAllRanges(); sel.addRange(range); }
-    }
-    this.inlineAiCursorRange = null;
-  }
-
-  private insertAiMarker(): void {
-    this.removeAiMarker();
-    if (!this.inlineAiCursorRange || !this.editorRef) return;
-    if (this.inlineAiSelectedText()) return;
-    const marker = document.createElement('span');
-    marker.className = 'ai-insertion-marker';
-    marker.setAttribute('data-ai-marker', '');
-    Object.assign(marker.style, { display: 'inline-block', width: '2px', height: '1.2em', verticalAlign: 'text-bottom', background: '#6750a4', borderRadius: '1px', pointerEvents: 'none', margin: '0 1px', animation: 'ai-marker-blink 1s step-end infinite' });
-    const range = this.inlineAiCursorRange;
-    range.insertNode(marker);
-    const nr = document.createRange();
-    nr.setStartAfter(marker);
-    nr.collapse(true);
-    this.inlineAiCursorRange = nr;
-  }
-
-  private removeAiMarker(): void {
-    this.editorRef?.nativeElement.querySelectorAll('.ai-insertion-marker').forEach(el => el.remove());
   }
 
   /**
@@ -2608,11 +2341,6 @@ export class RichTextEditorComponent implements OnInit, AfterViewInit, OnDestroy
     span.remove();
   }
 
-  private isImageRequest(text: string): boolean {
-    return /\b(generate|create|draw|make|produce|illustrate)\b[\s\S]{0,60}\b(image|picture|illustration|artwork|photo|painting)\b/i.test(text) ||
-           /\b(image|draw|illustrate|paint)\s*:/i.test(text);
-  }
-
   // ── Minimap ───────────────────────────────────────────────────────────────
 
   onMinimapMouseDown(event: MouseEvent): void {
@@ -2920,12 +2648,5 @@ export class RichTextEditorComponent implements OnInit, AfterViewInit, OnDestroy
       this.emitTimer = null;
       this.contentChange.emit(this.editorContent);
     }, 800);
-  }
-
-  private authFetch(input: string, init: RequestInit = {}): Promise<Response> {
-    const token = localStorage.getItem('app_auth_token');
-    const headers = new Headers(init.headers as HeadersInit);
-    if (token) headers.set('Authorization', `Bearer ${token}`);
-    return fetch(input, { ...init, headers });
   }
 }

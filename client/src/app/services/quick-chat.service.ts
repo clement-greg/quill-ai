@@ -1,45 +1,85 @@
 import { Injectable, inject, signal } from '@angular/core';
 import { Router } from '@angular/router';
-import { ChapterCitation, ChatFolder, ChatSession, ChatSessionMessage, MapPreview } from '@shared/models';
-import { Series } from '@shared/models/series.model';
+import { ChapterCitation, ChatMessageHighlight, ChatSession, ChatSessionMessage, MapPreview } from '@shared/models';
+import { EditorBridgeService } from './editor-bridge.service';
+import { AiAssistantService } from './ai-assistant.service';
+
 
 /**
- * Backs the quick-launch "Ask Quill" overlay: an ephemeral, cross-series RAG
- * chat that isn't persisted unless the user explicitly saves it into the
- * Resource Manager. Kept separate from {@link AiAssistantService} (which owns
- * the heavier folder/session-management panel) so the overlay stays lightweight.
+ * Backs the "Ask Quill" overlay. Every conversation is auto-saved into a
+ * global "Chats" folder in the Resource Manager (no series required); the user
+ * can move sessions from there to any folder they like.
  */
 @Injectable({ providedIn: 'root' })
 export class QuickChatService {
   private readonly router = inject(Router);
+  private readonly editorBridge = inject(EditorBridgeService);
+  private readonly aiAssistant = inject(AiAssistantService);
 
-  readonly isOpen = signal(false);
+  /** The panel is always present — it cannot be fully closed, only minimized. */
+  readonly isOpen = signal(true);
+  /** Starts collapsed so it's non-intrusive on load; user expands on demand. */
+  readonly minimized = signal(true);
   readonly messages = signal<ChatSessionMessage[]>([]);
   readonly streaming = signal(false);
+  /** Set when a saved session is loaded; new messages are auto-persisted to it. */
+  readonly activeSessionId = signal<string | null>(null);
 
   private abortController: AbortController | null = null;
+  /** Cached ID of the global "Chats" folder so we don't re-query on every message. */
+  private chatsFolderId: string | null = null;
 
   open(): void {
-    this.isOpen.set(true);
+    this.minimized.set(false);
   }
 
+  /** Collapses to the minimized bar — the panel is never fully closed. */
   close(): void {
-    this.isOpen.set(false);
+    this.minimized.set(true);
   }
 
+  minimize(): void {
+    this.minimized.set(true);
+  }
+
+  restore(): void {
+    this.minimized.set(false);
+  }
+
+  /** Ctrl/Cmd+I: expand if minimized, otherwise collapse. */
   toggle(): void {
-    this.isOpen.update(v => !v);
+    this.minimized.update(m => !m);
   }
 
   /** Clears the conversation (e.g. after saving or via "New chat"). */
   reset(): void {
     this.cancelStreaming();
     this.messages.set([]);
+    this.activeSessionId.set(null);
+  }
+
+  /** Loads a saved chat session into the panel and expands it.
+   *  Subsequent messages are auto-persisted back to the same session. */
+  async loadSession(id: string): Promise<void> {
+    try {
+      const res = await this.authFetch(`/api/chat-sessions/${id}`);
+      if (res.ok) {
+        const session = await res.json() as ChatSession;
+        this.messages.set(session.messages);
+        this.activeSessionId.set(id);
+        this.minimized.set(false);
+      }
+    } catch {
+      // Best-effort
+    }
   }
 
   async sendMessage(text: string): Promise<void> {
     const trimmed = text.trim();
     if (!trimmed || this.streaming()) return;
+
+    // Ensure a session exists before we start streaming so every exchange is saved.
+    await this.createAutoSaveSession();
 
     const userMsg: ChatSessionMessage = { role: 'user', text: trimmed };
     const assistantPlaceholder: ChatSessionMessage = { role: 'assistant', text: '' };
@@ -52,13 +92,20 @@ export class QuickChatService {
       .slice(-7)
       .map(m => ({ role: m.role, content: m.text }));
 
+    // When opened from a chapter editor, ground the answer in that chapter and
+    // the text surrounding the cursor (so it's suitable to insert there).
+    const captured = this.editorBridge.captureContext();
+    const chapterContext = captured
+      ? { chapterId: captured.chapterId, surroundingText: captured.surroundingText, selectedText: captured.selectedText }
+      : undefined;
+
     this.abortController = new AbortController();
 
     try {
       const res = await this.authFetch('/api/chat-sessions/quick-chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ messages: apiMessages }),
+        body: JSON.stringify({ messages: apiMessages, ...(chapterContext ? { chapterContext } : {}) }),
         signal: this.abortController.signal,
       });
 
@@ -96,10 +143,10 @@ export class QuickChatService {
             if (parsed.error) {
               this.updateLastAssistantMessage(`Error: ${parsed.error}`);
             } else if (parsed.navigate) {
-              // The assistant invoked a tool to take the user somewhere: act on
-              // it, close the overlay, and stop reading the rest of the stream.
-              this.cancelStreaming();
-              this.close();
+              // The assistant invoked a navigation tool. Show a confirmation
+              // message in the bubble (so it's never blank), navigate, and
+              // leave the panel open so the user can continue the conversation.
+              this.updateLastAssistantMessage(`Opening "${parsed.navigate.title}"…`);
               this.router.navigate(this.routeFor(parsed.navigate.target, parsed.navigate.id));
               return;
             } else if (parsed.map) {
@@ -129,6 +176,98 @@ export class QuickChatService {
     } finally {
       this.streaming.set(false);
       this.abortController = null;
+      const sessionId = this.activeSessionId();
+      if (sessionId) {
+        void this.persistToSession(sessionId);
+        // Name the session from the first exchange only (exactly 1 user + 1 assistant message with text).
+        if (this.messages().filter(m => m.text).length === 2) {
+          void this.nameSession(sessionId).then(() => void this.aiAssistant.loadSessions());
+        }
+      }
+    }
+  }
+
+  /** Finds or creates the global "Chats" folder (no series). Result is cached. */
+  private async getOrCreateChatsFolder(): Promise<string | null> {
+    if (this.chatsFolderId) return this.chatsFolderId;
+    try {
+      const res = await this.authFetch('/api/chat-folders');
+      if (res.ok) {
+        const folders = await res.json() as Array<{ id: string; name: string; seriesId?: string | null }>;
+        const existing = folders.find(f => f.name.toLowerCase() === 'chats' && !f.seriesId);
+        if (existing) { this.chatsFolderId = existing.id; return existing.id; }
+      }
+      const createRes = await this.authFetch('/api/chat-folders', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: 'Chats', seriesId: null }),
+      });
+      if (createRes.ok) {
+        const folder = await createRes.json() as { id: string };
+        this.chatsFolderId = folder.id;
+        return folder.id;
+      }
+    } catch {
+      // Best-effort
+    }
+    return null;
+  }
+
+  /** Creates a session in the Chats folder if one isn't already active. */
+  private async createAutoSaveSession(): Promise<void> {
+    if (this.activeSessionId()) return;
+    try {
+      const folderId = await this.getOrCreateChatsFolder();
+      const res = await this.authFetch('/api/chat-sessions', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ folderId, seriesId: null }),
+      });
+      if (res.ok) {
+        const session = await res.json() as ChatSession;
+        this.activeSessionId.set(session.id);
+        void this.aiAssistant.loadFolders();
+        void this.aiAssistant.loadSessions();
+      }
+    } catch {
+      // Best-effort — conversation continues even if session creation fails
+    }
+  }
+
+  /** Generates a name for the session from the first exchange. */
+  private async nameSession(sessionId: string): Promise<void> {
+    try {
+      const messages = this.messages()
+        .filter(m => m.text)
+        .slice(0, 2)
+        .map(m => ({ role: m.role, content: m.text }));
+      await this.authFetch(`/api/chat-sessions/${sessionId}/name`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ messages }),
+      });
+    } catch {
+      // Best-effort
+    }
+  }
+
+  private async persistToSession(sessionId: string): Promise<void> {
+    const messages = this.messages()
+      .filter(m => m.text || m.imageUrl)
+      .map(({ role, text, imageUrl, thumbnailUrl, sources }) => ({
+        role, text,
+        ...(imageUrl ? { imageUrl } : {}),
+        ...(thumbnailUrl ? { thumbnailUrl } : {}),
+        ...(sources?.length ? { sources } : {}),
+      }));
+    try {
+      await this.authFetch(`/api/chat-sessions/${sessionId}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ messages }),
+      });
+    } catch {
+      // Best-effort
     }
   }
 
@@ -146,75 +285,7 @@ export class QuickChatService {
     }
   }
 
-  /** Loads the user's active series for the save picker (alphabetical). */
-  async listSeries(): Promise<Series[]> {
-    try {
-      const res = await this.authFetch('/api/series');
-      if (res.ok) {
-        const data = await res.json() as Series[];
-        return data
-          .filter(s => !(s as { deleted?: boolean }).deleted && !(s as { archived?: boolean }).archived)
-          .sort((a, b) => (a.title ?? '').localeCompare(b.title ?? ''));
-      }
-    } catch {
-      // Best-effort
-    }
-    return [];
-  }
 
-  /** Loads the chat folders for a series, used by the save picker tree. */
-  async listFolders(seriesId: string): Promise<ChatFolder[]> {
-    try {
-      const res = await this.authFetch(`/api/chat-folders?seriesId=${encodeURIComponent(seriesId)}`);
-      if (res.ok) return await res.json() as ChatFolder[];
-    } catch {
-      // Best-effort
-    }
-    return [];
-  }
-
-  /**
-   * Persists the current conversation as a chat session in the Resource Manager
-   * under the chosen series/folder, then auto-names it. Returns true on success.
-   */
-  async saveToResourceManager(seriesId: string, folderId: string | null): Promise<boolean> {
-    const persistMessages = this.messages()
-      .filter(m => m.text || m.imageUrl)
-      .map(({ role, text, imageUrl, thumbnailUrl, sources }) => ({
-        role,
-        text,
-        ...(imageUrl ? { imageUrl } : {}),
-        ...(thumbnailUrl ? { thumbnailUrl } : {}),
-        ...(sources?.length ? { sources } : {}),
-      }));
-    if (persistMessages.length === 0) return false;
-
-    try {
-      const createRes = await this.authFetch('/api/chat-sessions', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ folderId, seriesId }),
-      });
-      if (!createRes.ok) return false;
-      const session = await createRes.json() as ChatSession;
-
-      await this.authFetch(`/api/chat-sessions/${session.id}`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ messages: persistMessages }),
-      });
-
-      // Best-effort title from the first exchange (mirrors the panel behavior).
-      await this.authFetch(`/api/chat-sessions/${session.id}/name`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ messages: persistMessages.slice(0, 2).map(m => ({ role: m.role, content: m.text })) }),
-      });
-      return true;
-    } catch {
-      return false;
-    }
-  }
 
   private updateLastAssistantMessage(text: string): void {
     this.messages.update(msgs => {
@@ -265,6 +336,33 @@ export class QuickChatService {
       copy[copy.length - 1] = { ...copy[copy.length - 1], imageUrl, thumbnailUrl, generatingImage: false };
       return copy;
     });
+  }
+
+  async addHighlight(messageIndex: number, highlight: ChatMessageHighlight): Promise<void> {
+    this.messages.update(msgs => {
+      const copy = [...msgs];
+      const msg = copy[messageIndex];
+      if (!msg) return msgs;
+      copy[messageIndex] = { ...msg, highlights: [...(msg.highlights ?? []), highlight] };
+      return copy;
+    });
+    const sessionId = this.activeSessionId();
+    if (sessionId) void this.persistToSession(sessionId);
+  }
+
+  async removeHighlightsInRange(messageIndex: number, startOffset: number, endOffset: number): Promise<void> {
+    this.messages.update(msgs => {
+      const copy = [...msgs];
+      const msg = copy[messageIndex];
+      if (!msg || !msg.highlights?.length) return msgs;
+      const filtered = msg.highlights.filter(
+        h => h.endOffset <= startOffset || h.startOffset >= endOffset,
+      );
+      copy[messageIndex] = { ...msg, highlights: filtered };
+      return copy;
+    });
+    const sessionId = this.activeSessionId();
+    if (sessionId) void this.persistToSession(sessionId);
   }
 
   /** Uploads an image file into a Resource Manager folder. Returns true on success. */

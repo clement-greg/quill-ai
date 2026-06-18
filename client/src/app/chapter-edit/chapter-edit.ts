@@ -36,6 +36,7 @@ import { UserSettingsService } from '../services/user-settings.service';
 import { AuthService } from '../auth/auth.service';
 import { SeriesContextService } from '../services/series-context.service';
 import { EditorBridgeService } from '../services/editor-bridge.service';
+import { QuickChatService } from '../services/quick-chat.service';
 import { RecentChaptersService } from '../services/recent-chapters.service';
 import { diffWords } from 'diff';
 import { forkJoin, Subscription } from 'rxjs';
@@ -77,6 +78,7 @@ export class ChapterEditComponent implements OnInit, OnDestroy {
   private authService = inject(AuthService);
   private seriesContext = inject(SeriesContextService);
   private editorBridge = inject(EditorBridgeService);
+  private quickChat = inject(QuickChatService);
   private recentChapters = inject(RecentChaptersService);
   private routeSub?: Subscription;
 
@@ -250,6 +252,7 @@ export class ChapterEditComponent implements OnInit, OnDestroy {
           if (this.editorRef) {
             this.editorRef.setContent(content);
             this.editorBridge.register(this.editorRef);
+            this.editorBridge.setChapterContext({ chapterId: data.id, seriesId: this.seriesId() || null });
           }
         });
 
@@ -257,6 +260,7 @@ export class ChapterEditComponent implements OnInit, OnDestroy {
           next: (book) => {
             this.seriesId.set(book.seriesId);
             this.seriesContext.set(book.seriesId);
+            this.editorBridge.setChapterContext({ chapterId: data.id, seriesId: book.seriesId });
 
             forkJoin({
               series: this.seriesService.getById(book.seriesId),
@@ -350,6 +354,12 @@ export class ChapterEditComponent implements OnInit, OnDestroy {
       this.hasDraft.set(true);
       this.autoSaveTimer = null;
     }, 800);
+  }
+
+  /** Opens the Ask Quill overlay; it grounds answers in this chapter (via the
+   *  editor bridge) and offers an "Insert at cursor" action on its replies. */
+  openAskQuill(): void {
+    this.quickChat.open();
   }
 
   onEditorContentChange(html: string): void {

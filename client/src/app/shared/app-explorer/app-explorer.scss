@@ -91,12 +91,202 @@ mat-divider {
 }
 
 .tree-heading {
-  padding: 8px 16px 4px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 4px 4px 16px;
   font-size: 0.72rem;
   font-weight: 600;
   letter-spacing: 0.06em;
   text-transform: uppercase;
   color: var(--mat-sys-on-surface-variant);
+}
+
+.tree-view-toggle {
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+
+  .view-btn {
+    width: 28px;
+    height: 28px;
+    line-height: 28px;
+
+    mat-icon {
+      font-size: 18px;
+      width: 18px;
+      height: 18px;
+      color: var(--mat-sys-on-surface-variant);
+    }
+
+    &.active mat-icon {
+      color: var(--mat-sys-primary);
+    }
+  }
+}
+
+/* Children containers (books within a series, chapters within a book) */
+.tree-children {
+  display: flex;
+  flex-direction: column;
+}
+
+.tree-books {
+  padding-left: 20px; // level-1 indent
+}
+
+.tree-chapters {
+  padding-left: 20px; // level-2 indent (relative to already-indented book card)
+}
+
+/* Full-width items inside a grid (loading/empty states) */
+.tree-child-full {
+  grid-column: 1 / -1;
+  padding-left: 0;
+}
+
+/* ── Tiles view ──────────────────────────────────────────────── */
+.view-tiles {
+  .tree-books,
+  .tree-chapters {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 5px;
+    padding: 5px 8px;
+  }
+
+  .tree-child-item {
+    background: var(--mat-sys-surface-container-high);
+    border-radius: 8px;
+    overflow: hidden;
+
+    &:hover {
+      background: var(--mat-sys-surface-container-highest);
+    }
+  }
+
+  // Only apply card layout to book/chapter rows, not the series header row
+  .tree-row:not(.tree-series-row) {
+    flex-direction: column;
+    align-items: center;
+    padding: 8px 4px 4px;
+
+    .tree-toggle {
+      order: 2;
+      width: 22px;
+      height: 22px;
+      line-height: 22px;
+      align-self: flex-end;
+
+      mat-icon {
+        font-size: 16px;
+        width: 16px;
+        height: 16px;
+      }
+    }
+
+    .tree-toggle-spacer {
+      display: none;
+    }
+
+    .tree-label {
+      order: 1;
+      flex-direction: column;
+      align-items: center;
+      padding: 0;
+      gap: 5px;
+      width: 100%;
+
+      .tree-thumb {
+        width: 44px;
+        height: 44px;
+        border-radius: 6px;
+      }
+
+      .tree-icon {
+        font-size: 32px;
+        width: 32px;
+        height: 32px;
+      }
+
+      .tree-text {
+        font-size: 0.72rem;
+        text-align: center;
+        white-space: normal;
+        overflow: hidden;
+        display: -webkit-box;
+        -webkit-line-clamp: 2;
+        -webkit-box-orient: vertical;
+      }
+    }
+  }
+}
+
+/* ── Large icons view ────────────────────────────────────────── */
+.view-large {
+  .tree-books,
+  .tree-chapters {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    padding: 4px 8px;
+  }
+
+  .tree-child-item {
+    background: var(--mat-sys-surface-container-high);
+    border-radius: 8px;
+    overflow: hidden;
+
+    &:hover {
+      background: var(--mat-sys-surface-container-highest);
+    }
+  }
+
+  // Only apply large layout to book/chapter rows, not the series header row
+  .tree-row:not(.tree-series-row) {
+    gap: 12px;
+    padding: 8px 10px;
+
+    .tree-toggle {
+      order: 2;
+      margin-left: auto;
+      flex-shrink: 0;
+    }
+
+    .tree-toggle-spacer {
+      display: none;
+    }
+
+    .tree-label {
+      order: 1;
+      flex: 1 1 auto;
+      min-width: 0;
+      padding: 0;
+
+      .tree-thumb {
+        width: 40px;
+        height: 40px;
+        border-radius: 6px;
+        flex-shrink: 0;
+      }
+
+      .tree-icon {
+        font-size: 32px;
+        width: 32px;
+        height: 32px;
+        flex-shrink: 0;
+      }
+
+      .tree-text {
+        font-size: 0.875rem;
+        white-space: normal;
+        overflow: hidden;
+        display: -webkit-box;
+        -webkit-line-clamp: 2;
+        -webkit-box-orient: vertical;
+      }
+    }
+  }
 }
 
 .explorer-filter {
@@ -199,15 +389,6 @@ mat-divider {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-}
-
-/* Indentation by depth */
-.level-1 {
-  padding-left: 20px;
-}
-
-.level-2 {
-  padding-left: 40px;
 }
 
 .tree-loading,
