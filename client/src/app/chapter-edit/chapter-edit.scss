@@ -2234,6 +2234,80 @@ button.mobile-only {
   }
 }
 
+// ── Quill Editor scanning animation ──────────────────────────────────────
+.quill-scanning {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 24px 16px 8px;
+}
+
+.quill-scan-lottie {
+  width: 160px;
+  height: 160px;
+}
+
+.quill-scanning-label {
+  margin: 0;
+  font-size: 0.85rem;
+  color: var(--mat-sys-on-surface-variant, #666);
+  text-align: center;
+}
+
+.quill-scanning-inline {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  margin: 0 12px 8px;
+  border-radius: 8px;
+  background: var(--mat-sys-surface-container, #f1f3f4);
+  border: 1px solid var(--mat-sys-outline-variant, #e0e0e0);
+}
+
+.quill-scan-lottie-inline {
+  width: 32px;
+  height: 32px;
+  flex-shrink: 0;
+}
+
+.quill-scanning-inline-label {
+  font-size: 0.82rem;
+  color: var(--mat-sys-on-surface-variant, #666);
+}
+
+// ── Quill Editor inline text edit ────────────────────────────────────────
+.quill-edit-row {
+  margin-top: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.quill-edit-textarea {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 6px 10px;
+  font: inherit;
+  font-size: 0.82rem;
+  border: 1px solid var(--mat-sys-primary, #6750a4);
+  border-radius: 8px;
+  background: var(--mat-sys-surface, #fff);
+  color: var(--mat-sys-on-surface, #222);
+  resize: vertical;
+
+  &:focus {
+    outline: none;
+    box-shadow: 0 0 0 2px color-mix(in srgb, var(--mat-sys-primary, #6750a4) 20%, transparent);
+  }
+}
+
+.quill-edit-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
 // ── Quill Editor Phase 5 polish ───────────────────────────────────────────
 .quill-card-clickable { cursor: pointer; }
 

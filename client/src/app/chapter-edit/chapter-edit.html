@@ -387,10 +387,18 @@
                 }
 
                 @if (editorReview.running() && quillSuggestions().length === 0) {
-                  <p class="notes-empty">
-                    <mat-progress-spinner diameter="18" mode="indeterminate" />
-                    Reading your chapter…
-                  </p>
+                  <div class="quill-scanning">
+                    <lottie-player
+                      src="https://lottie.host/03d88623-09f2-424f-864d-9586ccaf27a1/fxQwB2FOoW.json"
+                      background="transparent"
+                      speed="1"
+                      loop
+                      autoplay
+                      aria-hidden="true"
+                      class="quill-scan-lottie">
+                    </lottie-player>
+                    <p class="quill-scanning-label">Reading your chapter…</p>
+                  </div>
                 } @else if (!editorReview.running() && quillSuggestions().length === 0) {
                   <div class="quill-run-empty" style="text-align:center">
                     <p class="notes-empty">Run an AI editorial pass to get suggestions on pacing, clarity, and style.</p>
@@ -398,6 +406,21 @@
                       <mat-icon>rate_review</mat-icon>
                       Run Quill Editor
                     </button>
+                  </div>
+                }
+
+                @if (editorReview.running() && quillSuggestions().length > 0) {
+                  <div class="quill-scanning-inline" aria-live="polite" aria-label="Scan in progress">
+                    <lottie-player
+                      src="https://lottie.host/03d88623-09f2-424f-864d-9586ccaf27a1/fxQwB2FOoW.json"
+                      background="transparent"
+                      speed="1"
+                      loop
+                      autoplay
+                      aria-hidden="true"
+                      class="quill-scan-lottie-inline">
+                    </lottie-player>
+                    <span class="quill-scanning-inline-label">Scanning…</span>
                   </div>
                 }
 
@@ -466,12 +489,38 @@
                           <span class="quill-new">{{ s.replacementText }}</span>
                         </div>
                         <p class="quill-reason">{{ s.reason }}</p>
+                        @if (quillEditOpenId() === s.id) {
+                          <div class="quill-edit-row" (click)="$event.stopPropagation()">
+                            <textarea class="quill-edit-textarea"
+                              rows="3"
+                              [value]="quillEditText()"
+                              (input)="quillEditText.set($any($event.target).value)"
+                              (keydown.escape)="quillEditOpenId.set(null)"
+                              aria-label="Edit replacement text"></textarea>
+                            <div class="quill-edit-actions">
+                              <button mat-flat-button class="quill-accept-btn"
+                                (click)="acceptQuillSuggestionEdited(s)"
+                                [disabled]="!quillEditText().trim()">
+                                <mat-icon>check</mat-icon> Apply
+                              </button>
+                              <button mat-button (click)="quillEditOpenId.set(null)">Cancel</button>
+                            </div>
+                          </div>
+                        }
                         <div class="quill-suggestion-actions" (click)="$event.stopPropagation()">
-                          <button mat-flat-button class="quill-accept-btn" (click)="acceptQuillSuggestion(s)">
-                            <mat-icon>check</mat-icon> Accept
-                          </button>
+                          @if (quillEditOpenId() !== s.id) {
+                            <button mat-flat-button class="quill-accept-btn" (click)="acceptQuillSuggestion(s)">
+                              <mat-icon>check</mat-icon> Accept
+                            </button>
+                          }
                           <button mat-stroked-button (click)="rejectQuillSuggestion(s)">
                             <mat-icon>close</mat-icon> Reject
+                          </button>
+                          <button mat-icon-button class="quill-refine-toggle"
+                            [class.active]="quillEditOpenId() === s.id"
+                            (click)="toggleQuillEdit(s)"
+                            title="Edit replacement text before accepting">
+                            <mat-icon>edit</mat-icon>
                           </button>
                           <button mat-icon-button class="quill-refine-toggle" [class.active]="quillRefineOpenId() === s.id"
                             (click)="toggleQuillRefine(s)" title="Refine — tell Quill what to do instead">

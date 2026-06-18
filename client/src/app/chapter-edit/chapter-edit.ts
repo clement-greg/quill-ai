@@ -1,6 +1,7 @@
 import {
   Component, inject, signal, computed, OnInit, OnDestroy,
   ElementRef, ViewChild, HostListener, effect, untracked,
+  CUSTOM_ELEMENTS_SCHEMA,
 } from '@angular/core';
 import { ActivatedRoute, Router } from '@angular/router';
 import { FormsModule } from '@angular/forms';
@@ -57,6 +58,7 @@ interface DiffParagraph { hasChanges: boolean; segments: DiffWord[]; }
   ],
   templateUrl: './chapter-edit.html',
   styleUrl: './chapter-edit.scss',
+  schemas: [CUSTOM_ELEMENTS_SCHEMA],
 })
 export class ChapterEditComponent implements OnInit, OnDestroy {
   @ViewChild(RichTextEditorComponent) editorRef!: RichTextEditorComponent;
@@ -179,6 +181,9 @@ export class ChapterEditComponent implements OnInit, OnDestroy {
   /** Suggestion currently being refined (shows a spinner). */
   quillRefiningId = signal<string | null>(null);
   quillRefineText = signal('');
+  /** Suggestion whose replacement text is being manually edited before accept. */
+  quillEditOpenId = signal<string | null>(null);
+  quillEditText = signal('');
 
   // Track emails whose avatar endpoint returned an error so we fall back to the placeholder icon
   private _avatarErrors = signal<ReadonlySet<string>>(new Set());
@@ -1149,6 +1154,29 @@ export class ChapterEditComponent implements OnInit, OnDestroy {
     if (updated) this.editorRef?.updateReviewSuggestion(updated);
     this.quillRefineOpenId.set(null);
     this.quillRefineText.set('');
+  }
+
+  toggleQuillEdit(s: ReviewSuggestion): void {
+    if (this.quillEditOpenId() === s.id) {
+      this.quillEditOpenId.set(null);
+    } else {
+      this.quillEditOpenId.set(s.id);
+      this.quillEditText.set(s.replacementText ?? '');
+    }
+  }
+
+  acceptQuillSuggestionEdited(s: ReviewSuggestion): void {
+    const editedText = this.quillEditText().trim();
+    const modified = { ...s, replacementText: editedText };
+    const applied = this.editorRef?.acceptSuggestionEdit(modified);
+    if (applied) {
+      this.editorReview.markAccepted(s.id);
+    } else {
+      this.editorReview.markRejected(s.id);
+      this.snackBar.open("Couldn't locate that text — it may have changed.", 'OK', { duration: 3000 });
+    }
+    this.quillEditOpenId.set(null);
+    this.maybeUnlockEditor();
   }
 
   /** Document→sidebar hover sync (from the editor's hover output). */
