@@ -223,7 +223,9 @@
       <app-entity-collage
         [entities]="collageEntities()"
         [counts]="mentionCounts()"
-        (entitySelected)="selectEntity($event)" />
+        [uploadingEntityId]="uploadingEntityId()"
+        (entitySelected)="selectEntity($event)"
+        (fileDrop)="onCollageDrop($event)" />
     } @else {
       <div class="empty-state">
         <mat-icon class="empty-icon">people</mat-icon>

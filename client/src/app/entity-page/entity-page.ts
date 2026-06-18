@@ -286,6 +286,14 @@ export class EntityPageComponent implements OnInit, OnDestroy {
     if (!entityId) return;
     const files = Array.from(event.dataTransfer?.files ?? []).filter(f => f.type.startsWith('image/'));
     if (files.length === 0) return;
+    this.uploadFilesToEntity(entityId, files);
+  }
+
+  onCollageDrop(event: { entityId: string; files: File[] }): void {
+    this.uploadFilesToEntity(event.entityId, event.files);
+  }
+
+  private uploadFilesToEntity(entityId: string, files: File[]): void {
     this.uploadingEntityId.set(entityId);
     forkJoin(files.map(f => this.entityService.uploadThumbnail(f))).pipe(
       switchMap(results =>

@@ -1,4 +1,5 @@
-import { Component, ChangeDetectionStrategy, computed, input, output } from '@angular/core';
+import { Component, ChangeDetectionStrategy, computed, input, output, signal } from '@angular/core';
+import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
 import { Entity } from '@shared/models/entity.model';
 
 interface CollageTile {
@@ -15,6 +16,7 @@ interface CollageTile {
 @Component({
   selector: 'app-entity-collage',
   changeDetection: ChangeDetectionStrategy.OnPush,
+  imports: [MatProgressSpinnerModule],
   template: `
     <div class="collage" role="list" aria-label="Entity photo collage, sized by mentions">
       @for (tile of tiles(); track tile.id) {
@@ -24,7 +26,12 @@ interface CollageTile {
                 [style.--rotation]="tile.rotation + 'deg'"
                 [style.--z]="tile.zIndex"
                 [class.tile--placeholder]="!tile.imageUrl"
+                [class.tile--drag-over]="dragOverId() === tile.id"
+                [class.tile--uploading]="uploadingEntityId() === tile.id"
                 (click)="entitySelected.emit(tile.id)"
+                (dragover)="onTileDragOver($event, tile.id)"
+                (dragleave)="onTileDragLeave($event)"
+                (drop)="onTileDrop($event, tile.id)"
                 [attr.aria-label]="tile.name + ', ' + tile.count + (tile.count === 1 ? ' mention' : ' mentions')">
           @if (tile.imageUrl) {
             <img [src]="tile.imageUrl" [alt]="tile.name" loading="lazy" />
@@ -34,6 +41,9 @@ interface CollageTile {
           <span class="tile-overlay">
             <span class="tile-name">{{ tile.name }}</span>
           </span>
+          @if (uploadingEntityId() === tile.id) {
+            <div class="tile-upload-overlay" aria-hidden="true"><mat-spinner diameter="32" /></div>
+          }
         </button>
       }
     </div>
@@ -99,6 +109,26 @@ interface CollageTile {
       background: color-mix(in srgb, var(--mat-sys-primary) 8%, var(--mat-sys-surface-container-high));
     }
 
+    .tile--drag-over {
+      outline: 3px dashed var(--mat-sys-primary);
+      outline-offset: -3px;
+      transform: rotate(0deg) scale(1.1) !important;
+      z-index: 50 !important;
+    }
+
+    .tile--uploading {
+      pointer-events: none;
+    }
+
+    .tile-upload-overlay {
+      position: absolute;
+      inset: 0;
+      background: color-mix(in srgb, var(--mat-sys-surface) 60%, transparent);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
     .tile-initial {
       font-size: calc(20px * var(--span));
       font-weight: 600;
@@ -130,7 +160,11 @@ interface CollageTile {
 export class EntityCollageComponent {
   entities = input.required<Entity[]>();
   counts = input.required<Record<string, number>>();
+  uploadingEntityId = input<string | null>(null);
   entitySelected = output<string>();
+  fileDrop = output<{ entityId: string; files: File[] }>();
+
+  dragOverId = signal<string | null>(null);
 
   tiles = computed<CollageTile[]>(() => {
     const counts = this.counts();
@@ -157,6 +191,30 @@ export class EntityCollageComponent {
       // every render. grid-auto-flow: dense backfills the gaps.
       .sort((a, b) => this.hash(a.id) - this.hash(b.id));
   });
+
+  onTileDragOver(event: DragEvent, entityId: string): void {
+    if (!Array.from(event.dataTransfer?.types ?? []).includes('Files')) return;
+    event.preventDefault();
+    event.stopPropagation();
+    if (event.dataTransfer) event.dataTransfer.dropEffect = 'copy';
+    if (this.dragOverId() !== entityId) this.dragOverId.set(entityId);
+  }
+
+  onTileDragLeave(event: DragEvent): void {
+    const related = event.relatedTarget as Node | null;
+    if (!(event.currentTarget as HTMLElement).contains(related)) {
+      this.dragOverId.set(null);
+    }
+  }
+
+  onTileDrop(event: DragEvent, entityId: string): void {
+    event.preventDefault();
+    event.stopPropagation();
+    this.dragOverId.set(null);
+    const files = Array.from(event.dataTransfer?.files ?? []).filter(f => f.type.startsWith('image/'));
+    if (files.length === 0) return;
+    this.fileDrop.emit({ entityId, files });
+  }
 
   private hash(id: string): number {
     let h = 0;
