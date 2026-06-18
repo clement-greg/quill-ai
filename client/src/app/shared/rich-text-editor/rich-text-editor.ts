@@ -1507,11 +1507,12 @@ export class RichTextEditorComponent implements OnInit, AfterViewInit, OnDestroy
   }
 
   onEditorKeyUp(event: KeyboardEvent): void {
-    // Show/update the formatting toolbar when the selection changes via keyboard.
-    // Covers Shift+arrows, releasing Shift after a selection, and Ctrl+A.
+    // Update toolbar for any key that can affect the selection — both expanding keys
+    // (Shift+arrows, Ctrl+A) and collapsing keys (bare arrow keys, Home/End, etc.).
+    const isNavigationKey = ['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'Home', 'End'].includes(event.key);
     const isSelectionKey = event.shiftKey || event.key === 'Shift'
       || (event.key === 'a' && (event.ctrlKey || event.metaKey));
-    if (isSelectionKey) {
+    if (isSelectionKey || isNavigationKey) {
       setTimeout(() => this.updateFormattingToolbar());
     }
   }
