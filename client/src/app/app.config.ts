@@ -20,7 +20,7 @@ import { EntityPageComponent } from './entity-page/entity-page';
 import { MapListComponent } from './maps/map-list/map-list';
 import { MapEditorComponent } from './maps/map-editor/map-editor';
 import { authGuard } from './auth/auth.guard';
-import { authInterceptor } from './auth/auth.interceptor';
+import { authInterceptor, authErrorInterceptor } from './auth/auth.interceptor';
 
 const routes: Routes = [
   { path: 'login', component: LoginComponent },
@@ -48,7 +48,7 @@ const routes: Routes = [
 export const appConfig: ApplicationConfig = {
   providers: [
     provideBrowserGlobalErrorListeners(),
-    provideHttpClient(withInterceptors([authInterceptor])),
+    provideHttpClient(withInterceptors([authInterceptor, authErrorInterceptor])),
     provideRouter(routes),
     provideEnvironmentInitializer(() => {
       inject(MatIconRegistry).setDefaultFontSetClass('material-symbols-outlined');

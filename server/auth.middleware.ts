@@ -32,6 +32,12 @@ export async function requireAuth(req: Request, res: Response, next: NextFunctio
       res.status(401).json({ error: 'Invalid token payload' });
       return;
     }
+    // A refresh token must never be accepted as an access token. Legacy tokens
+    // issued before the access/refresh split carry no `type` and stay valid.
+    if (payload['type'] === 'refresh') {
+      res.status(401).json({ error: 'Invalid token type' });
+      return;
+    }
     req.user = {
       email: payload['email'] as string,
       sub: payload['sub'] as string,

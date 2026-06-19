@@ -81,6 +81,7 @@ export class EntityEditComponent {
   uploading = signal(false);
   generatingImage = signal(false);
   generatingPersonality = signal(false);
+  generatingBiography = signal(false);
   refreshing = signal(false);
   quotes = signal<EntityQuote[]>([]);
   quotesLoading = signal(false);
@@ -239,6 +240,19 @@ export class EntityEditComponent {
     const d = this.draft();
     if (!d || !d.name.trim()) return;
     this.save.emit(d);
+  }
+
+  generateBiography(): void {
+    const d = this.draft();
+    if (!d) return;
+    this.generatingBiography.set(true);
+    this.entityService.generateBiography(d.id).subscribe({
+      next: ({ biography }) => {
+        this.draft.set({ ...d, biography });
+        this.generatingBiography.set(false);
+      },
+      error: () => this.generatingBiography.set(false),
+    });
   }
 
   generatePersonality(): void {

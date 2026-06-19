@@ -74,6 +74,10 @@ export class EntityService {
     return this.http.post<{ personality: string }>(`${this.apiUrl}/${entityId}/generate-personality`, { basicDescription });
   }
 
+  generateBiography(entityId: string): Observable<{ biography: string }> {
+    return this.http.post<{ biography: string }>(`${this.apiUrl}/${entityId}/generate-biography`, {});
+  }
+
   generateImage(prompt: string, provider: 'gpt' | 'gemini' = 'gpt'): Observable<{ url: string; thumbnailUrl: string }> {
     return this.http.post<{ url: string; thumbnailUrl: string }>('/api/image/generate', { prompt, provider });
   }

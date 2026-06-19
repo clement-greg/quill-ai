@@ -6,7 +6,9 @@ import { deleteBlob } from '../storage';
 import { Entity } from '../../shared/models/entity.model';
 import { Chapter } from '../../shared/models/chapter.model';
 import { Book } from '../../shared/models/book.model';
+import { TimelineEvent } from '../../shared/models/timeline-event.model';
 import { withOwnerFilter, readOwnedItem } from '../owner-guard';
+import { searchChapterChunks } from '../chapter-chunks';
 
 const aiClient = new AzureOpenAI({
   endpoint: config.foundry.endpoint,
@@ -620,6 +622,112 @@ router.post('/:id/generate-personality', async (req: Request, res: Response) => 
   } catch (err) {
     console.error('Error generating personality:', err);
     res.status(500).json({ error: 'Failed to generate personality' });
+  }
+});
+
+// POST generate a biography from timeline events and chapter appearances
+router.post('/:id/generate-biography', async (req: Request, res: Response) => {
+  try {
+    const id = req.params['id'] as string;
+
+    const entity = await readOwnedItem<Entity>(container, id, id, req);
+    if (!entity) {
+      res.status(404).json({ error: 'Entity not found' });
+      return;
+    }
+
+    // Fetch timeline events for this entity
+    const eventsContainer = getContainer('timeline-events');
+    const { resources: rawEvents } = await eventsContainer.items
+      .query(
+        withOwnerFilter(req, {
+          query: 'SELECT * FROM c WHERE c.entityId = @entityId',
+          parameters: [{ name: '@entityId', value: id }],
+        }),
+        { partitionKey: id },
+      )
+      .fetchAll();
+    const events = (rawEvents as TimelineEvent[]).sort(
+      (a, b) => (a.sortOrder ?? Infinity) - (b.sortOrder ?? Infinity),
+    );
+
+    // Vector search for the most relevant chapter passages referencing this entity
+    const chunks = await searchChapterChunks(
+      entity.name,
+      { seriesId: entity.seriesId, topK: 10 },
+      req,
+    );
+
+    // Fetch summaries for the chapters that surfaced in vector search
+    let chapterSummaries: { title: string; summary: string }[] = [];
+    if (chunks.length > 0) {
+      const chapterIds = [...new Set(chunks.map(c => c.chapterId))];
+      const chaptersContainer = getContainer('chapters');
+      const placeholders = chapterIds.map((_, i) => `@cid${i}`).join(', ');
+      const parameters = chapterIds.map((cid, i) => ({ name: `@cid${i}`, value: cid }));
+      const { resources: chapters } = await chaptersContainer.items
+        .query<Chapter>(
+          withOwnerFilter(req, {
+            query: `SELECT c.id, c.title, c.summary FROM c WHERE c.id IN (${placeholders})`,
+            parameters,
+          }),
+        )
+        .fetchAll();
+      chapterSummaries = chapters
+        .filter(c => c.summary)
+        .map(c => ({ title: c.title, summary: c.summary! }));
+    }
+
+    // Build prompt
+    const lines: string[] = [];
+    lines.push(`Character name: ${entity.name}`);
+    if (entity.personality) lines.push(`\nPersonality profile:\n${entity.personality}`);
+    if (entity.biography) lines.push(`\nExisting biography (use as a starting point and expand):\n${entity.biography}`);
+
+    if (events.length > 0) {
+      lines.push('\nTimeline events (in story order):');
+      for (const ev of events) {
+        const parts = [ev.name];
+        if (ev.timeframe) parts.push(`(${ev.timeframe})`);
+        if (ev.location) parts.push(`at ${ev.location}`);
+        if (ev.description) parts.push(`— ${ev.description}`);
+        lines.push(`• ${parts.join(' ')}`);
+      }
+    }
+
+    if (chapterSummaries.length > 0) {
+      lines.push('\nChapter appearances:');
+      for (const ch of chapterSummaries) {
+        lines.push(`• "${ch.title}": ${ch.summary}`);
+      }
+    }
+
+    if (chunks.length > 0) {
+      lines.push('\nRelevant story passages:');
+      for (const chunk of chunks.slice(0, 5)) {
+        const stripped = chunk.content.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
+        if (stripped) lines.push(`"${stripped.slice(0, 300)}${stripped.length > 300 ? '…' : ''}"`);
+      }
+    }
+
+    const contextBlock = lines.join('\n');
+    const prompt =
+      `You are an expert creative writing consultant. Using the character information below, ` +
+      `write a compelling short biography for this character in 2–4 paragraphs. ` +
+      `Write in third person. Focus on their background, key life events, motivations, and role in the story. ` +
+      `Return only the biography text — no preamble, no headings.\n\n` +
+      contextBlock;
+
+    const completion = await aiClient.chat.completions.create({
+      model: config.foundry.miniModel,
+      messages: [{ role: 'user', content: prompt }],
+    });
+
+    const biography = completion.choices[0]?.message?.content?.trim() ?? '';
+    res.json({ biography });
+  } catch (err) {
+    console.error('Error generating biography:', err);
+    res.status(500).json({ error: 'Failed to generate biography' });
   }
 });
 

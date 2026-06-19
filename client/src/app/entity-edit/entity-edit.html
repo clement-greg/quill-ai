@@ -148,6 +148,17 @@
                     placeholder="Enter a short biography"></textarea>
         </mat-form-field>
 
+        @if (!isNew()) {
+          <button mat-stroked-button (click)="generateBiography()" [disabled]="generatingBiography()">
+            @if (generatingBiography()) {
+              <mat-spinner diameter="18" />
+            } @else {
+              <mat-icon>auto_awesome</mat-icon>
+            }
+            {{ generatingBiography() ? 'Generating…' : 'Generate with AI' }}
+          </button>
+        }
+
       </div>
     </mat-tab>
 
