@@ -46,6 +46,8 @@ export interface ChatSession {
   pinned: boolean;
   folderId?: string | null;
   seriesId?: string | null;
+  /** When set, this session is pinned to a specific chapter and appears in its notes panel. */
+  chapterId?: string | null;
   messages: ChatSessionMessage[];
   owner?: string;
   deleted?: boolean;
@@ -59,6 +61,7 @@ export interface ChatSessionSummary {
   pinned: boolean;
   folderId?: string | null;
   seriesId?: string | null;
+  chapterId?: string | null;
   updatedAt: string;
 }
 

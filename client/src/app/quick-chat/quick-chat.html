@@ -18,9 +18,13 @@
 }
 
 @if (quickChat.isOpen() && !quickChat.minimized()) {
-  <div #cardEl class="qc-card" role="dialog" aria-modal="false" aria-label="Ask Quill" animate.enter="qc-slide-up">
+  <div #cardEl class="qc-card" role="dialog" aria-modal="false" aria-label="Ask Quill" animate.enter="qc-slide-up"
+       [class.qc-dragging]="isDragging()"
+       [style.left.px]="dragPos()?.left ?? null"
+       [style.top.px]="dragPos()?.top ?? null"
+       [style.bottom]="dragPos() ? 'auto' : null">
     <header class="qc-header">
-      <div class="qc-title-group">
+      <div class="qc-title-group" (mousedown)="onDragStart($event)">
         <mat-icon class="qc-title-icon">forum</mat-icon>
         <div class="qc-title-text">
           <div class="qc-title">Ask Quill</div>
@@ -34,6 +38,16 @@
                 [disabled]="quickChat.messages().length === 0">
           <mat-icon>add_comment</mat-icon>
         </button>
+        @if (isPinnedToCurrentChapter()) {
+          <button mat-icon-button class="qc-pinned-btn" (click)="unpinFromCurrentChapter()"
+                  matTooltip="Unpin from this chapter" aria-label="Unpin from chapter">
+            <mat-icon>push_pin</mat-icon>
+          </button>
+        } @else if (canPinToChapter()) {
+          <button mat-icon-button (click)="pinToCurrentChapter()" matTooltip="Pin to this chapter" aria-label="Pin to chapter">
+            <mat-icon>push_pin</mat-icon>
+          </button>
+        }
 @if (allHighlights().length > 0) {
           <button mat-icon-button class="qc-highlights-btn"
                   [class.qc-highlights-active]="showHighlightsSummary()"

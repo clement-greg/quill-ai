@@ -3,6 +3,7 @@ import {
   Component,
   CUSTOM_ELEMENTS_SCHEMA,
   ElementRef,
+  NgZone,
   computed,
   effect,
   inject,
@@ -270,9 +271,42 @@ export class QuickChatComponent {
   private readonly chapterService = inject(ChapterService);
   readonly editorBridge = inject(EditorBridgeService);
   readonly userSettings = inject(UserSettingsService);
+  private readonly ngZone = inject(NgZone);
+
+  // ── Drag-to-reposition (desktop only) ────────────────────────────────────
+  readonly dragPos = signal<{ left: number; top: number } | null>(null);
+  readonly isDragging = signal(false);
+  private dragOffset = { x: 0, y: 0 };
+  private readonly boundMouseMove = (e: MouseEvent) =>
+    this.ngZone.run(() => this.handleDragMove(e));
+  private readonly boundMouseUp = () =>
+    this.ngZone.run(() => this.handleDragEnd());
 
   /** Ghost-complete: the saved prompt snippet whose text starts with the current
    *  input, suggested as greyed text and accepted with Tab. */
+  /** The chapter context currently registered from the editor, if any. */
+  private readonly chapterContext = computed(() => this.editorBridge.captureContext());
+  /** True when the active session can be pinned to the current chapter. */
+  readonly canPinToChapter = computed(() =>
+    !!this.quickChat.activeSessionId() &&
+    !!this.chapterContext()?.chapterId &&
+    this.quickChat.pinnedChapterId() !== this.chapterContext()!.chapterId,
+  );
+  /** True when the active session is already pinned to the current chapter. */
+  readonly isPinnedToCurrentChapter = computed(() =>
+    !!this.quickChat.pinnedChapterId() &&
+    this.quickChat.pinnedChapterId() === this.chapterContext()?.chapterId,
+  );
+
+  pinToCurrentChapter(): void {
+    const chapterId = this.chapterContext()?.chapterId;
+    if (chapterId) void this.quickChat.pinToChapter(chapterId);
+  }
+
+  unpinFromCurrentChapter(): void {
+    void this.quickChat.unpinFromChapter();
+  }
+
   readonly ghostSuggestion = computed<GhostCompleteItem | null>(() => {
     const inputVal = this.input();
     if (!inputVal) return null;
@@ -1184,6 +1218,34 @@ export class QuickChatComponent {
         // Skip if DOM structure prevents wrapping (e.g. complex overlaps)
       }
     }
+  }
+
+  onDragStart(event: MouseEvent): void {
+    if (!window.matchMedia('(pointer: fine)').matches) return;
+    event.preventDefault();
+    const card = this.cardEl()?.nativeElement;
+    if (!card) return;
+    const rect = card.getBoundingClientRect();
+    this.dragOffset = { x: event.clientX - rect.left, y: event.clientY - rect.top };
+    this.dragPos.set({ left: rect.left, top: rect.top });
+    this.isDragging.set(true);
+    document.addEventListener('mousemove', this.boundMouseMove);
+    document.addEventListener('mouseup', this.boundMouseUp, { once: true });
+  }
+
+  private handleDragMove(event: MouseEvent): void {
+    const card = this.cardEl()?.nativeElement;
+    if (!card) return;
+    let left = event.clientX - this.dragOffset.x;
+    let top = event.clientY - this.dragOffset.y;
+    left = Math.max(0, Math.min(left, window.innerWidth - card.offsetWidth));
+    top = Math.max(0, Math.min(top, window.innerHeight - card.offsetHeight));
+    this.dragPos.set({ left, top });
+  }
+
+  private handleDragEnd(): void {
+    document.removeEventListener('mousemove', this.boundMouseMove);
+    this.isDragging.set(false);
   }
 
   onEscape(): void {

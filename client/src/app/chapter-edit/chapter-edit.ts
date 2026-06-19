@@ -12,13 +12,16 @@ import { MatFormFieldModule } from '@angular/material/form-field';
 import { MatSelectModule } from '@angular/material/select';
 import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
 import { MatTabsModule } from '@angular/material/tabs';
+import { MatExpansionModule } from '@angular/material/expansion';
 import { MatMenuModule } from '@angular/material/menu';
+import { MatTooltipModule } from '@angular/material/tooltip';
 import { MatSnackBar } from '@angular/material/snack-bar';
 import { MatDialog, MatDialogModule, MAT_DIALOG_DATA } from '@angular/material/dialog';
 import { ChapterService } from '../chapter/chapter.service';
 import { ChapterDraftService } from './chapter-draft.service';
 import { ChapterVersionService } from './chapter-version.service';
 import { Chapter, ChapterNote, ChapterVersion, OutlineItem } from '@shared/models/chapter.model';
+import { ChatSessionSummary } from '@shared/models';
 import { Entity } from '@shared/models/entity.model';
 import { EntityQuote } from '@shared/models';
 import { BookService } from '../book/book.service';
@@ -53,7 +56,7 @@ interface DiffParagraph { hasChanges: boolean; segments: DiffWord[]; }
   imports: [
     FormsModule,
     MatButtonModule, MatIconModule, MatInputModule, MatFormFieldModule,
-    MatProgressSpinnerModule, MatTabsModule, MatDialogModule, MatMenuModule, MatSelectModule,
+    MatProgressSpinnerModule, MatTabsModule, MatExpansionModule, MatDialogModule, MatMenuModule, MatSelectModule, MatTooltipModule,
     SlideOutPanelContainer, EntityEditComponent, RichTextEditorComponent, AiStatsComponent, ChapterOutlineComponent,
   ],
   templateUrl: './chapter-edit.html',
@@ -127,6 +130,10 @@ export class ChapterEditComponent implements OnInit, OnDestroy {
   highlightedNoteId = signal<string | null>(null);
   private noteSelectionRange: Range | null = null;
 
+  // ── Linked chats ─────────────────────────────────────────────────────────
+  linkedChats = signal<ChatSessionSummary[]>([]);
+  linkedChatsLoading = signal(false);
+
   // ── Version history ──────────────────────────────────────────────────────
   historyLoading = signal(false);
   historyVersions = signal<ChapterVersion[]>([]);
@@ -164,7 +171,7 @@ export class ChapterEditComponent implements OnInit, OnDestroy {
 
   // ── Quill Editor (AI review pass) ─────────────────────────────────────────
   /** Index of the "Quill Editor" sidebar tab. */
-  static readonly QUILL_REVIEW_TAB = 5;
+  static readonly QUILL_REVIEW_TAB = 3;
   /** When false, low-severity suggestions are hidden (the default). */
   quillShowLow = signal(false);
   /** Suggestions filtered by the current severity toggle. */
@@ -246,6 +253,15 @@ export class ChapterEditComponent implements OnInit, OnDestroy {
       }
     });
 
+    // Reload linked chats whenever the active session's chapter pin changes
+    effect(() => {
+      this.quickChat.pinnedChapterId(); // track both pin and unpin
+      const chapterId = this.chapter()?.id;
+      if (chapterId) {
+        untracked(() => void this.loadLinkedChats(chapterId));
+      }
+    });
+
     // Start/stop the periodic server auto-save based on the user setting
     effect(() => {
       const enabled = this.userSettings.autoSaveEnabled();
@@ -297,6 +313,7 @@ export class ChapterEditComponent implements OnInit, OnDestroy {
         this.chapter.set({ ...data, content });
         this.notes.set(notes);
         this.outline.set(outline);
+        void this.loadLinkedChats(data.id);
         this.imageUrl.set(data.imageUrl ?? null);
         this.imageThumbnailUrl.set(data.imageThumbnailUrl ?? null);
         this.lastSavedContent = data.content ?? '';
@@ -755,6 +772,49 @@ export class ChapterEditComponent implements OnInit, OnDestroy {
     this.highlightedNoteId.set(noteId);
     this.editorRef?.scrollToNoteSpan(noteId);
     setTimeout(() => this.highlightedNoteId.set(null), 2100);
+  }
+
+  async loadLinkedChats(chapterId: string): Promise<void> {
+    this.linkedChatsLoading.set(true);
+    const chats = await this.quickChat.getLinkedChats(chapterId);
+    this.linkedChats.set(chats);
+    this.linkedChatsLoading.set(false);
+  }
+
+  openLinkedChat(sessionId: string): void {
+    void this.quickChat.loadSession(sessionId, true);
+  }
+
+  startLinkedChat(): void {
+    const chapterId = this.chapter()?.id;
+    if (!chapterId) return;
+    void this.quickChat.startLinkedChat(chapterId).then(() => {
+      void this.loadLinkedChats(chapterId);
+    });
+  }
+
+  unlinkChat(sessionId: string): void {
+    const chapterId = this.chapter()?.id;
+    // If this session is currently open in quick chat, clear its pin signal too
+    if (this.quickChat.activeSessionId() === sessionId) {
+      void this.quickChat.unpinFromChapter().then(() => {
+        if (chapterId) void this.loadLinkedChats(chapterId);
+      });
+    } else {
+      // Session isn't active — patch it directly and refresh the list
+      void fetch(`/api/chat-sessions/${sessionId}`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(localStorage.getItem('app_auth_token')
+            ? { Authorization: `Bearer ${localStorage.getItem('app_auth_token')}` }
+            : {}),
+        },
+        body: JSON.stringify({ chapterId: null }),
+      }).then(() => {
+        if (chapterId) void this.loadLinkedChats(chapterId);
+      });
+    }
   }
 
   toggleNotesList(): void { this.activateSidebarTab(0); }

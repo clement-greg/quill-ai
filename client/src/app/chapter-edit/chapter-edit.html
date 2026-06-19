@@ -131,7 +131,7 @@
             <mat-tab-group [selectedIndex]="sidebarTabIndex()" (selectedIndexChange)="onSidebarTabChange($event)"
               headerPosition="below" class="sidebar-tab-group">
 
-              <!-- Tab 0: Notes -->
+              <!-- Tab 0: Meta (Notes / Linked Chats / Outline / POV & Settings) -->
               <mat-tab>
                 <ng-template mat-tab-label>
                   <span class="entity-suggestion-tab-label">
@@ -141,47 +141,155 @@
                     }
                   </span>
                 </ng-template>
-                <div class="sidebar-tab-content">
-                  <div class="notes-panel-header">
-                    <mat-icon>sticky_note_2</mat-icon>
-                    <span>Notes</span>
-                    <span class="notes-panel-count">({{ notes().length }})</span>
-                  </div>
-                  <div class="notes-list">
-                    @if (notes().length === 0) {
-                      <p class="notes-empty">No notes yet. Select text and click
-                        <mat-icon style="font-size:14px;vertical-align:middle">sticky_note_2</mat-icon>
-                        to add one.
-                      </p>
-                    }
-                    @for (note of notes(); track note.id) {
-                      <div class="note-item" [class.note-item-highlighted]="highlightedNoteId() === note.id"
-                        (click)="scrollToNote(note.id)">
-                        @if (note.createdByName || note.createdBy || note.createdByAvatar) {
-                          <div class="note-author">
-                            @if (note.createdBy && !avatarFailed(note.createdBy)) {
-                              <img class="note-author-avatar" [src]="'/api/avatar/' + note.createdBy" (error)="onAvatarError(note.createdBy!)" [alt]="note.createdByName || 'Author'" />
-                            } @else if (note.createdByAvatar) {
-                              <img class="note-author-avatar" [src]="note.createdByAvatar" [alt]="note.createdByName || 'Author'" />
-                            } @else {
-                              <span class="note-author-avatar-placeholder">
-                                <mat-icon style="font-size:14px;width:14px;height:14px;line-height:14px">person</mat-icon>
-                              </span>
+                <div class="sidebar-tab-content sidebar-tab-content-meta">
+                  <mat-accordion multi class="meta-accordion">
+
+                    <!-- Notes -->
+                    <mat-expansion-panel expanded>
+                      <mat-expansion-panel-header>
+                        <mat-panel-title>
+                          <mat-icon class="meta-panel-icon">sticky_note_2</mat-icon>
+                          Notes
+                          @if (notes().length > 0) {
+                            <span class="meta-panel-count">{{ notes().length }}</span>
+                          }
+                        </mat-panel-title>
+                      </mat-expansion-panel-header>
+                      <div class="meta-notes-body">
+                        @if (notes().length === 0) {
+                          <p class="notes-empty">No notes yet. Select text and click
+                            <mat-icon style="font-size:14px;vertical-align:middle">sticky_note_2</mat-icon>
+                            to add one.
+                          </p>
+                        }
+                        @for (note of notes(); track note.id) {
+                          <div class="note-item" [class.note-item-highlighted]="highlightedNoteId() === note.id"
+                            (click)="scrollToNote(note.id)">
+                            @if (note.createdByName || note.createdBy || note.createdByAvatar) {
+                              <div class="note-author">
+                                @if (note.createdBy && !avatarFailed(note.createdBy)) {
+                                  <img class="note-author-avatar" [src]="'/api/avatar/' + note.createdBy" (error)="onAvatarError(note.createdBy!)" [alt]="note.createdByName || 'Author'" />
+                                } @else if (note.createdByAvatar) {
+                                  <img class="note-author-avatar" [src]="note.createdByAvatar" [alt]="note.createdByName || 'Author'" />
+                                } @else {
+                                  <span class="note-author-avatar-placeholder">
+                                    <mat-icon style="font-size:14px;width:14px;height:14px;line-height:14px">person</mat-icon>
+                                  </span>
+                                }
+                                @if (note.createdByName) {
+                                  <span class="note-author-name">{{ note.createdByName }}</span>
+                                }
+                              </div>
                             }
-                            @if (note.createdByName) {
-                              <span class="note-author-name">{{ note.createdByName }}</span>
+                            <div class="note-selected-text">&ldquo;{{ note.selectedText }}&rdquo;</div>
+                            <div class="note-text">{{ note.noteText }}</div>
+                            <button class="note-delete-btn" mat-icon-button
+                              (click)="deleteNote(note.id); $event.stopPropagation()" title="Delete note">
+                              <mat-icon>delete</mat-icon>
+                            </button>
+                          </div>
+                        }
+                      </div>
+                    </mat-expansion-panel>
+
+                    <!-- Linked Chats -->
+                    <mat-expansion-panel>
+                      <mat-expansion-panel-header>
+                        <mat-panel-title>
+                          <mat-icon class="meta-panel-icon">forum</mat-icon>
+                          Linked Chats
+                          @if (linkedChats().length > 0) {
+                            <span class="meta-panel-count">{{ linkedChats().length }}</span>
+                          }
+                        </mat-panel-title>
+                      </mat-expansion-panel-header>
+                      <div class="linked-chats-panel-body">
+                        <div class="linked-chats-panel-add">
+                          <button mat-stroked-button class="linked-chat-new-full-btn"
+                            (click)="startLinkedChat()" aria-label="Start new linked chat">
+                            <mat-icon>add</mat-icon>
+                            New chat
+                          </button>
+                        </div>
+                        @if (linkedChatsLoading()) {
+                          <p class="linked-chats-empty">Loading…</p>
+                        } @else if (linkedChats().length === 0) {
+                          <p class="linked-chats-empty">No linked chats yet.</p>
+                        } @else {
+                          <div class="linked-chats-list">
+                            @for (chat of linkedChats(); track chat.id) {
+                              <div class="linked-chat-row">
+                                <button class="linked-chat-item" (click)="openLinkedChat(chat.id)">
+                                  <mat-icon class="linked-chat-icon">chat</mat-icon>
+                                  <span class="linked-chat-name">{{ chat.name }}</span>
+                                  <mat-icon class="linked-chat-open">chevron_right</mat-icon>
+                                </button>
+                                <button mat-icon-button class="linked-chat-unpin-btn"
+                                  (click)="unlinkChat(chat.id)"
+                                  matTooltip="Unpin from chapter" aria-label="Unpin chat from chapter">
+                                  <mat-icon>push_pin</mat-icon>
+                                </button>
+                              </div>
                             }
                           </div>
                         }
-                        <div class="note-selected-text">&ldquo;{{ note.selectedText }}&rdquo;</div>
-                        <div class="note-text">{{ note.noteText }}</div>
-                        <button class="note-delete-btn" mat-icon-button
-                          (click)="deleteNote(note.id); $event.stopPropagation()" title="Delete note">
-                          <mat-icon>delete</mat-icon>
-                        </button>
                       </div>
-                    }
-                  </div>
+                    </mat-expansion-panel>
+
+                    <!-- Outline -->
+                    <mat-expansion-panel>
+                      <mat-expansion-panel-header>
+                        <mat-panel-title>
+                          <mat-icon class="meta-panel-icon">toc</mat-icon>
+                          Outline
+                        </mat-panel-title>
+                      </mat-expansion-panel-header>
+                      <div class="meta-outline-body">
+                        <app-chapter-outline
+                          [items]="outline()"
+                          [entities]="entities()"
+                          (itemsChange)="onOutlineChange($event)"
+                        />
+                      </div>
+                    </mat-expansion-panel>
+
+                    <!-- POV & Settings -->
+                    <mat-expansion-panel>
+                      <mat-expansion-panel-header>
+                        <mat-panel-title>
+                          <mat-icon class="meta-panel-icon">tune</mat-icon>
+                          POV &amp; Settings
+                        </mat-panel-title>
+                      </mat-expansion-panel-header>
+                      <div class="meta-details-body">
+                        <p class="details-hint">These help Quill draft this chapter in the right voice and context.</p>
+                        <mat-form-field appearance="outline" class="details-field">
+                          <mat-label>Point of view</mat-label>
+                          <mat-select [ngModel]="chapter()!.povEntityId ?? ''" (ngModelChange)="updatePov($event)">
+                            <mat-option value="">— Narrator (default) —</mat-option>
+                            @for (e of personEntities(); track e.id) {
+                              <mat-option [value]="e.id">{{ e.name }}</mat-option>
+                            }
+                          </mat-select>
+                        </mat-form-field>
+                        <mat-form-field appearance="outline" class="details-field">
+                          <mat-label>Setting</mat-label>
+                          <input matInput placeholder="Where this chapter takes place"
+                                 [ngModel]="chapter()!.setting ?? ''"
+                                 (ngModelChange)="updateMetaField('setting', $event)"
+                                 (blur)="persistMeta()" />
+                        </mat-form-field>
+                        <mat-form-field appearance="outline" class="details-field">
+                          <mat-label>Story-time</mat-label>
+                          <input matInput placeholder="When in the story (e.g. 'Three days later')"
+                                 [ngModel]="chapter()!.inStoryTime ?? ''"
+                                 (ngModelChange)="updateMetaField('inStoryTime', $event)"
+                                 (blur)="persistMeta()" />
+                        </mat-form-field>
+                      </div>
+                    </mat-expansion-panel>
+
+                  </mat-accordion>
                 </div>
               </mat-tab>
 
@@ -307,50 +415,7 @@
                 </div>
               </mat-tab>
 
-              <!-- Tab 3: Outline -->
-              <mat-tab>
-                <ng-template mat-tab-label><mat-icon>toc</mat-icon></ng-template>
-                <div class="sidebar-tab-content sidebar-tab-content-outline">
-                  <app-chapter-outline
-                    [items]="outline()"
-                    [entities]="entities()"
-                    (itemsChange)="onOutlineChange($event)"
-                  />
-                </div>
-              </mat-tab>
-
-              <!-- Tab 4: Details (POV / setting / story-time) -->
-              <mat-tab>
-                <ng-template mat-tab-label><mat-icon>tune</mat-icon></ng-template>
-                <div class="sidebar-tab-content sidebar-tab-content-details">
-                  <p class="details-hint">These help Quill draft this chapter in the right voice and context.</p>
-                  <mat-form-field appearance="outline" class="details-field">
-                    <mat-label>Point of view</mat-label>
-                    <mat-select [ngModel]="chapter()!.povEntityId ?? ''" (ngModelChange)="updatePov($event)">
-                      <mat-option value="">— Narrator (default) —</mat-option>
-                      @for (e of personEntities(); track e.id) {
-                        <mat-option [value]="e.id">{{ e.name }}</mat-option>
-                      }
-                    </mat-select>
-                  </mat-form-field>
-                  <mat-form-field appearance="outline" class="details-field">
-                    <mat-label>Setting</mat-label>
-                    <input matInput placeholder="Where this chapter takes place"
-                           [ngModel]="chapter()!.setting ?? ''"
-                           (ngModelChange)="updateMetaField('setting', $event)"
-                           (blur)="persistMeta()" />
-                  </mat-form-field>
-                  <mat-form-field appearance="outline" class="details-field">
-                    <mat-label>Story-time</mat-label>
-                    <input matInput placeholder="When in the story (e.g. 'Three days later')"
-                           [ngModel]="chapter()!.inStoryTime ?? ''"
-                           (ngModelChange)="updateMetaField('inStoryTime', $event)"
-                           (blur)="persistMeta()" />
-                  </mat-form-field>
-                </div>
-              </mat-tab>
-
-            <!-- Tab 5: Quill Editor (AI review pass) -->
+            <!-- Tab 3: Quill Editor (AI review pass) -->
             <mat-tab>
               <ng-template mat-tab-label>
                 <span class="entity-suggestion-tab-label">
@@ -613,22 +678,6 @@
                   (click)="activateSidebarTab(3)"
                   role="tab"
                   [attr.aria-selected]="mobileSidebarOpen() && sidebarTabIndex() === 3"
-                  aria-label="Outline">
-            <mat-icon>toc</mat-icon>
-          </button>
-          <button mat-icon-button class="mobile-tab-btn"
-                  [class.mobile-tab-btn--active]="mobileSidebarOpen() && sidebarTabIndex() === 4"
-                  (click)="activateSidebarTab(4)"
-                  role="tab"
-                  [attr.aria-selected]="mobileSidebarOpen() && sidebarTabIndex() === 4"
-                  aria-label="Details">
-            <mat-icon>tune</mat-icon>
-          </button>
-          <button mat-icon-button class="mobile-tab-btn"
-                  [class.mobile-tab-btn--active]="mobileSidebarOpen() && sidebarTabIndex() === 5"
-                  (click)="activateSidebarTab(5)"
-                  role="tab"
-                  [attr.aria-selected]="mobileSidebarOpen() && sidebarTabIndex() === 5"
                   aria-label="Quill Editor">
             <span class="mobile-tab-icon">
               <mat-icon>rate_review</mat-icon>

@@ -1193,6 +1193,7 @@ router.post('/', async (req: Request, res: Response) => {
     pinned: false,
     folderId: req.body.folderId ?? null,
     seriesId: req.body.seriesId ?? null,
+    chapterId: req.body.chapterId ?? null,
     messages: [],
     createdAt: now,
     updatedAt: now,
@@ -1205,6 +1206,32 @@ router.post('/', async (req: Request, res: Response) => {
   } catch (err) {
     console.error('Error creating chat session:', err);
     res.status(500).json({ error: 'Failed to create session' });
+  }
+});
+
+// GET /by-chapter/:chapterId — list sessions pinned to a specific chapter
+router.get('/by-chapter/:chapterId', async (req: Request, res: Response) => {
+  const chapterId = req.params['chapterId'] as string;
+  try {
+    const container = getContainer('chat-sessions');
+    const { resources } = await container.items
+      .query({
+        query: `SELECT c.id, c.name, c.pinned, c.folderId, c.seriesId, c.chapterId, c.updatedAt FROM c
+                WHERE c.owner = @owner
+                  AND c.chapterId = @chapterId
+                  AND (NOT IS_DEFINED(c.deleted) OR c.deleted = false)
+                  AND (NOT IS_DEFINED(c.archived) OR c.archived = false)
+                ORDER BY c.updatedAt DESC`,
+        parameters: [
+          { name: '@owner', value: req.user!.email },
+          { name: '@chapterId', value: chapterId },
+        ],
+      })
+      .fetchAll();
+    res.json(resources);
+  } catch (err) {
+    console.error('Error listing chapter chat sessions:', err);
+    res.status(500).json({ error: 'Failed to list sessions' });
   }
 });
 
@@ -1240,6 +1267,7 @@ router.put('/:id', async (req: Request, res: Response) => {
       ...(req.body.pinned !== undefined && { pinned: req.body.pinned }),
       ...(req.body.messages !== undefined && { messages: req.body.messages }),
       ...(req.body.folderId !== undefined && { folderId: req.body.folderId }),
+      ...(req.body.chapterId !== undefined && { chapterId: req.body.chapterId }),
       updatedAt: new Date().toISOString(),
     };
     await container.items.upsert(updated);

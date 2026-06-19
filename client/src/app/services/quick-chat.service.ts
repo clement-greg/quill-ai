@@ -1,6 +1,6 @@
 import { Injectable, inject, signal, effect } from '@angular/core';
 import { Router } from '@angular/router';
-import { ChapterCitation, ChatMessageHighlight, ChatSession, ChatSessionMessage, MapPreview } from '@shared/models';
+import { ChapterCitation, ChatMessageHighlight, ChatSession, ChatSessionMessage, ChatSessionSummary, MapPreview } from '@shared/models';
 import { EditorBridgeService } from './editor-bridge.service';
 import { AiAssistantService } from './ai-assistant.service';
 import { ChapterSyncService, ChapterExternalUpdate } from './chapter-sync.service';
@@ -31,6 +31,8 @@ export class QuickChatService {
   readonly streaming = signal(false);
   /** Set when a saved session is loaded; new messages are auto-persisted to it. */
   readonly activeSessionId = signal<string | null>(null);
+  /** The chapter this session is pinned to, if any. */
+  readonly pinnedChapterId = signal<string | null>(null);
 
   private abortController: AbortController | null = null;
   /** Cached ID of the global "Chats" folder so we don't re-query on every message. */
@@ -77,6 +79,7 @@ export class QuickChatService {
     this.cancelStreaming();
     this.messages.set([]);
     this.activeSessionId.set(null);
+    this.pinnedChapterId.set(null);
   }
 
   /** Loads a saved chat session into the panel. Subsequent messages are
@@ -89,6 +92,7 @@ export class QuickChatService {
         const session = await res.json() as ChatSession;
         this.messages.set(session.messages);
         this.activeSessionId.set(id);
+        this.pinnedChapterId.set(session.chapterId ?? null);
         if (expand) this.minimized.set(false);
       }
     } catch {
@@ -322,6 +326,78 @@ export class QuickChatService {
     } catch {
       // Best-effort
     }
+  }
+
+  /** Pins the active session to the given chapter. No-op if no session is active. */
+  async pinToChapter(chapterId: string): Promise<void> {
+    const sessionId = this.activeSessionId();
+    if (!sessionId) return;
+    try {
+      const res = await this.authFetch(`/api/chat-sessions/${sessionId}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ chapterId }),
+      });
+      if (res.ok) {
+        this.pinnedChapterId.set(chapterId);
+        void this.aiAssistant.loadSessions();
+      }
+    } catch {
+      // Best-effort
+    }
+  }
+
+  /** Removes the chapter association from the active session. */
+  async unpinFromChapter(): Promise<void> {
+    const sessionId = this.activeSessionId();
+    if (!sessionId) return;
+    try {
+      const res = await this.authFetch(`/api/chat-sessions/${sessionId}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ chapterId: null }),
+      });
+      if (res.ok) {
+        this.pinnedChapterId.set(null);
+        void this.aiAssistant.loadSessions();
+      }
+    } catch {
+      // Best-effort
+    }
+  }
+
+  /** Creates a new session pre-linked to a chapter, opens the panel, and focuses it. */
+  async startLinkedChat(chapterId: string): Promise<void> {
+    this.reset();
+    try {
+      const folderId = await this.getOrCreateChatsFolder();
+      const res = await this.authFetch('/api/chat-sessions', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ folderId, seriesId: null, chapterId }),
+      });
+      if (res.ok) {
+        const session = await res.json() as ChatSession;
+        this.activeSessionId.set(session.id);
+        this.pinnedChapterId.set(chapterId);
+        void this.aiAssistant.loadFolders();
+        void this.aiAssistant.loadSessions();
+      }
+    } catch {
+      // Best-effort
+    }
+    this.minimized.set(false);
+  }
+
+  /** Returns sessions pinned to the given chapter. */
+  async getLinkedChats(chapterId: string): Promise<ChatSessionSummary[]> {
+    try {
+      const res = await this.authFetch(`/api/chat-sessions/by-chapter/${chapterId}`);
+      if (res.ok) return await res.json() as ChatSessionSummary[];
+    } catch {
+      // Best-effort
+    }
+    return [];
   }
 
   cancelStreaming(): void {

@@ -98,6 +98,15 @@
   display: flex;
   align-items: center;
   gap: 12px;
+
+  @media (pointer: fine) {
+    cursor: grab;
+  }
+}
+
+.qc-card.qc-dragging {
+  cursor: grabbing;
+  user-select: none;
 }
 
 .qc-title-icon {
@@ -874,6 +883,10 @@
 }
 
 /* ── Highlights active toggle ────────────────────────────────────────────── */
+
+.qc-pinned-btn {
+  color: var(--mat-sys-primary) !important;
+}
 
 .qc-highlights-btn {
   position: relative;
