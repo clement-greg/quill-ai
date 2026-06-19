@@ -8,10 +8,12 @@ import {
   input,
   output,
   effect,
+  viewChild,
+  untracked,
 } from '@angular/core';
 import { Router } from '@angular/router';
-import { forkJoin, from } from 'rxjs';
-import { concatMap, map } from 'rxjs/operators';
+import { forkJoin, from, of } from 'rxjs';
+import { concatMap, map, catchError } from 'rxjs/operators';
 import { MatButtonModule } from '@angular/material/button';
 import { MatIconModule } from '@angular/material/icon';
 import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
@@ -19,9 +21,13 @@ import { MatTooltipModule } from '@angular/material/tooltip';
 import { MatMenuModule } from '@angular/material/menu';
 import { MatDialog } from '@angular/material/dialog';
 import { MatSnackBar } from '@angular/material/snack-bar';
+import { MatTabsModule } from '@angular/material/tabs';
 import { CdkDropList, CdkDrag, CdkDragHandle, CdkDragDrop, CdkDragPlaceholder, moveItemInArray } from '@angular/cdk/drag-drop';
 import { Entity, EntityPhoto } from '@shared/models/entity.model';
 import { TimelineEvent, TimelineEventPhoto } from '@shared/models/timeline-event.model';
+import { SeriesMap } from '@shared/models/map.model';
+import { FictionalLocationMapComponent, FictionalMapPin } from './fictional-location-map';
+import { MapService } from '../maps/map.service';
 import { EntityRelationshipSummary, RELATIONSHIP_TYPES } from '@shared/models/entity-relationship.model';
 import { EntityService, ChapterAppearance } from '../services/entity.service';
 import { TimelineEventService } from '../services/timeline-event.service';
@@ -53,7 +59,9 @@ interface BookGroup {
     CdkDrag,
     CdkDragHandle,
     CdkDragPlaceholder,
+    MatTabsModule,
     TimelineMapComponent,
+    FictionalLocationMapComponent,
   ],
   templateUrl: './entity-detail.html',
   styleUrl: './entity-detail.scss',
@@ -67,6 +75,7 @@ export class EntityDetailComponent implements OnDestroy {
   private entityService = inject(EntityService);
   private timelineService = inject(TimelineEventService);
   private relationshipService = inject(EntityRelationshipService);
+  private mapService = inject(MapService);
   private dialog = inject(MatDialog);
   private snackBar = inject(MatSnackBar);
   private settingsService = inject(UserSettingsService);
@@ -94,6 +103,38 @@ export class EntityDetailComponent implements OnDestroy {
   sortablePhotos = signal<EntityPhoto[]>([]);
   timelineDragOverId = signal<string | null>(null);
   hoveredMapEventId = signal<string | null>(null);
+  locationEntities = signal<Map<string, Entity>>(new Map());
+  hoveredPlaceEntityId = signal<string | null>(null);
+  loadedFictionalMaps = signal<Map<string, SeriesMap>>(new Map());
+
+  /** One entry per unique fictional map that has at least one pin from this entity's events. */
+  readonly fictionalMapTabs = computed(() => {
+    const entities = this.locationEntities();
+    const entityByName = new Map([...entities.values()].map(e => [e.name.toLowerCase().trim(), e]));
+    const pinsByMapId = new Map<string, Map<string, FictionalMapPin>>();
+
+    for (const ev of this.timelineEvents()) {
+      let entity: Entity | undefined;
+      if (ev.locationEntityId) entity = entities.get(ev.locationEntityId);
+      if (!entity && ev.location?.trim()) entity = entityByName.get(ev.location.trim().toLowerCase());
+      if (!entity?.location || entity.location.type !== 'fictional' || !entity.location.fictional) continue;
+
+      const { mapId, x, y } = entity.location.fictional;
+      if (!pinsByMapId.has(mapId)) pinsByMapId.set(mapId, new Map());
+      const mapPins = pinsByMapId.get(mapId)!;
+      if (!mapPins.has(entity.id)) mapPins.set(entity.id, { entity, x, y, eventCount: 0, events: [] });
+      const pin = mapPins.get(entity.id)!;
+      pin.eventCount++;
+      pin.events.push(ev);
+    }
+
+    const loaded = this.loadedFictionalMaps();
+    return [...pinsByMapId.entries()]
+      .map(([mapId, pinsMap]) => ({ seriesMap: loaded.get(mapId), pins: [...pinsMap.values()] }))
+      .filter((t): t is { seriesMap: SeriesMap; pins: FictionalMapPin[] } => !!t.seriesMap);
+  });
+
+  private timelineMapRef = viewChild(TimelineMapComponent);
 
   readonly PHOTO_PREVIEW_LIMIT = 5;
 
@@ -156,6 +197,25 @@ export class EntityDetailComponent implements OnDestroy {
       this.loadTimeline(id);
       this.loadRelationships(id);
     });
+
+    // Load SeriesMap objects for any fictional PLACE entities referenced by timeline events.
+    effect(() => {
+      const entities = this.locationEntities();
+      untracked(() => {
+        const loaded = this.loadedFictionalMaps();
+        const mapIds = new Set<string>();
+        for (const entity of entities.values()) {
+          const mapId = entity.location?.fictional?.mapId;
+          if (mapId && !loaded.has(mapId)) mapIds.add(mapId);
+        }
+        for (const mapId of mapIds) {
+          this.mapService.getById(mapId).subscribe({
+            next: m => this.loadedFictionalMaps.update(cur => new Map([...cur, [m.id, m]])),
+            error: () => {},
+          });
+        }
+      });
+    }, { allowSignalWrites: true });
   }
 
   private loadEntity(id: string): void {
@@ -202,8 +262,39 @@ export class EntityDetailComponent implements OnDestroy {
       next: (events) => {
         this.timelineEvents.set(events);
         this.timelineLoading.set(false);
+        this.loadLocationEntities(events);
       },
       error: () => this.timelineLoading.set(false),
+    });
+  }
+
+  private loadLocationEntities(events: TimelineEvent[]): void {
+    const seriesId = this.entity()?.seriesId;
+    if (!seriesId) {
+      this.locationEntities.set(new Map());
+      return;
+    }
+    // Load all PLACE entities for the series so we can match both by explicit ID
+    // and by location string name (for events created before entity-linking was added).
+    this.entityService.getBySeries(seriesId).pipe(
+      map(entities => entities.filter(e => e.type === 'PLACE' && !e.archived)),
+      catchError(() => of([] as Entity[])),
+    ).subscribe(placeEntities => {
+      const placeById = new Map(placeEntities.map(e => [e.id, e]));
+      const placeByName = new Map(placeEntities.map(e => [e.name.toLowerCase().trim(), e]));
+
+      const result = new Map<string, Entity>();
+      for (const ev of events) {
+        if (ev.locationEntityId) {
+          const entity = placeById.get(ev.locationEntityId);
+          if (entity) result.set(entity.id, entity);
+        }
+        if (ev.location?.trim()) {
+          const matched = placeByName.get(ev.location.trim().toLowerCase());
+          if (matched) result.set(matched.id, matched);
+        }
+      }
+      this.locationEntities.set(result);
     });
   }
 
@@ -232,6 +323,7 @@ export class EntityDetailComponent implements OnDestroy {
           timeframe: result.timeframe,
           description: result.description,
           location: result.location,
+          locationEntityId: result.locationEntityId,
           photo: result.photo,
         }).subscribe({
           next: updated =>
@@ -245,6 +337,7 @@ export class EntityDetailComponent implements OnDestroy {
           timeframe: result.timeframe,
           description: result.description,
           location: result.location,
+          locationEntityId: result.locationEntityId,
           photo: result.photo,
         }).subscribe({
           next: created => this.timelineEvents.update(list => [...list, created]),
@@ -569,6 +662,12 @@ export class EntityDetailComponent implements OnDestroy {
     if (!url) return null;
     const filename = url.split('/').pop();
     return filename ? `/api/image/${filename}` : null;
+  }
+
+  onMapTabChange(index: number): void {
+    if (index === 0) {
+      this.timelineMapRef()?.onTabActivated();
+    }
   }
 
   ngOnDestroy(): void {}

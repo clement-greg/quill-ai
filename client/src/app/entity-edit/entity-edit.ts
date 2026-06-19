@@ -18,6 +18,7 @@ import { EntityQuoteService } from '../services/entity-quote.service';
 import { ImageGenDialogComponent, ImageGenResult } from './image-gen-dialog';
 import { PhotoPickerDialogComponent, PhotoPickerResult } from './photo-picker-dialog';
 import { UserSettingsService } from '../services/user-settings.service';
+import { EntityLocationPickerComponent } from './entity-location-picker';
 
 @Component({
   selector: 'app-entity-edit',
@@ -32,6 +33,7 @@ import { UserSettingsService } from '../services/user-settings.service';
     MatTooltipModule,
     MatTabsModule,
     TextFieldModule,
+    EntityLocationPickerComponent,
   ],
   templateUrl: './entity-edit.html',
   styleUrl: './entity-edit.scss',

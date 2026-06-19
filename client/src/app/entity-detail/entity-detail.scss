@@ -559,8 +559,26 @@
   color: var(--mat-sys-error, #b3261e);
 }
 
-.timeline-map-wrap {
+.map-tabs {
   margin-top: 32px;
+
+  ::ng-deep .mat-mdc-tab-header {
+    border-bottom: 1px solid var(--mat-sys-outline-variant, #cac4d0);
+  }
+
+  // Prevent the map image from blowing out the panel width.
+  ::ng-deep .mat-mdc-tab-body-content {
+    overflow-x: hidden;
+  }
+}
+
+.timeline-map-wrap {
+  padding-top: 16px;
+}
+
+.fictional-map-wrap {
+  padding-top: 16px;
+  overflow-x: hidden;
 }
 
 // ── Timeline: mobile reflow ───────────────────────────────

@@ -17,7 +17,9 @@ import { MatButtonModule } from '@angular/material/button';
 import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
 import { MatIconModule } from '@angular/material/icon';
 import { TimelineEvent } from '@shared/models/timeline-event.model';
+import { Entity } from '@shared/models/entity.model';
 import { UserSettingsService } from '../services/user-settings.service';
+import { loadGoogleMaps } from '../utils/google-maps-loader';
 
 const DARK_MAP_STYLES: google.maps.MapTypeStyle[] = [
   { elementType: 'geometry', stylers: [{ color: '#212121' }] },
@@ -42,42 +44,6 @@ const DARK_MAP_STYLES: google.maps.MapTypeStyle[] = [
   { featureType: 'water', elementType: 'labels.text.fill', stylers: [{ color: '#3d3d3d' }] },
 ];
 
-// Loads the Google Maps JS API exactly once for the whole app. Subsequent
-// callers await the same promise.
-let mapsLoaderPromise: Promise<typeof google.maps> | undefined;
-
-async function fetchMapsKey(): Promise<string> {
-  const res = await fetch('/api/config/maps-key');
-  if (!res.ok) throw new Error('Failed to fetch Maps API key');
-  const data = await res.json() as { key: string };
-  return data.key;
-}
-
-function loadGoogleMaps(): Promise<typeof google.maps> {
-  if (mapsLoaderPromise) return mapsLoaderPromise;
-  mapsLoaderPromise = (async () => {
-    if (typeof google !== 'undefined' && google.maps) {
-      return google.maps;
-    }
-    const apiKey = await fetchMapsKey();
-    return new Promise<typeof google.maps>((resolve, reject) => {
-      const callbackName = '__quillGoogleMapsReady';
-      (window as unknown as Record<string, () => void>)[callbackName] = () => resolve(google.maps);
-      const script = document.createElement('script');
-      const params = new URLSearchParams({
-        key: apiKey,
-        callback: callbackName,
-        loading: 'async',
-        libraries: 'marker',
-      });
-      script.src = `https://maps.googleapis.com/maps/api/js?${params.toString()}`;
-      script.async = true;
-      script.onerror = () => reject(new Error('Failed to load Google Maps'));
-      document.head.appendChild(script);
-    });
-  })();
-  return mapsLoaderPromise;
-}
 
 @Component({
   selector: 'app-timeline-map',
@@ -212,6 +178,8 @@ export class TimelineMapComponent implements OnDestroy {
   private settings = inject(UserSettingsService);
 
   events = input<TimelineEvent[]>([]);
+  /** Resolved PLACE entities keyed by ID — used to bypass geocoding for real-world-linked events. */
+  locationEntities = input<Map<string, Entity>>(new Map());
   eventHovered = output<string | null>();
 
   geocodingRemaining = signal(0);
@@ -227,6 +195,7 @@ export class TimelineMapComponent implements OnDestroy {
   private map: google.maps.Map | undefined;
   private geocoder: google.maps.Geocoder | undefined;
   private infoWindow: google.maps.InfoWindow | undefined;
+  private hoverInfoWindow: google.maps.InfoWindow | undefined;
   private markers: google.maps.Marker[] = [];
   private loadToken = 0;
   private destroyed = false;
@@ -245,10 +214,10 @@ export class TimelineMapComponent implements OnDestroy {
       this.zone.runOutsideAngular(() => void this.setup());
     });
 
-    // Reload markers whenever the selected entity's events change (or once the
-    // map becomes ready). Reading both signals registers them as dependencies.
+    // Reload markers whenever events or resolved location entities change.
     effect(() => {
       this.events();
+      this.locationEntities();
       if (!this.ready() || !this.maps || !this.map) return;
       this.zone.runOutsideAngular(() => void this.loadMarkers(this.maps!));
     });
@@ -257,11 +226,19 @@ export class TimelineMapComponent implements OnDestroy {
   ngOnDestroy(): void {
     this.destroyed = true;
     this.infoWindow?.close();
+    this.hoverInfoWindow?.close();
     this.clearMarkers();
     this.map = undefined;
     document.removeEventListener('keydown', this.onKeyDown);
     if (this.isExpanded()) {
       document.body.style.overflow = '';
+    }
+  }
+
+  /** Call when the containing tab becomes active so the map re-sizes to fill its container. */
+  onTabActivated(): void {
+    if (this.map) {
+      setTimeout(() => google.maps.event.trigger(this.map!, 'resize'), 0);
     }
   }
 
@@ -306,6 +283,11 @@ export class TimelineMapComponent implements OnDestroy {
     this.maps = maps;
     this.geocoder = new maps.Geocoder();
     this.infoWindow = new maps.InfoWindow();
+    this.hoverInfoWindow = new maps.InfoWindow({ disableAutoPan: true });
+    this.hoverInfoWindow.addListener('domready', () => {
+      const btn = document.querySelector('.gm-ui-hover-effect') as HTMLElement | null;
+      if (btn) btn.style.display = 'none';
+    });
     // Flipping ready triggers the effect, which performs the initial marker load.
     this.zone.run(() => this.ready.set(true));
   }
@@ -315,8 +297,9 @@ export class TimelineMapComponent implements OnDestroy {
     const token = ++this.loadToken;
     this.clearMarkers();
     this.infoWindow?.close();
+    this.hoverInfoWindow?.close();
 
-    const eventsWithLocations = this.events().filter(e => e.location?.trim());
+    const eventsWithLocations = this.events().filter(e => this.hasResolvableLocation(e));
     this.zone.run(() => {
       this.geocodeError.set(null);
       this.pinCount.set(0);
@@ -328,7 +311,7 @@ export class TimelineMapComponent implements OnDestroy {
 
     for (const event of eventsWithLocations) {
       if (this.destroyed || !this.map || token !== this.loadToken) return;
-      const coords = await this.geocode(event.location!.trim());
+      const coords = await this.resolveCoords(event);
       if (token !== this.loadToken) return;
       this.zone.run(() => this.geocodingRemaining.update(n => Math.max(0, n - 1)));
       if (!coords || this.destroyed || !this.map) continue;
@@ -340,13 +323,19 @@ export class TimelineMapComponent implements OnDestroy {
       });
       marker.addListener('click', () => {
         if (!this.infoWindow || !this.map) return;
+        this.hoverInfoWindow?.close();
         this.infoWindow.setContent(this.popupHtml(event));
         this.infoWindow.open({ anchor: marker, map: this.map });
       });
       marker.addListener('mouseover', () => {
+        if (this.hoverInfoWindow && this.map) {
+          this.hoverInfoWindow.setContent(this.hoverHtml(event));
+          this.hoverInfoWindow.open({ anchor: marker, map: this.map });
+        }
         this.zone.run(() => this.eventHovered.emit(event.id));
       });
       marker.addListener('mouseout', () => {
+        this.hoverInfoWindow?.close();
         this.zone.run(() => this.eventHovered.emit(null));
       });
       this.markers.push(marker);
@@ -373,6 +362,44 @@ export class TimelineMapComponent implements OnDestroy {
     this.markers = [];
   }
 
+  private resolveLocationEntity(event: TimelineEvent): Entity | undefined {
+    const entities = this.locationEntities();
+    if (event.locationEntityId) {
+      const e = entities.get(event.locationEntityId);
+      if (e) return e;
+    }
+    if (event.location?.trim()) {
+      const byName = [...entities.values()].find(
+        e => e.name.toLowerCase().trim() === event.location!.trim().toLowerCase()
+      );
+      if (byName) return byName;
+    }
+    return undefined;
+  }
+
+  private hasResolvableLocation(event: TimelineEvent): boolean {
+    const entity = this.resolveLocationEntity(event);
+    if (entity) {
+      // Only resolvable on the real-world map if it has real-world coords.
+      // Fictional-only entities are handled by the fictional map component, not here.
+      return entity.location?.type === 'real-world' && !!entity.location.realWorld;
+    }
+    return !!event.location?.trim();
+  }
+
+  private async resolveCoords(event: TimelineEvent): Promise<google.maps.LatLngLiteral | null> {
+    const entity = this.resolveLocationEntity(event);
+    if (entity?.location?.type === 'real-world' && entity.location.realWorld) {
+      return { lat: entity.location.realWorld.lat, lng: entity.location.realWorld.lng };
+    }
+    // Only geocode if there's no linked entity — avoids wasting API calls on fictional places
+    // whose location string won't resolve to real-world coordinates.
+    if (!entity && event.location?.trim()) {
+      return this.geocode(event.location.trim());
+    }
+    return null;
+  }
+
   private geocode(location: string): Promise<google.maps.LatLngLiteral | null> {
     if (this.geocodeCache.has(location)) {
       return Promise.resolve(this.geocodeCache.get(location) ?? null);
@@ -394,6 +421,17 @@ export class TimelineMapComponent implements OnDestroy {
         resolve(coords);
       });
     });
+  }
+
+  private hoverHtml(event: TimelineEvent): string {
+    const thumb = event.photo?.thumbnailUrl
+      ? (() => { const f = event.photo!.thumbnailUrl.split('/').pop(); return f ? `/api/image/${f}` : null; })()
+      : null;
+    const img = thumb
+      ? `<img src="${escapeHtml(thumb)}" alt="" style="width:60px;height:60px;object-fit:cover;border-radius:4px;flex-shrink:0" />`
+      : '';
+    const name = `<strong style="font-size:0.9em">${escapeHtml(event.name)}</strong>`;
+    return `<div style="display:flex;align-items:center;gap:8px;max-width:200px">${img}<div>${name}</div></div>`;
   }
 
   private popupHtml(event: TimelineEvent): string {

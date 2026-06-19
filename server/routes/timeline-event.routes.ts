@@ -203,12 +203,12 @@ Return a JSON object with exactly three keys:
    - "name": a short event title (under ten words)
    - "timeframe": free-form timing if the text establishes one (e.g. "Three years before the war"); omit when unknown
    - "description": one or two sentences describing the event as established by the text
-   - "location": the place where the event occurs if the text clearly establishes one (city, country, region, landmark, or fictional place name); omit when unknown or vague
+   - For location: if the place clearly matches one of the known PLACE entities, provide "locationEntityId" with that entity's id. Otherwise provide "location" as a free-text string (city, country, region, landmark, or fictional place name). Never provide both. Omit both when the location is unknown or vague.
 
 2. "updates": existing timeline events whose underlying facts have SUBSTANTIVELY changed in the chapter text — a different outcome, different participants, or materially different circumstances. Each item must have:
    - "id": the existing event id
    - "name", "timeframe", "description": the corrected values (always include "name"; reuse the current value for anything unchanged)
-   - "location": the corrected location if it changed; omit to preserve the current value
+   - For location changes: provide "locationEntityId" if the new location is a known PLACE entity, or "location" as a free-text string if not. Omit both to leave location unchanged.
    - "reason": one short sentence explaining what substantively changed
    Never propose an update for rewording, tone, or trivial detail differences.
 
@@ -225,12 +225,19 @@ Rules for what counts as an event — these are CRITICAL:
 
 const MAX_EXTRACTION_CHARS = 60000;
 
-function normalizeFields(name: string, timeframe?: unknown, description?: unknown, location?: unknown): TimelineEventFields {
+function normalizeFields(
+  name: string,
+  timeframe?: unknown,
+  description?: unknown,
+  location?: unknown,
+  locationEntityId?: unknown,
+): TimelineEventFields {
   return {
     name: name.trim(),
     timeframe: typeof timeframe === 'string' && timeframe.trim() ? timeframe.trim() : undefined,
     description: typeof description === 'string' && description.trim() ? description.trim() : undefined,
     location: typeof location === 'string' && location.trim() ? location.trim() : undefined,
+    locationEntityId: typeof locationEntityId === 'string' && locationEntityId.trim() ? locationEntityId.trim() : undefined,
   };
 }
 
@@ -238,7 +245,39 @@ function fieldsChanged(a: TimelineEventFields, b: TimelineEventFields): boolean 
   return a.name !== b.name ||
     (a.timeframe ?? '') !== (b.timeframe ?? '') ||
     (a.description ?? '') !== (b.description ?? '') ||
-    (a.location ?? '') !== (b.location ?? '');
+    (a.location ?? '') !== (b.location ?? '') ||
+    (a.locationEntityId ?? '') !== (b.locationEntityId ?? '');
+}
+
+type PlaceEntity = Pick<Entity, 'id' | 'name' | 'type' | 'deleted' | 'archived'>;
+
+/** Resolve locationEntityId + location from raw AI output. Returns both fields.
+ *  The entity name is copied into `location` as a fallback string so that
+ *  existing code that reads the plain location field keeps working.
+ */
+function resolveLocation(
+  rawLocation: unknown,
+  rawLocationEntityId: unknown,
+  entityById: Map<string, PlaceEntity>,
+  fallbackLocation?: string,
+  fallbackLocationEntityId?: string,
+): { location?: string; locationEntityId?: string } {
+  // AI provided a PLACE entity reference — validate it
+  if (typeof rawLocationEntityId === 'string' && rawLocationEntityId.trim()) {
+    const entity = entityById.get(rawLocationEntityId.trim());
+    if (entity && entity.type === 'PLACE') {
+      return { locationEntityId: entity.id, location: entity.name };
+    }
+  }
+  // AI provided a plain string
+  if (typeof rawLocation === 'string' && rawLocation.trim()) {
+    return { location: rawLocation.trim(), locationEntityId: undefined };
+  }
+  // AI said nothing about location — preserve existing values
+  if (fallbackLocation !== undefined || fallbackLocationEntityId !== undefined) {
+    return { location: fallbackLocation, locationEntityId: fallbackLocationEntityId };
+  }
+  return {};
 }
 
 // POST analyze chapter text and propose timeline changes. Nothing is persisted —
@@ -292,6 +331,7 @@ router.post('/extract-from-chapter', async (req: Request, res: Response) => {
         timeframe: e.timeframe,
         description: e.description,
         location: e.location,
+        locationEntityId: e.locationEntityId,
       }))),
       '',
       'Chapter text:',
@@ -319,24 +359,33 @@ router.post('/extract-from-chapter', async (req: Request, res: Response) => {
       .filter((a: { entityId?: unknown; name?: unknown }) =>
         a && typeof a.entityId === 'string' && entityById.has(a.entityId) &&
         typeof a.name === 'string' && a.name.trim().length > 0)
-      .map((a: { entityId: string; name: string; timeframe?: unknown; description?: unknown; location?: unknown }) => ({
-        entityId: a.entityId,
-        entityName: entityById.get(a.entityId)!.name,
-        ...normalizeFields(a.name, a.timeframe, a.description, a.location),
-      }));
+      .map((a: { entityId: string; name: string; timeframe?: unknown; description?: unknown; location?: unknown; locationEntityId?: unknown }) => {
+        const loc = resolveLocation(a.location, a.locationEntityId, entityById);
+        return {
+          entityId: a.entityId,
+          entityName: entityById.get(a.entityId)!.name,
+          ...normalizeFields(a.name, a.timeframe, a.description, loc.location, loc.locationEntityId),
+        };
+      });
 
     const updates: TimelineUpdateProposal[] = (Array.isArray(parsed.updates) ? parsed.updates : [])
       .filter((u: { id?: unknown; name?: unknown }) =>
         u && typeof u.id === 'string' && eventById.has(u.id) &&
         typeof u.name === 'string' && u.name.trim().length > 0)
-      .map((u: { id: string; name: string; timeframe?: unknown; description?: unknown; location?: unknown; reason?: unknown }) => {
+      .map((u: { id: string; name: string; timeframe?: unknown; description?: unknown; location?: unknown; locationEntityId?: unknown; reason?: unknown }) => {
         const existing = eventById.get(u.id)!;
-        const current = normalizeFields(existing.name, existing.timeframe, existing.description, existing.location);
+        const current = normalizeFields(existing.name, existing.timeframe, existing.description, existing.location, existing.locationEntityId);
+        const aiChangedLocation = (typeof u.location === 'string' && u.location.trim()) ||
+          (typeof u.locationEntityId === 'string' && u.locationEntityId.trim());
+        const loc = aiChangedLocation
+          ? resolveLocation(u.location, u.locationEntityId, entityById)
+          : { location: current.location, locationEntityId: current.locationEntityId };
         const proposed: TimelineEventFields = {
           name: u.name.trim(),
           timeframe: typeof u.timeframe === 'string' && u.timeframe.trim() ? u.timeframe.trim() : current.timeframe,
           description: typeof u.description === 'string' && u.description.trim() ? u.description.trim() : current.description,
-          location: typeof u.location === 'string' && u.location.trim() ? u.location.trim() : current.location,
+          location: loc.location,
+          locationEntityId: loc.locationEntityId,
         };
         return {
           eventId: existing.id,
@@ -426,6 +475,7 @@ router.post('/apply-chapter-proposals', async (req: Request, res: Response) => {
         timeframe: add.timeframe?.trim() || undefined,
         description: add.description?.trim() || undefined,
         location: add.location?.trim() || undefined,
+        locationEntityId: typeof add.locationEntityId === 'string' ? add.locationEntityId : undefined,
         photo,
         sortOrder,
         source: 'chapter',
@@ -455,6 +505,9 @@ router.post('/apply-chapter-proposals', async (req: Request, res: Response) => {
         timeframe: update.proposed.timeframe?.trim() || undefined,
         description: update.proposed.description?.trim() || undefined,
         location: update.proposed.location?.trim() || undefined,
+        locationEntityId: typeof update.proposed.locationEntityId === 'string'
+          ? update.proposed.locationEntityId
+          : undefined,
         modifiedBy: req.user!.email,
         modifiedAt: now,
       };

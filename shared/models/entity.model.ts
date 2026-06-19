@@ -2,6 +2,24 @@ import { AuditedRecord } from './audited-record';
 
 export type EntityReference = 'full-name' | 'first-name' | 'last-name' | 'nickname' | 'title-full-name' | 'title-last-name' | 'other';
 
+export interface EntityRealWorldLocation {
+  lat: number;
+  lng: number;
+  address?: string;
+}
+
+export interface EntityFictionalLocation {
+  mapId: string;
+  x: number;
+  y: number;
+}
+
+export interface EntityLocation {
+  type: 'real-world' | 'fictional';
+  realWorld?: EntityRealWorldLocation;
+  fictional?: EntityFictionalLocation;
+}
+
 export interface EntityPhoto {
     url: string;
     thumbnailUrl: string;
@@ -31,4 +49,5 @@ export interface Entity extends AuditedRecord {
     deleted?: boolean;
     isNarrator?: boolean;
     photos?: EntityPhoto[];
+    location?: EntityLocation;
 }

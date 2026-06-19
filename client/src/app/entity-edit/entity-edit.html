@@ -151,6 +151,19 @@
       </div>
     </mat-tab>
 
+    <!-- ── Location tab (PLACE only) ────────────────── -->
+    @if (draft()!.type === 'PLACE' && !isNew()) {
+      <mat-tab label="Location">
+        <div class="tab-content">
+          <app-entity-location-picker
+            [entityId]="entity().id"
+            [seriesId]="draft()!.seriesId"
+            [location]="draft()!.location"
+            (locationChange)="update('location', $event)" />
+        </div>
+      </mat-tab>
+    }
+
     <!-- ── Quotes tab ──────────────────────────────── -->
     @if (entity().id && entity().type === 'PERSON') {
       <mat-tab>

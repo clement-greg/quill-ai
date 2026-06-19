@@ -2,7 +2,9 @@ import {
   Component,
   inject,
   signal,
+  computed,
   ChangeDetectionStrategy,
+  OnInit,
 } from '@angular/core';
 import { ReactiveFormsModule, FormBuilder, Validators } from '@angular/forms';
 import { MatDialog, MatDialogModule, MatDialogRef, MAT_DIALOG_DATA } from '@angular/material/dialog';
@@ -11,12 +13,13 @@ import { MatIconModule } from '@angular/material/icon';
 import { MatInputModule } from '@angular/material/input';
 import { MatFormFieldModule } from '@angular/material/form-field';
 import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
-import { MatAutocompleteModule } from '@angular/material/autocomplete';
+import { MatAutocompleteModule, MatAutocompleteSelectedEvent } from '@angular/material/autocomplete';
 import { TextFieldModule } from '@angular/cdk/text-field';
 import { AsyncPipe } from '@angular/common';
 import { HttpClient } from '@angular/common/http';
-import { Observable, of } from 'rxjs';
+import { Observable, of, combineLatest } from 'rxjs';
 import { debounceTime, distinctUntilChanged, switchMap, map, catchError, startWith } from 'rxjs/operators';
+import { toObservable } from '@angular/core/rxjs-interop';
 import { Entity, EntityPhoto } from '@shared/models/entity.model';
 import { TimelineEvent, TimelineEventPhoto } from '@shared/models/timeline-event.model';
 import { EntityService } from '../services/entity.service';
@@ -32,9 +35,16 @@ export interface TimelineEventDialogResult {
   timeframe?: string;
   description?: string;
   location?: string;
+  locationEntityId?: string;
   photo?: TimelineEventPhoto;
   /** Set when a file upload added a new photo to the entity gallery. */
   updatedEntity?: Entity;
+}
+
+interface LocationOption {
+  label: string;
+  value: string;
+  entityId?: string;
 }
 
 @Component({
@@ -71,13 +81,38 @@ export interface TimelineEventDialogResult {
         <mat-icon matPrefix>place</mat-icon>
         <input matInput formControlName="location"
                placeholder="e.g. London, The Dark Forest, Rivendell"
-               [matAutocomplete]="locationAuto" />
-        <mat-autocomplete #locationAuto="matAutocomplete">
-          @for (s of locationSuggestions$ | async; track s) {
-            <mat-option [value]="s">{{ s }}</mat-option>
+               [matAutocomplete]="locationAuto"
+               (input)="onLocationInput()" />
+        <mat-autocomplete #locationAuto="matAutocomplete"
+                          (optionSelected)="onLocationSelected($event)">
+          @if (placeEntities().length > 0) {
+            <mat-optgroup label="Series places">
+              @for (opt of filteredPlaceOptions$ | async; track opt.entityId) {
+                <mat-option [value]="opt.value">
+                  <mat-icon class="place-opt-icon" aria-hidden="true">place</mat-icon>
+                  {{ opt.label }}
+                </mat-option>
+              }
+            </mat-optgroup>
+          }
+          @if (realWorldSuggestions$ | async; as suggestions) {
+            @if (suggestions.length > 0) {
+              <mat-optgroup label="Real-world places">
+                @for (s of suggestions; track s) {
+                  <mat-option [value]="s">{{ s }}</mat-option>
+                }
+              </mat-optgroup>
+            }
           }
         </mat-autocomplete>
-        <mat-hint>Real or fictitious — type to get suggestions for real places</mat-hint>
+        @if (selectedPlaceEntity(); as linked) {
+          <mat-hint>
+            <mat-icon class="hint-icon" aria-hidden="true">link</mat-icon>
+            Linked to {{ linked.name }}
+          </mat-hint>
+        } @else {
+          <mat-hint>Real or fictitious — type to get suggestions</mat-hint>
+        }
       </mat-form-field>
 
       <mat-form-field appearance="outline" class="full-field">
@@ -145,9 +180,23 @@ export interface TimelineEventDialogResult {
     }
     .photo-buttons { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
     .upload-spinner { display: inline-block; }
+    .place-opt-icon {
+      font-size: 16px;
+      width: 16px;
+      height: 16px;
+      vertical-align: middle;
+      margin-right: 4px;
+      color: var(--mat-sys-primary, #6750a4);
+    }
+    .hint-icon {
+      font-size: 13px;
+      width: 13px;
+      height: 13px;
+      vertical-align: middle;
+    }
   `],
 })
-export class TimelineEventDialogComponent {
+export class TimelineEventDialogComponent implements OnInit {
   private dialogRef = inject(MatDialogRef<TimelineEventDialogComponent>);
   private dialog = inject(MatDialog);
   private entityService = inject(EntityService);
@@ -162,7 +211,30 @@ export class TimelineEventDialogComponent {
     description: [this.data.event?.description ?? ''],
   });
 
-  locationSuggestions$: Observable<string[]> = this.form.controls.location.valueChanges.pipe(
+  placeEntities = signal<Entity[]>([]);
+
+  /** The PLACE entity currently linked to this event (selected from autocomplete). */
+  selectedLocationEntityId = signal<string | null>(this.data.event?.locationEntityId ?? null);
+
+  readonly selectedPlaceEntity = computed(() => {
+    const id = this.selectedLocationEntityId();
+    if (!id) return null;
+    return this.placeEntities().find(e => e.id === id) ?? null;
+  });
+
+  readonly filteredPlaceOptions$: Observable<LocationOption[]> = combineLatest([
+    this.form.controls.location.valueChanges.pipe(startWith(this.form.controls.location.value)),
+    toObservable(this.placeEntities),
+  ]).pipe(
+    map(([q, places]) => {
+      const query = (q ?? '').toLowerCase().trim();
+      return places
+        .filter(e => !query || e.name.toLowerCase().includes(query))
+        .map(e => ({ label: e.name, value: e.name, entityId: e.id }));
+    }),
+  );
+
+  readonly realWorldSuggestions$: Observable<string[]> = this.form.controls.location.valueChanges.pipe(
     debounceTime(300),
     distinctUntilChanged(),
     switchMap(q => !q || q.trim().length < 2
@@ -180,6 +252,23 @@ export class TimelineEventDialogComponent {
 
   private entityPhotos = signal<EntityPhoto[]>(this.data.entity.photos ?? []);
   private updatedEntity: Entity | undefined;
+
+  ngOnInit(): void {
+    this.entityService.getBySeries(this.data.entity.seriesId).pipe(
+      map(entities => entities.filter(e => e.type === 'PLACE' && !e.archived)),
+      catchError(() => of([] as Entity[])),
+    ).subscribe(places => this.placeEntities.set(places));
+  }
+
+  onLocationInput(): void {
+    this.selectedLocationEntityId.set(null);
+  }
+
+  onLocationSelected(event: MatAutocompleteSelectedEvent): void {
+    const value: string = event.option.value as string;
+    const match = this.placeEntities().find(e => e.name === value);
+    this.selectedLocationEntityId.set(match?.id ?? null);
+  }
 
   pickFromGallery(): void {
     const ref = this.dialog.open(PhotoPickerDialogComponent, {
@@ -199,7 +288,6 @@ export class TimelineEventDialogComponent {
     this.uploading.set(true);
     this.entityService.uploadThumbnail(file).subscribe({
       next: ({ url, thumbnailUrl }) => {
-        // New photos always join the entity gallery so they show up everywhere.
         this.entityService.addPhoto(this.data.entity.id, url, thumbnailUrl).subscribe({
           next: updated => {
             this.updatedEntity = updated;
@@ -226,6 +314,7 @@ export class TimelineEventDialogComponent {
       name: name.trim(),
       timeframe: timeframe.trim() || undefined,
       location: location.trim() || undefined,
+      locationEntityId: this.selectedLocationEntityId() ?? undefined,
       description: description.trim() || undefined,
       photo: this.photo() ?? undefined,
       updatedEntity: this.updatedEntity,

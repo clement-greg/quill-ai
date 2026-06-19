@@ -15,6 +15,8 @@ export interface TimelineEvent extends AuditedRecord {
     description?: string;
     /** Free-form location — real or fictitious (e.g. "London", "The Forbidden Forest"). */
     location?: string;
+    /** ID of a PLACE entity in the same series. Takes precedence over location string when set. */
+    locationEntityId?: string;
     /** Relative position on the timeline. */
     sortOrder?: number;
     photo?: TimelineEventPhoto;
@@ -29,6 +31,7 @@ export interface TimelineEventFields {
     timeframe?: string;
     description?: string;
     location?: string;
+    locationEntityId?: string;
 }
 
 /** A new event the LLM found in the chapter. */

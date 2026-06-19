@@ -61,7 +61,12 @@ const RELATIONSHIP_LABEL = new Map(RELATIONSHIP_TYPES.map(t => [t.value, t.label
               }
               @if (add.location) {
                 <div class="event-location">
-                  <mat-icon class="location-icon" aria-hidden="true">place</mat-icon>{{ add.location }}
+                  <mat-icon class="location-icon" aria-hidden="true">place</mat-icon>
+                  @if (add.locationEntityId) {
+                    <span class="location-entity-chip">{{ add.location }}</span>
+                  } @else {
+                    {{ add.location }}
+                  }
                 </div>
               }
               @if (add.description) {
@@ -144,12 +149,17 @@ const RELATIONSHIP_LABEL = new Map(RELATIONSHIP_TYPES.map(t => [t.value, t.label
                     <span class="diff-new">{{ update.proposed.description || '(no description)' }}</span>
                   </div>
                 }
-                @if ((update.current.location ?? '') !== (update.proposed.location ?? '')) {
+                @if ((update.current.location ?? '') !== (update.proposed.location ?? '') ||
+                     (update.current.locationEntityId ?? '') !== (update.proposed.locationEntityId ?? '')) {
                   <div class="field-diff">
                     <mat-icon class="location-icon" aria-hidden="true">place</mat-icon>
                     <span class="diff-old">{{ update.current.location || '(no location)' }}</span>
                     <mat-icon class="diff-arrow">arrow_forward</mat-icon>
-                    <span class="diff-new">{{ update.proposed.location || '(no location)' }}</span>
+                    @if (update.proposed.locationEntityId) {
+                      <span class="location-entity-chip diff-new">{{ update.proposed.location || '(no location)' }}</span>
+                    } @else {
+                      <span class="diff-new">{{ update.proposed.location || '(no location)' }}</span>
+                    }
                   </div>
                 }
               </div>
@@ -253,6 +263,13 @@ const RELATIONSHIP_LABEL = new Map(RELATIONSHIP_TYPES.map(t => [t.value, t.label
       font-size: 0.8rem; font-style: italic; color: var(--mat-sys-on-surface-variant, #49454f); margin-top: 2px;
     }
     .location-icon { font-size: 14px; width: 14px; height: 14px; flex-shrink: 0; }
+    .location-entity-chip {
+      display: inline-flex; align-items: center;
+      padding: 1px 6px; border-radius: 8px; font-style: normal;
+      background: var(--mat-sys-secondary-container, #e8def8);
+      color: var(--mat-sys-on-secondary-container, #1d192b);
+      font-size: 0.75rem; font-weight: 500;
+    }
     .event-description { margin: 4px 0 0; font-size: 0.875rem; }
     .proposal-reason { font-size: 0.8rem; font-style: italic; color: var(--mat-sys-on-surface-variant, #49454f); margin-top: 2px; }
     .field-diffs { margin-top: 6px; display: flex; flex-direction: column; gap: 4px; }

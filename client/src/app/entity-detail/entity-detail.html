@@ -178,7 +178,7 @@
               }
               <div class="timeline-card"
                    [class.timeline-card--drop-target]="timelineDragOverId() === ev.id"
-                   [class.timeline-card--map-highlighted]="hoveredMapEventId() === ev.id"
+                   [class.timeline-card--map-highlighted]="hoveredMapEventId() === ev.id || (ev.locationEntityId !== undefined && ev.locationEntityId === hoveredPlaceEntityId())"
                    (dragover)="onTimelineCardDragOver($event, ev)"
                    (dragleave)="onTimelineCardDragLeave($event, ev)"
                    (drop)="onTimelineCardDrop($event, ev)">
@@ -236,9 +236,27 @@
       }
 
       @if (timelineEvents().length > 0) {
-        <div class="timeline-map-wrap">
-          <app-timeline-map [events]="timelineEvents()" (eventHovered)="hoveredMapEventId.set($event)" />
-        </div>
+        <mat-tab-group class="map-tabs" animationDuration="200ms" (selectedIndexChange)="onMapTabChange($event)">
+          <mat-tab label="Real World">
+            <div class="timeline-map-wrap">
+              <app-timeline-map
+                [events]="timelineEvents()"
+                [locationEntities]="locationEntities()"
+                (eventHovered)="hoveredMapEventId.set($event)" />
+            </div>
+          </mat-tab>
+          @for (tab of fictionalMapTabs(); track tab.seriesMap.id) {
+            <mat-tab [label]="tab.seriesMap.title">
+              <div class="fictional-map-wrap">
+                <app-fictional-location-map
+                  [seriesMap]="tab.seriesMap"
+                  [pins]="tab.pins"
+                  (placeEntityHovered)="hoveredPlaceEntityId.set($event)"
+                  (placeEntityClicked)="navigateToEntity($event)" />
+              </div>
+            </mat-tab>
+          }
+        </mat-tab-group>
       }
     </section>
 

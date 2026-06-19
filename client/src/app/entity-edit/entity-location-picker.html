@@ -1,0 +1,149 @@
+<div class="location-picker">
+
+  <mat-button-toggle-group
+    class="type-toggle"
+    [ngModel]="locationType()"
+    (ngModelChange)="setLocationType($event)"
+    aria-label="Location type">
+    <mat-button-toggle value="none">None</mat-button-toggle>
+    <mat-button-toggle value="real-world">
+      <mat-icon>public</mat-icon>
+      Real World
+    </mat-button-toggle>
+    <mat-button-toggle value="fictional">
+      <mat-icon>map</mat-icon>
+      Fictional Map
+    </mat-button-toggle>
+  </mat-button-toggle-group>
+
+  <!-- ── Real-world picker ──────────────────────────────── -->
+  @if (locationType() === 'real-world') {
+    <div class="real-world-section">
+
+      <div class="address-row">
+        <mat-form-field appearance="outline" class="address-field">
+          <mat-label>Search address or landmark</mat-label>
+          <input matInput
+                 [ngModel]="addressInput()"
+                 (ngModelChange)="addressInput.set($event)"
+                 (keydown.enter)="searchAddress()"
+                 placeholder="City, landmark, or address…" />
+        </mat-form-field>
+        <button mat-icon-button
+                (click)="searchAddress()"
+                [disabled]="geocoding() || !mapReady() || !addressInput().trim()"
+                matTooltip="Search"
+                aria-label="Search address">
+          @if (geocoding()) {
+            <mat-spinner diameter="18" />
+          } @else {
+            <mat-icon>search</mat-icon>
+          }
+        </button>
+      </div>
+
+      @if (geocodeError()) {
+        <p class="picker-error" role="alert">
+          Address not found ({{ geocodeError() }}). Try a more specific search term.
+        </p>
+      }
+
+      @if (mapLoadError()) {
+        <p class="picker-error" role="alert">Map failed to load. Check your internet connection.</p>
+      } @else {
+        <p class="picker-hint">Click on the map or search above to place a pin.</p>
+        <div #mapEl class="real-world-map" role="region" aria-label="Select real-world location on map"></div>
+      }
+
+      @if (realWorldCoords()) {
+        <div class="coords-row">
+          <mat-icon class="coords-icon">location_on</mat-icon>
+          <span class="coords-text">
+            {{ formatCoord(realWorldCoords()!.lat) }}, {{ formatCoord(realWorldCoords()!.lng) }}
+          </span>
+          <button mat-icon-button
+                  (click)="clearRealWorldLocation()"
+                  matTooltip="Clear location"
+                  aria-label="Clear location">
+            <mat-icon>close</mat-icon>
+          </button>
+        </div>
+      }
+
+    </div>
+  }
+
+  <!-- ── Fictional map picker ───────────────────────────── -->
+  @if (locationType() === 'fictional') {
+    <div class="fictional-section">
+
+      @if (mapsLoading()) {
+        <div class="maps-loading"><mat-spinner diameter="24" /></div>
+      } @else if (seriesMaps().length === 0) {
+        <p class="picker-hint">
+          No maps found for this series. Create a map first, then come back to set the location.
+        </p>
+      } @else {
+        <mat-form-field appearance="outline">
+          <mat-label>Map</mat-label>
+          <mat-select
+            [ngModel]="selectedMapId()"
+            (ngModelChange)="onFictionalMapSelect($event)"
+            aria-label="Select a fictional map">
+            @for (map of seriesMaps(); track map.id) {
+              <mat-option [value]="map.id">{{ map.title }}</mat-option>
+            }
+          </mat-select>
+        </mat-form-field>
+
+        @if (selectedMap()) {
+          <p class="picker-hint">Click on the map to place a pin.</p>
+
+          <div class="map-canvas-wrapper"
+               role="button"
+               tabindex="0"
+               [attr.aria-label]="'Click to set location on ' + selectedMap()!.title"
+               (click)="onMapCanvasClick($event)"
+               (keydown.enter)="onMapCanvasClick($any($event))"
+               (keydown.space)="onMapCanvasClick($any($event))">
+
+            @if (proxyUrl(selectedMap()!.thumbnailUrl); as thumb) {
+              <img [src]="thumb" [alt]="selectedMap()!.title + ' preview'" class="map-canvas-img" />
+            } @else {
+              <div class="map-canvas-placeholder" [style.background]="selectedMap()!.background.color">
+                <mat-icon aria-hidden="true">map</mat-icon>
+                <span>No preview — save the map to generate one</span>
+              </div>
+            }
+
+            @if (fictionalPin()) {
+              <div class="map-pin"
+                   aria-hidden="true"
+                   [style.left.%]="fictionalPin()!.x / selectedMap()!.width * 100"
+                   [style.top.%]="fictionalPin()!.y / selectedMap()!.height * 100">
+                <mat-icon>location_on</mat-icon>
+              </div>
+            }
+          </div>
+
+          @if (fictionalPin()) {
+            <div class="coords-row">
+              <mat-icon class="coords-icon">location_on</mat-icon>
+              <span class="coords-text">
+                x: {{ fictionalPin()!.x }}, y: {{ fictionalPin()!.y }}
+              </span>
+              <button mat-icon-button
+                      (click)="clearFictionalPin()"
+                      matTooltip="Clear pin"
+                      aria-label="Clear pin">
+                <mat-icon>close</mat-icon>
+              </button>
+            </div>
+          }
+        }
+      }
+
+    </div>
+  }
+
+</div>
