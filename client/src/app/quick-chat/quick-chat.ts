@@ -16,19 +16,230 @@ import { MatTooltipModule } from '@angular/material/tooltip';
 import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
 import { MatDialog } from '@angular/material/dialog';
 import { DomSanitizer, SafeHtml } from '@angular/platform-browser';
-import { firstValueFrom } from 'rxjs';
+import { firstValueFrom, forkJoin } from 'rxjs';
 import { ChatMessageHighlight, ChatSessionMessage, MapPreview } from '@shared/models';
 import { Entity } from '@shared/models/entity.model';
 import { QuickChatService } from '../services/quick-chat.service';
 import { SpeechRecognitionService } from '../services/speech-recognition.service';
 import { AiAssistantService } from '../services/ai-assistant.service';
 import { EntityService } from '../services/entity.service';
+import { BookService } from '../book/book.service';
+import { ChapterService } from '../chapter/chapter.service';
 import { EditorBridgeService } from '../services/editor-bridge.service';
 import { UserSettingsService, GhostCompleteItem } from '../services/user-settings.service';
 import { chatMarkdownToHtml, chapterIdFromClick } from '../shared/chat-markdown';
 import { MapPreviewComponent } from '../maps/map-preview/map-preview';
 import { EntityPickerDialogComponent, EntityPickerData } from '../entity-edit/entity-picker-dialog';
 import { FolderLocationPickerDialogComponent, FolderLocation, FolderLocationPickerData } from '../ai-assistant/folder-location-picker-dialog';
+
+/** Minimal surface of the `<lottie-player>` web component we interact with. */
+type LottiePlayerElement = HTMLElement & { play(): void };
+
+/** A single item in the entity/chapter/book autocomplete popup. */
+type AcItem =
+  | { kind: 'entity'; id: string; name: string; entityType: string }
+  | { kind: 'chapter'; id: string; name: string }
+  | { kind: 'book'; id: string; name: string };
+
+/**
+ * A discoverable agentic action surfaced via the `/` command menu (and the
+ * empty-state chips). Selecting one either navigates directly (when `route` is
+ * set) or seeds the composer with a guided prompt `scaffold` that flows through
+ * the normal chat agent loop. The menu is purely a teaching/shortcut layer.
+ */
+interface SlashCommand {
+  /** The word typed after `/` (e.g. "image"); also matched for filtering. */
+  command: string;
+  /** Extra terms that should match this command in the filter. */
+  keywords: string[];
+  icon: string;
+  label: string;
+  hint: string;
+  /** When set, selecting this command navigates immediately — no LLM, no message. */
+  route?: string;
+  /** When set, runs a named in-component action immediately — no LLM, no message. */
+  action?: 'new-chat' | 'open-resources' | 'minimize';
+  /** Text inserted into the composer; ignored when `route` or `action` is set. */
+  scaffold: string;
+  /** Only offer this when the overlay was opened from a chapter editor. */
+  requiresChapter?: boolean;
+}
+
+const SLASH_COMMANDS: readonly SlashCommand[] = [
+  {
+    command: 'hide',
+    keywords: ['collapse', 'close', 'minimize', 'dismiss'],
+    icon: 'minimize',
+    label: 'Hide chat',
+    hint: 'Collapse the Ask Quill panel',
+    action: 'minimize',
+    scaffold: '',
+  },
+  {
+    command: 'new',
+    keywords: ['clear', 'reset', 'fresh'],
+    icon: 'add_comment',
+    label: 'New chat',
+    hint: 'Clear the conversation and start fresh',
+    action: 'new-chat',
+    scaffold: '',
+  },
+  {
+    command: 'resources',
+    keywords: ['files', 'manager', 'library', 'notes'],
+    icon: 'folder_open',
+    label: 'Resource Manager',
+    hint: 'Open the Resource Manager panel',
+    action: 'open-resources',
+    scaffold: '',
+  },
+  {
+    command: 'draft',
+    keywords: ['write', 'chapter', 'prose'],
+    icon: 'auto_stories',
+    label: 'Draft this chapter',
+    hint: 'Write a full first draft from your outline & notes',
+    scaffold: 'Draft this chapter based on the outline and notes: ',
+    requiresChapter: true,
+  },
+  {
+    command: 'chapter',
+    keywords: ['create', 'new'],
+    icon: 'post_add',
+    label: 'Create a chapter',
+    hint: 'Create and open a new chapter',
+    scaffold: 'Create a chapter called ',
+  },
+  {
+    command: 'image',
+    keywords: ['draw', 'picture', 'illustrate', 'art'],
+    icon: 'image',
+    label: 'Generate an image',
+    hint: 'Create an illustration from a description',
+    scaffold: 'Draw ',
+  },
+  {
+    command: 'map',
+    keywords: ['show'],
+    icon: 'map',
+    label: 'Show a map',
+    hint: 'Display one of your maps inline',
+    scaffold: 'Show me the map of ',
+  },
+  {
+    command: 'note',
+    keywords: ['add'],
+    icon: 'sticky_note_2',
+    label: 'Add a note',
+    hint: 'Save a note to a book or chapter',
+    scaffold: 'Add a note to ',
+  },
+  {
+    command: 'edit',
+    keywords: ['review', 'proofread', 'suggestions', 'quill editor'],
+    icon: 'rate_review',
+    label: 'Edit a chapter',
+    hint: 'Run the Quill Editor on a chapter for AI suggestions',
+    scaffold: 'Edit ',
+  },
+  {
+    command: 'outline',
+    keywords: ['add'],
+    icon: 'format_list_bulleted',
+    label: 'Add to an outline',
+    hint: 'Add an item to a book or chapter outline',
+    scaffold: 'Add to the outline of ',
+  },
+  {
+    command: 'open',
+    keywords: ['go', 'navigate', 'jump'],
+    icon: 'open_in_new',
+    label: 'Open something',
+    hint: 'Jump to a chapter, book, series, or character',
+    scaffold: 'Open ',
+  },
+  {
+    command: 'home',
+    keywords: ['dashboard', 'start'],
+    icon: 'home',
+    label: 'Home',
+    hint: 'Go to the Home page',
+    route: '/home',
+    scaffold: '',
+  },
+  {
+    command: 'series',
+    keywords: ['books', 'library'],
+    icon: 'collections_bookmark',
+    label: 'Series',
+    hint: 'Go to the Series list',
+    route: '/series',
+    scaffold: '',
+  },
+  {
+    command: 'entities',
+    keywords: ['characters', 'people', 'places', 'things'],
+    icon: 'group',
+    label: 'Entities',
+    hint: 'Go to the Entities page',
+    route: '/entities',
+    scaffold: '',
+  },
+  {
+    command: 'relationships',
+    keywords: ['diagram', 'graph', 'connections'],
+    icon: 'hub',
+    label: 'Relationships',
+    hint: 'Go to the Relationships diagram',
+    route: '/relationships',
+    scaffold: '',
+  },
+  {
+    command: 'maps',
+    keywords: ['map', 'world'],
+    icon: 'map',
+    label: 'Maps',
+    hint: 'Go to the Maps page',
+    route: '/maps',
+    scaffold: '',
+  },
+  {
+    command: 'gallery',
+    keywords: ['photos', 'images', 'pictures'],
+    icon: 'photo_library',
+    label: 'Photo Gallery',
+    hint: 'Go to the Photo Gallery',
+    route: '/gallery',
+    scaffold: '',
+  },
+  {
+    command: 'stats',
+    keywords: ['writing', 'words', 'progress'],
+    icon: 'bar_chart',
+    label: 'Writing Stats',
+    hint: 'Go to Writing Stats',
+    route: '/writing-stats',
+    scaffold: '',
+  },
+  {
+    command: 'archived',
+    keywords: ['archive'],
+    icon: 'inventory_2',
+    label: 'Archived',
+    hint: 'Go to Archived items',
+    route: '/archived',
+    scaffold: '',
+  },
+  {
+    command: 'settings',
+    keywords: ['preferences', 'account', 'profile'],
+    icon: 'settings',
+    label: 'Settings',
+    hint: 'Go to Settings',
+    route: '/settings',
+    scaffold: '',
+  },
+];
 
 /**
  * The quick-launch "Ask Quill" overlay (Ctrl/Cmd+I). A centered, spotlight-style
@@ -55,8 +266,10 @@ export class QuickChatComponent {
   private readonly router = inject(Router);
   private readonly dialog = inject(MatDialog);
   private readonly entityService = inject(EntityService);
+  private readonly bookService = inject(BookService);
+  private readonly chapterService = inject(ChapterService);
   readonly editorBridge = inject(EditorBridgeService);
-  private readonly userSettings = inject(UserSettingsService);
+  readonly userSettings = inject(UserSettingsService);
 
   /** Ghost-complete: the saved prompt snippet whose text starts with the current
    *  input, suggested as greyed text and accepted with Tab. */
@@ -121,36 +334,94 @@ export class QuickChatComponent {
   readonly imageToast = signal<string | null>(null);
   private imageToastTimer: ReturnType<typeof setTimeout> | null = null;
 
-  // ── Entity typeahead ──────────────────────────────────────────────────────
+  // ── Slash-command menu (discoverable agentic actions) ─────────────────────
+  /** Commands offered in the current context (filters out chapter-only ones
+   *  when the overlay wasn't opened from an editor). Also backs the empty-state
+   *  chips. */
+  readonly availableSlashCommands = computed<SlashCommand[]>(() => {
+    const hasChapter = this.editorBridge.hasChapterContext();
+    return SLASH_COMMANDS.filter(c => !c.requiresChapter || hasChapter);
+  });
+  /** Up to five commands surfaced as one-tap chips in the empty state. */
+  readonly slashChips = computed(() => this.availableSlashCommands().slice(0, 4));
+  readonly slashItems = signal<SlashCommand[]>([]);
+  readonly slashIndex = signal(0);
+  readonly slashOpen = signal(false);
+
+  // ── Entity / chapter / book typeahead ────────────────────────────────────
   private readonly entities = signal<Entity[]>([]);
-  private entitiesLoaded = false;
-  readonly acItems = signal<Entity[]>([]);
+  private readonly books = signal<AcItem[]>([]);
+  private readonly chapters = signal<AcItem[]>([]);
+  private resourcesLoaded = false;
+  readonly acItems = signal<AcItem[]>([]);
   readonly acIndex = signal(0);
   readonly acOpen = signal(false);
   /** Bounds of the partial word the typeahead is completing, within the input. */
   private tokenStart = 0;
   private tokenEnd = 0;
+  /** True once the user has arrowed through the autocomplete list; enables Enter to select. */
+  private acNavigated = false;
 
   private readonly inputEl = viewChild<ElementRef<HTMLTextAreaElement>>('inputEl');
   private readonly messagesEl = viewChild<ElementRef<HTMLDivElement>>('messagesEl');
   private readonly cardEl = viewChild<ElementRef<HTMLElement>>('cardEl');
+  /** The empty-state Lottie web component (only present when there are no messages). */
+  private readonly emptyLottie = viewChild<ElementRef<LottiePlayerElement>>('emptyLottie');
+  /** The minimized-bar Lottie web component (only present when collapsed). */
+  private readonly minimizedLottie = viewChild<ElementRef<LottiePlayerElement>>('minimizedLottie');
 
 
   constructor() {
-    // Focus the input whenever the panel expands, and lazily load the entity
-    // pool (across all series) the first time it's shown.
+    // Focus the input whenever the panel expands, and lazily load the resource
+    // pool (entities, books, chapters) the first time it's shown.
     effect(() => {
       if (!this.quickChat.minimized()) {
-        this.loadEntities();
+        this.loadResources();
         queueMicrotask(() => this.inputEl()?.nativeElement.focus());
       }
     });
 
-    // Keep the latest message in view as the answer streams in.
+    // Keep the latest message in view as content streams in and when streaming
+    // ends (including the early-exit navigate path which returns before [DONE]).
     effect(() => {
       this.quickChat.messages();
+      this.quickChat.streaming();
       const el = this.messagesEl()?.nativeElement;
       if (el) queueMicrotask(() => (el.scrollTop = el.scrollHeight));
+    });
+
+    // Auto-grow the composer: start at one row, expand up to four, then scroll.
+    // Driven by the input signal so every mutation (typing, ghost-complete,
+    // dictation, send-clear) re-measures.
+    effect(() => {
+      this.input();
+      queueMicrotask(() => this.autoGrowTextarea());
+    });
+
+    // Loop the empty-state and minimized Lotties with a fixed pause between
+    // plays. Each player runs once (autoplay, no `loop`); when it finishes we
+    // wait, then replay.
+    effect((onCleanup) => this.loopLottieWithPause(this.emptyLottie()?.nativeElement, 10_000, onCleanup));
+    effect((onCleanup) => this.loopLottieWithPause(this.minimizedLottie()?.nativeElement, 20_000, onCleanup));
+  }
+
+  /** Replays a Lottie player `intermissionMs` after each completion, cleaning up
+   *  the listener and pending timer when the player leaves the DOM. */
+  private loopLottieWithPause(
+    player: LottiePlayerElement | undefined,
+    intermissionMs: number,
+    onCleanup: (fn: () => void) => void,
+  ): void {
+    if (!player) return;
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    const onComplete = () => {
+      if (timer) clearTimeout(timer);
+      timer = setTimeout(() => player.play(), intermissionMs);
+    };
+    player.addEventListener('complete', onComplete);
+    onCleanup(() => {
+      player.removeEventListener('complete', onComplete);
+      if (timer) clearTimeout(timer);
     });
   }
 
@@ -163,6 +434,38 @@ export class QuickChatComponent {
       this.htmlCache.set(msg, this.sanitizer.bypassSecurityTrustHtml(html));
     }
     return this.htmlCache.get(msg)!;
+  }
+
+  /** Resizes the composer to fit its content, from 1 row up to a 4-row cap
+   *  (after which it scrolls). */
+  private static readonly TEXTAREA_MAX_ROWS = 4;
+  private autoGrowTextarea(): void {
+    const el = this.inputEl()?.nativeElement;
+    if (!el) return;
+    const styles = getComputedStyle(el);
+    let lineHeight = parseFloat(styles.lineHeight);
+    if (!Number.isFinite(lineHeight)) lineHeight = parseFloat(styles.fontSize) * 1.4;
+    const padding = parseFloat(styles.paddingTop) + parseFloat(styles.paddingBottom);
+    const border = parseFloat(styles.borderTopWidth) + parseFloat(styles.borderBottomWidth);
+    // Measure the natural content height with the field collapsed.
+    el.style.height = 'auto';
+    const contentHeight = el.scrollHeight; // includes padding (border-box)
+    const maxContent = lineHeight * QuickChatComponent.TEXTAREA_MAX_ROWS + padding;
+    el.style.height = `${Math.min(contentHeight, maxContent) + border}px`;
+    el.style.overflowY = contentHeight > maxContent ? 'auto' : 'hidden';
+  }
+
+  /** Formats a message's ISO timestamp for display in the chat (e.g. "Jun 19, 2:34 PM"). */
+  formatTimestamp(iso: string | undefined): string {
+    if (!iso) return '';
+    const d = new Date(iso);
+    if (Number.isNaN(d.getTime())) return '';
+    return d.toLocaleString(undefined, {
+      month: 'short',
+      day: 'numeric',
+      hour: 'numeric',
+      minute: '2-digit',
+    });
   }
 
   onCitationClick(event: MouseEvent): void {
@@ -248,22 +551,55 @@ export class QuickChatComponent {
   }
 
   onKeyDown(event: KeyboardEvent): void {
-    // While the entity typeahead is open, arrows/Enter/Tab/Escape drive it.
+    // While the slash menu is open, arrows/Enter/Tab/Escape drive it. Enter and
+    // Tab both pick the highlighted command (rather than sending).
+    if (this.slashOpen() && this.slashItems().length > 0) {
+      const n = this.slashItems().length;
+      if (event.key === 'ArrowDown') {
+        event.preventDefault();
+        this.slashIndex.update(i => (i + 1) % n);
+        this.scrollActiveSlashIntoView();
+        return;
+      }
+      if (event.key === 'ArrowUp') {
+        event.preventDefault();
+        this.slashIndex.update(i => (i - 1 + n) % n);
+        this.scrollActiveSlashIntoView();
+        return;
+      }
+      if (event.key === 'Enter' || event.key === 'Tab') {
+        event.preventDefault();
+        this.acceptSlash(this.slashItems()[this.slashIndex()]);
+        return;
+      }
+      if (event.key === 'Escape') {
+        // Dismiss the menu only — don't let the overlay's Esc handler fire.
+        event.preventDefault();
+        event.stopPropagation();
+        this.closeSlash();
+        return;
+      }
+    }
+
+    // While the entity/chapter/book typeahead is open, arrows/Tab/Escape drive it.
+    // Enter only selects once the user has arrowed through options; otherwise it sends.
     if (this.acOpen() && this.acItems().length > 0) {
       const n = this.acItems().length;
       if (event.key === 'ArrowDown') {
         event.preventDefault();
+        this.acNavigated = true;
         this.acIndex.update(i => (i + 1) % n);
         return;
       }
       if (event.key === 'ArrowUp') {
         event.preventDefault();
+        this.acNavigated = true;
         this.acIndex.update(i => (i - 1 + n) % n);
         return;
       }
-      if (event.key === 'Enter' || event.key === 'Tab') {
+      if (event.key === 'Tab' || (event.key === 'Enter' && this.acNavigated)) {
         event.preventDefault();
-        this.acceptEntity(this.acItems()[this.acIndex()]);
+        this.acceptAcItem(this.acItems()[this.acIndex()]);
         return;
       }
       if (event.key === 'Escape') {
@@ -436,25 +772,144 @@ export class QuickChatComponent {
     queueMicrotask(() => this.inputEl()?.nativeElement.focus());
   }
 
-  // ── Entity typeahead ──────────────────────────────────────────────────────
+  // ── Entity / chapter / book typeahead ────────────────────────────────────
 
-  private loadEntities(): void {
-    if (this.entitiesLoaded) return;
-    this.entitiesLoaded = true;
-    this.entityService.getAll().subscribe({
-      next: list => this.entities.set(
-        list
-          .filter(e => !e.deleted && !e.archived)
-          .sort((a, b) => a.name.localeCompare(b.name)),
-      ),
-      error: () => { this.entitiesLoaded = false; },
+  private loadResources(): void {
+    if (this.resourcesLoaded) return;
+    this.resourcesLoaded = true;
+    forkJoin({
+      entities: this.entityService.getAll(),
+      books: this.bookService.getAll(),
+      chapters: this.chapterService.getAll(),
+    }).subscribe({
+      next: ({ entities, books, chapters }) => {
+        this.entities.set(
+          entities
+            .filter(e => !e.deleted && !e.archived)
+            .sort((a, b) => a.name.localeCompare(b.name)),
+        );
+        this.books.set(
+          books
+            .filter(b => !b.deleted && !b.archived)
+            .sort((a, b) => (a.title ?? '').localeCompare(b.title ?? ''))
+            .map(b => ({ kind: 'book' as const, id: b.id, name: b.title ?? '' }))
+            .filter(b => b.name),
+        );
+        this.chapters.set(
+          chapters
+            .filter(c => !c.archived)
+            .sort((a, b) => (a.title ?? '').localeCompare(b.title ?? ''))
+            .map(c => ({ kind: 'chapter' as const, id: c.id, name: c.title ?? '' }))
+            .filter(c => c.name),
+        );
+      },
+      error: () => { this.resourcesLoaded = false; },
     });
   }
 
   /** Called on every input event; updates the value and the typeahead. */
   onInput(value: string): void {
     this.input.set(value);
+    // The slash menu and entity typeahead are mutually exclusive: a leading `/`
+    // means the user is choosing a command, not naming an entity.
+    if (this.refreshSlash(value)) {
+      this.closeAutocomplete();
+      return;
+    }
     this.refreshAutocomplete(value);
+  }
+
+  // ── Slash-command menu ────────────────────────────────────────────────────
+
+  /** Shows/filters the slash menu while the input is just `/word` (no space yet).
+   *  Returns true when the menu is active so the caller can suppress the entity
+   *  typeahead. */
+  private refreshSlash(value: string): boolean {
+    const match = /^\/(\p{L}*)$/u.exec(value);
+    if (!match) {
+      this.closeSlash();
+      return false;
+    }
+    const q = match[1].toLowerCase();
+    const items = this.availableSlashCommands().filter(
+      c => c.command.startsWith(q) || c.keywords.some(k => k.startsWith(q)),
+    );
+    if (items.length === 0) {
+      this.closeSlash();
+      return false;
+    }
+    this.slashItems.set(items);
+    this.slashIndex.set(0);
+    this.slashOpen.set(true);
+    return true;
+  }
+
+  closeSlash(): void {
+    this.slashOpen.set(false);
+    this.slashItems.set([]);
+  }
+
+  /** Keeps the keyboard-highlighted command visible as the user arrows past the
+   *  menu's scroll boundary. Targets the item by index (the list DOM already
+   *  exists), so it stays in sync without waiting for the `active` class to be
+   *  applied by change detection. */
+  private scrollActiveSlashIntoView(): void {
+    const idx = this.slashIndex();
+    const items = document.querySelectorAll('.qc-slash-item');
+    items[idx]?.scrollIntoView({ block: 'nearest' });
+  }
+
+  onSlashMouseDown(event: MouseEvent, cmd: SlashCommand): void {
+    // Keep focus on the textarea so its blur doesn't dismiss the menu first.
+    event.preventDefault();
+    this.acceptSlash(cmd);
+  }
+
+  /** Picks a command from the menu. Route commands navigate immediately;
+   *  scaffold commands seed the composer for the user to complete. */
+  acceptSlash(cmd: SlashCommand): void {
+    this.closeSlash();
+    this.applyCommandScaffold(cmd);
+  }
+
+  /** Navigates instantly (route commands) or seeds the composer (scaffold
+   *  commands). Shared by the slash menu and the empty-state chips. */
+  applyCommandScaffold(cmd: SlashCommand): void {
+    if (cmd.action === 'minimize') {
+      this.input.set('');
+      this.quickChat.minimize();
+      return;
+    }
+    if (cmd.action === 'new-chat') {
+      this.input.set('');
+      this.newChat();
+      return;
+    }
+    if (cmd.action === 'open-resources') {
+      this.input.set('');
+      this.quickChat.minimize();
+      this.aiAssistant.togglePanel();
+      return;
+    }
+    if (cmd.route) {
+      this.input.set('');
+      this.quickChat.minimize();
+      this.router.navigateByUrl(cmd.route);
+      return;
+    }
+    this.input.set(cmd.scaffold);
+    queueMicrotask(() => {
+      const el = this.inputEl()?.nativeElement;
+      el?.focus();
+      const end = cmd.scaffold.length;
+      el?.setSelectionRange(end, end);
+    });
+  }
+
+  /** Closes both in-composer menus when the textarea loses focus. */
+  onBlur(): void {
+    this.closeAutocomplete();
+    this.closeSlash();
   }
 
   private refreshAutocomplete(value: string): void {
@@ -470,14 +925,25 @@ export class QuickChatComponent {
     }
 
     const q = word.toLowerCase();
-    const matched = (e: Entity) =>
+
+    const entityMatches = (e: Entity) =>
       [e.name, e.firstName, e.lastName, e.nickname].some(v => v?.toLowerCase().includes(q));
-    const startsWith = (e: Entity) =>
+    const entityStartsWith = (e: Entity) =>
       [e.name, e.firstName, e.lastName, e.nickname].some(v => v?.toLowerCase().startsWith(q));
-    const items = this.entities()
-      .filter(matched)
-      .sort((a, b) => Number(startsWith(b)) - Number(startsWith(a)))
-      .slice(0, 8);
+    const entityItems: AcItem[] = this.entities()
+      .filter(entityMatches)
+      .sort((a, b) => Number(entityStartsWith(b)) - Number(entityStartsWith(a)))
+      .slice(0, 5)
+      .map(e => ({ kind: 'entity' as const, id: e.id, name: e.name, entityType: e.type }));
+
+    const titleMatches = (item: AcItem) => item.name.toLowerCase().includes(q);
+    const titleStartsWith = (item: AcItem) => item.name.toLowerCase().startsWith(q);
+    const sortByStartsWith = (a: AcItem, b: AcItem) => Number(titleStartsWith(b)) - Number(titleStartsWith(a));
+
+    const bookItems = this.books().filter(titleMatches).sort(sortByStartsWith).slice(0, 3);
+    const chapterItems = this.chapters().filter(titleMatches).sort(sortByStartsWith).slice(0, 3);
+
+    const items = [...entityItems, ...chapterItems, ...bookItems].slice(0, 8);
 
     if (items.length === 0) {
       this.closeAutocomplete();
@@ -487,18 +953,19 @@ export class QuickChatComponent {
     this.tokenEnd = caret;
     this.acItems.set(items);
     this.acIndex.set(0);
+    this.acNavigated = false;
     this.acOpen.set(true);
   }
 
-  onItemMouseDown(event: MouseEvent, entity: Entity): void {
+  onItemMouseDown(event: MouseEvent, item: AcItem): void {
     // Prevent the textarea from losing focus before we re-insert the name.
     event.preventDefault();
-    this.acceptEntity(entity);
+    this.acceptAcItem(item);
   }
 
-  private acceptEntity(entity: Entity): void {
+  private acceptAcItem(item: AcItem): void {
     const value = this.input();
-    const name = entity.name;
+    const name = item.name;
     const newValue = value.slice(0, this.tokenStart) + name + ' ' + value.slice(this.tokenEnd);
     this.input.set(newValue);
     this.closeAutocomplete();
@@ -513,14 +980,19 @@ export class QuickChatComponent {
   closeAutocomplete(): void {
     this.acOpen.set(false);
     this.acItems.set([]);
+    this.acNavigated = false;
   }
 
-  entityIcon(entity: Entity): string {
-    return entity.type === 'PLACE' ? 'place' : entity.type === 'THING' ? 'category' : 'person';
+  acItemIcon(item: AcItem): string {
+    if (item.kind === 'book') return 'menu_book';
+    if (item.kind === 'chapter') return 'article';
+    return item.entityType === 'PLACE' ? 'place' : item.entityType === 'THING' ? 'category' : 'person';
   }
 
-  entityTypeLabel(entity: Entity): string {
-    return entity.type.charAt(0) + entity.type.slice(1).toLowerCase();
+  acItemTypeLabel(item: AcItem): string {
+    if (item.kind === 'book') return 'Book';
+    if (item.kind === 'chapter') return 'Chapter';
+    return item.entityType.charAt(0) + item.entityType.slice(1).toLowerCase();
   }
 
   // ── Highlight toolbar ───────────────────────────────────────────────────

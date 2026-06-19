@@ -326,6 +326,14 @@ async function listBooks(req: Request): Promise<{ id: string; title: string }[]>
   return resources.map(r => ({ id: r.id, title: r.title ?? '' })).filter(b => b.title);
 }
 
+/** Lists the user's (non-hidden) chapters as {id, title}. */
+async function listChapters(req: Request): Promise<{ id: string; title: string }[]> {
+  const { resources } = await getContainer('chapters').items
+    .query<TitledRecord>(withOwnerFilter(req, `SELECT c.id, c.title FROM c WHERE ${NOT_HIDDEN}`))
+    .fetchAll();
+  return resources.map(r => ({ id: r.id, title: r.title ?? '' })).filter(c => c.title);
+}
+
 // Maps are filtered on `archived` only, mirroring the maps route's access rule.
 const MAP_NOT_HIDDEN = '(NOT IS_DEFINED(c.archived) OR c.archived = false)';
 type MapRecord = { id: string; title?: string; thumbnailUrl?: string };
@@ -505,6 +513,53 @@ async function createChapterInBook(bookId: string, title: string, req: Request, 
   return { id: chapter.id, title };
 }
 
+/** Strips HTML tags and collapses whitespace to plain text. */
+function stripHtmlToPlain(html: string): string {
+  return html.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
+}
+
+/**
+ * Tool that lets the LLM fetch the full text of the chapter being edited.
+ * Only injected when the chat is anchored to a specific chapter (chapter-edit context).
+ */
+function getChapterTextTool(chapterId: string, req: Request): ChatTool {
+  return {
+    definition: {
+      type: 'function',
+      function: {
+        name: 'get_chapter_text',
+        description:
+          'Retrieve the full plain text of the chapter currently being edited. Call this when you need ' +
+          'the complete chapter content to write dialog that fits the existing voice, suggest plot points ' +
+          'that naturally follow what has been written, analyze narrative arc, identify character moments, ' +
+          'or give any other context-aware writing assistance that requires reading the whole chapter. ' +
+          'Returns the chapter text as plain prose with word count.',
+        parameters: {
+          type: 'object',
+          properties: {},
+          required: [],
+        },
+      },
+    },
+    execute: async () => {
+      try {
+        const { resource } = await getContainer('chapters').item(chapterId, chapterId).read<Chapter>();
+        if (!resource || resource.owner !== req.user!.email) {
+          console.log('[get_chapter_text] access denied for chapterId=%s', chapterId);
+          return { toolResult: { error: 'Chapter not found or access denied.' } };
+        }
+        const text = stripHtmlToPlain(resource.content ?? '');
+        const wordCount = text.split(/\s+/).filter(Boolean).length;
+        console.log('[get_chapter_text] invoked — chapter="%s" wordCount=%d', resource.title, wordCount);
+        return { toolResult: { title: resource.title, text, wordCount } };
+      } catch {
+        console.log('[get_chapter_text] error reading chapterId=%s', chapterId);
+        return { toolResult: { error: 'Failed to retrieve chapter text.' } };
+      }
+    },
+  };
+}
+
 /** Tools available to the quick-chat (cross-series) assistant. */
 function quickChatTools(req: Request): Record<string, ChatTool> {
   return {
@@ -617,6 +672,49 @@ function quickChatTools(req: Request): Record<string, ChatTool> {
           };
         }
         return { toolResult: { found: false, message: `Nothing matching "${name}" was found.` } };
+      },
+    },
+    edit_chapter: {
+      definition: {
+        type: 'function',
+        function: {
+          name: 'edit_chapter',
+          description:
+            'Start an AI editorial pass ("Quill Editor") on one of the user\'s chapters. Use this when the user ' +
+            'asks to edit, review, proofread, run the editor on, or get editorial suggestions for a chapter ' +
+            '(e.g. "edit Archimedes Fire" or "run the Quill Editor on chapter 3"). This opens the chapter, ' +
+            'reveals the Quill Editor panel, and automatically runs the editorial pass. Pass "name" as the ' +
+            'chapter title the user referred to. If the user did NOT name a chapter, call this WITHOUT name — ' +
+            'the tool returns the list of chapters so you can ask the user which one, then call it again with ' +
+            'their choice.',
+          parameters: {
+            type: 'object',
+            properties: {
+              name: { type: 'string', description: 'The chapter title the user referred to, if they named one.' },
+            },
+            required: [],
+          },
+        },
+      },
+      execute: async args => {
+        const name = String(args['name'] ?? '').trim();
+        const chapter = name ? await resolveByTitle('chapter', name, req) : null;
+        if (!chapter) {
+          const availableChapters = (await listChapters(req)).map(c => c.title);
+          return {
+            toolResult: {
+              started: false,
+              availableChapters,
+              message: name
+                ? `No chapter matching "${name}" was found. Ask the user which chapter they meant, choosing from availableChapters.`
+                : 'No chapter was specified. Ask the user which chapter to edit, choosing from availableChapters.',
+            },
+          };
+        }
+        return {
+          toolResult: { started: true, chapterId: chapter.id, title: chapter.title },
+          sse: { navigate: { target: 'chapter', id: chapter.id, title: chapter.title }, runEditor: true },
+        };
       },
     },
     show_map: {
@@ -1367,7 +1465,10 @@ router.post('/quick-chat', async (req: Request, res: Response) => {
   res.setHeader('Connection', 'keep-alive');
   res.flushHeaders();
 
-  await streamChatResponse(res, systemPrompt + IMAGE_TOOL_GUIDANCE, messages, citations, quickChatTools(req));
+  const tools = chapterContext?.chapterId
+    ? { ...quickChatTools(req), get_chapter_text: getChapterTextTool(chapterContext.chapterId, req) }
+    : quickChatTools(req);
+  await streamChatResponse(res, systemPrompt + IMAGE_TOOL_GUIDANCE, messages, citations, tools);
 });
 
 // POST /:id/name — ask the LLM to generate a session name, then persist it

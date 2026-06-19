@@ -104,6 +104,11 @@
   color: var(--mat-sys-primary);
 }
 
+.qc-minimized-lottie {
+  width: 32px;
+  height: 32px;
+}
+
 .qc-title-text {
   overflow: hidden;
 }
@@ -180,6 +185,12 @@
   opacity: 0.7;
 }
 
+.qc-empty-lottie {
+  width: 144px;
+  height: 144px;
+  margin: 0 auto;
+}
+
 .qc-empty-title {
   font-weight: 600;
   margin: 8px 0 4px;
@@ -201,12 +212,57 @@
   align-items: flex-end;
 }
 
+.qc-role-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.qc-message.user .qc-role-row {
+  flex-direction: row-reverse;
+}
+
 .qc-role {
   font-size: 0.7rem;
   font-weight: 700;
   letter-spacing: 0.04em;
   text-transform: uppercase;
   color: var(--mat-sys-on-surface-variant);
+}
+
+.qc-timestamp {
+  font-size: 0.65rem;
+  font-weight: 500;
+  letter-spacing: 0.02em;
+  color: var(--mat-sys-on-surface-variant);
+  opacity: 0.75;
+}
+
+.qc-avatar {
+  flex: none;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  object-fit: cover;
+}
+
+.qc-avatar-placeholder {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--mat-sys-surface-container-high);
+  color: var(--mat-sys-on-surface-variant);
+
+  mat-icon {
+    font-size: 18px;
+    width: 18px;
+    height: 18px;
+  }
+}
+
+.qc-avatar-lottie {
+  // The Lottie artwork has its own padding; scale up slightly to fill the circle.
+  transform: scale(1.4);
 }
 
 .qc-user-text {
@@ -452,6 +508,87 @@
 }
 
 .qc-ac-item.active .qc-ac-type { color: inherit; }
+
+/* ── Slash-command menu ──────────────────────────────────────────────────── */
+
+.qc-slash-item {
+  align-items: flex-start;
+}
+
+.qc-slash-text {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.qc-slash-hint {
+  font-size: 0.76rem;
+  color: var(--mat-sys-on-surface-variant);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.qc-ac-item.active .qc-slash-hint { color: inherit; }
+
+.qc-slash-item .qc-ac-type {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  text-transform: none;
+  letter-spacing: 0;
+  align-self: center;
+}
+
+/* ── Empty-state action chips ────────────────────────────────────────────── */
+
+.qc-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: center;
+  margin-top: 16px;
+}
+
+.qc-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  border: 1px solid var(--mat-sys-outline-variant);
+  border-radius: 999px;
+  background: var(--mat-sys-surface);
+  color: var(--mat-sys-on-surface);
+  font: inherit;
+  font-size: 0.82rem;
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s;
+
+  &:hover {
+    background: var(--mat-sys-primary-container);
+    border-color: var(--mat-sys-primary);
+    color: var(--mat-sys-on-primary-container);
+  }
+}
+
+.qc-chip-icon {
+  font-size: 17px;
+  width: 17px;
+  height: 17px;
+  color: var(--mat-sys-primary);
+}
+
+.qc-chip:hover .qc-chip-icon { color: inherit; }
+
+.qc-kbd {
+  display: inline-block;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.8em;
+  padding: 0 5px;
+  border: 1px solid var(--mat-sys-outline-variant);
+  border-radius: 4px;
+  background: var(--mat-sys-surface-container);
+}
 
 .qc-textarea-wrap {
   flex: 1;

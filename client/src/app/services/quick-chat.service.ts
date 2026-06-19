@@ -1,9 +1,13 @@
-import { Injectable, inject, signal } from '@angular/core';
+import { Injectable, inject, signal, effect } from '@angular/core';
 import { Router } from '@angular/router';
 import { ChapterCitation, ChatMessageHighlight, ChatSession, ChatSessionMessage, MapPreview } from '@shared/models';
 import { EditorBridgeService } from './editor-bridge.service';
 import { AiAssistantService } from './ai-assistant.service';
 import { ChapterSyncService, ChapterExternalUpdate } from './chapter-sync.service';
+import { EditorReviewService } from './editor-review.service';
+
+/** Remembers the last active session so a page refresh reopens it. */
+const LAST_SESSION_KEY = 'quill_last_chat_session_id';
 
 
 /**
@@ -17,6 +21,7 @@ export class QuickChatService {
   private readonly editorBridge = inject(EditorBridgeService);
   private readonly aiAssistant = inject(AiAssistantService);
   private readonly chapterSync = inject(ChapterSyncService);
+  private readonly editorReview = inject(EditorReviewService);
 
   /** The panel is always present — it cannot be fully closed, only minimized. */
   readonly isOpen = signal(true);
@@ -30,6 +35,20 @@ export class QuickChatService {
   private abortController: AbortController | null = null;
   /** Cached ID of the global "Chats" folder so we don't re-query on every message. */
   private chatsFolderId: string | null = null;
+
+  constructor() {
+    // Restore the last active conversation on load, but leave the panel
+    // minimized so the refresh isn't intrusive — the user expands on demand.
+    const lastId = localStorage.getItem(LAST_SESSION_KEY);
+    if (lastId) void this.loadSession(lastId, false);
+
+    // Persist the active session id so the next refresh can reopen it.
+    effect(() => {
+      const id = this.activeSessionId();
+      if (id) localStorage.setItem(LAST_SESSION_KEY, id);
+      else localStorage.removeItem(LAST_SESSION_KEY);
+    });
+  }
 
   open(): void {
     this.minimized.set(false);
@@ -60,16 +79,17 @@ export class QuickChatService {
     this.activeSessionId.set(null);
   }
 
-  /** Loads a saved chat session into the panel and expands it.
-   *  Subsequent messages are auto-persisted back to the same session. */
-  async loadSession(id: string): Promise<void> {
+  /** Loads a saved chat session into the panel. Subsequent messages are
+   *  auto-persisted back to the same session. Expands the panel unless
+   *  `expand` is false (e.g. when silently restoring on page load). */
+  async loadSession(id: string, expand = true): Promise<void> {
     try {
       const res = await this.authFetch(`/api/chat-sessions/${id}`);
       if (res.ok) {
         const session = await res.json() as ChatSession;
         this.messages.set(session.messages);
         this.activeSessionId.set(id);
-        this.minimized.set(false);
+        if (expand) this.minimized.set(false);
       }
     } catch {
       // Best-effort
@@ -83,8 +103,9 @@ export class QuickChatService {
     // Ensure a session exists before we start streaming so every exchange is saved.
     await this.createAutoSaveSession();
 
-    const userMsg: ChatSessionMessage = { role: 'user', text: trimmed };
-    const assistantPlaceholder: ChatSessionMessage = { role: 'assistant', text: '' };
+    const now = new Date().toISOString();
+    const userMsg: ChatSessionMessage = { role: 'user', text: trimmed, timestamp: now };
+    const assistantPlaceholder: ChatSessionMessage = { role: 'assistant', text: '', timestamp: now };
     this.messages.update(list => [...list, userMsg, assistantPlaceholder]);
     this.streaming.set(true);
 
@@ -143,6 +164,7 @@ export class QuickChatService {
               error?: string;
               sources?: ChapterCitation[];
               navigate?: { target: 'chapter' | 'book' | 'series' | 'entity'; id: string; title: string };
+              runEditor?: boolean;
               map?: MapPreview;
               generatingImage?: boolean;
               image?: { url: string; thumbnailUrl: string; prompt?: string };
@@ -162,7 +184,15 @@ export class QuickChatService {
               // The assistant invoked a navigation tool. Show a confirmation
               // message in the bubble (so it's never blank), navigate, and
               // leave the panel open so the user can continue the conversation.
-              this.updateLastAssistantMessage(`Opening "${parsed.navigate.title}"…`);
+              // When the editor tool requested an editorial pass, ask the editor
+              // to auto-run once the chapter loads (it's a different component
+              // instantiated by the navigation below).
+              if (parsed.runEditor && parsed.navigate.target === 'chapter') {
+                this.editorReview.requestAutoRun(parsed.navigate.id);
+                this.updateLastAssistantMessage(`Opening "${parsed.navigate.title}" and running the Quill Editor…`);
+              } else {
+                this.updateLastAssistantMessage(`Opening "${parsed.navigate.title}"…`);
+              }
               this.router.navigate(this.routeFor(parsed.navigate.target, parsed.navigate.id));
               return;
             } else if (parsed.map) {

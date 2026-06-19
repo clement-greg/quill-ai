@@ -36,6 +36,8 @@ export interface ChatSessionMessage {
   beats?: string;
   /** URL of a lottie animation to display inline after a successful action. */
   lottieUrl?: string;
+  /** ISO-8601 timestamp of when the message was created, shown in the chat. */
+  timestamp?: string;
 }
 
 export interface ChatSession {

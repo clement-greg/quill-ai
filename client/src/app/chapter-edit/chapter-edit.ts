@@ -307,6 +307,12 @@ export class ChapterEditComponent implements OnInit, OnDestroy {
             this.editorRef.setContent(content);
             this.editorBridge.register(this.editorRef);
             this.editorBridge.setChapterContext({ chapterId: data.id, seriesId: this.seriesId() || null });
+            // If the Ask Quill "edit chapter" tool navigated us here, kick off the
+            // editorial pass now that the editor has content. A nested timeout
+            // lets the freshly-set content settle before we extract blocks.
+            if (this.editorReview.consumeAutoRun(data.id)) {
+              setTimeout(() => this.startQuillReview());
+            }
           }
         });
 

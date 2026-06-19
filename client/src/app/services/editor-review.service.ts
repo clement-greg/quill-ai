@@ -30,6 +30,26 @@ export class EditorReviewService {
 
   private abortController: AbortController | null = null;
 
+  /** Chapter id for which an editorial pass should auto-run once its editor
+   *  loads. Set by the "edit_chapter" chat tool (cross-component), consumed by
+   *  the chapter editor on load so a fresh navigation kicks off the review. */
+  private readonly _autoRunChapterId = signal<string | null>(null);
+
+  /** Requests that the Quill Editor pass auto-run when `chapterId` next loads. */
+  requestAutoRun(chapterId: string): void {
+    this._autoRunChapterId.set(chapterId);
+  }
+
+  /** Returns true (once) if an auto-run was requested for `chapterId`, clearing
+   *  the request so it doesn't fire again on subsequent loads. */
+  consumeAutoRun(chapterId: string): boolean {
+    if (this._autoRunChapterId() === chapterId) {
+      this._autoRunChapterId.set(null);
+      return true;
+    }
+    return false;
+  }
+
   /** Suggestions filtered by a minimum severity, newest decisions preserved. */
   visible(showLow: boolean): ReviewSuggestion[] {
     const list = this.suggestions();
