@@ -124,7 +124,8 @@ export class RichTextEditorComponent implements OnInit, AfterViewInit, OnDestroy
       e.name.toLowerCase().includes(q) ||
       e.nickname?.toLowerCase().includes(q) ||
       e.firstName?.toLowerCase().includes(q) ||
-      e.lastName?.toLowerCase().includes(q),
+      e.lastName?.toLowerCase().includes(q) ||
+      e.aliases?.some(a => a.toLowerCase().includes(q)),
     ).slice(0, 20);
   });
   private entityTagSavedRange: Range | null = null;
@@ -193,7 +194,8 @@ export class RichTextEditorComponent implements OnInit, AfterViewInit, OnDestroy
       e.name.toLowerCase().includes(q) ||
       e.nickname?.toLowerCase().includes(q) ||
       e.firstName?.toLowerCase().includes(q) ||
-      e.lastName?.toLowerCase().includes(q),
+      e.lastName?.toLowerCase().includes(q) ||
+      e.aliases?.some(a => a.toLowerCase().includes(q)),
     ).slice(0, 20);
   });
   photoPickerGalleryPhotos = computed(() => {
@@ -2454,7 +2456,7 @@ export class RichTextEditorComponent implements OnInit, AfterViewInit, OnDestroy
     const refs = this.resolvedRefs(entity);
     const titleFullName = refs.title ? `${refs.title} ${entity.name}` : undefined;
     const titleLastName = refs.title && refs.lastName ? `${refs.title} ${refs.lastName}` : undefined;
-    return [entity.name, refs.firstName, refs.lastName, refs.nickname, titleFullName, titleLastName].filter((v): v is string => !!v);
+    return [entity.name, refs.firstName, refs.lastName, refs.nickname, titleFullName, titleLastName, ...(entity.aliases ?? [])].filter((v): v is string => !!v);
   }
 
   private getPreferredText(entity: Entity): string {

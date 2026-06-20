@@ -289,7 +289,7 @@ async function resolveByTitle(target: NavTarget, title: string, req: Request): P
   return bestTitleMatch(resources, title);
 }
 
-type EntityNameRecord = { id: string; name?: string; firstName?: string; lastName?: string; nickname?: string };
+type EntityNameRecord = { id: string; name?: string; firstName?: string; lastName?: string; nickname?: string; aliases?: string[] };
 
 /** The best human-readable label for an entity, preferring its explicit name. */
 function entityDisplayName(e: EntityNameRecord): string {
@@ -302,11 +302,11 @@ function entityDisplayName(e: EntityNameRecord): string {
  */
 async function resolveEntityByName(name: string, req: Request): Promise<TitleMatch | null> {
   const { resources } = await getContainer('entities').items
-    .query<EntityNameRecord>(withOwnerFilter(req, `SELECT c.id, c.name, c.firstName, c.lastName, c.nickname FROM c WHERE ${NOT_HIDDEN}`))
+    .query<EntityNameRecord>(withOwnerFilter(req, `SELECT c.id, c.name, c.firstName, c.lastName, c.nickname, c.aliases FROM c WHERE ${NOT_HIDDEN}`))
     .fetchAll();
   let best: TitleMatch | null = null;
   for (const e of resources) {
-    const aliases = [e.name, e.firstName, e.lastName, e.nickname, [e.firstName, e.lastName].filter(Boolean).join(' ')]
+    const aliases = [e.name, e.firstName, e.lastName, e.nickname, [e.firstName, e.lastName].filter(Boolean).join(' '), ...(e.aliases ?? [])]
       .map(a => (a ?? '').trim())
       .filter(Boolean);
     // Reuse the title scorer by treating each alias as a candidate title.

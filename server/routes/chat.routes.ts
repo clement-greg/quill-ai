@@ -167,7 +167,7 @@ router.post('/:chapterId', async (req: Request, res: Response) => {
         lastMessage.content += '\n\nReword this text in the character\'s authentic voice. Return only the reworded text, no explanation.';
       }
     }
-  }
+  } 
 
   res.setHeader('Content-Type', 'text/event-stream');
   res.setHeader('Cache-Control', 'no-cache');

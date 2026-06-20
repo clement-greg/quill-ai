@@ -57,7 +57,7 @@ function renderNotes(notes: ChapterNote[] | undefined): string {
 /** All the name variants an entity can be referred to by, lowercased. */
 function entityNameVariants(e: Entity): string[] {
   const words = e.name.split(/\s+/).filter(w => w.length > 1);
-  return [...words, e.firstName, e.lastName, e.nickname, e.title]
+  return [...words, e.firstName, e.lastName, e.nickname, e.title, ...(e.aliases ?? [])]
     .filter((v): v is string => Boolean(v) && v!.length > 1)
     .map(v => v.toLowerCase());
 }

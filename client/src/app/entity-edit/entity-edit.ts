@@ -77,6 +77,7 @@ export class EntityEditComponent {
   });
 
   draft = signal<Entity | null>(null);
+  aliasInput = signal('');
   thumbnailPreview = signal<string | null>(null);
   uploading = signal(false);
   generatingImage = signal(false);
@@ -110,6 +111,28 @@ export class EntityEditComponent {
       this.thumbnailPreview.set(this.proxyUrl(e.thumbnailUrl));
       if (e.id) this.loadQuotes(e.id);
     });
+  }
+
+  addAlias(): void {
+    const value = this.aliasInput().trim();
+    if (!value) return;
+    const current = this.draft();
+    if (!current) return;
+    const aliases = current.aliases ?? [];
+    if (aliases.some(a => a.toLowerCase() === value.toLowerCase())) {
+      this.aliasInput.set('');
+      return;
+    }
+    this.draft.set({ ...current, aliases: [...aliases, value] });
+    this.aliasInput.set('');
+  }
+
+  removeAlias(index: number): void {
+    const current = this.draft();
+    if (!current) return;
+    const aliases = [...(current.aliases ?? [])];
+    aliases.splice(index, 1);
+    this.draft.set({ ...current, aliases });
   }
 
   update<K extends keyof Entity>(field: K, value: Entity[K]): void {

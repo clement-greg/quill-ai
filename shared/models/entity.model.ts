@@ -40,6 +40,7 @@ export interface Entity extends AuditedRecord {
     firstName?: string;
     lastName?: string;
     nickname?: string;
+    aliases?: string[];
     preferredReference?: EntityReference;
     personality?: string;
     gender?: string;

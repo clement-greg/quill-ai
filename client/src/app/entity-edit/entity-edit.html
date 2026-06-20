@@ -101,6 +101,34 @@
 
         }
 
+        @if (draft()!.type === 'PERSON' && !isNarrator()) {
+          <div class="aliases-section" role="group" aria-labelledby="aliases-label">
+            <span id="aliases-label" class="aliases-label">Aliases</span>
+            @if ((draft()!.aliases ?? []).length > 0) {
+              <div class="aliases-chips" role="list" aria-label="Aliases">
+                @for (alias of draft()!.aliases!; track alias; let i = $index) {
+                  <span class="alias-chip" role="listitem">
+                    {{ alias }}
+                    <button type="button" class="alias-remove-btn" (click)="removeAlias(i)" [attr.aria-label]="'Remove alias ' + alias">
+                      <mat-icon>close</mat-icon>
+                    </button>
+                  </span>
+                }
+              </div>
+            }
+            <div class="alias-input-row">
+              <mat-form-field appearance="outline" class="alias-input-field">
+                <mat-label>Add alias</mat-label>
+                <input matInput [ngModel]="aliasInput()" (ngModelChange)="aliasInput.set($event)"
+                       (keydown.enter)="$event.preventDefault(); addAlias()" />
+              </mat-form-field>
+              <button mat-icon-button type="button" (click)="addAlias()" [disabled]="!aliasInput().trim()" aria-label="Add alias">
+                <mat-icon>add</mat-icon>
+              </button>
+            </div>
+          </div>
+        }
+
         @if (!isNarrator()) {
           <mat-form-field appearance="outline">
             <mat-label>Nickname</mat-label>

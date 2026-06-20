@@ -121,7 +121,8 @@ export class EntityPickerDialogComponent implements OnInit {
       e.name.toLowerCase().includes(q) ||
       e.nickname?.toLowerCase().includes(q) ||
       e.firstName?.toLowerCase().includes(q) ||
-      e.lastName?.toLowerCase().includes(q),
+      e.lastName?.toLowerCase().includes(q) ||
+      e.aliases?.some(a => a.toLowerCase().includes(q)),
     );
   });
 
