@@ -256,7 +256,7 @@ router.get('/:id/chapters', async (req: Request, res: Response) => {
     const chaptersContainer = getContainer('chapters');
     const { resources: chapters } = await chaptersContainer.items
       .query<Chapter>({
-        query: `SELECT c.id, c.title, c.bookId, c.sortOrder FROM c WHERE c.bookId IN (${bookIdList}) AND c.owner = @owner AND (NOT IS_DEFINED(c.archived) OR c.archived = false) AND CONTAINS(c.content, @entityId)`,
+        query: `SELECT c.id, c.title, c.bookId, c.sortOrder, c.imageUrl, c.imageThumbnailUrl FROM c WHERE c.bookId IN (${bookIdList}) AND c.owner = @owner AND (NOT IS_DEFINED(c.archived) OR c.archived = false) AND CONTAINS(c.content, @entityId)`,
         parameters: [
           ...bookIdParams,
           { name: '@owner', value: req.user!.email },
@@ -272,6 +272,8 @@ router.get('/:id/chapters', async (req: Request, res: Response) => {
         sortOrder: c.sortOrder,
         bookId: c.bookId,
         bookTitle: bookMap.get(c.bookId) ?? 'Unknown Book',
+        imageUrl: c.imageUrl,
+        imageThumbnailUrl: c.imageThumbnailUrl,
       }))
       .sort((a, b) => {
         const bookCmp = a.bookTitle.localeCompare(b.bookTitle);

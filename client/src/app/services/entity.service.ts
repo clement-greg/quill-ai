@@ -9,6 +9,8 @@ export interface ChapterAppearance {
   sortOrder?: number;
   bookId: string;
   bookTitle: string;
+  imageUrl?: string;
+  imageThumbnailUrl?: string;
 }
 
 @Injectable({ providedIn: 'root' })

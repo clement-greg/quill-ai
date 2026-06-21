@@ -10,6 +10,8 @@ import { ChapterCitation } from '../../shared/models/chat-session.model';
 import { BookNote } from '../../shared/models/book-note.model';
 import { Book } from '../../shared/models/book.model';
 import { Entity } from '../../shared/models/entity.model';
+import { TimelineEvent } from '../../shared/models/timeline-event.model';
+import { EntityRelationship } from '../../shared/models/entity-relationship.model';
 import { generateImage } from '../image-generation';
 import { buildChapterContextPrompt } from '../chapter-ai-context';
 import { buildChapterDraftingContext, generateChapterBeatSheet } from '../chapter-drafting-context';
@@ -82,6 +84,19 @@ const SMART_EDIT_GUIDANCE =
   'refine, or apply — do not repeat the full new text in your message. If the author then asks for ' +
   'changes to placement or wording, call propose_chapter_edit again with the revised edit.';
 
+// Appended whenever the research_entity tool is available (always).
+const ENTITY_RESEARCH_GUIDANCE =
+  '\n\nRESEARCHING ENTITIES: The author keeps a story bible of characters, places, and things (entities), ' +
+  'each with a biography, personality, aliases, location, a timeline of events, and relationships to other ' +
+  'entities. When the author asks a question about a specific character/place/thing and the answer is NOT ' +
+  'already in the conversation or the story passages you were given (e.g. "what is Elara\'s backstory?", ' +
+  '"who is Mara related to?", "where does the Duke live?", "what happened to Tomas before the war?"), call ' +
+  'research_entity with "entityName" set to the name, nickname, or alias the author used, then answer from ' +
+  'what it returns. Prefer this tool over guessing. If it reports the name is ambiguous (matches more than ' +
+  'one entity), ask the author which one they mean and call it again. If it reports no match, tell the ' +
+  'author you have no record of that entity. Do not invent biography, timeline, or relationship details ' +
+  'that the tool did not return.';
+
 
 /**
  * Builds a RAG-grounded system prompt for a chat turn. Embeds the last user
@@ -143,7 +158,10 @@ async function buildRagSystemPrompt(
     `- ALWAYS use this exact bracketed-number format. NEVER cite by chapter name, and never use ` +
     `parentheses, footnotes, or superscripts.\n` +
     `- Only cite numbers that appear in the list below.\n` +
-    `- If the excerpts don't contain the answer, say so rather than inventing details.\n\n` +
+    `- If the excerpts don't contain the answer, do NOT invent details and do NOT immediately give up. ` +
+    `First consider whether one of your tools could find it — in particular, if the question is about a ` +
+    `specific character, place, or thing, call research_entity to look up its story-bible record before ` +
+    `telling the author you don't have the information.\n\n` +
     `${labeledExcerpts}`;
 
   return { systemPrompt, citations };
@@ -909,9 +927,165 @@ function getProposeChapterEditTool(chapterId: string, req: Request): ChatTool {
   };
 }
 
+/** A compact, LLM-readable timeline event (only the fields worth reasoning over). */
+type ResearchTimelineEvent = { name: string; timeframe?: string; description?: string; location?: string };
+/** A compact, LLM-readable relationship: who, how, and any note. */
+type ResearchRelationship = { partner: string; type: string; description?: string };
+
+/**
+ * Assembles the full story-bible record for one entity — its profile fields, its
+ * timeline of events (ordered along the timeline), and its relationships (either
+ * direction, enriched with the partner's name) — shaped for the LLM to answer
+ * questions from. Returns null when the entity is missing, deleted, or not owned
+ * by the requester. Mirrors the queries the entity/timeline/relationship routes use.
+ */
+async function buildEntityResearch(entityId: string, req: Request): Promise<Record<string, unknown> | null> {
+  const { resource: entity } = await getContainer('entities').item(entityId, entityId).read<Entity>();
+  if (!entity || entity.owner !== req.user!.email || entity.deleted) return null;
+
+  // Timeline events live in their own container, partitioned by entityId.
+  const { resources: rawEvents } = await getContainer('timeline-events').items
+    .query<TimelineEvent>(
+      withOwnerFilter(req, {
+        query: 'SELECT * FROM c WHERE c.entityId = @entityId',
+        parameters: [{ name: '@entityId', value: entityId }],
+      }),
+      { partitionKey: entityId },
+    )
+    .fetchAll();
+  const timelineEvents: ResearchTimelineEvent[] = rawEvents
+    .sort((a, b) => (a.sortOrder ?? Infinity) - (b.sortOrder ?? Infinity))
+    .map(e => ({ name: e.name, timeframe: e.timeframe || undefined, description: e.description || undefined, location: e.location || undefined }));
+
+  // Relationships reference partners only by id, so resolve their names.
+  const { resources: rels } = await getContainer('entity-relationships').items
+    .query<EntityRelationship>(
+      withOwnerFilter(req, {
+        query: 'SELECT * FROM c WHERE c.sourceEntityId = @id OR c.targetEntityId = @id',
+        parameters: [{ name: '@id', value: entityId }],
+      }),
+    )
+    .fetchAll();
+  let relationships: ResearchRelationship[] = [];
+  if (rels.length) {
+    const partnerIds = [...new Set(rels.map(r => (r.sourceEntityId === entityId ? r.targetEntityId : r.sourceEntityId)))];
+    const params = partnerIds.map((id, i) => ({ name: `@p${i}`, value: id }));
+    const inClause = params.map(p => p.name).join(', ');
+    const { resources: partners } = await getContainer('entities').items
+      .query<Pick<Entity, 'id' | 'name' | 'deleted' | 'archived'>>(
+        withOwnerFilter(req, {
+          query: `SELECT c.id, c.name, c.deleted, c.archived FROM c WHERE c.id IN (${inClause})`,
+          parameters: params,
+        }),
+      )
+      .fetchAll();
+    const nameById = new Map(partners.filter(p => !p.deleted && !p.archived).map(p => [p.id, p.name]));
+    relationships = rels.flatMap(r => {
+      const partner = nameById.get(r.sourceEntityId === entityId ? r.targetEntityId : r.sourceEntityId);
+      return partner ? [{ partner, type: r.relationshipType, description: r.description || undefined }] : [];
+    });
+  }
+
+  const loc = entity.location;
+  const location =
+    loc?.type === 'real-world'
+      ? loc.realWorld?.address || (loc.realWorld ? `${loc.realWorld.lat}, ${loc.realWorld.lng}` : undefined)
+      : loc?.type === 'fictional'
+        ? 'Placed on a fictional map'
+        : undefined;
+
+  // Drop empty fields so the model isn't fed a wall of nulls.
+  const record: Record<string, unknown> = {
+    name: entity.name,
+    type: entity.type,
+    title: entity.title || undefined,
+    nickname: entity.nickname || undefined,
+    aliases: entity.aliases?.length ? entity.aliases : undefined,
+    isNarrator: entity.isNarrator || undefined,
+    gender: entity.gender || undefined,
+    race: entity.race || undefined,
+    biography: entity.biography || undefined,
+    personality: entity.personality || undefined,
+    location,
+    timelineEvents: timelineEvents.length ? timelineEvents : undefined,
+    relationships: relationships.length ? relationships : undefined,
+  };
+  for (const k of Object.keys(record)) if (record[k] === undefined) delete record[k];
+  return record;
+}
+
+/**
+ * Tool that looks up an entity's full story-bible record (profile, timeline,
+ * relationships) so the model can answer questions the story passages don't
+ * cover. Resolves the name/alias to a single entity, surfacing ambiguity or a
+ * miss back to the model rather than guessing. Available in every chat context.
+ */
+function getResearchEntityTool(req: Request): ChatTool {
+  return {
+    definition: {
+      type: 'function',
+      function: {
+        name: 'research_entity',
+        description:
+          'Look up the author\'s full story-bible record for a character, place, or thing (entity): its ' +
+          'biography, personality, aliases, location, timeline of events, and relationships to other entities. ' +
+          'Call this when the author asks a question about a specific character/place/thing that the ' +
+          'conversation and the story passages already provided cannot answer (e.g. backstory, who someone ' +
+          'is related to, where they live, what happened to them and when). "entityName" is the name, ' +
+          'nickname, or alias the author used (alias lookup is handled for you). If the result is ambiguous, ' +
+          'ask the author which entity they mean and call again; if there is no match, tell the author.',
+        parameters: {
+          type: 'object',
+          properties: {
+            entityName: {
+              type: 'string',
+              description: 'The name, nickname, or alias of the entity to research (e.g. "Elara", "the Duke", "Mara Quinn").',
+            },
+          },
+          required: ['entityName'],
+        },
+      },
+    },
+    pending: { researchingEntity: true },
+    execute: async args => {
+      const entityName = String(args['entityName'] ?? '').trim();
+      if (!entityName) {
+        return { toolResult: { found: false, message: 'No entity name was given. Ask the author which entity to research.' } };
+      }
+      const candidates = await resolveEntityCandidates(entityName, req);
+      // Require a strong (exact or whole-word) match so we don't research the wrong entity.
+      const strong = candidates.filter(c => c.score >= 0.9);
+      if (strong.length === 0) {
+        return {
+          toolResult: { found: false, message: `No entity matching "${entityName}" was found. Tell the author you have no record of that entity.` },
+        };
+      }
+      const top = strong[0]!;
+      const contenders = strong.filter(c => c.score >= top.score - 0.001);
+      if (contenders.length > 1) {
+        return {
+          toolResult: {
+            found: false,
+            ambiguous: true,
+            candidates: contenders.map(c => c.name),
+            message: `"${entityName}" could refer to more than one entity. Ask the author which one they mean: ${contenders.map(c => c.name).join(', ')}.`,
+          },
+        };
+      }
+      const record = await buildEntityResearch(top.id, req);
+      if (!record) {
+        return { toolResult: { found: false, message: `Could not load the record for ${top.name}.` } };
+      }
+      console.log('[research_entity] invoked — entity="%s"', top.name);
+      return { toolResult: { found: true, entity: record } };
+    },
+  };
+}
+
 /** Tools available to the quick-chat (cross-series) assistant. */
 function quickChatTools(req: Request): Record<string, ChatTool> {
   return {
+    research_entity: getResearchEntityTool(req),
     create_chapter: {
       definition: {
         type: 'function',
@@ -1477,9 +1651,10 @@ function generateImageTool(): ChatTool {
 }
 
 /** Tools available to the series-scoped Resource Manager chat. */
-function seriesChatTools(): Record<string, ChatTool> {
+function seriesChatTools(req: Request): Record<string, ChatTool> {
   return {
     generate_image: generateImageTool(),
+    research_entity: getResearchEntityTool(req),
   };
 }
 
@@ -1730,7 +1905,7 @@ router.post('/:id/chat', async (req: Request, res: Response) => {
   res.setHeader('Connection', 'keep-alive');
   res.flushHeaders();
 
-  await streamChatResponse(res, systemPrompt + IMAGE_TOOL_GUIDANCE, messages, citations, seriesChatTools());
+  await streamChatResponse(res, systemPrompt + IMAGE_TOOL_GUIDANCE + ENTITY_RESEARCH_GUIDANCE, messages, citations, seriesChatTools(req));
 });
 
 // POST /quick-chat — stateless RAG chat for the quick-launch overlay. Normally
@@ -1851,7 +2026,7 @@ router.post('/quick-chat', async (req: Request, res: Response) => {
       }
     : quickChatTools(req);
   const guidance =
-    IMAGE_TOOL_GUIDANCE + (chapterContext?.chapterId ? LINK_REFERENCES_GUIDANCE + SMART_EDIT_GUIDANCE : '');
+    IMAGE_TOOL_GUIDANCE + ENTITY_RESEARCH_GUIDANCE + (chapterContext?.chapterId ? LINK_REFERENCES_GUIDANCE + SMART_EDIT_GUIDANCE : '');
   await streamChatResponse(res, systemPrompt + guidance, messages, citations, tools);
 });
 

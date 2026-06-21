@@ -323,7 +323,11 @@
               @for (chapter of group.chapters; track chapter.id) {
                 <li>
                   <button class="chapter-item" (click)="openChapter(chapter.id)">
-                    <mat-icon class="chapter-icon">menu_book</mat-icon>
+                    @if (chapter.imageThumbnailUrl || chapter.imageUrl) {
+                      <img class="chapter-thumb" [src]="proxyUrl(chapter.imageThumbnailUrl || chapter.imageUrl)" [alt]="chapter.title" />
+                    } @else {
+                      <mat-icon class="chapter-icon">menu_book</mat-icon>
+                    }
                     <span>{{ chapter.title }}</span>
                     <mat-icon class="chapter-arrow">chevron_right</mat-icon>
                   </button>

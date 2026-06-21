@@ -803,6 +803,14 @@
   flex-shrink: 0;
 }
 
+.chapter-thumb {
+  width: 32px;
+  height: 32px;
+  border-radius: 6px;
+  object-fit: cover;
+  flex-shrink: 0;
+}
+
 .chapter-arrow {
   color: var(--mat-sys-on-surface-variant, #49454f);
   font-size: 20px;
