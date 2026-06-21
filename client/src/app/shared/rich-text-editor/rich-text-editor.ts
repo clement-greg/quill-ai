@@ -9,6 +9,7 @@ import { MatIconModule } from '@angular/material/icon';
 import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
 import { MatTooltipModule } from '@angular/material/tooltip';
 import { Entity, EntityReference } from '@shared/models/entity.model';
+import { ChapterEditProposal } from '@shared/models/chat-session.model';
 import { EntityService } from '../../services/entity.service';
 import { GrammarCheckService, GrammarError, SuggestedEntity } from '../../services/grammar-check.service';
 import { UserSettingsService } from '../../services/user-settings.service';
@@ -1185,6 +1186,187 @@ export class RichTextEditorComponent implements OnInit, AfterViewInit, OnDestroy
     this.entityLinkCurrentCount.set(0);
     this.entityLinkStep.set(0);
     this.entityLinkTotal.set(0);
+  }
+
+  // ── Smart edit (Ask Quill "propose_chapter_edit" tool) ───────────────────
+  /** Transient highlight <mark>s showing where a proposed edit will land. */
+  private smartEditMarks: HTMLElement[] = [];
+
+  /** Highlights and scrolls to where a proposed edit (insert/replace/delete)
+   *  would land, anchored to a verbatim snippet of the chapter. Returns false
+   *  when the anchor can't be located in the live editor. */
+  previewSmartEdit(proposal: ChapterEditProposal): boolean {
+    const editor = this.editorRef?.nativeElement;
+    if (!editor) return false;
+    this.clearSmartEditPreview();
+    this.unwrapGrammarMarks();
+    editor.normalize();
+    const loc = this.locateAnchor(editor, proposal.anchorText);
+    if (!loc) return false;
+    this.smartEditMarks = this.markSmartEditSpans(loc.spans);
+    this.smartEditMarks[0]?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    return true;
+  }
+
+  /** Applies a confirmed edit into the live editor and persists it. Returns
+   *  false when the anchor can no longer be located (e.g. the text changed). */
+  applySmartEdit(proposal: ChapterEditProposal): boolean {
+    const editor = this.editorRef?.nativeElement;
+    if (!editor) return false;
+    this.clearSmartEditPreview();
+    this.unwrapGrammarMarks();
+    editor.normalize();
+    const loc = this.locateAnchor(editor, proposal.anchorText);
+    if (!loc) return false;
+
+    const range = document.createRange();
+    try {
+      range.setStart(loc.startNode, loc.startOffset);
+      range.setEnd(loc.endNode, loc.endOffset);
+    } catch {
+      return false;
+    }
+
+    if (proposal.kind === 'delete') {
+      range.deleteContents();
+    } else if (proposal.kind === 'replace') {
+      range.deleteContents();
+      range.insertNode(this.buildAiSpan(proposal.newText ?? ''));
+    } else {
+      // insert: collapse to the chosen side of the anchor and add a separating space.
+      range.collapse(proposal.position !== 'before');
+      const core = (proposal.newText ?? '').replace(/\s+/g, ' ').trim();
+      const spaced = proposal.position === 'before' ? `${core} ` : ` ${core}`;
+      range.insertNode(this.buildAiSpan(spaced));
+    }
+
+    editor.normalize();
+    editor.focus({ preventScroll: true });
+    this.wordCount.set(this.countWords(editor.textContent ?? ''));
+    this.editorContent = editor.innerHTML;
+    this.scheduleEmit();
+    this.scheduleGrammarCheck();
+    setTimeout(() => this.scheduleMinimap());
+    return true;
+  }
+
+  /** Removes any transient smart-edit preview highlights. */
+  clearSmartEditPreview(): void {
+    const editor = this.editorRef?.nativeElement;
+    if (editor) {
+      editor.querySelectorAll('mark[data-smart-edit-preview]').forEach(mark => {
+        const parent = mark.parentNode!;
+        while (mark.firstChild) parent.insertBefore(mark.firstChild, mark);
+        parent.removeChild(mark);
+      });
+      editor.normalize();
+    }
+    this.smartEditMarks = [];
+  }
+
+  /** Builds an entity-annotated, AI-tagged span for inserted/replacement prose. */
+  private buildAiSpan(text: string): HTMLElement {
+    const wrapper = document.createElement('span');
+    wrapper.setAttribute('data-ai-generated', 'true');
+    wrapper.appendChild(this.buildEntityAnnotatedFragment(text));
+    return wrapper;
+  }
+
+  /** Builds a whitespace-collapsed flat string of the editor's prose with a map
+   *  from each character back to its (text node, offset), so a plain-text anchor
+   *  can be located as a DOM range even when it spans inline markup. */
+  private buildTextIndex(editor: HTMLElement): { text: string; map: { node: Text; offset: number }[] } {
+    const walker = document.createTreeWalker(editor, NodeFilter.SHOW_TEXT, {
+      acceptNode: (node: Node) => {
+        const parent = (node as Text).parentElement;
+        if (!parent) return NodeFilter.FILTER_REJECT;
+        // Skip non-prose markers so they don't pollute anchor matching.
+        if (parent.closest('.note-indicator')) return NodeFilter.FILTER_REJECT;
+        return NodeFilter.FILTER_ACCEPT;
+      },
+    });
+    let text = '';
+    const map: { node: Text; offset: number }[] = [];
+    let lastWasSpace = true; // suppress leading whitespace
+    let prevBlock: Element | null = null;
+    let node: Text | null;
+    while ((node = walker.nextNode() as Text | null)) {
+      const block = node.parentElement?.closest('p,div,li,h1,h2,h3,h4,h5,h6,blockquote') ?? null;
+      // A block boundary reads as whitespace (paragraph breaks collapse to a space).
+      if (prevBlock && block !== prevBlock && !lastWasSpace) {
+        text += ' ';
+        map.push({ node, offset: 0 });
+        lastWasSpace = true;
+      }
+      prevBlock = block;
+      const content = node.textContent ?? '';
+      for (let i = 0; i < content.length; i++) {
+        if (/\s/.test(content[i]!)) {
+          if (lastWasSpace) continue;
+          text += ' ';
+          lastWasSpace = true;
+        } else {
+          text += content[i];
+          lastWasSpace = false;
+        }
+        map.push({ node, offset: i });
+      }
+    }
+    return { text, map };
+  }
+
+  /** Locates a plain-text anchor in the editor, returning the DOM range bounds
+   *  and per-text-node spans (for highlighting). Returns null when not found. */
+  private locateAnchor(
+    editor: HTMLElement,
+    anchorText: string,
+  ): {
+    startNode: Text; startOffset: number;
+    endNode: Text; endOffset: number;
+    spans: { node: Text; start: number; end: number }[];
+  } | null {
+    const needle = anchorText.replace(/\s+/g, ' ').trim();
+    if (!needle) return null;
+    const { text, map } = this.buildTextIndex(editor);
+    const idx = text.indexOf(needle);
+    if (idx === -1) return null;
+    const startEntry = map[idx];
+    const lastEntry = map[idx + needle.length - 1];
+    if (!startEntry || !lastEntry) return null;
+
+    const spansByNode = new Map<Text, { start: number; end: number }>();
+    for (let i = idx; i < idx + needle.length; i++) {
+      const e = map[i];
+      if (!e) continue;
+      const span = spansByNode.get(e.node);
+      if (!span) spansByNode.set(e.node, { start: e.offset, end: e.offset + 1 });
+      else { span.start = Math.min(span.start, e.offset); span.end = Math.max(span.end, e.offset + 1); }
+    }
+    return {
+      startNode: startEntry.node, startOffset: startEntry.offset,
+      endNode: lastEntry.node, endOffset: lastEntry.offset + 1,
+      spans: [...spansByNode.entries()].map(([node, s]) => ({ node, start: s.start, end: s.end })),
+    };
+  }
+
+  /** Wraps each per-node span of a located anchor in a transient highlight. */
+  private markSmartEditSpans(spans: { node: Text; start: number; end: number }[]): HTMLElement[] {
+    const marks: HTMLElement[] = [];
+    for (const { node, start, end } of spans) {
+      if (!node.parentNode) continue;
+      const range = document.createRange();
+      try {
+        range.setStart(node, start);
+        range.setEnd(node, end);
+        const mark = document.createElement('mark');
+        mark.setAttribute('data-smart-edit-preview', '');
+        range.surroundContents(mark);
+        marks.push(mark);
+      } catch {
+        // Skip a span that can't be cleanly wrapped.
+      }
+    }
+    return marks;
   }
 
   // ── Content input handler ────────────────────────────────────────────────

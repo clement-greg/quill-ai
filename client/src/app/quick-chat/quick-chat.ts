@@ -18,7 +18,7 @@ import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
 import { MatDialog } from '@angular/material/dialog';
 import { DomSanitizer, SafeHtml } from '@angular/platform-browser';
 import { firstValueFrom, forkJoin } from 'rxjs';
-import { ChatMessageHighlight, ChatSessionMessage, MapPreview } from '@shared/models';
+import { ChapterEditProposal, ChatMessageHighlight, ChatSessionMessage, MapPreview } from '@shared/models';
 import { Entity } from '@shared/models/entity.model';
 import { QuickChatService } from '../services/quick-chat.service';
 import { SpeechRecognitionService } from '../services/speech-recognition.service';
@@ -724,6 +724,35 @@ export class QuickChatComponent {
   reviseDraft(): void {
     this.input.set('Revise the draft: ');
     this.inputEl()?.nativeElement.focus();
+  }
+
+  // ── Smart edit proposal card ─────────────────────────────────────────────
+  /** Applies a proposed edit into the chapter, or toasts if it can't be placed. */
+  applyEdit(messageIndex: number): void {
+    const ok = this.quickChat.applyEditProposal(messageIndex);
+    if (ok) this.showImageToast('Edit applied to your chapter.');
+    else this.showImageToast("Couldn't place this edit — the text may have changed. Ask Quill to propose it again.");
+  }
+
+  /** Discards a proposed edit and clears its preview from the editor. */
+  discardEdit(messageIndex: number): void {
+    this.quickChat.discardEditProposal(messageIndex);
+  }
+
+  editProposalLabel(edit: ChapterEditProposal): string {
+    switch (edit.kind) {
+      case 'insert': return 'Add content';
+      case 'replace': return 'Change content';
+      case 'delete': return 'Remove content';
+    }
+  }
+
+  editProposalIcon(edit: ChapterEditProposal): string {
+    switch (edit.kind) {
+      case 'insert': return 'add';
+      case 'replace': return 'edit';
+      case 'delete': return 'remove';
+    }
   }
 
   /** Collapses the panel and returns focus to the editor at the cursor position

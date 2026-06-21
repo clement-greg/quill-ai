@@ -1,6 +1,6 @@
 import { Injectable, inject, signal, effect } from '@angular/core';
 import { Router } from '@angular/router';
-import { ChapterCitation, ChatMessageHighlight, ChatSession, ChatSessionMessage, ChatSessionSummary, MapPreview } from '@shared/models';
+import { ChapterCitation, ChapterEditProposal, ChatMessageHighlight, ChatSession, ChatSessionMessage, ChatSessionSummary, MapPreview } from '@shared/models';
 import { EditorBridgeService } from './editor-bridge.service';
 import { AiAssistantService } from './ai-assistant.service';
 import { ChapterSyncService, ChapterExternalUpdate } from './chapter-sync.service';
@@ -178,6 +178,7 @@ export class QuickChatService {
               beats?: string;
               lottie?: string;
               linkEntityReferences?: { entityId: string; entityName: string; terms?: string[] };
+              proposeChapterEdit?: ChapterEditProposal;
             };
             if (parsed.error) {
               this.updateLastAssistantMessage(`Error: ${parsed.error}`);
@@ -225,6 +226,12 @@ export class QuickChatService {
                   : `I couldn't find any unlinked plain-text references to ${entityName} in this chapter.`,
               );
               return;
+            } else if (parsed.proposeChapterEdit) {
+              // The assistant proposed a targeted edit. Attach it to the message
+              // (renders a before→after card) and highlight the spot in the live
+              // editor. The assistant's short confirmation text streams after this.
+              this.setLastAssistantEditProposal(parsed.proposeChapterEdit);
+              this.editorBridge.previewChapterEdit(parsed.proposeChapterEdit);
             } else if (parsed.content) {
               this.appendToLastAssistantMessage(parsed.content);
             } else if (parsed.sources) {
@@ -320,7 +327,7 @@ export class QuickChatService {
   private async persistToSession(sessionId: string): Promise<void> {
     const messages = this.messages()
       .filter(m => m.text || m.imageUrl)
-      .map(({ role, text, imageUrl, thumbnailUrl, sources, kind, beats, lottieUrl }) => ({
+      .map(({ role, text, imageUrl, thumbnailUrl, sources, kind, beats, lottieUrl, editProposal }) => ({
         role, text,
         ...(imageUrl ? { imageUrl } : {}),
         ...(thumbnailUrl ? { thumbnailUrl } : {}),
@@ -328,6 +335,7 @@ export class QuickChatService {
         ...(kind ? { kind } : {}),
         ...(beats ? { beats } : {}),
         ...(lottieUrl ? { lottieUrl } : {}),
+        ...(editProposal ? { editProposal } : {}),
       }));
     try {
       await this.authFetch(`/api/chat-sessions/${sessionId}`, {
@@ -541,6 +549,54 @@ export class QuickChatService {
       if (msgs.length === 0) return msgs;
       const copy = [...msgs];
       copy[copy.length - 1] = { ...copy[copy.length - 1], beats };
+      return copy;
+    });
+  }
+
+  private setLastAssistantEditProposal(editProposal: ChapterEditProposal): void {
+    this.messages.update(msgs => {
+      if (msgs.length === 0) return msgs;
+      const copy = [...msgs];
+      copy[copy.length - 1] = { ...copy[copy.length - 1], editProposal };
+      return copy;
+    });
+  }
+
+  /** Applies a proposed edit into the live editor and marks it applied. Returns
+   *  false when the editor can no longer locate the anchor text. */
+  applyEditProposal(messageIndex: number): boolean {
+    const proposal = this.messages()[messageIndex]?.editProposal;
+    if (!proposal || proposal.applied) return false;
+    const applied = this.editorBridge.applyChapterEdit(proposal);
+    if (!applied) return false;
+    this.markEditProposalApplied(messageIndex);
+    const sessionId = this.activeSessionId();
+    if (sessionId) void this.persistToSession(sessionId);
+    return true;
+  }
+
+  /** Discards a proposed edit: clears the editor preview and drops the card. */
+  discardEditProposal(messageIndex: number): void {
+    this.editorBridge.clearEditPreview();
+    this.messages.update(msgs => {
+      const copy = [...msgs];
+      const msg = copy[messageIndex];
+      if (!msg?.editProposal) return msgs;
+      const { editProposal: _drop, ...rest } = msg;
+      copy[messageIndex] = rest;
+      return copy;
+    });
+    const sessionId = this.activeSessionId();
+    if (sessionId) void this.persistToSession(sessionId);
+  }
+
+  private markEditProposalApplied(messageIndex: number): void {
+    this.editorBridge.clearEditPreview();
+    this.messages.update(msgs => {
+      const copy = [...msgs];
+      const msg = copy[messageIndex];
+      if (!msg?.editProposal) return msgs;
+      copy[messageIndex] = { ...msg, editProposal: { ...msg.editProposal, applied: true } };
       return copy;
     });
   }

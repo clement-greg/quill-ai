@@ -12,6 +12,25 @@ export interface ChapterCitation {
   title: string;
 }
 
+/**
+ * A targeted, author-confirmable edit to the chapter being edited, produced by
+ * the `propose_chapter_edit` tool. `anchorText` is a verbatim snippet of the
+ * current chapter used to locate the edit:
+ * - insert: place `newText` `position` (before/after) the anchor.
+ * - replace: swap the anchor for `newText`.
+ * - delete: remove the anchor.
+ * Surfaced as a before→after card in the chat; `applied` flips true once the
+ * author confirms and the edit is written into the editor.
+ */
+export interface ChapterEditProposal {
+  kind: 'insert' | 'replace' | 'delete';
+  anchorText: string;
+  position?: 'before' | 'after';
+  newText?: string;
+  explanation: string;
+  applied?: boolean;
+}
+
 /** A map an assistant answer surfaced, shown inline as a clickable thumbnail. */
 export interface MapPreview {
   id: string;            // open the full map via /maps/:id
@@ -28,6 +47,8 @@ export interface ChatSessionMessage {
   highlights?: ChatMessageHighlight[];
   sources?: ChapterCitation[];
   maps?: MapPreview[];
+  /** A targeted chapter edit the author can apply/refine, rendered as a card. */
+  editProposal?: ChapterEditProposal;
   /** Marks an assistant message as a full chapter draft, enabling the
    * Insert / Replace chapter / Revise actions in the UI. */
   kind?: 'chapter-draft';

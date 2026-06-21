@@ -71,6 +71,17 @@ const LINK_REFERENCES_GUIDANCE =
   'tell the author and ask for the correct name. After a successful call, briefly tell the author you ' +
   'are scanning the chapter and they will be asked to confirm each set of matches.';
 
+// Appended whenever the propose_chapter_edit tool is available (chapter edit).
+const SMART_EDIT_GUIDANCE =
+  '\n\nSMART EDITING: When the author asks you to add/insert, change/rewrite/reword, or remove/delete ' +
+  'some content in the chapter they are editing (e.g. "add a sentence about the storm after they leave", ' +
+  '"make the second paragraph more tense", "cut the line about the dog"), you MUST call ' +
+  'propose_chapter_edit rather than just describing the change or returning prose. First call ' +
+  'get_chapter_text so your "anchorText" is copied verbatim from the current wording. Propose ONE edit ' +
+  'per turn. After a successful call, briefly tell the author the proposed edit is ready below to review, ' +
+  'refine, or apply — do not repeat the full new text in your message. If the author then asks for ' +
+  'changes to placement or wording, call propose_chapter_edit again with the revised edit.';
+
 
 /**
  * Builds a RAG-grounded system prompt for a chat turn. Embeds the last user
@@ -666,6 +677,132 @@ function getLinkEntityReferencesTool(req: Request): ChatTool {
       return {
         toolResult: { found: true, entityName: top.name, message: `Scanning the chapter for plain-text references to ${top.name}.` },
         sse: { linkEntityReferences: { entityId: top.id, entityName: top.name, ...(terms && terms.length ? { terms } : {}) } },
+      };
+    },
+  };
+}
+
+/** Collapses all whitespace to single spaces and trims, for anchor matching. */
+function normalizeForAnchor(s: string): string {
+  return s.replace(/\s+/g, ' ').trim();
+}
+
+/**
+ * Tool that proposes a single targeted edit (insert/replace/delete) to the
+ * chapter being edited, anchored to a verbatim snippet of the current text.
+ * The server only validates that the anchor locates the edit unambiguously and
+ * hands the proposal to the client; the author reviews a before→after card in
+ * the chat, can refine it over multiple turns, and applies it into the live
+ * editor when satisfied (mirroring the entity-linking hand-off pattern).
+ */
+function getProposeChapterEditTool(chapterId: string, req: Request): ChatTool {
+  return {
+    definition: {
+      type: 'function',
+      function: {
+        name: 'propose_chapter_edit',
+        description:
+          'Propose a single, specific edit to the chapter the author is editing — adding, changing, or ' +
+          'removing content — for the author to review and confirm. Use this whenever the author asks to ' +
+          'add/insert, change/rewrite/reword, or remove/delete some content and describes what they want. ' +
+          'First call get_chapter_text so you know the exact current wording. "anchorText" MUST be copied ' +
+          'VERBATIM from the current chapter (exact characters, within a single paragraph) and must be long ' +
+          'enough to occur exactly once — include a few surrounding words if a short phrase is ambiguous. ' +
+          'For "insert", anchorText is the existing sentence/phrase you insert next to (set "position" to ' +
+          'before/after) and "newText" is the content to add. For "replace", anchorText is the exact text ' +
+          'to swap out and "newText" is its replacement. For "delete", anchorText is the exact text to ' +
+          'remove ("newText" omitted). Keep "explanation" to one short sentence describing the change. If ' +
+          'the tool reports the anchor was not found or is ambiguous, fix anchorText and call again.',
+        parameters: {
+          type: 'object',
+          properties: {
+            kind: { type: 'string', enum: ['insert', 'replace', 'delete'], description: 'The kind of edit.' },
+            anchorText: {
+              type: 'string',
+              description: 'Verbatim snippet from the current chapter that locates the edit (single paragraph, unique).',
+            },
+            position: {
+              type: 'string',
+              enum: ['before', 'after'],
+              description: 'For "insert" only: insert the new text before or after the anchor. Defaults to after.',
+            },
+            newText: {
+              type: 'string',
+              description: 'The content to add (insert) or the replacement text (replace). Omit for delete.',
+            },
+            explanation: {
+              type: 'string',
+              description: 'One short sentence describing the change, shown to the author.',
+            },
+          },
+          required: ['kind', 'anchorText', 'explanation'],
+        },
+      },
+    },
+    execute: async args => {
+      const kind = String(args['kind'] ?? '').trim();
+      const anchorText = String(args['anchorText'] ?? '');
+      const position = args['position'] === 'before' ? 'before' : 'after';
+      const newText = args['newText'] != null ? String(args['newText']) : '';
+      const explanation = String(args['explanation'] ?? '').trim();
+
+      if (kind !== 'insert' && kind !== 'replace' && kind !== 'delete') {
+        return { toolResult: { ok: false, message: 'kind must be one of insert, replace, or delete.' } };
+      }
+      if (!normalizeForAnchor(anchorText)) {
+        return { toolResult: { ok: false, message: 'anchorText is required and must be copied from the chapter.' } };
+      }
+      if ((kind === 'insert' || kind === 'replace') && !newText.trim()) {
+        return { toolResult: { ok: false, message: `newText is required for a ${kind} edit.` } };
+      }
+
+      // Validate the anchor against the saved chapter text. The live editor is the
+      // authority at apply time, but this catches hallucinated/ambiguous anchors now.
+      let plain: string;
+      try {
+        const { resource } = await getContainer('chapters').item(chapterId, chapterId).read<Chapter>();
+        if (!resource || resource.owner !== req.user!.email) {
+          return { toolResult: { ok: false, message: 'Chapter not found or access denied.' } };
+        }
+        plain = normalizeForAnchor(stripHtmlToPlain(resource.content ?? ''));
+      } catch {
+        return { toolResult: { ok: false, message: 'Failed to read the chapter to validate the edit.' } };
+      }
+
+      const needle = normalizeForAnchor(anchorText);
+      let count = 0;
+      for (let i = plain.indexOf(needle); i !== -1; i = plain.indexOf(needle, i + 1)) count++;
+      if (count === 0) {
+        return {
+          toolResult: {
+            ok: false,
+            message:
+              'anchorText was not found in the chapter. Copy it verbatim from get_chapter_text (exact wording) and try again.',
+          },
+        };
+      }
+      if (count > 1) {
+        return {
+          toolResult: {
+            ok: false,
+            message: `anchorText matches ${count} places in the chapter. Make it longer / more specific so it occurs exactly once.`,
+          },
+        };
+      }
+
+      const proposal = {
+        kind,
+        anchorText,
+        ...(kind === 'insert' ? { position } : {}),
+        ...(kind === 'delete' ? {} : { newText }),
+        explanation: explanation || 'Proposed edit',
+      };
+      return {
+        toolResult: {
+          ok: true,
+          message: 'Proposed the edit. Tell the author it is ready below to review, refine, or apply.',
+        },
+        sse: { proposeChapterEdit: proposal },
       };
     },
   };
@@ -1609,9 +1746,11 @@ router.post('/quick-chat', async (req: Request, res: Response) => {
         ...quickChatTools(req),
         get_chapter_text: getChapterTextTool(chapterContext.chapterId, req),
         link_entity_references: getLinkEntityReferencesTool(req),
+        propose_chapter_edit: getProposeChapterEditTool(chapterContext.chapterId, req),
       }
     : quickChatTools(req);
-  const guidance = IMAGE_TOOL_GUIDANCE + (chapterContext?.chapterId ? LINK_REFERENCES_GUIDANCE : '');
+  const guidance =
+    IMAGE_TOOL_GUIDANCE + (chapterContext?.chapterId ? LINK_REFERENCES_GUIDANCE + SMART_EDIT_GUIDANCE : '');
   await streamChatResponse(res, systemPrompt + guidance, messages, citations, tools);
 });
 

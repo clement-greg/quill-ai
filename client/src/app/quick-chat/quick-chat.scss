@@ -662,6 +662,113 @@
   --mdc-outlined-button-container-height: 32px;
 }
 
+/* ── Smart edit proposal card ────────────────────────────────────────────── */
+.qc-edit-proposal {
+  margin-top: 8px;
+  border: 1px solid var(--mat-sys-outline-variant);
+  border-radius: 12px;
+  padding: 10px 12px;
+  background: color-mix(in srgb, var(--mat-sys-tertiary) 6%, var(--mat-sys-surface));
+
+  &.qc-edit-applied {
+    opacity: 0.75;
+    background: color-mix(in srgb, var(--mat-sys-tertiary) 4%, var(--mat-sys-surface));
+  }
+}
+
+.qc-edit-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-weight: 600;
+  font-size: 0.85rem;
+}
+
+.qc-edit-icon {
+  font-size: 18px;
+  width: 18px;
+  height: 18px;
+  color: var(--mat-sys-tertiary);
+}
+
+.qc-edit-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  margin-left: auto;
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--mat-sys-primary);
+
+  mat-icon {
+    font-size: 14px;
+    width: 14px;
+    height: 14px;
+  }
+}
+
+.qc-edit-explanation {
+  margin: 6px 0 8px;
+  font-size: 0.85rem;
+  color: var(--mat-sys-on-surface-variant);
+}
+
+.qc-edit-diff {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.qc-edit-line {
+  display: flex;
+  gap: 8px;
+  font-size: 0.84rem;
+  line-height: 1.4;
+  padding: 6px 8px;
+  border-radius: 8px;
+  border-left: 3px solid var(--mat-sys-outline);
+  background: var(--mat-sys-surface-container);
+
+  &.qc-edit-add {
+    border-left-color: #2e7d32;
+    background: color-mix(in srgb, #2e7d32 10%, var(--mat-sys-surface));
+  }
+
+  &.qc-edit-remove {
+    border-left-color: #c62828;
+    background: color-mix(in srgb, #c62828 10%, var(--mat-sys-surface));
+  }
+}
+
+.qc-edit-tag {
+  flex: 0 0 auto;
+  font-size: 0.68rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--mat-sys-on-surface-variant);
+  padding-top: 1px;
+}
+
+.qc-edit-text {
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.qc-edit-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.qc-edit-hint {
+  margin: 6px 0 0;
+  font-size: 0.76rem;
+  font-style: italic;
+  color: var(--mat-sys-on-surface-variant);
+}
+
 /* ── Chapter-draft beat sheet ("Story plan") ─────────────────────────────── */
 
 .qc-beats {

@@ -1,7 +1,7 @@
 import { Injectable, signal, computed } from '@angular/core';
 import { Subject } from 'rxjs';
 import { RichTextEditorComponent } from '../shared/rich-text-editor/rich-text-editor';
-import { ChapterNote, OutlineItem } from '@shared/models';
+import { ChapterEditProposal, ChapterNote, OutlineItem } from '@shared/models';
 
 /** The chapter an active editor belongs to, so external tools (e.g. Ask Quill)
  * can ground answers in the chapter and insert at the cursor. */
@@ -77,6 +77,25 @@ export class EditorBridgeService {
   /** Returns focus to the active editor at its prior cursor position. */
   restoreFocus(): void {
     this._editor()?.restoreFocus();
+  }
+
+  /** Highlights and scrolls to where a proposed smart edit would land in the
+   *  live editor. Returns false when no editor is active or the anchor text
+   *  can't be located (e.g. the chapter has since changed). */
+  previewChapterEdit(proposal: ChapterEditProposal): boolean {
+    return this._editor()?.previewSmartEdit(proposal) ?? false;
+  }
+
+  /** Applies a confirmed smart edit into the live editor (and autosaves via the
+   *  editor's normal content-change path). Returns false when it can't be
+   *  located or applied. */
+  applyChapterEdit(proposal: ChapterEditProposal): boolean {
+    return this._editor()?.applySmartEdit(proposal) ?? false;
+  }
+
+  /** Clears any transient smart-edit preview highlight from the editor. */
+  clearEditPreview(): void {
+    this._editor()?.clearSmartEditPreview();
   }
 
   /** Snapshots the chapter + cursor surroundings for an AI request, or null when

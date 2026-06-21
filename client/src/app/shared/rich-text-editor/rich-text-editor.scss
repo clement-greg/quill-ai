@@ -101,6 +101,15 @@
   outline: 1px solid color-mix(in srgb, var(--mat-sys-primary, #1976d2) 55%, transparent);
 }
 
+/* Where a proposed smart edit (Ask Quill) will land, while the author reviews it. */
+:host ::ng-deep mark[data-smart-edit-preview] {
+  background: color-mix(in srgb, var(--mat-sys-tertiary, #7b1fa2) 20%, transparent);
+  color: inherit;
+  border-radius: 2px;
+  padding: 0 1px;
+  outline: 1px dashed color-mix(in srgb, var(--mat-sys-tertiary, #7b1fa2) 60%, transparent);
+}
+
 .rte-entity-link-popup {
   position: absolute;
   top: 12px;

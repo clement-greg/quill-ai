@@ -230,6 +230,54 @@
                 </div>
               }
             }
+            @if (msg.editProposal; as edit) {
+              <div class="qc-edit-proposal" [class.qc-edit-applied]="edit.applied">
+                <div class="qc-edit-head">
+                  <mat-icon class="qc-edit-icon">{{ editProposalIcon(edit) }}</mat-icon>
+                  <span class="qc-edit-kind">{{ editProposalLabel(edit) }}</span>
+                  @if (edit.applied) {
+                    <span class="qc-edit-badge"><mat-icon>check</mat-icon> Applied</span>
+                  }
+                </div>
+                <p class="qc-edit-explanation">{{ edit.explanation }}</p>
+                <div class="qc-edit-diff">
+                  @if (edit.kind === 'insert') {
+                    <div class="qc-edit-line qc-edit-context">
+                      <span class="qc-edit-tag">{{ edit.position === 'before' ? 'Before' : 'After' }}</span>
+                      <span class="qc-edit-text">{{ edit.anchorText }}</span>
+                    </div>
+                    <div class="qc-edit-line qc-edit-add">
+                      <span class="qc-edit-tag">Add</span>
+                      <span class="qc-edit-text">{{ edit.newText }}</span>
+                    </div>
+                  } @else if (edit.kind === 'replace') {
+                    <div class="qc-edit-line qc-edit-remove">
+                      <span class="qc-edit-tag">Was</span>
+                      <span class="qc-edit-text">{{ edit.anchorText }}</span>
+                    </div>
+                    <div class="qc-edit-line qc-edit-add">
+                      <span class="qc-edit-tag">Now</span>
+                      <span class="qc-edit-text">{{ edit.newText }}</span>
+                    </div>
+                  } @else {
+                    <div class="qc-edit-line qc-edit-remove">
+                      <span class="qc-edit-tag">Remove</span>
+                      <span class="qc-edit-text">{{ edit.anchorText }}</span>
+                    </div>
+                  }
+                </div>
+                @if (!edit.applied) {
+                  <div class="qc-edit-actions">
+                    <button mat-flat-button class="qc-edit-apply" (click)="applyEdit($index)"
+                            matTooltip="Apply this edit to your chapter">
+                      <mat-icon>check</mat-icon> Apply edit
+                    </button>
+                    <button mat-stroked-button (click)="discardEdit($index)">Discard</button>
+                  </div>
+                  <p class="qc-edit-hint">Not quite right? Tell Quill how to adjust the placement or wording.</p>
+                }
+              </div>
+            }
             @if (msg.maps?.length) {
               <div class="qc-maps">
                 @for (m of msg.maps; track m.id) {
