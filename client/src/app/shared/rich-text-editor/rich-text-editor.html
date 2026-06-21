@@ -42,6 +42,32 @@
       <div class="rte-resize-handle rte-resize-se" (mousedown)="onResizeHandleMouseDown($event, 'se')"></div>
     </div>
   }
+
+  <!-- Entity-linking prompt (Ask Quill "link references" tool) -->
+  @if (entityLinkActive()) {
+    <div class="rte-entity-link-popup" role="dialog" aria-label="Link entity references">
+      <div class="rte-entity-link-head">
+        <mat-icon class="rte-entity-link-icon">link</mat-icon>
+        <span class="rte-entity-link-title">Link references</span>
+        <span class="rte-entity-link-step">{{ entityLinkStep() }} of {{ entityLinkTotal() }}</span>
+        <button mat-icon-button class="rte-entity-link-close" (click)="cancelEntityLinking()" title="Stop linking">
+          <mat-icon>close</mat-icon>
+        </button>
+      </div>
+      <div class="rte-entity-link-body">
+        {{ entityLinkCurrentCount() }}
+        {{ entityLinkCurrentCount() === 1 ? 'match' : 'matches' }} of
+        <span class="rte-entity-link-match-text">&ldquo;{{ entityLinkCurrentText() }}&rdquo;</span>
+        &rarr; <span class="rte-entity-link-entity">{{ entityLinkEntityName() }}</span>
+      </div>
+      <div class="rte-entity-link-actions">
+        <button mat-flat-button (click)="confirmEntityLinkGroup()">
+          Link all {{ entityLinkCurrentCount() }}
+        </button>
+        <button mat-stroked-button (click)="skipEntityLinkGroup()">Skip</button>
+      </div>
+    </div>
+  }
 </div>
 
 <!-- Formatting toolbar (fixed, outside layout flow) -->

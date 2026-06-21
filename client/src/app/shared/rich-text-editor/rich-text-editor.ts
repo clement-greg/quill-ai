@@ -973,6 +973,220 @@ export class RichTextEditorComponent implements OnInit, AfterViewInit, OnDestroy
     return sel.getRangeAt(0).getBoundingClientRect();
   }
 
+  // ── Interactive entity linking (Ask Quill "link references" tool) ─────────
+  /** True while the author is being prompted to confirm entity-reference matches. */
+  readonly entityLinkActive = signal(false);
+  /** Display name of the entity whose mentions are being linked. */
+  readonly entityLinkEntityName = signal('');
+  /** The exact matched text the current prompt is asking about. */
+  readonly entityLinkCurrentText = signal('');
+  /** How many occurrences of the current text were found. */
+  readonly entityLinkCurrentCount = signal(0);
+  /** 1-based position of the current prompt within the queue ("2 of 3"). */
+  readonly entityLinkStep = signal(0);
+  readonly entityLinkTotal = signal(0);
+
+  private entityLinkEntity: Entity | null = null;
+  private entityLinkQueue: { text: string; refType: EntityReference }[] = [];
+  private entityLinkIndex = 0;
+  private entityLinkMarks: HTMLElement[] = [];
+
+  /** Entry point for the Ask Quill "link references" tool. Scans the live editor
+   *  for plain-text mentions of the entity (skipping text already inside an entity
+   *  reference) and walks the author through confirming each unique match. Returns
+   *  false when there is no editor, no such entity, or nothing left to link. */
+  startInteractiveEntityLinking(entityId: string, terms?: string[]): boolean {
+    const editor = this.editorRef?.nativeElement;
+    if (!editor) return false;
+    const entity = this.entities().find(e => e.id === entityId);
+    if (!entity) return false;
+
+    // Don't let transient grammar marks fragment the text we scan, and clear any
+    // stale highlight from a previous (interrupted) pass.
+    this.unwrapGrammarMarks();
+    this.clearEntityLinkMarks();
+    editor.normalize();
+
+    // Candidate strings: the specific phrases the author named, else every name
+    // form and alias for the entity. Aliases have no dedicated reference form, so
+    // they resolve to 'other'.
+    const rawTexts = terms && terms.length ? terms : this.allRefsFor(entity);
+    const seen = new Set<string>();
+    const candidates: { text: string; refType: EntityReference }[] = [];
+    for (const t of rawTexts) {
+      const text = t.trim();
+      if (!text || seen.has(text.toLowerCase())) continue;
+      seen.add(text.toLowerCase());
+      candidates.push({ text, refType: this.getReferenceType(entity, text) });
+    }
+    if (candidates.length === 0) return false;
+
+    // Match longest-first so "Mark Johnson" wins over "Mark"/"Johnson" and each
+    // spot is attributed to its most specific term.
+    candidates.sort((a, b) => b.text.length - a.text.length);
+    const escaped = candidates.map(c => c.text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
+    const scanRegex = new RegExp(`\\b(${escaped.join('|')})\\b`, 'gi');
+    const refTypeByLower = new Map(candidates.map(c => [c.text.toLowerCase(), c.refType]));
+
+    // Group occurrences by the exact matched text, in document order, ignoring
+    // anything already inside an entity reference or note indicator.
+    const groups = new Map<string, { refType: EntityReference; count: number }>();
+    const walker = document.createTreeWalker(editor, NodeFilter.SHOW_TEXT, {
+      acceptNode: (node: Node) => this.acceptLinkableText(node),
+    });
+    let node: Text | null;
+    while ((node = walker.nextNode() as Text | null)) {
+      const text = node.textContent ?? '';
+      let m: RegExpExecArray | null;
+      scanRegex.lastIndex = 0;
+      while ((m = scanRegex.exec(text)) !== null) {
+        const exact = m[0];
+        const existing = groups.get(exact);
+        if (existing) existing.count++;
+        else groups.set(exact, { refType: refTypeByLower.get(exact.toLowerCase()) ?? 'other', count: 1 });
+      }
+    }
+    if (groups.size === 0) return false;
+
+    this.entityLinkEntity = entity;
+    this.entityLinkQueue = [...groups.entries()].map(([text, g]) => ({ text, refType: g.refType }));
+    this.entityLinkIndex = 0;
+    this.entityLinkEntityName.set(entity.name);
+    this.entityLinkTotal.set(this.entityLinkQueue.length);
+    this.entityLinkActive.set(true);
+    this.showEntityLinkGroup();
+    return true;
+  }
+
+  /** TreeWalker filter: accept text nodes not already inside a reference/note. */
+  private acceptLinkableText(node: Node): number {
+    const parent = (node as Text).parentElement;
+    if (!parent) return NodeFilter.FILTER_REJECT;
+    if (parent.closest('.entity-reference, .note-indicator')) return NodeFilter.FILTER_REJECT;
+    return NodeFilter.FILTER_ACCEPT;
+  }
+
+  /** Highlights the current group's matches and surfaces the confirm prompt. */
+  private showEntityLinkGroup(): void {
+    const editor = this.editorRef?.nativeElement;
+    if (!editor || this.entityLinkIndex >= this.entityLinkQueue.length) { this.finishEntityLinking(); return; }
+    editor.normalize();
+    const group = this.entityLinkQueue[this.entityLinkIndex]!;
+    const marks = this.highlightEntityLinkMatches(group.text);
+    if (marks.length === 0) {
+      // Nothing left for this term (e.g. removed by an earlier edit); skip ahead.
+      this.entityLinkIndex++;
+      this.showEntityLinkGroup();
+      return;
+    }
+    this.entityLinkMarks = marks;
+    this.entityLinkCurrentText.set(group.text);
+    this.entityLinkCurrentCount.set(marks.length);
+    this.entityLinkStep.set(this.entityLinkIndex + 1);
+    marks[0]!.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  }
+
+  /** Wrap exact (case-sensitive, word-bounded) matches of `exact` in transient
+   *  <mark> highlights, skipping text already inside a reference. Returns marks. */
+  private highlightEntityLinkMatches(exact: string): HTMLElement[] {
+    const editor = this.editorRef?.nativeElement;
+    if (!editor) return [];
+    const re = new RegExp(`\\b${exact.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, 'g');
+    const walker = document.createTreeWalker(editor, NodeFilter.SHOW_TEXT, {
+      acceptNode: (node: Node) => this.acceptLinkableText(node),
+    });
+    const targets: Text[] = [];
+    let node: Text | null;
+    while ((node = walker.nextNode() as Text | null)) {
+      re.lastIndex = 0;
+      if (re.test(node.textContent ?? '')) targets.push(node);
+    }
+    const marks: HTMLElement[] = [];
+    for (const textNode of targets) {
+      const text = textNode.textContent ?? '';
+      const frag = document.createDocumentFragment();
+      let lastIdx = 0;
+      let m: RegExpExecArray | null;
+      re.lastIndex = 0;
+      while ((m = re.exec(text)) !== null) {
+        if (m.index > lastIdx) frag.appendChild(document.createTextNode(text.slice(lastIdx, m.index)));
+        const mark = document.createElement('mark');
+        mark.setAttribute('data-entity-link-match', '');
+        mark.textContent = m[0];
+        frag.appendChild(mark);
+        marks.push(mark);
+        lastIdx = m.index + m[0].length;
+      }
+      if (lastIdx < text.length) frag.appendChild(document.createTextNode(text.slice(lastIdx)));
+      textNode.parentNode!.replaceChild(frag, textNode);
+    }
+    return marks;
+  }
+
+  /** Author confirmed: wrap every highlighted occurrence of the current text in
+   *  entity-reference markup, then advance to the next unique match. */
+  confirmEntityLinkGroup(): void {
+    const entity = this.entityLinkEntity;
+    const group = this.entityLinkQueue[this.entityLinkIndex];
+    if (entity && group) {
+      for (const mark of this.entityLinkMarks) {
+        const span = document.createElement('span');
+        span.className = 'entity-reference';
+        span.setAttribute('data-id', entity.id);
+        span.setAttribute('data-reference-type', group.refType);
+        span.textContent = mark.textContent;
+        mark.parentNode!.replaceChild(span, mark);
+      }
+    }
+    this.entityLinkMarks = [];
+    this.entityLinkIndex++;
+    this.showEntityLinkGroup();
+  }
+
+  /** Author skipped this match: leave the text as plain prose and advance. */
+  skipEntityLinkGroup(): void {
+    this.clearEntityLinkMarks();
+    this.entityLinkIndex++;
+    this.showEntityLinkGroup();
+  }
+
+  /** Author cancelled the rest of the pass. */
+  cancelEntityLinking(): void {
+    this.finishEntityLinking();
+  }
+
+  /** Unwrap any leftover highlight <mark>s back into plain text. */
+  private clearEntityLinkMarks(): void {
+    const editor = this.editorRef?.nativeElement;
+    if (!editor) { this.entityLinkMarks = []; return; }
+    editor.querySelectorAll('mark[data-entity-link-match]').forEach(mark => {
+      const parent = mark.parentNode!;
+      while (mark.firstChild) parent.insertBefore(mark.firstChild, mark);
+      parent.removeChild(mark);
+    });
+    this.entityLinkMarks = [];
+  }
+
+  /** Tear down the linking pass and persist whatever was wrapped. */
+  private finishEntityLinking(): void {
+    this.clearEntityLinkMarks();
+    const editor = this.editorRef?.nativeElement;
+    if (editor) {
+      editor.normalize();
+      this.editorContent = editor.innerHTML;
+      this.scheduleEmit();
+      this.scheduleGrammarCheck();
+    }
+    this.entityLinkActive.set(false);
+    this.entityLinkEntity = null;
+    this.entityLinkQueue = [];
+    this.entityLinkIndex = 0;
+    this.entityLinkCurrentText.set('');
+    this.entityLinkCurrentCount.set(0);
+    this.entityLinkStep.set(0);
+    this.entityLinkTotal.set(0);
+  }
+
   // ── Content input handler ────────────────────────────────────────────────
 
   onContentInput(event: Event): void {

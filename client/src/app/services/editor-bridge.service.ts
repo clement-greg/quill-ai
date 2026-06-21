@@ -66,6 +66,14 @@ export class EditorBridgeService {
     this._draftAccepted.next();
   }
 
+  /** Starts an interactive pass that finds plain-text mentions of the given
+   * entity and lets the author confirm wrapping each unique match in
+   * entity-reference markup. Returns false when no editor is active or no
+   * unlinked matches were found. */
+  startEntityLinking(entityId: string, terms?: string[]): boolean {
+    return this._editor()?.startInteractiveEntityLinking(entityId, terms) ?? false;
+  }
+
   /** Returns focus to the active editor at its prior cursor position. */
   restoreFocus(): void {
     this._editor()?.restoreFocus();

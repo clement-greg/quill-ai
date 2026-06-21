@@ -58,6 +58,19 @@ const IMAGE_TOOL_GUIDANCE =
   'image. Build the tool\'s "prompt" from the user\'s description, enriching it with helpful visual ' +
   'detail while staying faithful to what they asked for.';
 
+// Appended whenever the link_entity_references tool is available (chapter edit).
+const LINK_REFERENCES_GUIDANCE =
+  '\n\nLINKING ENTITY REFERENCES: When the author asks you to link, tag, mark, connect, or "make ' +
+  'references" to a character/place/thing in the chapter they are editing (e.g. "link references to ' +
+  'Mark Johnson", "tag every mention of John", "mark where Johnson appears"), you MUST call ' +
+  'link_entity_references. Pass "entityName" as the name or alias the author used. Only pass "terms" ' +
+  'when the author restricts it to a specific word or phrase (e.g. "only link \'John Markson\'", "just ' +
+  'the mentions of \'the Captain\'"); otherwise omit "terms" so every name form and alias is offered. ' +
+  'If the tool reports the name is ambiguous (matches more than one entity), do not guess — ask the ' +
+  'author which one they mean and call the tool again with the clarified name. If it reports no match, ' +
+  'tell the author and ask for the correct name. After a successful call, briefly tell the author you ' +
+  'are scanning the chapter and they will be asked to confirm each set of matches.';
+
 
 /**
  * Builds a RAG-grounded system prompt for a chat turn. Embeds the last user
@@ -318,6 +331,27 @@ async function resolveEntityByName(name: string, req: Request): Promise<TitleMat
   return best;
 }
 
+/**
+ * Resolves an entity name/alias to candidate matches, ranked by score. Unlike
+ * resolveEntityByName this returns every strong candidate so the caller can
+ * detect ambiguity (e.g. a name/alias shared by more than one entity) and ask
+ * the user which one they mean.
+ */
+async function resolveEntityCandidates(name: string, req: Request): Promise<{ id: string; name: string; score: number }[]> {
+  const { resources } = await getContainer('entities').items
+    .query<EntityNameRecord>(withOwnerFilter(req, `SELECT c.id, c.name, c.firstName, c.lastName, c.nickname, c.aliases FROM c WHERE ${NOT_HIDDEN}`))
+    .fetchAll();
+  const scored: { id: string; name: string; score: number }[] = [];
+  for (const e of resources) {
+    const aliases = [e.name, e.firstName, e.lastName, e.nickname, [e.firstName, e.lastName].filter(Boolean).join(' '), ...(e.aliases ?? [])]
+      .map(a => (a ?? '').trim())
+      .filter(Boolean);
+    const match = bestTitleMatch(aliases.map(a => ({ id: e.id, title: a })), name);
+    if (match) scored.push({ id: e.id, name: entityDisplayName(e) || match.title, score: match.score });
+  }
+  return scored.sort((a, b) => b.score - a.score);
+}
+
 /** Lists the user's (non-hidden) books as {id, title}. */
 async function listBooks(req: Request): Promise<{ id: string; title: string }[]> {
   const { resources } = await getContainer('books').items
@@ -556,6 +590,83 @@ function getChapterTextTool(chapterId: string, req: Request): ChatTool {
         console.log('[get_chapter_text] error reading chapterId=%s', chapterId);
         return { toolResult: { error: 'Failed to retrieve chapter text.' } };
       }
+    },
+  };
+}
+
+/**
+ * Tool that finds plain-text mentions of an entity in the chapter being edited
+ * and offers to wrap them in entity-reference markup. The heavy lifting (scanning
+ * the live editor content, prompting the author one match at a time, and wrapping
+ * the spans) happens client-side; this tool only resolves which entity the author
+ * meant — handling alias lookup and ambiguity — and hands the id to the client.
+ */
+function getLinkEntityReferencesTool(req: Request): ChatTool {
+  return {
+    definition: {
+      type: 'function',
+      function: {
+        name: 'link_entity_references',
+        description:
+          'Find plain-text mentions of a character, place, or thing in the chapter the author is ' +
+          'editing and wrap them in entity-reference markup. Use when the author asks to link, tag, ' +
+          'mark, or connect references/mentions of an entity. "entityName" is the name or alias the ' +
+          'author used (alias lookup is handled for you). Pass "terms" ONLY when the author limits it ' +
+          'to specific word(s)/phrase(s); omit it to offer every name form and alias. The author ' +
+          'confirms each match in the editor, so do not ask which mentions to change here.',
+        parameters: {
+          type: 'object',
+          properties: {
+            entityName: {
+              type: 'string',
+              description: 'The entity name or alias the author referred to (e.g. "Mark Johnson", "John Markson").',
+            },
+            terms: {
+              type: 'array',
+              items: { type: 'string' },
+              description: 'Optional specific phrase(s) to search for, only when the author restricts the search to them.',
+            },
+          },
+          required: ['entityName'],
+        },
+      },
+    },
+    pending: { linkingReferences: true },
+    execute: async args => {
+      const entityName = String(args['entityName'] ?? '').trim();
+      const terms = Array.isArray(args['terms'])
+        ? (args['terms'] as unknown[]).map(t => String(t).trim()).filter(Boolean)
+        : undefined;
+      if (!entityName) {
+        return { toolResult: { found: false, message: 'No entity name was given. Ask the author which entity to link.' } };
+      }
+      const candidates = await resolveEntityCandidates(entityName, req);
+      const strong = candidates.filter(c => c.score >= 0.6);
+      if (strong.length === 0) {
+        return {
+          toolResult: {
+            found: false,
+            message: `No entity matching "${entityName}" was found. Ask the author for the correct name.`,
+          },
+        };
+      }
+      // Treat near-tied top matches (or several exact-name hits) as ambiguous.
+      const top = strong[0]!;
+      const contenders = strong.filter(c => c.score >= top.score - 0.1);
+      if (contenders.length > 1) {
+        return {
+          toolResult: {
+            found: false,
+            ambiguous: true,
+            candidates: contenders.map(c => c.name),
+            message: `"${entityName}" could refer to more than one entity. Ask the author which one they mean: ${contenders.map(c => c.name).join(', ')}.`,
+          },
+        };
+      }
+      return {
+        toolResult: { found: true, entityName: top.name, message: `Scanning the chapter for plain-text references to ${top.name}.` },
+        sse: { linkEntityReferences: { entityId: top.id, entityName: top.name, ...(terms && terms.length ? { terms } : {}) } },
+      };
     },
   };
 }
@@ -1494,9 +1605,14 @@ router.post('/quick-chat', async (req: Request, res: Response) => {
   res.flushHeaders();
 
   const tools = chapterContext?.chapterId
-    ? { ...quickChatTools(req), get_chapter_text: getChapterTextTool(chapterContext.chapterId, req) }
+    ? {
+        ...quickChatTools(req),
+        get_chapter_text: getChapterTextTool(chapterContext.chapterId, req),
+        link_entity_references: getLinkEntityReferencesTool(req),
+      }
     : quickChatTools(req);
-  await streamChatResponse(res, systemPrompt + IMAGE_TOOL_GUIDANCE, messages, citations, tools);
+  const guidance = IMAGE_TOOL_GUIDANCE + (chapterContext?.chapterId ? LINK_REFERENCES_GUIDANCE : '');
+  await streamChatResponse(res, systemPrompt + guidance, messages, citations, tools);
 });
 
 // POST /:id/name — ask the LLM to generate a session name, then persist it

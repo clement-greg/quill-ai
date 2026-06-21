@@ -177,6 +177,7 @@ export class QuickChatService {
               chapterDraft?: boolean;
               beats?: string;
               lottie?: string;
+              linkEntityReferences?: { entityId: string; entityName: string; terms?: string[] };
             };
             if (parsed.error) {
               this.updateLastAssistantMessage(`Error: ${parsed.error}`);
@@ -213,6 +214,17 @@ export class QuickChatService {
               this.setLastAssistantLottie(parsed.lottie);
             } else if (parsed.chapterUpdated) {
               this.chapterSync.notify(parsed.chapterUpdated);
+            } else if (parsed.linkEntityReferences) {
+              // The assistant resolved an entity; hand off to the live editor to
+              // scan the chapter and let the author confirm each set of matches.
+              const { entityId, entityName, terms } = parsed.linkEntityReferences;
+              const started = this.editorBridge.startEntityLinking(entityId, terms);
+              this.updateLastAssistantMessage(
+                started
+                  ? `Scanning the chapter for plain-text references to ${entityName}. Confirm each set of matches in the editor.`
+                  : `I couldn't find any unlinked plain-text references to ${entityName} in this chapter.`,
+              );
+              return;
             } else if (parsed.content) {
               this.appendToLastAssistantMessage(parsed.content);
             } else if (parsed.sources) {
