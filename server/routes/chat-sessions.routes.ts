@@ -313,7 +313,70 @@ async function resolveByTitle(target: NavTarget, title: string, req: Request): P
   return bestTitleMatch(resources, title);
 }
 
-type EntityNameRecord = { id: string; name?: string; firstName?: string; lastName?: string; nickname?: string; aliases?: string[] };
+type EntityNameRecord = { id: string; name?: string; title?: string; firstName?: string; lastName?: string; nickname?: string; aliases?: string[] };
+
+/** A concrete string to search the chapter for, plus the reference type to stamp
+ *  on the wrapping span. Mirrors the editor's own variant/refType resolution so
+ *  the client never has to re-derive forms from its (possibly incomplete) copy
+ *  of the entity. */
+type EntitySearchTerm = { text: string; refType: string };
+
+/** Builds every name form (and alias) the entity can be referred to by, each
+ *  paired with its reference type. Aliases have no dedicated form, so 'other'. */
+function buildEntitySearchTerms(e: EntityNameRecord): EntitySearchTerm[] {
+  const name = (e.name ?? '').trim();
+  const title = (e.title ?? '').trim();
+  const parts = name.split(/\s+/).filter(Boolean);
+  const first = (e.firstName ?? '').trim() || (parts.length >= 2 ? parts[0]! : '');
+  const last = (e.lastName ?? '').trim() || (parts.length >= 2 ? parts[parts.length - 1]! : '');
+  const nick = (e.nickname ?? '').trim();
+  const out: EntitySearchTerm[] = [];
+  const seen = new Set<string>();
+  const add = (text: string, refType: string) => {
+    const t = text.trim();
+    if (!t || seen.has(t.toLowerCase())) return;
+    seen.add(t.toLowerCase());
+    out.push({ text: t, refType });
+  };
+  if (title && name) add(`${title} ${name}`, 'title-full-name');
+  if (title && last) add(`${title} ${last}`, 'title-last-name');
+  if (name) add(name, 'full-name');
+  if (first && last) add(`${first} ${last}`, 'full-name');
+  add(nick, 'nickname');
+  add(first, 'first-name');
+  add(last, 'last-name');
+  // Aliases are full reference phrases (e.g. "Mark Amherst"), but the prose often
+  // uses just one part of them ("Mark"). Offer the whole alias AND its first/last
+  // word, mirroring how the primary name is decomposed. Skip articles and
+  // one-character tokens so we don't search for "the"/"of"/etc.
+  for (const a of e.aliases ?? []) {
+    const alias = (a ?? '').trim();
+    if (!alias) continue;
+    add(alias, 'other');
+    const parts = alias.split(/\s+/).filter(Boolean);
+    if (parts.length >= 2) {
+      for (const part of [parts[0]!, parts[parts.length - 1]!]) {
+        if (part.length >= 2 && !ALIAS_STOPWORDS.has(part.toLowerCase())) add(part, 'other');
+      }
+    }
+  }
+  return out;
+}
+
+/** Tokens skipped when decomposing a multi-word alias into searchable parts. */
+const ALIAS_STOPWORDS = new Set(['the', 'a', 'an', 'of', 'and', 'or', 'to', 'in', 'on', 'at', 'de', 'la', 'le', 'el', 'von', 'van']);
+
+/** True when a name form and a user-named term refer to the same thing, by
+ *  whole-word containment in either direction (so "John Markson" matches the
+ *  alias form, and "Mark" matches "Mark Johnson"). */
+function termMatchesUserPhrase(formText: string, userTerm: string): boolean {
+  const f = formText.trim().toLowerCase();
+  const u = userTerm.trim().toLowerCase();
+  if (!f || !u) return false;
+  if (f === u) return true;
+  const wb = (hay: string, needle: string) => new RegExp(`\\b${needle.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`).test(hay);
+  return wb(f, u) || wb(u, f);
+}
 
 /** The best human-readable label for an entity, preferring its explicit name. */
 function entityDisplayName(e: EntityNameRecord): string {
@@ -343,22 +406,44 @@ async function resolveEntityByName(name: string, req: Request): Promise<TitleMat
 }
 
 /**
+ * Scores how well a queried name matches an entity's name forms, using strict
+ * whole-word matching so "Mark" matches the entity "Mark Johnson" (or an alias
+ * "Mark") but NOT an unrelated alias that merely contains those letters (e.g.
+ * "Markon"). Returns 1 for an exact form, 0.9 when the query is a whole word
+ * within a form, and 0 otherwise. Loose substring scoring is deliberately
+ * avoided here — wrapping the wrong character's mentions is worse than a miss.
+ */
+function entityNameMatchScore(forms: string[], query: string): number {
+  const q = query.trim().toLowerCase();
+  if (!q) return 0;
+  const wholeWord = new RegExp(`\\b${q.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`);
+  let best = 0;
+  for (const form of forms) {
+    const f = form.trim().toLowerCase();
+    if (!f) continue;
+    if (f === q) return 1;
+    if (wholeWord.test(f)) best = Math.max(best, 0.9);
+  }
+  return best;
+}
+
+/**
  * Resolves an entity name/alias to candidate matches, ranked by score. Unlike
  * resolveEntityByName this returns every strong candidate so the caller can
  * detect ambiguity (e.g. a name/alias shared by more than one entity) and ask
  * the user which one they mean.
  */
-async function resolveEntityCandidates(name: string, req: Request): Promise<{ id: string; name: string; score: number }[]> {
+async function resolveEntityCandidates(name: string, req: Request): Promise<{ id: string; name: string; score: number; record: EntityNameRecord }[]> {
   const { resources } = await getContainer('entities').items
-    .query<EntityNameRecord>(withOwnerFilter(req, `SELECT c.id, c.name, c.firstName, c.lastName, c.nickname, c.aliases FROM c WHERE ${NOT_HIDDEN}`))
+    .query<EntityNameRecord>(withOwnerFilter(req, `SELECT c.id, c.name, c.title, c.firstName, c.lastName, c.nickname, c.aliases FROM c WHERE ${NOT_HIDDEN}`))
     .fetchAll();
-  const scored: { id: string; name: string; score: number }[] = [];
+  const scored: { id: string; name: string; score: number; record: EntityNameRecord }[] = [];
   for (const e of resources) {
-    const aliases = [e.name, e.firstName, e.lastName, e.nickname, [e.firstName, e.lastName].filter(Boolean).join(' '), ...(e.aliases ?? [])]
+    const forms = [e.name, e.firstName, e.lastName, e.nickname, [e.firstName, e.lastName].filter(Boolean).join(' '), ...(e.aliases ?? [])]
       .map(a => (a ?? '').trim())
       .filter(Boolean);
-    const match = bestTitleMatch(aliases.map(a => ({ id: e.id, title: a })), name);
-    if (match) scored.push({ id: e.id, name: entityDisplayName(e) || match.title, score: match.score });
+    const score = entityNameMatchScore(forms, name);
+    if (score > 0) scored.push({ id: e.id, name: entityDisplayName(e), score, record: e });
   }
   return scored.sort((a, b) => b.score - a.score);
 }
@@ -652,7 +737,9 @@ function getLinkEntityReferencesTool(req: Request): ChatTool {
         return { toolResult: { found: false, message: 'No entity name was given. Ask the author which entity to link.' } };
       }
       const candidates = await resolveEntityCandidates(entityName, req);
-      const strong = candidates.filter(c => c.score >= 0.6);
+      // Require a strong (exact or whole-word) match — a loose partial match risks
+      // wrapping a different character's mentions, which is worse than a miss.
+      const strong = candidates.filter(c => c.score >= 0.9);
       if (strong.length === 0) {
         return {
           toolResult: {
@@ -661,9 +748,9 @@ function getLinkEntityReferencesTool(req: Request): ChatTool {
           },
         };
       }
-      // Treat near-tied top matches (or several exact-name hits) as ambiguous.
+      // Treat equally-strong matches (same score) as ambiguous so the author picks.
       const top = strong[0]!;
-      const contenders = strong.filter(c => c.score >= top.score - 0.1);
+      const contenders = strong.filter(c => c.score >= top.score - 0.001);
       if (contenders.length > 1) {
         return {
           toolResult: {
@@ -674,9 +761,23 @@ function getLinkEntityReferencesTool(req: Request): ChatTool {
           },
         };
       }
+      // Build the concrete strings to search for from the resolved entity's own
+      // record (so aliases are always included). When the author restricted the
+      // search to specific phrases, keep only the matching forms.
+      const allTerms = buildEntitySearchTerms(top.record);
+      let searchTerms = allTerms;
+      if (terms && terms.length) {
+        const filtered = allTerms.filter(t => terms.some(u => termMatchesUserPhrase(t.text, u)));
+        if (filtered.length) searchTerms = filtered;
+      }
+      if (searchTerms.length === 0) {
+        return {
+          toolResult: { found: false, message: `Could not determine what text to search for ${top.name}.` },
+        };
+      }
       return {
         toolResult: { found: true, entityName: top.name, message: `Scanning the chapter for plain-text references to ${top.name}.` },
-        sse: { linkEntityReferences: { entityId: top.id, entityName: top.name, ...(terms && terms.length ? { terms } : {}) } },
+        sse: { linkEntityReferences: { entityId: top.id, entityName: top.name, terms: searchTerms } },
       };
     },
   };

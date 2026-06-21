@@ -18,7 +18,7 @@ import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
 import { MatDialog } from '@angular/material/dialog';
 import { DomSanitizer, SafeHtml } from '@angular/platform-browser';
 import { firstValueFrom, forkJoin } from 'rxjs';
-import { ChapterEditProposal, ChatMessageHighlight, ChatSessionMessage, MapPreview } from '@shared/models';
+import { ChapterEditProposal, ChatMessageHighlight, ChatSessionMessage, EntityLinkGroup, EntityLinkSession, MapPreview } from '@shared/models';
 import { Entity } from '@shared/models/entity.model';
 import { QuickChatService } from '../services/quick-chat.service';
 import { SpeechRecognitionService } from '../services/speech-recognition.service';
@@ -753,6 +753,37 @@ export class QuickChatComponent {
       case 'replace': return 'edit';
       case 'delete': return 'remove';
     }
+  }
+
+  // ── Entity-link session card ─────────────────────────────────────────────
+  /** Links every occurrence of the current term and advances to the next. */
+  linkAllMatches(messageIndex: number): void {
+    this.quickChat.linkEntityGroup(messageIndex);
+  }
+
+  /** Skips the current term and advances to the next. */
+  skipMatches(messageIndex: number): void {
+    this.quickChat.skipEntityGroup(messageIndex);
+  }
+
+  /** Ends the link session early, leaving remaining terms untouched. */
+  stopLinking(messageIndex: number): void {
+    this.quickChat.stopLinkSession(messageIndex);
+  }
+
+  /** True once every term in the session has been linked or skipped. */
+  linkSessionDone(session: EntityLinkSession): boolean {
+    return session.index >= session.groups.length;
+  }
+
+  /** The term currently awaiting a decision, or null when the session is done. */
+  linkSessionCurrent(session: EntityLinkSession): EntityLinkGroup | null {
+    return session.groups[session.index] ?? null;
+  }
+
+  /** The groups the author acted on, for the post-session summary. */
+  linkSessionReviewed(session: EntityLinkSession): EntityLinkGroup[] {
+    return session.groups.filter(g => g.status);
   }
 
   /** Collapses the panel and returns focus to the editor at the cursor position

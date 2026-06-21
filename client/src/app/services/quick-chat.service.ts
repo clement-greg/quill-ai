@@ -1,6 +1,6 @@
 import { Injectable, inject, signal, effect } from '@angular/core';
 import { Router } from '@angular/router';
-import { ChapterCitation, ChapterEditProposal, ChatMessageHighlight, ChatSession, ChatSessionMessage, ChatSessionSummary, MapPreview } from '@shared/models';
+import { ChapterCitation, ChapterEditProposal, ChatMessageHighlight, ChatSession, ChatSessionMessage, ChatSessionSummary, EntityLinkSession, MapPreview } from '@shared/models';
 import { EditorBridgeService } from './editor-bridge.service';
 import { AiAssistantService } from './ai-assistant.service';
 import { ChapterSyncService, ChapterExternalUpdate } from './chapter-sync.service';
@@ -177,7 +177,7 @@ export class QuickChatService {
               chapterDraft?: boolean;
               beats?: string;
               lottie?: string;
-              linkEntityReferences?: { entityId: string; entityName: string; terms?: string[] };
+              linkEntityReferences?: { entityId: string; entityName: string; terms: { text: string; refType: string }[] };
               proposeChapterEdit?: ChapterEditProposal;
             };
             if (parsed.error) {
@@ -216,15 +216,22 @@ export class QuickChatService {
             } else if (parsed.chapterUpdated) {
               this.chapterSync.notify(parsed.chapterUpdated);
             } else if (parsed.linkEntityReferences) {
-              // The assistant resolved an entity; hand off to the live editor to
-              // scan the chapter and let the author confirm each set of matches.
+              // The assistant resolved an entity; scan the live chapter for plain
+              // text matches and, if any, attach a step-through link session to
+              // this message so the author confirms each unique match in the chat.
               const { entityId, entityName, terms } = parsed.linkEntityReferences;
-              const started = this.editorBridge.startEntityLinking(entityId, terms);
-              this.updateLastAssistantMessage(
-                started
-                  ? `Scanning the chapter for plain-text references to ${entityName}. Confirm each set of matches in the editor.`
-                  : `I couldn't find any unlinked plain-text references to ${entityName} in this chapter.`,
-              );
+              const groups = this.editorBridge.scanEntityLinks(terms);
+              if (groups.length === 0) {
+                this.updateLastAssistantMessage(`I couldn't find any unlinked plain-text references to ${entityName} in this chapter.`);
+              } else {
+                const total = groups.reduce((n, g) => n + g.count, 0);
+                this.updateLastAssistantMessage(
+                  `I found ${total} plain-text mention${total === 1 ? '' : 's'} of ${entityName} across ` +
+                  `${groups.length} form${groups.length === 1 ? '' : 's'}. Link them?`,
+                );
+                this.setLastAssistantLinkSession({ entityId, entityName, groups, index: 0 });
+                this.editorBridge.highlightEntityTerm(groups[0]!.text);
+              }
               return;
             } else if (parsed.proposeChapterEdit) {
               // The assistant proposed a targeted edit. Attach it to the message
@@ -327,7 +334,7 @@ export class QuickChatService {
   private async persistToSession(sessionId: string): Promise<void> {
     const messages = this.messages()
       .filter(m => m.text || m.imageUrl)
-      .map(({ role, text, imageUrl, thumbnailUrl, sources, kind, beats, lottieUrl, editProposal }) => ({
+      .map(({ role, text, imageUrl, thumbnailUrl, sources, kind, beats, lottieUrl, editProposal, linkSession }) => ({
         role, text,
         ...(imageUrl ? { imageUrl } : {}),
         ...(thumbnailUrl ? { thumbnailUrl } : {}),
@@ -336,6 +343,7 @@ export class QuickChatService {
         ...(beats ? { beats } : {}),
         ...(lottieUrl ? { lottieUrl } : {}),
         ...(editProposal ? { editProposal } : {}),
+        ...(linkSession ? { linkSession } : {}),
       }));
     try {
       await this.authFetch(`/api/chat-sessions/${sessionId}`, {
@@ -599,6 +607,65 @@ export class QuickChatService {
       copy[messageIndex] = { ...msg, editProposal: { ...msg.editProposal, applied: true } };
       return copy;
     });
+  }
+
+  // ── Entity-link session (in-chat "link references" stepper) ──────────────
+  private setLastAssistantLinkSession(linkSession: EntityLinkSession): void {
+    this.messages.update(msgs => {
+      if (msgs.length === 0) return msgs;
+      const copy = [...msgs];
+      copy[copy.length - 1] = { ...copy[copy.length - 1], linkSession };
+      return copy;
+    });
+  }
+
+  /** Links every occurrence of the current term, then advances to the next. */
+  linkEntityGroup(messageIndex: number): void {
+    this.advanceLinkSession(messageIndex, 'linked');
+  }
+
+  /** Leaves the current term as plain prose and advances to the next. */
+  skipEntityGroup(messageIndex: number): void {
+    this.advanceLinkSession(messageIndex, 'skipped');
+  }
+
+  /** Ends the session early, leaving any not-yet-reviewed terms untouched. */
+  stopLinkSession(messageIndex: number): void {
+    const session = this.messages()[messageIndex]?.linkSession;
+    if (!session) return;
+    this.editorBridge.clearEntityLinkHighlight();
+    this.messages.update(msgs => {
+      const copy = [...msgs];
+      const msg = copy[messageIndex];
+      if (!msg?.linkSession) return msgs;
+      copy[messageIndex] = { ...msg, linkSession: { ...session, index: session.groups.length } };
+      return copy;
+    });
+    const sessionId = this.activeSessionId();
+    if (sessionId) void this.persistToSession(sessionId);
+  }
+
+  private advanceLinkSession(messageIndex: number, action: 'linked' | 'skipped'): void {
+    const session = this.messages()[messageIndex]?.linkSession;
+    if (!session || session.index >= session.groups.length) return;
+    const group = session.groups[session.index]!;
+    if (action === 'linked') this.editorBridge.applyEntityTerm(session.entityId, group.text, group.refType);
+
+    const groups = session.groups.map((g, i) => i === session.index ? { ...g, status: action } : g);
+    const nextIndex = session.index + 1;
+    this.messages.update(msgs => {
+      const copy = [...msgs];
+      const msg = copy[messageIndex];
+      if (!msg?.linkSession) return msgs;
+      copy[messageIndex] = { ...msg, linkSession: { ...session, groups, index: nextIndex } };
+      return copy;
+    });
+
+    if (nextIndex < groups.length) this.editorBridge.highlightEntityTerm(groups[nextIndex]!.text);
+    else this.editorBridge.clearEntityLinkHighlight();
+
+    const sessionId = this.activeSessionId();
+    if (sessionId) void this.persistToSession(sessionId);
   }
 
   private setLastAssistantSources(sources: ChapterCitation[]): void {

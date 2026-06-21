@@ -1,7 +1,7 @@
 import { Injectable, signal, computed } from '@angular/core';
 import { Subject } from 'rxjs';
 import { RichTextEditorComponent } from '../shared/rich-text-editor/rich-text-editor';
-import { ChapterEditProposal, ChapterNote, OutlineItem } from '@shared/models';
+import { ChapterEditProposal, ChapterNote, EntityLinkGroup, OutlineItem } from '@shared/models';
 
 /** The chapter an active editor belongs to, so external tools (e.g. Ask Quill)
  * can ground answers in the chapter and insert at the cursor. */
@@ -66,12 +66,28 @@ export class EditorBridgeService {
     this._draftAccepted.next();
   }
 
-  /** Starts an interactive pass that finds plain-text mentions of the given
-   * entity and lets the author confirm wrapping each unique match in
-   * entity-reference markup. Returns false when no editor is active or no
-   * unlinked matches were found. */
-  startEntityLinking(entityId: string, terms?: string[]): boolean {
-    return this._editor()?.startInteractiveEntityLinking(entityId, terms) ?? false;
+  /** Scans the active editor for plain-text mentions matching the supplied
+   * terms, returning the unique matches grouped by exact text. Empty when no
+   * editor is active or nothing matched. */
+  scanEntityLinks(terms: { text: string; refType: string }[]): EntityLinkGroup[] {
+    return this._editor()?.scanEntityLinkMatches(terms) ?? [];
+  }
+
+  /** Highlights and scrolls to all occurrences of one exact term in the editor
+   * (the chat is asking the author about it). Returns the count highlighted. */
+  highlightEntityTerm(text: string): number {
+    return this._editor()?.highlightEntityTerm(text) ?? 0;
+  }
+
+  /** Wraps every occurrence of one exact term in entity-reference markup for the
+   * given entity. Returns the number wrapped. */
+  applyEntityTerm(entityId: string, text: string, refType: string): number {
+    return this._editor()?.applyEntityTerm(entityId, text, refType) ?? 0;
+  }
+
+  /** Clears any transient link highlight from the editor. */
+  clearEntityLinkHighlight(): void {
+    this._editor()?.clearEntityLinkHighlight();
   }
 
   /** Returns focus to the active editor at its prior cursor position. */

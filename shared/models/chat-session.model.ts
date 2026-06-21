@@ -31,6 +31,27 @@ export interface ChapterEditProposal {
   applied?: boolean;
 }
 
+/** One unique plain-text match the "link references" tool found, e.g. "Mark"
+ *  appearing 16 times. `refType` is the entity-reference type to stamp when the
+ *  author links it; `status` is set once the author links or skips it. */
+export interface EntityLinkGroup {
+  text: string;
+  refType: string;
+  count: number;
+  status?: 'linked' | 'skipped';
+}
+
+/** An in-chat, step-through session for wrapping plain-text mentions of an
+ *  entity in reference markup. Attached to the assistant message that started
+ *  it; `index` is the group currently awaiting a decision (=== groups.length
+ *  when every match has been linked or skipped). */
+export interface EntityLinkSession {
+  entityId: string;
+  entityName: string;
+  groups: EntityLinkGroup[];
+  index: number;
+}
+
 /** A map an assistant answer surfaced, shown inline as a clickable thumbnail. */
 export interface MapPreview {
   id: string;            // open the full map via /maps/:id
@@ -49,6 +70,8 @@ export interface ChatSessionMessage {
   maps?: MapPreview[];
   /** A targeted chapter edit the author can apply/refine, rendered as a card. */
   editProposal?: ChapterEditProposal;
+  /** An in-chat, step-through session for linking plain-text entity mentions. */
+  linkSession?: EntityLinkSession;
   /** Marks an assistant message as a full chapter draft, enabling the
    * Insert / Replace chapter / Revise actions in the UI. */
   kind?: 'chapter-draft';

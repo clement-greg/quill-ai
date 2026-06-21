@@ -278,6 +278,48 @@
                 }
               </div>
             }
+            @if (msg.linkSession; as link) {
+              <div class="qc-link-session">
+                <div class="qc-link-head">
+                  <mat-icon class="qc-link-icon">link</mat-icon>
+                  <span class="qc-link-entity">{{ link.entityName }}</span>
+                  @if (!linkSessionDone(link)) {
+                    <span class="qc-link-step">{{ link.index + 1 }} of {{ link.groups.length }}</span>
+                  }
+                </div>
+
+                @if (linkSessionCurrent(link); as cur) {
+                  <p class="qc-link-prompt">
+                    Link
+                    <span class="qc-link-count">{{ cur.count }}</span>
+                    plain-text mention{{ cur.count === 1 ? '' : 's' }} of
+                    <span class="qc-link-term">&ldquo;{{ cur.text }}&rdquo;</span>?
+                  </p>
+                  <div class="qc-link-actions">
+                    <button mat-flat-button class="qc-link-apply" (click)="linkAllMatches($index)">
+                      <mat-icon>link</mat-icon> Link all {{ cur.count }}
+                    </button>
+                    <button mat-stroked-button (click)="skipMatches($index)">Skip</button>
+                    <button mat-button class="qc-link-stop" (click)="stopLinking($index)">Stop</button>
+                  </div>
+                } @else {
+                  <div class="qc-link-summary">
+                    @for (g of linkSessionReviewed(link); track g.text) {
+                      <div class="qc-link-summary-row" [class.is-skipped]="g.status === 'skipped'">
+                        <mat-icon>{{ g.status === 'linked' ? 'check_circle' : 'cancel' }}</mat-icon>
+                        <span class="qc-link-summary-text">
+                          @if (g.status === 'linked') {
+                            Linked {{ g.count }} &times; &ldquo;{{ g.text }}&rdquo;
+                          } @else {
+                            Skipped &ldquo;{{ g.text }}&rdquo;
+                          }
+                        </span>
+                      </div>
+                    }
+                  </div>
+                }
+              </div>
+            }
             @if (msg.maps?.length) {
               <div class="qc-maps">
                 @for (m of msg.maps; track m.id) {
