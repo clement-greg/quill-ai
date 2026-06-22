@@ -134,6 +134,17 @@
     linear-gradient(to bottom, var(--mat-sys-outline-variant) 1px, transparent 1px);
   background-size: 24px 24px;
   min-height: 100%;
+  cursor: grab;
+
+  &.is-panning {
+    cursor: grabbing;
+    user-select: none;
+  }
+}
+
+.diagram-content {
+  position: relative;
+  transform-origin: 0 0;
 }
 
 .connections-layer {

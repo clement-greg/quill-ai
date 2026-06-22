@@ -46,9 +46,18 @@
   <!-- Main canvas -->
   <div class="diagram-canvas"
        #canvas
+       [class.is-panning]="isPanning()"
+       (mousedown)="onCanvasMouseDown($event)"
+       (wheel)="onCanvasWheel($event)"
        (dragover)="onCanvasDragOver($event)"
        (drop)="onCanvasDrop($event)"
        (click)="onCanvasClick()">
+
+    <!-- Scaled content (nodes + connections) -->
+    <div class="diagram-content"
+         [style.width.px]="contentSize().width"
+         [style.height.px]="contentSize().height"
+         [style.transform]="'scale(' + zoom() + ')'">
 
     <!-- SVG layer for connection lines -->
     <svg class="connections-layer">
@@ -101,6 +110,9 @@
       </div>
     }
 
+    </div>
+    <!-- /diagram-content -->
+
     @if (diagramNodes().length === 0) {
       <div class="canvas-empty">
         <mat-icon>account_tree</mat-icon>
@@ -128,5 +140,14 @@
       <span class="toolbar-hint">Click a target entity to create a relationship…</span>
       <button mat-button (click)="cancelConnecting()">Cancel</button>
     }
+    <button mat-icon-button (click)="zoomOut()" [disabled]="zoom() <= 0.25" title="Zoom out">
+      <mat-icon>remove</mat-icon>
+    </button>
+    <button mat-button (click)="resetZoom()" title="Reset zoom" class="zoom-level">
+      {{ zoomPercent() }}%
+    </button>
+    <button mat-icon-button (click)="zoomIn()" [disabled]="zoom() >= 2.5" title="Zoom in">
+      <mat-icon>add</mat-icon>
+    </button>
   </div>
 </div>

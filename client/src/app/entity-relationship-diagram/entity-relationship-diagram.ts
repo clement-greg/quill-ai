@@ -28,6 +28,9 @@ interface ConnectionLine {
 
 const NODE_WIDTH = 120;
 const NODE_HEIGHT = 100;
+const MIN_ZOOM = 0.25;
+const MAX_ZOOM = 2.5;
+const ZOOM_STEP = 1.1;
 
 @Component({
   selector: 'app-entity-relationship-diagram',
@@ -59,6 +62,20 @@ export class EntityRelationshipDiagramComponent implements OnInit, OnDestroy {
   selectedRelationshipId = signal<string | null>(null);
   connectingFrom = signal<DiagramNodePosition | null>(null);
   tempLineEnd = signal<{ x: number; y: number } | null>(null);
+  zoom = signal(1);
+  zoomPercent = computed(() => Math.round(this.zoom() * 100));
+
+  // World size for the scaled content, sized to fit all nodes plus margin.
+  contentSize = computed(() => {
+    const nodes = this.diagramNodes();
+    const margin = 400;
+    const maxX = nodes.reduce((m, n) => Math.max(m, n.x + NODE_WIDTH), 0);
+    const maxY = nodes.reduce((m, n) => Math.max(m, n.y + NODE_HEIGHT), 0);
+    return {
+      width: Math.max(2000, maxX + margin),
+      height: Math.max(2000, maxY + margin),
+    };
+  });
 
   // Entities NOT yet on the canvas
   availableEntities = computed(() => {
@@ -94,6 +111,10 @@ export class EntityRelationshipDiagramComponent implements OnInit, OnDestroy {
   private dragOffset = { x: 0, y: 0 };
   private boundOnMouseMove = this.onMouseMove.bind(this);
   private boundOnMouseUp = this.onMouseUp.bind(this);
+
+  // ── pan state (canvas dragging to scroll) ──
+  isPanning = signal(false);
+  private panStart = { x: 0, y: 0, scrollLeft: 0, scrollTop: 0 };
 
   ngOnInit(): void {
     this.routeSub = this.route.paramMap.subscribe(params => {
@@ -191,13 +212,76 @@ export class EntityRelationshipDiagramComponent implements OnInit, OnDestroy {
     const canvasEl = this.canvas()?.nativeElement;
     if (!canvasEl) return;
 
-    const rect = canvasEl.getBoundingClientRect();
-    const x = event.clientX - rect.left + canvasEl.scrollLeft - NODE_WIDTH / 2;
-    const y = event.clientY - rect.top + canvasEl.scrollTop - NODE_HEIGHT / 2;
+    const point = this.clientToContent(event.clientX, event.clientY);
+    const x = point.x - NODE_WIDTH / 2;
+    const y = point.y - NODE_HEIGHT / 2;
 
     const node: DiagramNodePosition = { entityId, x: Math.max(0, x), y: Math.max(0, y) };
     this.diagramNodes.update((nodes) => [...nodes, node]);
     this.saveLayout();
+  }
+
+  // ── Canvas panning (click & drag background to scroll) ──
+
+  onCanvasMouseDown(event: MouseEvent): void {
+    // Only pan on primary button when not creating a connection.
+    if (event.button !== 0 || this.connectingFrom()) return;
+    const canvasEl = this.canvas()?.nativeElement;
+    if (!canvasEl) return;
+    this.isPanning.set(true);
+    this.panStart = {
+      x: event.clientX,
+      y: event.clientY,
+      scrollLeft: canvasEl.scrollLeft,
+      scrollTop: canvasEl.scrollTop,
+    };
+  }
+
+  // ── Zoom (mouse wheel + toolbar) ──
+
+  onCanvasWheel(event: WheelEvent): void {
+    event.preventDefault();
+    const factor = event.deltaY < 0 ? ZOOM_STEP : 1 / ZOOM_STEP;
+    this.applyZoom(this.zoom() * factor, event.clientX, event.clientY);
+  }
+
+  zoomIn(): void {
+    this.applyZoom(this.zoom() * ZOOM_STEP);
+  }
+
+  zoomOut(): void {
+    this.applyZoom(this.zoom() / ZOOM_STEP);
+  }
+
+  resetZoom(): void {
+    this.zoom.set(1);
+  }
+
+  // Zoom toward an anchor point (defaults to the viewport center) so the
+  // content under the cursor stays put.
+  private applyZoom(target: number, anchorClientX?: number, anchorClientY?: number): void {
+    const canvasEl = this.canvas()?.nativeElement;
+    if (!canvasEl) return;
+
+    const oldZoom = this.zoom();
+    const newZoom = Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, target));
+    if (newZoom === oldZoom) return;
+
+    const rect = canvasEl.getBoundingClientRect();
+    const anchorX = (anchorClientX ?? rect.left + rect.width / 2) - rect.left;
+    const anchorY = (anchorClientY ?? rect.top + rect.height / 2) - rect.top;
+
+    // Content point under the anchor before zooming.
+    const contentX = (anchorX + canvasEl.scrollLeft) / oldZoom;
+    const contentY = (anchorY + canvasEl.scrollTop) / oldZoom;
+
+    this.zoom.set(newZoom);
+
+    // Re-pin the anchor after the new scale has laid out.
+    requestAnimationFrame(() => {
+      canvasEl.scrollLeft = contentX * newZoom - anchorX;
+      canvasEl.scrollTop = contentY * newZoom - anchorY;
+    });
   }
 
   // ── Node interactions ──
@@ -206,29 +290,48 @@ export class EntityRelationshipDiagramComponent implements OnInit, OnDestroy {
     if (this.connectingFrom()) return; // don't drag while connecting
     event.stopPropagation();
     this.draggingNode = node;
-    this.dragOffset = { x: event.clientX - node.x, y: event.clientY - node.y };
+    const point = this.clientToContent(event.clientX, event.clientY);
+    this.dragOffset = { x: point.x - node.x, y: point.y - node.y };
   }
 
   private onMouseMove(event: MouseEvent): void {
+    if (this.isPanning()) {
+      const canvasEl = this.canvas()?.nativeElement;
+      if (canvasEl) {
+        canvasEl.scrollLeft = this.panStart.scrollLeft - (event.clientX - this.panStart.x);
+        canvasEl.scrollTop = this.panStart.scrollTop - (event.clientY - this.panStart.y);
+      }
+      return;
+    }
     if (this.draggingNode) {
-      const x = Math.max(0, event.clientX - this.dragOffset.x);
-      const y = Math.max(0, event.clientY - this.dragOffset.y);
+      const point = this.clientToContent(event.clientX, event.clientY);
+      const x = Math.max(0, point.x - this.dragOffset.x);
+      const y = Math.max(0, point.y - this.dragOffset.y);
       this.diagramNodes.update((nodes) =>
         nodes.map((n) => (n.entityId === this.draggingNode!.entityId ? { ...n, x, y } : n))
       );
     }
     if (this.connectingFrom()) {
-      const canvasEl = this.canvas()?.nativeElement;
-      if (!canvasEl) return;
-      const rect = canvasEl.getBoundingClientRect();
-      this.tempLineEnd.set({
-        x: event.clientX - rect.left + canvasEl.scrollLeft,
-        y: event.clientY - rect.top + canvasEl.scrollTop,
-      });
+      this.tempLineEnd.set(this.clientToContent(event.clientX, event.clientY));
     }
   }
 
+  // Convert viewport coordinates to unscaled content (world) coordinates.
+  private clientToContent(clientX: number, clientY: number): { x: number; y: number } {
+    const canvasEl = this.canvas()?.nativeElement;
+    if (!canvasEl) return { x: 0, y: 0 };
+    const rect = canvasEl.getBoundingClientRect();
+    const zoom = this.zoom();
+    return {
+      x: (clientX - rect.left + canvasEl.scrollLeft) / zoom,
+      y: (clientY - rect.top + canvasEl.scrollTop) / zoom,
+    };
+  }
+
   private onMouseUp(_event: MouseEvent): void {
+    if (this.isPanning()) {
+      this.isPanning.set(false);
+    }
     if (this.draggingNode) {
       this.draggingNode = null;
       this.saveLayout();
