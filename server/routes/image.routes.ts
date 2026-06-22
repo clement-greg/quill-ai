@@ -4,16 +4,36 @@ import { generateImage } from '../image-generation';
 
 const router = Router();
 
-// POST /api/image/generate  — { prompt: string, provider?: 'gpt' | 'gemini' } → { url, thumbnailUrl }
+// POST /api/image/generate
+//   { prompt: string, provider?: 'gpt' | 'gemini', referenceImageUrl?: string } → { url, thumbnailUrl }
+// When referenceImageUrl is provided, its image is passed to the model as a
+// reference so the generated image keeps the same face/body.
 router.post('/generate', async (req: Request, res: Response) => {
-  const { prompt, provider = 'gpt' } = req.body as { prompt?: string; provider?: 'gpt' | 'gemini' };
+  const { prompt, provider = 'gpt', referenceImageUrl } = req.body as {
+    prompt?: string;
+    provider?: 'gpt' | 'gemini';
+    referenceImageUrl?: string;
+  };
   if (!prompt?.trim()) {
     res.status(400).json({ error: 'prompt is required' });
     return;
   }
 
   try {
-    const result = await generateImage(prompt, provider);
+    let referenceImage: { data: Buffer; mimeType: string } | undefined;
+    if (referenceImageUrl?.trim()) {
+      const filename = referenceImageUrl.split('/').pop();
+      if (filename && !/[/\\]/.test(filename)) {
+        try {
+          const { data, contentType } = await downloadBlob(filename);
+          referenceImage = { data, mimeType: contentType };
+        } catch (err) {
+          console.error('Failed to load reference image, generating without it:', err);
+        }
+      }
+    }
+
+    const result = await generateImage(prompt, provider, referenceImage);
     res.json(result);
   } catch (err) {
     console.error('Image generate error:', err);

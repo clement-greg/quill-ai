@@ -54,7 +54,7 @@
               </button>
             }
             <button mat-stroked-button class="section-action"
-                    (click)="photoFileInput.click()"
+                    [matMenuTriggerFor]="addPhotoMenu"
                     [disabled]="photoUploading()"
                     aria-label="Add photos">
               @if (photoUploading()) {
@@ -62,8 +62,18 @@
               } @else {
                 <mat-icon>add_photo_alternate</mat-icon>
               }
-              {{ photoUploading() ? 'Uploading…' : 'Add photos' }}
+              {{ photoUploading() ? 'Working…' : 'Add photos' }}
             </button>
+            <mat-menu #addPhotoMenu="matMenu">
+              <button mat-menu-item (click)="photoFileInput.click()">
+                <mat-icon>upload</mat-icon>
+                <span>Upload photo</span>
+              </button>
+              <button mat-menu-item (click)="openGenerateImageDialog()">
+                <mat-icon>auto_awesome</mat-icon>
+                <span>Generate with AI</span>
+              </button>
+            </mat-menu>
             <input #photoFileInput type="file" accept="image/*" multiple hidden (change)="onPhotoFileSelected($event)" />
           </div>
         } @else {

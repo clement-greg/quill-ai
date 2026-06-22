@@ -39,6 +39,12 @@ import {
   TimelineEventDialogResult,
 } from './timeline-event-dialog';
 import { TimelineMapComponent } from './timeline-map';
+import {
+  ImageGenDialogComponent,
+  ImageGenDialogData,
+  ImageGenResult,
+  ImageGenSource,
+} from '../entity-edit/image-gen-dialog';
 
 interface BookGroup {
   bookTitle: string;
@@ -540,6 +546,53 @@ export class EntityDetailComponent implements OnDestroy {
       concatMap(photo => this.timelineService.update({ ...ev, photo }))
     ).subscribe({
       next: updated => this.timelineEvents.update(list => list.map(e => e.id === updated.id ? updated : e)),
+    });
+  }
+
+  openGenerateImageDialog(): void {
+    const entity = this.entity();
+    if (!entity) return;
+
+    // Source options: the profile picture first, then the gallery photos.
+    const sources: ImageGenSource[] = [];
+    if (entity.originalUrl || entity.thumbnailUrl) {
+      sources.push({
+        url: entity.originalUrl ?? entity.thumbnailUrl!,
+        thumbnailUrl: entity.thumbnailUrl ?? entity.originalUrl!,
+        label: 'Profile',
+      });
+    }
+    this.visiblePhotos().forEach((p, i) => {
+      if (sources.some(s => s.url === p.url)) return;
+      sources.push({ url: p.url, thumbnailUrl: p.thumbnailUrl, label: `Photo ${i + 1}` });
+    });
+
+    const ref = this.dialog.open(ImageGenDialogComponent, {
+      width: '500px',
+      data: {
+        sources,
+        defaultSourceUrl: sources[0]?.url,
+        defaultProvider: 'gpt',
+      } satisfies ImageGenDialogData,
+    });
+
+    ref.afterClosed().subscribe((result?: ImageGenResult) => {
+      if (!result) return;
+      const entityId = this.entity()?.id;
+      if (!entityId) return;
+      this.photoUploading.set(true);
+      this.entityService.generateImage(result.prompt, result.provider, result.referenceImageUrl).pipe(
+        concatMap(({ url, thumbnailUrl }) => this.entityService.addPhoto(entityId, url, thumbnailUrl))
+      ).subscribe({
+        next: (updated) => {
+          this.entity.set(updated);
+          this.photoUploading.set(false);
+        },
+        error: () => {
+          this.photoUploading.set(false);
+          this.snackBar.open('Image generation failed', undefined, { duration: 3000 });
+        },
+      });
     });
   }
 

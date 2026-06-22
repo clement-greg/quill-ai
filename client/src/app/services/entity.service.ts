@@ -80,8 +80,16 @@ export class EntityService {
     return this.http.post<{ biography: string }>(`${this.apiUrl}/${entityId}/generate-biography`, {});
   }
 
-  generateImage(prompt: string, provider: 'gpt' | 'gemini' = 'gpt'): Observable<{ url: string; thumbnailUrl: string }> {
-    return this.http.post<{ url: string; thumbnailUrl: string }>('/api/image/generate', { prompt, provider });
+  generateImage(
+    prompt: string,
+    provider: 'gpt' | 'gemini' = 'gpt',
+    referenceImageUrl?: string,
+  ): Observable<{ url: string; thumbnailUrl: string }> {
+    return this.http.post<{ url: string; thumbnailUrl: string }>('/api/image/generate', {
+      prompt,
+      provider,
+      referenceImageUrl,
+    });
   }
 
   getOrCreateNarrator(seriesId: string): Observable<Entity> {
