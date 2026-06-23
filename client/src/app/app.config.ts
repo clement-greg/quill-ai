@@ -42,7 +42,17 @@ const routes: Routes = [
   { path: 'maps', component: MapListComponent, canActivate: [authGuard] },
   { path: 'maps/:id', component: MapEditorComponent, canActivate: [authGuard] },
   { path: 'home', component: Home, canActivate: [authGuard] },
+  {
+    path: 'quilly-demo',
+    loadComponent: () =>
+      import('./quilly-demo/quilly-demo').then((m) => m.QuillyDemoComponent),
+  },
   { path: '', redirectTo: 'home', pathMatch: 'full' },
+  {
+    path: '**',
+    loadComponent: () =>
+      import('./not-found/not-found').then((m) => m.NotFoundComponent),
+  },
 ];
 
 export const appConfig: ApplicationConfig = {

@@ -1,0 +1,20 @@
+<main class="not-found">
+  <app-quilly-character
+    #character
+    [loop]="loop()"
+    [loopIntermission]="idleIntermissionMs"
+    [size]="280"
+    [speechPosition]="speechPosition"
+    ariaLabel="Quilly looking confused"
+    (sequenceComplete)="onComplete($event)"
+  />
+
+  <p class="code">404</p>
+  <h1 class="title">This page wandered off</h1>
+  <p class="message">
+    The page you're looking for doesn't exist or may have moved. Quilly is just
+    as puzzled as you are.
+  </p>
+
+  <a class="home-link" routerLink="/home">Take me home</a>
+</main>

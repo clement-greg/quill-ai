@@ -1,0 +1,157 @@
+.demo {
+  max-width: 720px;
+  margin: 0 auto;
+  padding: 2rem 1.5rem 4rem;
+}
+
+.demo-header {
+  text-align: center;
+  margin-bottom: 1.5rem;
+
+  h1 {
+    margin: 0 0 0.25rem;
+    font-size: 1.75rem;
+  }
+
+  p {
+    margin: 0;
+    color: #5d6b6b;
+  }
+}
+
+.stage {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 320px;
+  padding: 1.5rem;
+  background: linear-gradient(160deg, #f4f7f7, #e7eeee);
+  border: 1px solid #d8e0e0;
+  border-radius: 16px;
+  margin-bottom: 1.5rem;
+}
+
+.controls {
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+}
+
+.sequences {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  justify-content: center;
+}
+
+.seq-btn {
+  padding: 0.5rem 0.9rem;
+  font-size: 0.9rem;
+  border: 1px solid #c4d0d0;
+  border-radius: 999px;
+  background: #fff;
+  color: #2f3d3d;
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s, color 0.15s;
+
+  &:hover {
+    border-color: #6f9091;
+  }
+
+  &.active {
+    background: #6f9091;
+    border-color: #6f9091;
+    color: #fff;
+  }
+
+  &:focus-visible {
+    outline: 2px solid #2f3d3d;
+    outline-offset: 2px;
+  }
+}
+
+.options {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 1.25rem;
+}
+
+.opt-btn {
+  padding: 0.5rem 1.1rem;
+  border: 1px solid #6f9091;
+  border-radius: 8px;
+  background: #fff;
+  color: #2f3d3d;
+  font-size: 0.9rem;
+  cursor: pointer;
+
+  &:hover {
+    background: #f0f5f5;
+  }
+
+  &:focus-visible {
+    outline: 2px solid #2f3d3d;
+    outline-offset: 2px;
+  }
+}
+
+.opt-toggle,
+.opt-size {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.9rem;
+  color: #2f3d3d;
+}
+
+.size-value {
+  min-width: 3.5ch;
+  color: #5d6b6b;
+}
+
+.speech {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  justify-content: center;
+  gap: 0.75rem;
+}
+
+.speech-text,
+.speech-dur {
+  display: inline-flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  font-size: 0.85rem;
+  color: #2f3d3d;
+  text-align: left;
+
+  input {
+    padding: 0.45rem 0.6rem;
+    border: 1px solid #c4d0d0;
+    border-radius: 8px;
+    font-size: 0.9rem;
+
+    &:focus-visible {
+      outline: 2px solid #2f3d3d;
+      outline-offset: 1px;
+    }
+  }
+}
+
+.speech-text {
+  flex: 1 1 220px;
+}
+
+.speech-dur input {
+  width: 5rem;
+}
+
+.status {
+  text-align: center;
+  margin: 0;
+  color: #6f9091;
+  font-weight: 600;
+}

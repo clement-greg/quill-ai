@@ -1,0 +1,102 @@
+<div class="demo">
+  <header class="demo-header">
+    <h1>Quilly character</h1>
+    <p>Reusable animated character component. Pick a sequence to play it.</p>
+  </header>
+
+  <section class="stage">
+    <app-quilly-character
+      #character
+      [sequence]="current()"
+      [loop]="loop()"
+      [size]="size()"
+      [speechPosition]="speechPosition()"
+      [ariaLabel]="'Quilly: ' + current()"
+      (sequenceComplete)="onComplete($event)"
+    />
+  </section>
+
+  <section class="controls">
+    <div class="sequences" role="group" aria-label="Animation sequences">
+      @for (seq of sequences; track seq.id) {
+        <button
+          type="button"
+          class="seq-btn"
+          [class.active]="seq.id === current()"
+          [attr.aria-pressed]="seq.id === current()"
+          (click)="select(seq.id)"
+        >
+          {{ seq.label }}
+        </button>
+      }
+    </div>
+
+    <div class="options">
+      <button type="button" class="opt-btn" (click)="replay()">Replay</button>
+
+      <label class="opt-toggle">
+        <input
+          type="checkbox"
+          [checked]="loop()"
+          (change)="toggleLoop()"
+        />
+        Loop
+      </label>
+
+      <label class="opt-size">
+        Size
+        <input
+          type="range"
+          min="120"
+          max="480"
+          step="20"
+          [value]="size()"
+          (input)="onSize($event)"
+          aria-label="Character size in pixels"
+        />
+        <span class="size-value">{{ size() }}px</span>
+      </label>
+    </div>
+
+    <div class="speech">
+      <label class="speech-text">
+        Speech bubble
+        <input
+          type="text"
+          [value]="speechInput()"
+          (input)="onSpeechText($event)"
+          placeholder="What should Quilly say?"
+        />
+      </label>
+      <label class="speech-dur">
+        Seconds (0 = auto)
+        <input
+          type="number"
+          min="0"
+          max="30"
+          [value]="speechSeconds()"
+          (input)="onSpeechSeconds($event)"
+        />
+      </label>
+      <div class="speech-pos" role="group" aria-label="Speech bubble position">
+        @for (pos of positions; track pos) {
+          <button
+            type="button"
+            class="seq-btn"
+            [class.active]="pos === speechPosition()"
+            [attr.aria-pressed]="pos === speechPosition()"
+            (click)="setPosition(pos)"
+          >
+            {{ pos }}
+          </button>
+        }
+      </div>
+
+      <button type="button" class="opt-btn" (click)="say()">Say it</button>
+    </div>
+
+    @if (lastCompleted(); as done) {
+      <p class="status" role="status">Finished: {{ done }}</p>
+    }
+  </section>
+</div>

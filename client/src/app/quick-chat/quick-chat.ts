@@ -2,6 +2,7 @@ import {
   ChangeDetectionStrategy,
   Component,
   CUSTOM_ELEMENTS_SCHEMA,
+  DestroyRef,
   ElementRef,
   NgZone,
   computed,
@@ -32,9 +33,14 @@ import { chatMarkdownToHtml, chapterIdFromClick } from '../shared/chat-markdown'
 import { MapPreviewComponent } from '../maps/map-preview/map-preview';
 import { EntityPickerDialogComponent, EntityPickerData } from '../entity-edit/entity-picker-dialog';
 import { FolderLocationPickerDialogComponent, FolderLocation, FolderLocationPickerData } from '../ai-assistant/folder-location-picker-dialog';
+import { QuillyCharacterComponent } from '../shared/quilly-character/quilly-character';
 
-/** Minimal surface of the `<lottie-player>` web component we interact with. */
-type LottiePlayerElement = HTMLElement & { play(): void };
+/** Intro Quilly speaks when the empty panel first appears. */
+const QC_INTRO = "Ask me anything about your books. Or pick an action to get started '/'";
+/** Follow-up Quilly speaks if the user is still idle after the intro. */
+const QC_OPTIONS = 'Here are some options:';
+/** How long to wait, with no user activity, before offering the action chips. */
+const QC_OPTIONS_DELAY_MS = 10_000;
 
 /** A single item in the entity/chapter/book autocomplete popup. */
 type AcItem =
@@ -250,7 +256,7 @@ const SLASH_COMMANDS: readonly SlashCommand[] = [
 @Component({
   selector: 'app-quick-chat',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [MatButtonModule, MatIconModule, MatTooltipModule, MatProgressSpinnerModule, MapPreviewComponent],
+  imports: [MatButtonModule, MatIconModule, MatTooltipModule, MatProgressSpinnerModule, MapPreviewComponent, QuillyCharacterComponent],
   templateUrl: './quick-chat.html',
   styleUrl: './quick-chat.scss',
   schemas: [CUSTOM_ELEMENTS_SCHEMA],
@@ -399,10 +405,13 @@ export class QuickChatComponent {
   private readonly inputEl = viewChild<ElementRef<HTMLTextAreaElement>>('inputEl');
   private readonly messagesEl = viewChild<ElementRef<HTMLDivElement>>('messagesEl');
   private readonly cardEl = viewChild<ElementRef<HTMLElement>>('cardEl');
-  /** The empty-state Lottie web component (only present when there are no messages). */
-  private readonly emptyLottie = viewChild<ElementRef<LottiePlayerElement>>('emptyLottie');
-  /** The minimized-bar Lottie web component (only present when collapsed). */
-  private readonly minimizedLottie = viewChild<ElementRef<LottiePlayerElement>>('minimizedLottie');
+
+  /** Empty-state Quilly intro: what (if anything) Quilly is currently saying. */
+  readonly emptySpeech = signal('');
+  /** Whether the action chips are revealed yet (after the intro delay). */
+  readonly showEmptyChips = signal(false);
+  private emptyOptionsTimer: ReturnType<typeof setTimeout> | null = null;
+  private emptyIntroStarted = false;
 
 
   constructor() {
@@ -432,31 +441,51 @@ export class QuickChatComponent {
       queueMicrotask(() => this.autoGrowTextarea());
     });
 
-    // Loop the empty-state and minimized Lotties with a fixed pause between
-    // plays. Each player runs once (autoplay, no `loop`); when it finishes we
-    // wait, then replay.
-    effect((onCleanup) => this.loopLottieWithPause(this.emptyLottie()?.nativeElement, 10_000, onCleanup));
-    effect((onCleanup) => this.loopLottieWithPause(this.minimizedLottie()?.nativeElement, 20_000, onCleanup));
+    // Drive the empty-state Quilly intro: speak the welcome line on appearance,
+    // then offer the action chips if the user is still idle after a delay.
+    effect(() => {
+      const showingEmpty =
+        this.quickChat.isOpen() &&
+        !this.quickChat.minimized() &&
+        this.quickChat.messages().length === 0;
+      if (showingEmpty) {
+        this.startEmptyIntro();
+      } else {
+        this.resetEmptyIntro();
+      }
+    });
+
+    inject(DestroyRef).onDestroy(() => this.clearEmptyOptionsTimer());
   }
 
-  /** Replays a Lottie player `intermissionMs` after each completion, cleaning up
-   *  the listener and pending timer when the player leaves the DOM. */
-  private loopLottieWithPause(
-    player: LottiePlayerElement | undefined,
-    intermissionMs: number,
-    onCleanup: (fn: () => void) => void,
-  ): void {
-    if (!player) return;
-    let timer: ReturnType<typeof setTimeout> | null = null;
-    const onComplete = () => {
-      if (timer) clearTimeout(timer);
-      timer = setTimeout(() => player.play(), intermissionMs);
-    };
-    player.addEventListener('complete', onComplete);
-    onCleanup(() => {
-      player.removeEventListener('complete', onComplete);
-      if (timer) clearTimeout(timer);
-    });
+  /** Speak the intro once, then reveal the chips after the options delay. */
+  private startEmptyIntro(): void {
+    if (this.emptyIntroStarted) return;
+    this.emptyIntroStarted = true;
+    this.showEmptyChips.set(false);
+    this.emptySpeech.set(QC_INTRO);
+    this.clearEmptyOptionsTimer();
+    this.emptyOptionsTimer = setTimeout(() => {
+      this.emptyOptionsTimer = null;
+      if (this.quickChat.messages().length === 0) {
+        this.emptySpeech.set(QC_OPTIONS);
+        this.showEmptyChips.set(true);
+      }
+    }, QC_OPTIONS_DELAY_MS);
+  }
+
+  private resetEmptyIntro(): void {
+    this.emptyIntroStarted = false;
+    this.clearEmptyOptionsTimer();
+    this.emptySpeech.set('');
+    this.showEmptyChips.set(false);
+  }
+
+  private clearEmptyOptionsTimer(): void {
+    if (this.emptyOptionsTimer !== null) {
+      clearTimeout(this.emptyOptionsTimer);
+      this.emptyOptionsTimer = null;
+    }
   }
 
   renderHtml(msg: ChatSessionMessage, msgIndex = 0): SafeHtml {
