@@ -116,68 +116,22 @@
     background: var(--mat-sys-surface-container);
     border-color: var(--mat-sys-outline);
   }
-
-  @media (hover: hover) {
-    &:hover .recent-chip-remove {
-      opacity: 1;
-    }
-  }
 }
 
 .recent-chip-main {
   display: inline-flex;
   align-items: center;
   gap: 8px;
-  padding: 6px 8px 6px 10px;
+  padding: 6px 12px;
   background: transparent;
   border: none;
-  border-radius: 20px 0 0 20px;
+  border-radius: 20px;
   cursor: pointer;
   text-align: left;
 
   &:focus-visible {
     outline: 2px solid var(--mat-sys-primary);
     outline-offset: 2px;
-  }
-}
-
-.recent-chip-remove {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 28px;
-  height: 28px;
-  margin-right: 4px;
-  padding: 0;
-  background: transparent;
-  border: none;
-  border-radius: 50%;
-  cursor: pointer;
-  opacity: 1;
-  transition: opacity 120ms ease, background 120ms ease;
-
-  @media (hover: hover) {
-    opacity: 0;
-  }
-  color: var(--mat-sys-outline);
-  flex-shrink: 0;
-
-  &:hover {
-    background: var(--mat-sys-surface-container-high);
-    color: var(--mat-sys-on-surface);
-  }
-
-  &:focus-visible {
-    opacity: 1;
-    outline: 2px solid var(--mat-sys-primary);
-    outline-offset: 2px;
-  }
-
-  mat-icon {
-    font-size: 16px;
-    width: 16px;
-    height: 16px;
-    line-height: 16px;
   }
 }
 

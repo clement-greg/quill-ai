@@ -10,20 +10,20 @@ export class RecentChaptersService {
   private http = inject(HttpClient);
   private readonly _items = signal<RecentChapter[]>([]);
 
+  /** The most recent distinct chapters, newest first, as computed by the server. */
   readonly recentChapters = this._items.asReadonly();
 
   constructor() {
-    this.loadFromServer();
+    this.refresh();
   }
 
   /**
-   * Loads the canonical list from the server. Retries transient failures (e.g.
-   * Cosmos cold-start/throttling, which are not 401s and so bypass the auth
-   * refresh interceptor) so a single startup hiccup doesn't leave the list
-   * empty. The list is never persisted from the client cache, so even a total
-   * load failure can no longer destroy the saved history on the next write.
+   * Loads the canonical list from the server. The server derives it from the
+   * append-only visit log, so this is purely a read — it can never destroy
+   * history. Retries transient failures (e.g. Cosmos cold-start/throttling,
+   * which are not 401s and so bypass the auth refresh interceptor).
    */
-  private async loadFromServer(): Promise<void> {
+  async refresh(): Promise<void> {
     try {
       const items = await firstValueFrom(
         this.http.get<RecentChapter[]>('/api/recent-chapters').pipe(
@@ -32,37 +32,17 @@ export class RecentChaptersService {
       );
       this._items.set(items);
     } catch {
-      // Keep whatever we already have; the next successful read or write will
-      // reconcile from the server. Never overwrite the server from here.
+      // Leave the existing list in place; the next load reconciles.
     }
   }
 
-  /**
-   * Records a chapter visit. The server owns the merge (read → prepend → dedupe
-   * → trim), so the client's local state can never clobber the persisted list.
-   * We adopt the canonical list the server returns.
-   */
+  /** Records a chapter visit (one immutable insert), then refreshes the list. */
   async record(entry: Omit<RecentChapter, 'visitedAt'>): Promise<void> {
     try {
-      const updated = await firstValueFrom(
-        this.http.post<RecentChapter[]>('/api/recent-chapters', entry),
-      );
-      this._items.set(updated);
+      await firstValueFrom(this.http.post('/api/recent-chapters', entry));
+      await this.refresh();
     } catch {
-      // Recording is non-critical; leave existing state untouched on failure.
-    }
-  }
-
-  async remove(chapterId: string): Promise<void> {
-    // Optimistic local removal for snappy UI; reconcile with the server result.
-    this._items.set(this._items().filter(i => i.chapterId !== chapterId));
-    try {
-      const updated = await firstValueFrom(
-        this.http.delete<RecentChapter[]>(`/api/recent-chapters/${chapterId}`),
-      );
-      this._items.set(updated);
-    } catch {
-      // Local optimistic state stands; a later load will reconcile.
+      // Recording is non-critical; leave the existing list untouched on failure.
     }
   }
 }

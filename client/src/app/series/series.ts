@@ -482,10 +482,6 @@ export class SeriesComponent implements OnInit {
     this.router.navigate(['/chapters', chapterId, 'edit']);
   }
 
-  removeRecentChapter(chapterId: string): void {
-    this.recentChaptersService.remove(chapterId);
-  }
-
   navigateTo(path: string): void {
     this.router.navigate([path]);
   }
