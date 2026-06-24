@@ -2,13 +2,15 @@
   <!-- Minimized: a non-intrusive bar in the bottom-left corner -->
   <button type="button" class="qc-minimized" animate.enter="qc-slide-up"
           (click)="restorePanel()" aria-label="Expand Ask Quill">
-    <app-quilly-character
-      class="qc-minimized-lottie"
-      sequence="idle"
-      [size]="44"
-      [loop]="true"
-      [loopIntermission]="10000"
-      ariaLabel="Quill" />
+    <lottie-player
+      #minimizedLottie
+      src="https://lottie.host/ae16df6a-44fb-4214-9b60-3e0320abdd00/k2kDltgCdz.json"
+      background="transparent"
+      speed="1"
+      autoplay
+      aria-hidden="true"
+      class="qc-minimized-lottie">
+    </lottie-player>
     @if (quickChat.streaming()) {
       <mat-spinner class="qc-minimized-spinner" diameter="16"></mat-spinner>
     }
@@ -93,26 +95,26 @@
     <div class="qc-messages" #messagesEl (mouseup)="onMessagesMouseUp()">
       @if (quickChat.messages().length === 0) {
         <div class="qc-empty">
-          <app-quilly-character
-            class="qc-empty-lottie"
-            sequence="idle"
-            [size]="144"
-            [loop]="true"
-            [loopIntermission]="10000"
-            [speech]="emptySpeech()"
-            speechPosition="above"
-            ariaLabel="Quill" />
-          @if (showEmptyChips()) {
-            <div class="qc-chips" animate.enter="qc-fade-in">
-              @for (cmd of slashChips(); track cmd.command) {
-                <button type="button" class="qc-chip" (click)="applyCommandScaffold(cmd)"
-                        [matTooltip]="cmd.hint">
-                  <mat-icon class="qc-chip-icon">{{ cmd.icon }}</mat-icon>
-                  <span>{{ cmd.label }}</span>
-                </button>
-              }
-            </div>
-          }
+          <lottie-player
+            #emptyLottie
+            src="https://lottie.host/ae16df6a-44fb-4214-9b60-3e0320abdd00/k2kDltgCdz.json"
+            background="transparent"
+            speed="1"
+            autoplay
+            aria-hidden="true"
+            class="qc-empty-lottie">
+          </lottie-player>
+          <p class="qc-empty-title">Ask anything about your books</p>
+          <p class="qc-empty-hint">…or pick an action to get started — type <kbd class="qc-kbd">/</kbd> any time to see them all.</p>
+          <div class="qc-chips">
+            @for (cmd of slashChips(); track cmd.command) {
+              <button type="button" class="qc-chip" (click)="applyCommandScaffold(cmd)"
+                      [matTooltip]="cmd.hint">
+                <mat-icon class="qc-chip-icon">{{ cmd.icon }}</mat-icon>
+                <span>{{ cmd.label }}</span>
+              </button>
+            }
+          </div>
         </div>
       }
       @for (msg of quickChat.messages(); track $index; let last = $last) {
@@ -128,12 +130,15 @@
                 <span class="qc-avatar qc-avatar-placeholder"><mat-icon>person</mat-icon></span>
               }
             } @else {
-              <app-quilly-character
-                class="qc-avatar qc-avatar-lottie"
-                sequence="idle"
-                [size]="28"
-                [loop]="true"
-                ariaLabel="Quill" />
+              <lottie-player
+                src="https://lottie.host/ae16df6a-44fb-4214-9b60-3e0320abdd00/k2kDltgCdz.json"
+                background="transparent"
+                speed="1"
+                loop
+                autoplay
+                aria-hidden="true"
+                class="qc-avatar qc-avatar-lottie">
+              </lottie-player>
             }
             <span class="qc-role">{{ msg.role === 'user' ? 'You' : 'Quill' }}</span>
             @if (msg.timestamp) {

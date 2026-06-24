@@ -30,15 +30,6 @@
   to { opacity: 1; transform: translateY(0); }
 }
 
-.qc-fade-in {
-  animation: qc-fade-in 0.25s ease-out;
-}
-
-@keyframes qc-fade-in {
-  from { opacity: 0; transform: translateY(6px); }
-  to { opacity: 1; transform: translateY(0); }
-}
-
 /* ── Minimized corner bar ────────────────────────────────────────────────── */
 
 .qc-minimized {
@@ -123,8 +114,8 @@
 }
 
 .qc-minimized-lottie {
-  display: block;
-  line-height: 0;
+  width: 32px;
+  height: 32px;
 }
 
 .qc-title-text {
@@ -204,9 +195,9 @@
 }
 
 .qc-empty-lottie {
-  display: inline-block;
-  // Leave headroom for the speech bubble that pops above Quilly.
-  margin-top: 56px;
+  width: 144px;
+  height: 144px;
+  margin: 0 auto;
 }
 
 .qc-empty-title {
