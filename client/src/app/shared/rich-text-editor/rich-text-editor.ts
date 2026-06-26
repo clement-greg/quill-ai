@@ -2605,10 +2605,34 @@ export class RichTextEditorComponent implements OnInit, AfterViewInit, OnDestroy
           const lower = s.name.toLowerCase();
           return !this.suggestedEntityNames.has(lower) && !knownLower.has(lower);
         });
-        if (newCards.length > 0) this.pendingSuggestions.update(prev => [...prev, ...newCards]);
+        if (newCards.length > 0) {
+          this.pendingSuggestions.update(prev => this.dedupePartialSuggestions([...prev, ...newCards]));
+        }
         suggestedEntities.forEach(s => this.suggestedEntityNames.add(s.name.toLowerCase()));
       }
     }
+  }
+
+  /** Removes near-duplicate suggestion cards created when a name is detected
+   *  mid-typing and then again once fully typed (e.g. "Elias Ashmol" vs
+   *  "Elias Ashmole"). A card is dropped when its name is a truncation of a
+   *  longer card's final word — i.e. the longer name starts with the shorter
+   *  one and continues the same word (no word boundary at the split point).
+   *  Cards the user is actively editing or has already added are never dropped. */
+  private dedupePartialSuggestions(cards: SuggestedEntityCard[]): SuggestedEntityCard[] {
+    return cards.filter((card, i) => {
+      if (card.creating || card.created) return true;
+      const lower = card.name.toLowerCase();
+      return !cards.some((other, j) => {
+        if (i === j) return false;
+        const otherLower = other.name.toLowerCase();
+        if (otherLower.length <= lower.length || !otherLower.startsWith(lower)) return false;
+        // Keep both if the longer name adds a separate word after a boundary
+        // ("John" vs "John Dee"); only merge when the same word is completed.
+        const nextChar = otherLower.charAt(lower.length);
+        return nextChar !== ' ';
+      });
+    });
   }
 
   private saveCursorOffset(editor: HTMLElement): { start: number; end: number } | null {
