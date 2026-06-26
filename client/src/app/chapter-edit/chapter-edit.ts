@@ -155,6 +155,11 @@ export class ChapterEditComponent implements OnInit, OnDestroy {
 
   // ── Entity suggestions (from editor grammar check) ───────────────────────
   pendingSuggestions = signal<SuggestedEntityCard[]>([]);
+  /** True while any suggestion card has its inline editor open, so the rest of
+   *  the list can be hidden and the editor given the full panel. */
+  suggestionEditingActive = computed(() =>
+    this.pendingSuggestions().some(c => c.creating && !!c.draftEntity),
+  );
   private suggestedEntityNames = new Set<string>();
   private dismissedEntityNames = new Set<string>();
 
@@ -1030,6 +1035,13 @@ export class ChapterEditComponent implements OnInit, OnDestroy {
   cancelSuggestionInlineEdit(index: number): void {
     this.pendingSuggestions.update(list =>
       list.map((c, i) => i === index ? { ...c, creating: false, draftEntity: undefined } : c),
+    );
+  }
+
+  /** Closes whichever card's inline editor is open, returning to the full list. */
+  closeSuggestionEditing(): void {
+    this.pendingSuggestions.update(list =>
+      list.map(c => c.creating ? { ...c, creating: false, draftEntity: undefined } : c),
     );
   }
 

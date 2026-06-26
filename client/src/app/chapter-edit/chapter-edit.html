@@ -311,9 +311,17 @@
                   @if (pendingSuggestions().length === 0) {
                     <p class="notes-empty">No new entities detected yet. Keep writing — characters, places, and things will appear here as they're recognized.</p>
                   } @else {
-                    <div class="entity-suggestion-list">
+                    <div class="entity-suggestion-list" [class.is-editing-mode]="suggestionEditingActive()">
+                      @if (suggestionEditingActive()) {
+                        <button type="button" class="entity-suggestion-back" (click)="closeSuggestionEditing()">
+                          <mat-icon>arrow_back</mat-icon>
+                          <span>Back to {{ pendingSuggestions().length }} suggestion{{ pendingSuggestions().length === 1 ? '' : 's' }}</span>
+                        </button>
+                      }
                       @for (card of pendingSuggestions(); track $index; let i = $index) {
-                        <div class="entity-suggestion-card" [class.is-editing]="card.creating && !!card.draftEntity">
+                        @if (!suggestionEditingActive() || (card.creating && !!card.draftEntity)) {
+                        <div class="entity-suggestion-card"
+                          [class.is-editing]="card.creating && !!card.draftEntity">
                           @if (card.created) {
                             <div class="entity-suggestion-done">
                               <mat-icon>check_circle</mat-icon>
@@ -348,6 +356,7 @@
                             </div>
                           }
                         </div>
+                        }
                       }
                     </div>
                   }

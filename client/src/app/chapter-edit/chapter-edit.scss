@@ -1223,6 +1223,38 @@
   min-height: 0;
 }
 
+/* When a card is being edited, the list hides every other card and hands the
+ * full panel height to the editor, with a back link to return to the list. */
+.entity-suggestion-list.is-editing-mode {
+  padding-bottom: 0;
+}
+
+.entity-suggestion-back {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  align-self: flex-start;
+  background: none;
+  border: none;
+  padding: 2px 0;
+  cursor: pointer;
+  font: inherit;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--mat-sys-primary, #1976d2);
+
+  mat-icon {
+    font-size: 18px;
+    width: 18px;
+    height: 18px;
+    line-height: 18px;
+  }
+
+  &:hover {
+    text-decoration: underline;
+  }
+}
+
 .entity-suggestion-header {
   display: flex;
   align-items: center;
