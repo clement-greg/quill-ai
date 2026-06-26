@@ -27,6 +27,7 @@ export interface GhostCompleteItem {
 export interface UserSettingsData {
   displayName?: string;
   avatarUrl?: string;
+  avatarVideoUrl?: string;
   darkMode?: boolean;
   colorTheme?: string;
   editorFontSize?: string;
@@ -58,6 +59,7 @@ export class UserSettingsService {
   private _editorFontFamily = signal<string>('serif');
   private _displayName = signal<string>('');
   private _avatarUrl = signal<string>('');
+  private _avatarVideoUrl = signal<string>('');
   private _grammarCheckEnabled = signal<boolean>(true);
   private _entityDetectionEnabled = signal<boolean>(true);
   private _autoSaveEnabled = signal<boolean>(false);
@@ -75,6 +77,7 @@ export class UserSettingsService {
   readonly editorFontFamily = this._editorFontFamily.asReadonly();
   readonly displayName = this._displayName.asReadonly();
   readonly avatarUrl = this._avatarUrl.asReadonly();
+  readonly avatarVideoUrl = this._avatarVideoUrl.asReadonly();
   readonly ghostCompleteItems = this._ghostCompleteItems.asReadonly();
   readonly grammarCheckEnabled = this._grammarCheckEnabled.asReadonly();
   readonly entityDetectionEnabled = this._entityDetectionEnabled.asReadonly();
@@ -91,6 +94,7 @@ export class UserSettingsService {
       const settings = await firstValueFrom(this.http.get<UserSettingsData>('/api/user-settings'));
       this._displayName.set(settings.displayName ?? '');
       this._avatarUrl.set(settings.avatarUrl ?? '');
+      this._avatarVideoUrl.set(settings.avatarVideoUrl ?? '');
       // Migrate: if no colorTheme yet, fall back to the legacy darkMode flag
       this._colorTheme.set(settings.colorTheme ?? (settings.darkMode ? 'dark' : 'default'));
       this._editorFontSize.set(settings.editorFontSize ?? 'normal');
@@ -113,6 +117,7 @@ export class UserSettingsService {
       this.http.put<UserSettingsData>('/api/user-settings', {
         displayName: this._displayName(),
         avatarUrl: this._avatarUrl(),
+        avatarVideoUrl: this._avatarVideoUrl(),
         colorTheme: this._colorTheme(),
         darkMode: this.darkMode(),
         editorFontSize: this._editorFontSize(),
@@ -201,6 +206,25 @@ export class UserSettingsService {
   clearAvatarUrl(): void {
     this._avatarUrl.set('');
     this.saveToServer();
+  }
+
+  setAvatarVideoUrl(value: string): void {
+    this._avatarVideoUrl.set(value);
+    this.saveToServer();
+  }
+
+  clearAvatarVideoUrl(): void {
+    this._avatarVideoUrl.set('');
+    this.saveToServer();
+  }
+
+  /** Uploads a profile video to blob storage and returns its stored URL. */
+  uploadProfileVideo(file: File): Promise<string> {
+    const formData = new FormData();
+    formData.append('file', file);
+    return firstValueFrom(
+      this.http.post<{ url: string; thumbnailUrl: string }>('/api/upload', formData)
+    ).then(res => res.url);
   }
 
   setGenderOptions(values: string[]): void {

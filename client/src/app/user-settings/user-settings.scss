@@ -73,6 +73,31 @@
   line-height: 14px;
 }
 
+.profile-video-wrap {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  position: relative;
+  max-width: 160px;
+}
+
+.profile-video {
+  width: 80px;
+  height: 80px;
+  border-radius: 50%;
+  object-fit: cover;
+  border: 2px solid var(--mat-sys-outline-variant, #ddd);
+  background: #000;
+}
+
+.profile-video-hint {
+  margin: 0;
+  font-size: 0.75rem;
+  text-align: center;
+  color: var(--mat-sys-on-surface-variant, #888);
+}
+
 .hidden-file-input {
   display: none;
 }

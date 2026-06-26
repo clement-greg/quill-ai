@@ -10,16 +10,25 @@ const DEFAULT_THUMBNAIL_SIZE = 400; // max width or height in px for palette sta
 
 const RASTER_EXTS = ['.jpg', '.jpeg', '.png', '.gif', '.webp'];
 const SVG_EXTS = ['.svg'];
+const VIDEO_EXTS = ['.mp4', '.webm', '.mov', '.m4v', '.ogv'];
+
+const VIDEO_MIME_BY_EXT: Record<string, string> = {
+  '.mp4': 'video/mp4',
+  '.m4v': 'video/mp4',
+  '.webm': 'video/webm',
+  '.mov': 'video/quicktime',
+  '.ogv': 'video/ogg',
+};
 
 const upload = multer({
   storage: multer.memoryStorage(),
-  limits: { fileSize: 10 * 1024 * 1024 }, // 10 MB
+  limits: { fileSize: 50 * 1024 * 1024 }, // 50 MB (videos are larger than images)
   fileFilter: (_req, file, cb) => {
     const ext = path.extname(file.originalname).toLowerCase();
-    if ([...RASTER_EXTS, ...SVG_EXTS].includes(ext)) {
+    if ([...RASTER_EXTS, ...SVG_EXTS, ...VIDEO_EXTS].includes(ext)) {
       cb(null, true);
     } else {
-      cb(new Error('Only image files are allowed'));
+      cb(new Error('Only image and video files are allowed'));
     }
   },
 });
@@ -46,7 +55,12 @@ router.post('/', upload.single('file'), async (req: Request, res: Response) => {
     let originalUrl: string;
     let thumbnailUrl: string;
 
-    if (SVG_EXTS.includes(ext)) {
+    if (VIDEO_EXTS.includes(ext)) {
+      // Videos can't be thumbnailed with sharp — upload once and reuse the URL for both.
+      const videoMime = VIDEO_MIME_BY_EXT[ext] ?? req.file.mimetype;
+      originalUrl = await uploadFileToBlob(req.file.buffer, originalFilename, videoMime);
+      thumbnailUrl = originalUrl;
+    } else if (SVG_EXTS.includes(ext)) {
       // SVGs are already scalable — upload once and use for both url and thumbnailUrl.
       originalUrl = await uploadFileToBlob(req.file.buffer, originalFilename, mimeType);
       thumbnailUrl = originalUrl;

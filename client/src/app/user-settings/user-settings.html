@@ -26,6 +26,26 @@
         <input #avatarFileInput type="file" accept="image/*" class="hidden-file-input"
           (change)="onAvatarFileChange($event)" />
       </div>
+      <div class="profile-video-wrap">
+        @if (avatarVideoUrl()) {
+          <video class="profile-video" [src]="proxyUrl(avatarVideoUrl())" muted autoplay loop playsinline></video>
+          <button mat-icon-button class="profile-avatar-remove" (click)="removeVideo()" title="Remove video">
+            <mat-icon>close</mat-icon>
+          </button>
+        } @else {
+          <div class="profile-avatar-placeholder">
+            <mat-icon>movie</mat-icon>
+          </div>
+        }
+        <button mat-stroked-button class="profile-avatar-upload-btn"
+          [disabled]="uploadingVideo()" (click)="triggerVideoUpload()">
+          <mat-icon>videocam</mat-icon>
+          {{ uploadingVideo() ? 'Uploading…' : (avatarVideoUrl() ? 'Change video' : 'Upload video') }}
+        </button>
+        <p class="profile-video-hint">Shown in AI chat instead of your photo. Loops with a 10-second pause.</p>
+        <input #avatarVideoInput type="file" accept="video/*" class="hidden-file-input"
+          (change)="onAvatarVideoChange($event)" />
+      </div>
       <div class="profile-name-wrap">
         <mat-form-field appearance="outline" class="profile-name-field">
           <mat-label>Display name</mat-label>

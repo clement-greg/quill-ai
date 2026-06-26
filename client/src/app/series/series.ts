@@ -1,5 +1,60 @@
 import { Component, inject, signal, OnInit, computed } from '@angular/core';
 
+interface GreetingContext {
+  /** First name, or a warm fallback when no name is available. */
+  name: string;
+  /** 0–23 local hour. */
+  hour: number;
+  /** Time-of-day word: "morning" | "afternoon" | "evening" | "night". */
+  partOfDay: string;
+  /** 0 (Sunday) – 6 (Saturday). */
+  day: number;
+  /** Full local weekday name, e.g. "Tuesday". */
+  dayName: string;
+  /** Current writing streak in days (0 when unknown or none). */
+  streak: number;
+}
+
+/**
+ * Greeting variations for the home banner. Each entry can opt out by returning
+ * null (e.g. streak greetings only apply once a streak exists); the component
+ * picks at random from the ones that apply on the current visit.
+ */
+const GREETINGS: ((c: GreetingContext) => string | null)[] = [
+  // Time of day — the classics.
+  ({ partOfDay, name }) => `Good ${partOfDay}, ${name}.`,
+  ({ partOfDay, name }) => `Good ${partOfDay}, ${name}. Ready to write?`,
+
+  // Day of the week.
+  ({ day, name }) => (day === 1 ? `Happy Monday, ${name}. Fresh week, fresh pages.` : null),
+  ({ day, name }) => (day === 3 ? `Happy hump day, ${name}. Push through.` : null),
+  ({ day, name }) => (day === 5 ? `Happy Friday, ${name}. Finish the week strong.` : null),
+  ({ day, name }) =>
+    day === 0 || day === 6 ? `Happy ${dayContext(day)}, ${name}. Weekends were made for writing.` : null,
+  ({ dayName, name }) => `It's ${dayName}, ${name}. A good day for a few hundred words.`,
+
+  // Writing streak.
+  ({ streak, name }) => (streak >= 2 ? `${streak} days running, ${name}. Keep the streak alive.` : null),
+  ({ streak, name }) =>
+    streak >= 2 ? `You're on a ${streak}-day streak, ${name}. Don't break the chain.` : null,
+  ({ streak, name }) => (streak >= 7 ? `A full week of writing, ${name}. Real momentum now.` : null),
+  ({ streak, name }) => (streak >= 30 ? `${streak} days straight, ${name}. You're unstoppable.` : null),
+
+  // Encouragement / open-ended.
+  ({ name }) => `Welcome back, ${name}. Your story's been waiting.`,
+  ({ name }) => `Where were we, ${name}? Let's pick up the thread.`,
+  ({ name }) => `The blank page won't fill itself, ${name}.`,
+  ({ name }) => `Let's make some words today, ${name}.`,
+  ({ name }) => `One scene at a time, ${name}.`,
+  ({ partOfDay, name }) =>
+    partOfDay === 'night' ? `Burning the midnight oil, ${name}? Make it count.` : null,
+];
+
+/** Weekend-friendly weekday label used by a couple of greetings. */
+function dayContext(day: number): string {
+  return ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'][day];
+}
+
 const WRITING_QUOTES: { text: string; author: string }[] = [
   { text: "Start writing, no matter what. The water does not flow until the faucet is turned on.", author: "Louis L'Amour" },
   { text: "You can always edit a bad page. You can't edit a blank page.", author: "Jodi Picoult" },
@@ -203,6 +258,7 @@ const WRITING_QUOTES: { text: string; author: string }[] = [
   { text: "It's possible, in a poem or short story, to write about commonplace things and objects using commonplace but precise language, and to endow those things with immense, even startling power.", author: "Raymond Carver" },
 ];
 import { Router } from '@angular/router';
+import { HttpClient } from '@angular/common/http';
 import { FormsModule } from '@angular/forms';
 import { MatButtonModule } from '@angular/material/button';
 import { MatIconModule } from '@angular/material/icon';
@@ -251,6 +307,7 @@ export class SeriesComponent implements OnInit {
   private router = inject(Router);
   private recentChaptersService = inject(RecentChaptersService);
   private headerService = inject(HeaderService);
+  private http = inject(HttpClient);
 
   readonly recentChapters = this.recentChaptersService.recentChapters;
 
@@ -264,17 +321,35 @@ export class SeriesComponent implements OnInit {
     { label: 'Settings',      icon: 'settings',      path: '/settings' },
   ];
 
-  readonly greeting = computed(() => {
-    const hour = new Date().getHours();
-    if (hour < 12) return 'Good morning';
-    if (hour < 17) return 'Good afternoon';
-    if (hour < 21) return 'Good evening';
-    return 'Good night';
-  });
-
   readonly firstName = computed(() =>
     (this.authService.currentUser()?.name ?? '').split(' ')[0]
   );
+
+  /** Current writing streak, loaded once on init to power streak greetings. */
+  private readonly streak = signal(0);
+
+  /** Random seed picked once per visit so the chosen greeting stays stable. */
+  private readonly greetingSeed = Math.random();
+
+  readonly greeting = computed(() => {
+    const now = new Date();
+    const hour = now.getHours();
+    const day = now.getDay();
+    const partOfDay =
+      hour < 12 ? 'morning' : hour < 17 ? 'afternoon' : hour < 21 ? 'evening' : 'night';
+
+    const ctx: GreetingContext = {
+      name: this.firstName() || 'writer',
+      hour,
+      partOfDay,
+      day,
+      dayName: dayContext(day),
+      streak: this.streak(),
+    };
+
+    const options = GREETINGS.map(fn => fn(ctx)).filter((g): g is string => g !== null);
+    return options[Math.floor(this.greetingSeed * options.length)];
+  });
 
   readonly quoteIndex = signal(Math.floor(Math.random() * WRITING_QUOTES.length));
   readonly quote = computed(() => WRITING_QUOTES[this.quoteIndex()]);
@@ -318,6 +393,19 @@ export class SeriesComponent implements OnInit {
   ngOnInit(): void {
     this.headerService.clearAll();
     this.loadSeries();
+    this.loadStreak();
+  }
+
+  private loadStreak(): void {
+    const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
+    this.http
+      .get<{ summary: { currentStreak: number } }>(
+        `/api/user-stats/writing?days=30&tz=${encodeURIComponent(tz)}`,
+      )
+      .subscribe({
+        next: ({ summary }) => this.streak.set(summary.currentStreak),
+        error: () => {},
+      });
   }
 
   loadSeries(): void {

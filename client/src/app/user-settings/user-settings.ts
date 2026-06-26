@@ -53,11 +53,14 @@ export class UserSettingsComponent {
   private headerService = inject(HeaderService);
 
   @ViewChild('avatarFileInput') avatarFileInput!: ElementRef<HTMLInputElement>;
+  @ViewChild('avatarVideoInput') avatarVideoInput!: ElementRef<HTMLInputElement>;
 
   readonly items = this.settingsService.ghostCompleteItems;
   readonly colorTheme = this.settingsService.colorTheme;
   readonly colorThemes = COLOR_THEMES;
   readonly avatarUrl = this.settingsService.avatarUrl;
+  readonly avatarVideoUrl = this.settingsService.avatarVideoUrl;
+  readonly uploadingVideo = signal(false);
   readonly editorFontSize = this.settingsService.editorFontSize;
   readonly editorFontFamily = this.settingsService.editorFontFamily;
   readonly grammarCheckEnabled = this.settingsService.grammarCheckEnabled;
@@ -132,6 +135,42 @@ export class UserSettingsComponent {
 
   removeAvatar(): void {
     this.settingsService.clearAvatarUrl();
+  }
+
+  /** Rewrites a stored upload URL to the same-origin media proxy. */
+  proxyUrl(url: string): string {
+    const filename = url.split('/').pop();
+    return filename ? `/api/image/${filename}` : url;
+  }
+
+  triggerVideoUpload(): void {
+    this.avatarVideoInput.nativeElement.click();
+  }
+
+  async onAvatarVideoChange(event: Event): Promise<void> {
+    const input = event.target as HTMLInputElement;
+    const file = input.files?.[0];
+    if (!file) return;
+    if (file.size > 50 * 1024 * 1024) {
+      this.snackBar.open('Video must be 50 MB or smaller.', undefined, { duration: 3000 });
+      input.value = '';
+      return;
+    }
+    this.uploadingVideo.set(true);
+    try {
+      const url = await this.settingsService.uploadProfileVideo(file);
+      this.settingsService.setAvatarVideoUrl(url);
+      this.snackBar.open('Profile video updated.', undefined, { duration: 2000 });
+    } catch {
+      this.snackBar.open('Video upload failed. Please try again.', undefined, { duration: 3000 });
+    } finally {
+      this.uploadingVideo.set(false);
+      input.value = '';
+    }
+  }
+
+  removeVideo(): void {
+    this.settingsService.clearAvatarVideoUrl();
   }
 
   // New item form

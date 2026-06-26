@@ -529,6 +529,15 @@ export class QuickChatComponent {
     return filename ? `/api/image/${filename}` : url;
   }
 
+  /** Profile-video avatars pause for 10s between loops rather than looping continuously. */
+  onAvatarVideoEnded(event: Event): void {
+    const video = event.target as HTMLVideoElement;
+    setTimeout(() => {
+      // The element may have been removed (e.g. chat closed) by the time this fires.
+      if (video.isConnected) void video.play().catch(() => {});
+    }, 10_000);
+  }
+
   // ── Generated-image actions ─────────────────────────────────────────────
 
   openLightbox(imageUrl: string): void {

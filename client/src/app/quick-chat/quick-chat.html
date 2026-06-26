@@ -124,7 +124,11 @@
              [class.streaming]="last && msg.role === 'assistant' && quickChat.streaming()">
           <div class="qc-role-row">
             @if (msg.role === 'user') {
-              @if (userSettings.avatarUrl()) {
+              @if (userSettings.avatarVideoUrl()) {
+                <video class="qc-avatar qc-avatar-video" [src]="proxyUrl(userSettings.avatarVideoUrl())"
+                       muted playsinline autoplay aria-hidden="true"
+                       (ended)="onAvatarVideoEnded($event)"></video>
+              } @else if (userSettings.avatarUrl()) {
                 <img class="qc-avatar" [src]="userSettings.avatarUrl()" alt="" />
               } @else {
                 <span class="qc-avatar qc-avatar-placeholder"><mat-icon>person</mat-icon></span>

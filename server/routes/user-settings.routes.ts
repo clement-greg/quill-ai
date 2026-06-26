@@ -8,6 +8,7 @@ interface UserSettings {
   email?: string;
   displayName?: string;
   avatarUrl?: string;
+  avatarVideoUrl?: string;
   darkMode?: boolean;
   colorTheme?: string;
   editorFontSize?: string;
@@ -51,6 +52,7 @@ router.put('/', async (req: Request, res: Response): Promise<void> => {
       email: user.email,
       displayName: req.body.displayName,
       avatarUrl: req.body.avatarUrl,
+      avatarVideoUrl: req.body.avatarVideoUrl,
       darkMode: req.body.darkMode,
       colorTheme: req.body.colorTheme,
       editorFontSize: req.body.editorFontSize,
