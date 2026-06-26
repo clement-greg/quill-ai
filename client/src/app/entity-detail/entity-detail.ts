@@ -103,6 +103,7 @@ export class EntityDetailComponent implements OnDestroy {
   slideDir = signal<'next' | 'prev'>('next');
   showAllPhotos = signal(false);
   photoUploading = signal(false);
+  photoGenerating = signal(false);
   photoDragOver = signal(false);
   sortingPhotos = signal(false);
   photoSortSaving = signal(false);
@@ -580,16 +581,16 @@ export class EntityDetailComponent implements OnDestroy {
       if (!result) return;
       const entityId = this.entity()?.id;
       if (!entityId) return;
-      this.photoUploading.set(true);
+      this.photoGenerating.set(true);
       this.entityService.generateImage(result.prompt, result.provider, result.referenceImageUrl).pipe(
         concatMap(({ url, thumbnailUrl }) => this.entityService.addPhoto(entityId, url, thumbnailUrl))
       ).subscribe({
         next: (updated) => {
           this.entity.set(updated);
-          this.photoUploading.set(false);
+          this.photoGenerating.set(false);
         },
         error: () => {
-          this.photoUploading.set(false);
+          this.photoGenerating.set(false);
           this.snackBar.open('Image generation failed', undefined, { duration: 3000 });
         },
       });

@@ -90,6 +90,32 @@ const chapterChunksContainerDef = {
   },
 };
 
+// Stores one embedding per timeline event (the LLM-built "key events" on an
+// entity), partitioned by entityId so all of an entity's event chunks live in
+// one partition (cheap to list and delete together). Mirrors the chapter-chunks
+// vector policy: cosine distance over 1536-dim float32 vectors, vector path
+// excluded from the standard index.
+const timelineEventChunksContainerDef = {
+  id: 'timeline-event-chunks',
+  partitionKey: { paths: ['/entityId'] },
+  vectorEmbeddingPolicy: {
+    vectorEmbeddings: [
+      {
+        path: '/contentVector',
+        dataType: 'float32',
+        distanceFunction: 'cosine',
+        dimensions: 1536,
+      },
+    ],
+  },
+  indexingPolicy: {
+    automatic: true,
+    indexingMode: 'consistent',
+    includedPaths: [{ path: '/*' }],
+    excludedPaths: [{ path: '/contentVector/*' }],
+  },
+};
+
 export function getContainer(containerName: string): Container {
   return database.container(containerName);
 }
@@ -113,4 +139,5 @@ export async function initDatabase(): Promise<void> {
   // Note: vector embedding policies cannot be changed on existing containers.
   await database.containers.createIfNotExists(chaptersContainerDef as any);
   await database.containers.createIfNotExists(chapterChunksContainerDef as any);
+  await database.containers.createIfNotExists(timelineEventChunksContainerDef as any);
 }

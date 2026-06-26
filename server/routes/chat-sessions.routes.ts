@@ -5,6 +5,7 @@ import config from '../config';
 import { getContainer } from '../cosmos';
 import { withOwnerFilter } from '../owner-guard';
 import { searchChapterChunks, reindexChapterChunks } from '../chapter-chunks';
+import { searchTimelineEvents, TimelineEventSearchResult } from '../timeline-event-chunks';
 import { Chapter, ChapterNote, OutlineItem } from '../../shared/models/chapter.model';
 import { ChapterCitation } from '../../shared/models/chat-session.model';
 import { BookNote } from '../../shared/models/book-note.model';
@@ -116,14 +117,29 @@ async function buildRagSystemPrompt(
   const retrievalQuery = (lastUserMessage?.content ?? '').trim();
   if (!retrievalQuery) return { systemPrompt, citations };
 
-  const chunks = await searchChapterChunks(retrievalQuery, { ...scope, topK: 8 }, req);
-  if (chunks.length === 0) return { systemPrompt, citations };
+  // Search both the prose chunks and the structured timeline events (the LLM-built
+  // "key events" on entities). Events capture plot-defining facts — deaths,
+  // betrayals, revelations — that the prose often only alludes to, so they ground
+  // questions ("what was Jim's fate") the prose alone answers incompletely.
+  const [chunks, timelineHits] = await Promise.all([
+    searchChapterChunks(retrievalQuery, { ...scope, topK: 8 }, req),
+    searchTimelineEvents(retrievalQuery, { seriesId: scope.seriesId, topK: 5 }, req),
+  ]);
+  if (chunks.length === 0 && timelineHits.length === 0) return { systemPrompt, citations };
 
-  // Number the distinct source chapters and resolve their titles so the
-  // model can cite them inline and the client can render links.
+  // Chapter-extracted events carry a chapterId, so they share the prose's chapter
+  // citations. Manual events have none and are surfaced as un-cited story-bible facts.
+  const citedTimelineHits = timelineHits.filter((t): t is TimelineEventSearchResult & { chapterId: string } => !!t.chapterId);
+  const uncitedTimelineHits = timelineHits.filter(t => !t.chapterId);
+
+  // Number the distinct source chapters (from both prose chunks and chapter-sourced
+  // events) and resolve their titles so the model can cite them inline.
   const distinctChapterIds: string[] = [];
   for (const c of chunks) {
     if (!distinctChapterIds.includes(c.chapterId)) distinctChapterIds.push(c.chapterId);
+  }
+  for (const t of citedTimelineHits) {
+    if (!distinctChapterIds.includes(t.chapterId)) distinctChapterIds.push(t.chapterId);
   }
   const chaptersContainer = getContainer('chapters');
   const titleById = new Map<string, string>();
@@ -145,9 +161,13 @@ async function buildRagSystemPrompt(
     title: titleById.get(cid) ?? 'Untitled chapter',
   }));
 
-  const labeledExcerpts = chunks
-    .map(c => `[${numberById.get(c.chapterId)}] (from "${titleById.get(c.chapterId) ?? 'Untitled chapter'}")\n${c.content}`)
-    .join('\n\n---\n\n');
+  // Prose excerpts and chapter-sourced events are both citable by chapter number.
+  const proseExcerpts = chunks
+    .map(c => `[${numberById.get(c.chapterId)}] (from "${titleById.get(c.chapterId) ?? 'Untitled chapter'}")\n${c.content}`);
+  const citedEventExcerpts = citedTimelineHits
+    .map(t => `[${numberById.get(t.chapterId)}] (from "${titleById.get(t.chapterId) ?? 'Untitled chapter'}", from ${t.entityName}'s timeline)\n${t.content}`);
+  const labeledExcerpts = [...proseExcerpts, ...citedEventExcerpts].join('\n\n---\n\n');
+
   systemPrompt +=
     `\n\nThe following are the most relevant excerpts from the author's story, ` +
     `each prefixed with a numbered source tag. Use them to ground your answer.\n\n` +
@@ -164,6 +184,16 @@ async function buildRagSystemPrompt(
     `telling the author you don't have the information.\n\n` +
     `${labeledExcerpts}`;
 
+  // Un-chaptered (manually authored) events carry no citation number; offer them as
+  // background facts the model may use but must not cite with a bracketed number.
+  if (uncitedTimelineHits.length > 0) {
+    const facts = uncitedTimelineHits.map(t => `- ${t.content}`).join('\n');
+    systemPrompt +=
+      `\n\nAdditional facts from the author's story bible (character timelines). ` +
+      `You may use these to inform your answer, but they have NO citation number — do not attach a ` +
+      `bracketed citation to information drawn only from them:\n${facts}`;
+  }
+
   return { systemPrompt, citations };
 }
 
@@ -176,6 +206,10 @@ function emitUsedCitations(res: Response, answer: string, citations: ChapterCita
   }
   const usedCitations = citations.filter(c => citedNumbers.has(c.n));
   if (usedCitations.length > 0) {
+    // The answer drew on retrieved chapters — surface the up-front RAG retrieval
+    // as a "Used: …" chip, since from the author's view the assistant searched
+    // their chapters (the retrieval runs before the agent loop, not as a tool).
+    res.write(`data: ${JSON.stringify({ tool: 'search-chapters' })}\n\n`);
     res.write(`data: ${JSON.stringify({ sources: usedCitations })}\n\n`);
   }
 }
@@ -250,6 +284,8 @@ async function streamChatResponse(
       });
       for (const c of calls) {
         const tool = tools[c.name];
+        // Tell the client which tool ran so it can surface a "Used: …" chip.
+        if (c.name) res.write(`data: ${JSON.stringify({ tool: c.name })}\n\n`);
         let parsedArgs: Record<string, unknown> = {};
         try {
           parsedArgs = c.args ? JSON.parse(c.args) : {};

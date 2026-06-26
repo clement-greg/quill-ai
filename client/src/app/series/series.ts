@@ -311,6 +311,26 @@ export class SeriesComponent implements OnInit {
 
   readonly recentChapters = this.recentChaptersService.recentChapters;
 
+  /** Number of recent chapters shown before the "More" toggle is expanded. */
+  private static readonly PRIMARY_CHAPTER_COUNT = 3;
+
+  /** Whether the full recent-chapters list (beyond the primary set) is revealed. */
+  readonly showAllChapters = signal(false);
+
+  readonly visibleChapters = computed(() =>
+    this.showAllChapters()
+      ? this.recentChapters()
+      : this.recentChapters().slice(0, SeriesComponent.PRIMARY_CHAPTER_COUNT)
+  );
+
+  readonly hasMoreChapters = computed(
+    () => this.recentChapters().length > SeriesComponent.PRIMARY_CHAPTER_COUNT
+  );
+
+  toggleChapters(): void {
+    this.showAllChapters.update((v) => !v);
+  }
+
   readonly featureLinks = [
     { label: 'Entities',      icon: 'people',        path: '/entities' },
     { label: 'Relationships', icon: 'account_tree',  path: '/relationships' },
@@ -320,6 +340,24 @@ export class SeriesComponent implements OnInit {
     { label: 'Archived',      icon: 'archive',       path: '/archived' },
     { label: 'Settings',      icon: 'settings',      path: '/settings' },
   ];
+
+  /** Number of feature links shown before the "More" toggle is expanded. */
+  private static readonly PRIMARY_FEATURE_COUNT = 4;
+
+  /** Whether the secondary feature links (beyond the primary set) are revealed. */
+  readonly showAllFeatures = signal(false);
+
+  readonly visibleFeatureLinks = computed(() =>
+    this.showAllFeatures()
+      ? this.featureLinks
+      : this.featureLinks.slice(0, SeriesComponent.PRIMARY_FEATURE_COUNT)
+  );
+
+  readonly hasMoreFeatures = this.featureLinks.length > SeriesComponent.PRIMARY_FEATURE_COUNT;
+
+  toggleFeatures(): void {
+    this.showAllFeatures.update((v) => !v);
+  }
 
   readonly firstName = computed(() =>
     (this.authService.currentUser()?.name ?? '').split(' ')[0]

@@ -92,7 +92,8 @@
       </div>
     }
 
-    <div class="qc-messages" #messagesEl (mouseup)="onMessagesMouseUp()">
+    <div class="qc-messages" #messagesEl (mouseup)="onMessagesMouseUp()"
+         (mousemove)="onMessagesMouseMove($event)" (mouseleave)="onEntityPopupMouseLeave()">
       @if (quickChat.messages().length === 0) {
         <div class="qc-empty">
           <lottie-player
@@ -200,6 +201,15 @@
                 }
                 @if (msg.text) {
                   <div class="qc-markdown" [attr.data-msg-index]="$index" (click)="onCitationClick($event)" [innerHTML]="renderHtml(msg, $index)"></div>
+                }
+              </div>
+            }
+            @if (msg.toolsUsed?.length) {
+              <div class="qc-tools-used">
+                @for (tool of msg.toolsUsed; track tool) {
+                  <span class="qc-tool-chip">
+                    <mat-icon>build</mat-icon>Used: {{ toolLabel(tool) }}
+                  </span>
                 }
               </div>
             }
@@ -419,6 +429,28 @@
       </button>
     </div>
   </div>
+
+  @if (hoveredEntity(); as entity) {
+    <div class="qc-entity-popup"
+         [style.top.px]="entityPopupTop()"
+         [style.left.px]="entityPopupLeft()"
+         (mouseenter)="onEntityPopupMouseEnter()"
+         (mouseleave)="onEntityPopupMouseLeave()">
+      @if (entity.thumbnailUrl) {
+        <img class="qc-entity-popup-thumb" [src]="proxyUrl(entity.thumbnailUrl)" alt="" />
+      }
+      <div class="qc-entity-popup-info">
+        <span class="qc-entity-popup-name">{{ entity.name }}</span>
+        @if (entity.biography) {
+          <span class="qc-entity-popup-bio">{{ entity.biography }}</span>
+        }
+      </div>
+      <button mat-icon-button class="qc-entity-popup-open" (click)="openEntity(entity.id)"
+              matTooltip="Open entity" aria-label="Open entity">
+        <mat-icon>open_in_new</mat-icon>
+      </button>
+    </div>
+  }
 
   @if (previewedMap(); as map) {
     <app-map-preview

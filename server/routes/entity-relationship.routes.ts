@@ -147,12 +147,12 @@ router.post('/extract-from-chapter', async (req: Request, res: Response) => {
 
     const { resources: entityResources } = await entitiesContainer.items
       .query(withOwnerFilter(req, {
-        query: 'SELECT c.id, c.name, c.type, c.deleted, c.archived FROM c WHERE c.seriesId = @seriesId',
+        query: 'SELECT c.id, c.name, c.type, c.deleted, c.archived, c.isNarrator FROM c WHERE c.seriesId = @seriesId',
         parameters: [{ name: '@seriesId', value: seriesId }],
       }))
       .fetchAll();
-    const entities = (entityResources as Pick<Entity, 'id' | 'name' | 'type' | 'deleted' | 'archived'>[])
-      .filter(e => !e.deleted && !e.archived);
+    const entities = (entityResources as Pick<Entity, 'id' | 'name' | 'type' | 'deleted' | 'archived' | 'isNarrator'>[])
+      .filter(e => !e.deleted && !e.archived && !e.isNarrator);
     const entityById = new Map(entities.map(e => [e.id, e]));
 
     const { resources: existingRels } = await relationshipContainer.items

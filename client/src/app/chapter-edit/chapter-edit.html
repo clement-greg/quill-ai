@@ -367,7 +367,8 @@
               <mat-tab>
                 <ng-template mat-tab-label><mat-icon>history</mat-icon></ng-template>
                 <div class="sidebar-tab-content tab-history">
-                  <div class="history-sidebar-list" [style.height.px]="historyListHeight()">
+                  <div class="history-sidebar-list" [class.history-sidebar-list-full]="!selectedVersion()"
+                    [style.height.px]="selectedVersion() ? historyListHeight() : null">
                     <div class="history-list-title">
                       <span>Version History</span>
                       <button mat-icon-button class="history-refresh-btn" [disabled]="historyLoading()"

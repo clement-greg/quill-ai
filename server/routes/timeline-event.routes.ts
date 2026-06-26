@@ -14,6 +14,10 @@ import {
 import { Entity } from '../../shared/models/entity.model';
 import { Chapter } from '../../shared/models/chapter.model';
 import { withOwnerFilter, readOwnedItem } from '../owner-guard';
+import {
+  indexTimelineEvent,
+  deleteTimelineEventChunk,
+} from '../timeline-event-chunks';
 import config from '../config';
 
 const router = Router();
@@ -99,6 +103,7 @@ router.post('/', async (req: Request, res: Response) => {
       modifiedAt: now,
     };
     const { resource } = await container.items.create<TimelineEvent>(event);
+    if (resource) await indexTimelineEvent(resource, entity.name);
     res.status(201).json(resource);
   } catch (err) {
     console.error('Error creating timeline event:', err);
@@ -135,6 +140,10 @@ router.put('/:id', async (req: Request, res: Response) => {
       modifiedAt: new Date().toISOString(),
     };
     const { resource } = await container.item(id, entityId).replace<TimelineEvent>(updated);
+    if (resource) {
+      const entity = await readOwnedItem<Entity>(entitiesContainer, entityId, entityId, req);
+      if (entity) await indexTimelineEvent(resource, entity.name);
+    }
     res.json(resource);
   } catch (err) {
     console.error('Error updating timeline event:', err);
@@ -180,12 +189,14 @@ router.delete('/:entityId/:id', async (req: Request, res: Response) => {
       return;
     }
     await container.item(id, entityId).delete();
+    await deleteTimelineEventChunk(id, entityId);
     res.status(204).send();
   } catch (err) {
     console.error('Error deleting timeline event:', err);
     res.status(500).json({ error: 'Failed to delete timeline event' });
   }
 });
+
 
 // ── Chapter timeline extraction ──────────────────────────────────────────────
 
@@ -437,6 +448,9 @@ router.post('/apply-chapter-proposals', async (req: Request, res: Response) => {
 
     const now = new Date().toISOString();
     let added = 0, updated = 0, removed = 0;
+    // Vector-index sync runs after each DB write; collected and awaited together
+    // at the end so embedding latency doesn't serialize the whole batch.
+    const indexOps: Promise<void>[] = [];
 
     // Creates — resolve the next sortOrder once per entity, then increment locally.
     const nextSortOrderByEntity = new Map<string, number>();
@@ -489,6 +503,7 @@ router.post('/apply-chapter-proposals', async (req: Request, res: Response) => {
       try {
         await container.items.create<TimelineEvent>(event);
         added++;
+        indexOps.push(indexTimelineEvent(event, entity.name));
       } catch (createErr) {
         console.error(`apply-chapter-proposals: failed to create event "${add.name}" for entity ${add.entityId}:`, createErr);
       }
@@ -514,6 +529,7 @@ router.post('/apply-chapter-proposals', async (req: Request, res: Response) => {
       try {
         await container.item(existing.id, existing.entityId).replace<TimelineEvent>(replacement);
         updated++;
+        indexOps.push(indexTimelineEvent(replacement, update.entityName));
       } catch (updateErr) {
         console.error(`apply-chapter-proposals: failed to update event ${update.eventId}:`, updateErr);
       }
@@ -527,11 +543,13 @@ router.post('/apply-chapter-proposals', async (req: Request, res: Response) => {
       try {
         await container.item(existing.id, existing.entityId).delete();
         removed++;
+        indexOps.push(deleteTimelineEventChunk(existing.id, existing.entityId));
       } catch (removeErr) {
         console.error(`apply-chapter-proposals: failed to delete event ${remove.eventId}:`, removeErr);
       }
     }
 
+    await Promise.all(indexOps);
     res.json({ added, updated, removed });
   } catch (err) {
     console.error('Error applying chapter timeline proposals:', err);

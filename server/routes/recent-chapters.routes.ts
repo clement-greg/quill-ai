@@ -4,7 +4,7 @@ import { getContainer } from '../cosmos';
 import { ChapterVisit, RecentChapter } from '../../shared/models/recent-chapter.model';
 
 const router = Router();
-const MAX_ITEMS = 4;
+const MAX_ITEMS = 20;
 // How many recent visits to scan when collapsing to distinct chapters. Bounds
 // the query cost while staying well above MAX_ITEMS so revisits never hide an
 // older distinct chapter that still belongs in the list.

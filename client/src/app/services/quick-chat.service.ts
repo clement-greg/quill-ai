@@ -179,9 +179,12 @@ export class QuickChatService {
               lottie?: string;
               linkEntityReferences?: { entityId: string; entityName: string; terms: { text: string; refType: string }[] };
               proposeChapterEdit?: ChapterEditProposal;
+              tool?: string;
             };
             if (parsed.error) {
               this.updateLastAssistantMessage(`Error: ${parsed.error}`);
+            } else if (parsed.tool) {
+              this.addToolUsedToLastAssistantMessage(parsed.tool);
             } else if (parsed.chapterDraft) {
               this.markLastAssistantAsDraft();
             } else if (parsed.beats) {
@@ -334,7 +337,7 @@ export class QuickChatService {
   private async persistToSession(sessionId: string): Promise<void> {
     const messages = this.messages()
       .filter(m => m.text || m.imageUrl)
-      .map(({ role, text, imageUrl, thumbnailUrl, sources, kind, beats, lottieUrl, editProposal, linkSession }) => ({
+      .map(({ role, text, imageUrl, thumbnailUrl, sources, kind, beats, lottieUrl, editProposal, linkSession, toolsUsed }) => ({
         role, text,
         ...(imageUrl ? { imageUrl } : {}),
         ...(thumbnailUrl ? { thumbnailUrl } : {}),
@@ -344,6 +347,7 @@ export class QuickChatService {
         ...(lottieUrl ? { lottieUrl } : {}),
         ...(editProposal ? { editProposal } : {}),
         ...(linkSession ? { linkSession } : {}),
+        ...(toolsUsed?.length ? { toolsUsed } : {}),
       }));
     try {
       await this.authFetch(`/api/chat-sessions/${sessionId}`, {
@@ -539,6 +543,20 @@ export class QuickChatService {
       if (msgs.length === 0) return msgs;
       const copy = [...msgs];
       copy[copy.length - 1] = { ...copy[copy.length - 1], kind: 'chapter-draft' };
+      return copy;
+    });
+  }
+
+  /** Records a tool the assistant invoked for the in-progress message, preserving
+   *  call order and ignoring duplicates. */
+  private addToolUsedToLastAssistantMessage(tool: string): void {
+    this.messages.update(msgs => {
+      if (msgs.length === 0) return msgs;
+      const copy = [...msgs];
+      const last = copy[copy.length - 1];
+      const existing = last.toolsUsed ?? [];
+      if (existing.includes(tool)) return msgs;
+      copy[copy.length - 1] = { ...last, toolsUsed: [...existing, tool] };
       return copy;
     });
   }

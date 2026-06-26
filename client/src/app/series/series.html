@@ -26,7 +26,7 @@
       <div class="recent-chapters">
         <h2 class="recent-chapters-heading">Continue writing</h2>
         <div class="recent-chapters-list">
-          @for (item of recentChapters(); track item.chapterId) {
+          @for (item of visibleChapters(); track item.chapterId) {
           <div class="recent-chapter-chip">
             <button class="recent-chip-main" (click)="navigateToChapter(item.chapterId)">
               @if (item.thumbnailUrl) {
@@ -42,19 +42,45 @@
           </div>
           }
         </div>
+        @if (hasMoreChapters()) {
+        <button
+          type="button"
+          class="feature-more"
+          (click)="toggleChapters()"
+          [attr.aria-expanded]="showAllChapters()"
+        >
+          {{ showAllChapters() ? 'Less' : 'More' }}
+          <mat-icon class="feature-more-icon">{{
+            showAllChapters() ? 'expand_less' : 'expand_more'
+          }}</mat-icon>
+        </button>
+        }
       </div>
       }
 
       <div class="feature-links">
         <h2>Explore</h2>
         <div class="feature-grid">
-          @for (link of featureLinks; track link.path) {
+          @for (link of visibleFeatureLinks(); track link.path) {
           <button class="feature-card" (click)="navigateTo(link.path)">
             <mat-icon class="feature-card-icon">{{ link.icon }}</mat-icon>
             <span class="feature-card-label">{{ link.label }}</span>
           </button>
           }
         </div>
+        @if (hasMoreFeatures) {
+        <button
+          type="button"
+          class="feature-more"
+          (click)="toggleFeatures()"
+          [attr.aria-expanded]="showAllFeatures()"
+        >
+          {{ showAllFeatures() ? 'Less' : 'More' }}
+          <mat-icon class="feature-more-icon">{{
+            showAllFeatures() ? 'expand_less' : 'expand_more'
+          }}</mat-icon>
+        </button>
+        }
       </div>
 
       <div class="series-header">

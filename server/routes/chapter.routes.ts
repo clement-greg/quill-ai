@@ -119,28 +119,6 @@ router.post('/', async (req: Request, res: Response) => {
   }
 });
 
-// POST reindex-all — (re)build chunk embeddings for every chapter the user owns.
-// One-time backfill / repair so semantic search has consistent, fully-populated
-// chunks (owner, bookId, seriesId, vectors). Runs sequentially to avoid hammering
-// the embedding service.
-router.post('/reindex-all', async (req: Request, res: Response) => {
-  try {
-    const { resources } = await container.items
-      .query<Chapter>(withOwnerFilter(req, 'SELECT * FROM c'))
-      .fetchAll();
-
-    let reindexed = 0;
-    for (const chapter of resources) {
-      await reindexChapterChunks(chapter);
-      reindexed++;
-    }
-    res.json({ reindexed });
-  } catch (err) {
-    console.error('Error reindexing chapters:', err);
-    res.status(500).json({ error: 'Failed to reindex chapters' });
-  }
-});
-
 // PATCH reorder chapters
 router.patch('/reorder', async (req: Request, res: Response) => {
   try {

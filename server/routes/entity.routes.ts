@@ -9,6 +9,7 @@ import { Book } from '../../shared/models/book.model';
 import { TimelineEvent } from '../../shared/models/timeline-event.model';
 import { withOwnerFilter, readOwnedItem } from '../owner-guard';
 import { searchChapterChunks } from '../chapter-chunks';
+import { deleteTimelineEventChunksForEntity } from '../timeline-event-chunks';
 
 const aiClient = new AzureOpenAI({
   endpoint: config.foundry.endpoint,
@@ -475,6 +476,8 @@ router.delete('/:id', async (req: Request, res: Response) => {
   try {
     const id = req.params['id'] as string;
     await container.item(id, id).delete();
+    // Drop the entity's timeline-event embeddings so deleted events don't surface in search.
+    await deleteTimelineEventChunksForEntity(id);
     res.status(204).send();
   } catch (err) {
     console.error('Error deleting entity:', err);

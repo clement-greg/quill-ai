@@ -655,6 +655,28 @@
   pointer-events: none;
 }
 
+.qc-tools-used {
+  margin-top: 4px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.qc-tool-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--mat-sys-on-surface-variant);
+  font-size: 0.75rem;
+
+  mat-icon {
+    font-size: 14px;
+    width: 14px;
+    height: 14px;
+    line-height: 14px;
+  }
+}
+
 .qc-insert-row {
   margin-top: 8px;
   display: flex;
@@ -951,6 +973,20 @@
     }
   }
 
+  .qc-entity-ref {
+    color: var(--mat-sys-primary);
+    text-decoration: underline;
+    text-decoration-color: color-mix(in srgb, var(--mat-sys-primary) 50%, transparent);
+    text-underline-offset: 2px;
+    border-radius: 2px;
+    padding: 0 1px;
+    cursor: pointer;
+
+    &:hover {
+      text-decoration-color: var(--mat-sys-primary);
+    }
+  }
+
   .chat-sources {
     margin-top: 12px;
     padding-top: 8px;
@@ -1192,4 +1228,61 @@
 
   .qc-highlight-entry:hover &,
   .qc-highlight-entry-active & { color: var(--mat-sys-primary); }
+}
+
+/* ── Entity reference hover badge ──────────────────────────────────────── */
+.qc-entity-popup {
+  position: fixed;
+  z-index: 1300;
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  max-width: 300px;
+  padding: 8px 6px 8px 14px;
+  background: var(--mat-sys-surface-container-highest);
+  border: 1px solid var(--mat-sys-outline-variant);
+  border-radius: 8px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.2);
+  pointer-events: auto;
+}
+
+.qc-entity-popup-thumb {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  object-fit: cover;
+  flex-shrink: 0;
+  margin-top: 2px;
+}
+
+.qc-entity-popup-info {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.qc-entity-popup-name {
+  font-size: 0.9rem;
+  font-weight: 500;
+}
+
+.qc-entity-popup-bio {
+  font-size: 0.78rem;
+  color: var(--mat-sys-on-surface-variant);
+  line-height: 1.4;
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.qc-entity-popup-open {
+  margin-left: auto;
+  flex-shrink: 0;
+  align-self: center;
+  opacity: 0.6;
+  transition: opacity 0.15s;
+
+  &:hover { opacity: 1; }
 }

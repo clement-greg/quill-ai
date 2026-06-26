@@ -80,6 +80,9 @@ export interface ChatSessionMessage {
   beats?: string;
   /** URL of a lottie animation to display inline after a successful action. */
   lottieUrl?: string;
+  /** Names of tools the assistant invoked while producing this message, in call
+   * order (deduplicated). Shown as small "Used: …" chips beneath the bubble. */
+  toolsUsed?: string[];
   /** ISO-8601 timestamp of when the message was created, shown in the chat. */
   timestamp?: string;
 }

@@ -97,7 +97,7 @@ export interface ImageGenResult {
     </mat-dialog-actions>
   `,
   styles: [`
-    .prompt-field { width: 100%; }
+    .prompt-field { width: 100%; margin-top: 8px; }
     .model-field { width: 100%; margin-top: 8px; }
     mat-dialog-content { width: min(460px, 90vw); box-sizing: border-box; }
     .source-section { margin: 4px 0 12px; }

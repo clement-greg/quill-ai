@@ -254,6 +254,23 @@
   }
 }
 
+.photo-card--skeleton {
+  cursor: default;
+  background: linear-gradient(
+    100deg,
+    var(--mat-sys-surface-variant, #e8e0f0) 30%,
+    rgba(255, 255, 255, 0.5) 50%,
+    var(--mat-sys-surface-variant, #e8e0f0) 70%
+  );
+  background-size: 200% 100%;
+  animation: photo-skeleton-shimmer 1.4s ease-in-out infinite;
+}
+
+@keyframes photo-skeleton-shimmer {
+  0% { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+
 .photo-caption {
   position: absolute;
   bottom: 0;

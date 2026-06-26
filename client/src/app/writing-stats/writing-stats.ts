@@ -112,6 +112,7 @@ const localTz = Intl.DateTimeFormat().resolvedOptions().timeZone;
           <video class="profile-avatar profile-avatar-video"
                  [src]="proxyUrl(userSettings.avatarVideoUrl())"
                  muted autoplay playsinline aria-hidden="true"
+                 (loadeddata)="onAvatarVideoReady($event)"
                  (ended)="onAvatarVideoEnded($event)"></video>
         } @else if (userSettings.avatarUrl()) {
           <img class="profile-avatar" [src]="userSettings.avatarUrl()" alt="" />
@@ -1331,6 +1332,16 @@ export class WritingStatsComponent implements OnInit, AfterViewInit, OnDestroy {
   proxyUrl(url: string): string {
     const filename = url.split('/').pop();
     return filename ? `/api/image/${filename}` : url;
+  }
+
+  /**
+   * Muted autoplay can fail to fire when the `src` is bound asynchronously (the
+   * browser's initial autoplay attempt runs before the source is set). Once the
+   * media has loaded, explicitly start playback to guarantee it plays.
+   */
+  onAvatarVideoReady(event: Event): void {
+    const video = event.target as HTMLVideoElement;
+    if (video.paused) void video.play().catch(() => {});
   }
 
   /** Profile-video avatars pause for 10s between loops rather than looping continuously. */

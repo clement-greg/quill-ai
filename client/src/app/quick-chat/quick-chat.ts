@@ -29,6 +29,7 @@ import { ChapterService } from '../chapter/chapter.service';
 import { EditorBridgeService } from '../services/editor-bridge.service';
 import { UserSettingsService, GhostCompleteItem } from '../services/user-settings.service';
 import { chatMarkdownToHtml, chapterIdFromClick } from '../shared/chat-markdown';
+import { annotateEntityReferences, entityIdFromClick } from '../shared/entity-references';
 import { MapPreviewComponent } from '../maps/map-preview/map-preview';
 import { EntityPickerDialogComponent, EntityPickerData } from '../entity-edit/entity-picker-dialog';
 import { FolderLocationPickerDialogComponent, FolderLocation, FolderLocationPickerData } from '../ai-assistant/folder-location-picker-dialog';
@@ -329,7 +330,7 @@ export class QuickChatComponent {
   // expected and fine. Once streaming ends the reference stabilises, so
   // subsequent change-detection passes return the *same* SafeHtml reference —
   // Angular skips the [innerHTML] update and the user's text selection survives.
-  private readonly htmlCache = new WeakMap<ChatSessionMessage, SafeHtml>();
+  private htmlCache = new WeakMap<ChatSessionMessage, SafeHtml>();
 
   readonly highlightColors = [
     { value: '#ffe066', label: 'Yellow' },
@@ -362,6 +363,13 @@ export class QuickChatComponent {
     entries.sort((a, b) => a.messageIndex - b.messageIndex || a.highlight.startOffset - b.highlight.startOffset);
     return entries;
   });
+
+  // ── Entity reference hover badge ──────────────────────────────────────────
+  /** The entity whose hover badge is currently shown over a chat reply, if any. */
+  readonly hoveredEntity = signal<Entity | null>(null);
+  readonly entityPopupTop = signal(0);
+  readonly entityPopupLeft = signal(0);
+  private entityPopupHideTimer: ReturnType<typeof setTimeout> | null = null;
 
   // Generated-image actions
   readonly lightboxUrl = signal<string | null>(null);
@@ -465,6 +473,9 @@ export class QuickChatComponent {
       if (msg.highlights?.length) {
         html = this.applyHighlightsToHtml(html, msg.highlights, msgIndex);
       }
+      // Wrap entity mentions last so it never disturbs the highlight offset math
+      // (it only nests spans around existing text — character offsets are preserved).
+      html = annotateEntityReferences(html, this.entities());
       this.htmlCache.set(msg, this.sanitizer.bypassSecurityTrustHtml(html));
     }
     return this.htmlCache.get(msg)!;
@@ -502,12 +513,72 @@ export class QuickChatComponent {
     });
   }
 
+  /** Turns a raw tool name (e.g. "generate_image", "linkEntityReferences") into a
+   *  readable, kebab-cased label for the "Used: …" chip (e.g. "generate-image"). */
+  toolLabel(tool: string): string {
+    return tool
+      .replace(/([a-z0-9])([A-Z])/g, '$1-$2') // camelCase → camel-Case
+      .replace(/_/g, '-')                       // snake_case → snake-case
+      .toLowerCase();
+  }
+
   onCitationClick(event: MouseEvent): void {
+    // Clicking an entity mention opens that entity (the hover badge offers the
+    // same jump). Checked first so entity spans nested near citations win.
+    const entityId = entityIdFromClick(event);
+    if (entityId) {
+      event.preventDefault();
+      this.openEntity(entityId);
+      return;
+    }
     const chapterId = chapterIdFromClick(event);
     if (!chapterId) return;
     event.preventDefault();
     this.quickChat.close();
     this.router.navigate(['/chapters', chapterId, 'edit']);
+  }
+
+  /** Navigates to an entity's page, closing the chat overlay. */
+  openEntity(entityId: string): void {
+    this.hoveredEntity.set(null);
+    this.quickChat.close();
+    this.router.navigate(['/entities', entityId]);
+  }
+
+  // ── Entity reference hover badge ──────────────────────────────────────────
+
+  /** Shows the badge when the pointer is over an entity mention in a reply,
+   *  and schedules it to hide when the pointer moves off. */
+  onMessagesMouseMove(event: MouseEvent): void {
+    const target = (event.target as HTMLElement | null)?.closest('.qc-entity-ref') as HTMLElement | null;
+    if (target) {
+      if (this.entityPopupHideTimer) { clearTimeout(this.entityPopupHideTimer); this.entityPopupHideTimer = null; }
+      const entityId = target.getAttribute('data-entity-id');
+      if (entityId && this.hoveredEntity()?.id !== entityId) {
+        const entity = this.entities().find(e => e.id === entityId);
+        if (entity) {
+          const rect = target.getBoundingClientRect();
+          this.entityPopupTop.set(rect.bottom + 6);
+          this.entityPopupLeft.set(rect.left);
+          this.hoveredEntity.set(entity);
+        }
+      }
+    } else if (this.hoveredEntity()) {
+      this.scheduleHideEntityPopup();
+    }
+  }
+
+  onEntityPopupMouseEnter(): void {
+    if (this.entityPopupHideTimer) { clearTimeout(this.entityPopupHideTimer); this.entityPopupHideTimer = null; }
+  }
+  onEntityPopupMouseLeave(): void { this.scheduleHideEntityPopup(); }
+
+  private scheduleHideEntityPopup(): void {
+    if (this.entityPopupHideTimer) clearTimeout(this.entityPopupHideTimer);
+    this.entityPopupHideTimer = setTimeout(() => {
+      this.hoveredEntity.set(null);
+      this.entityPopupHideTimer = null;
+    }, 150);
   }
 
   /** Opens the full-screen read-only viewer for a map thumbnail in the chat. */
@@ -891,6 +962,9 @@ export class QuickChatComponent {
             .filter(e => !e.deleted && !e.archived)
             .sort((a, b) => a.name.localeCompare(b.name)),
         );
+        // Messages may have rendered before entities arrived (and cached HTML
+        // without entity-reference markup). Drop the cache so they re-annotate.
+        this.htmlCache = new WeakMap<ChatSessionMessage, SafeHtml>();
         this.books.set(
           books
             .filter(b => !b.deleted && !b.archived)

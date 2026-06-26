@@ -55,7 +55,7 @@
             }
             <button mat-stroked-button class="section-action"
                     [matMenuTriggerFor]="addPhotoMenu"
-                    [disabled]="photoUploading()"
+                    [disabled]="photoUploading() || photoGenerating()"
                     aria-label="Add photos">
               @if (photoUploading()) {
                 <mat-spinner diameter="16" />
@@ -124,10 +124,13 @@
              (dragover)="onPhotoDragOver($event)"
              (dragleave)="onPhotoDragLeave($event)"
              (drop)="onPhotosDrop($event)">
-          @if (visiblePhotos().length === 0) {
+          @if (visiblePhotos().length === 0 && !photoGenerating()) {
             <p class="empty-hint">No photos added yet. Add photos or drag &amp; drop here.</p>
           } @else {
             <div class="photo-grid">
+              @if (photoGenerating()) {
+                <div class="photo-card photo-card--skeleton" aria-label="Generating image…" aria-busy="true"></div>
+              }
               @for (photo of displayedPhotos(); track $index) {
                 <button class="photo-card" draggable="true" (dragstart)="onPhotoDragStart($event, photo)" (click)="openLightbox($index)" [attr.aria-label]="photo.caption || 'Photo ' + ($index + 1)">
                   <img [src]="proxyUrl(photo.thumbnailUrl) || proxyUrl(photo.url)" [alt]="photo.caption || ''" />

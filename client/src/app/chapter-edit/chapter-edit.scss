@@ -375,6 +375,11 @@
   border-bottom: none;
 }
 
+.history-sidebar-list-full {
+  flex: 1;
+  min-height: 0;
+}
+
 .history-panel-resizer {
   flex-shrink: 0;
   height: 6px;
