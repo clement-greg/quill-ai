@@ -328,12 +328,10 @@
   background: var(--mat-sys-secondary-container, #e3f2fd);
 }
 
-.rte-autocomplete-item.is-preferred {
-  padding-top: 8px;
-  border-top: 1px solid var(--mat-sys-outline-variant, #e8e8e8);
+.rte-autocomplete-item.is-entity-end {
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--mat-sys-outline-variant, #e8e8e8);
 }
-
-.rte-autocomplete-item.is-preferred:first-child { border-top: none; }
 
 .rte-autocomplete-thumb {
   width: 28px;

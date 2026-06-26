@@ -95,7 +95,7 @@ export class RichTextEditorComponent implements OnInit, AfterViewInit, OnDestroy
   readonly pendingSuggestions = signal<SuggestedEntityCard[]>([]);
 
   // ── Autocomplete ─────────────────────────────────────────────────────────
-  autocompleteItems = signal<{ entity: Entity; text: string; isPreferred: boolean }[]>([]);
+  autocompleteItems = signal<{ entity: Entity; text: string; isPreferred: boolean; lastOfEntity: boolean }[]>([]);
   autocompleteIndex = signal(0);
   autocompleteTop = signal(0);
   autocompleteLeft = signal(0);
@@ -1767,10 +1767,21 @@ export class RichTextEditorComponent implements OnInit, AfterViewInit, OnDestroy
     // Autocomplete navigation
     const items = this.autocompleteItems();
     if (items.length === 0) return;
-    if (event.key === 'ArrowDown') { event.preventDefault(); this.autocompleteIndex.set(Math.min(this.autocompleteIndex() + 1, items.length - 1)); }
-    else if (event.key === 'ArrowUp') { event.preventDefault(); this.autocompleteIndex.set(Math.max(this.autocompleteIndex() - 1, 0)); }
+    if (event.key === 'ArrowDown') { event.preventDefault(); this.autocompleteIndex.set((this.autocompleteIndex() + 1) % items.length); this.scrollAutocompleteIntoView(); }
+    else if (event.key === 'ArrowUp') { event.preventDefault(); this.autocompleteIndex.set((this.autocompleteIndex() - 1 + items.length) % items.length); this.scrollAutocompleteIntoView(); }
     else if (event.key === 'Enter' || event.key === 'Tab') { event.preventDefault(); const item = items[this.autocompleteIndex()]; this.selectAutocomplete(item.entity, item.text); }
     else if (event.key === 'Escape') { this.autocompleteItems.set([]); this.currentWordRange = null; }
+  }
+
+  /** Scrolls the currently-highlighted autocomplete item into view if the
+   *  dropdown is scrollable. Deferred so the `active` class is applied first. */
+  private scrollAutocompleteIntoView(): void {
+    const index = this.autocompleteIndex();
+    requestAnimationFrame(() => {
+      const dropdown = document.querySelector('.rte-autocomplete-dropdown');
+      const item = dropdown?.querySelectorAll<HTMLElement>('.rte-autocomplete-item')[index];
+      item?.scrollIntoView({ block: 'nearest' });
+    });
   }
 
   selectAutocomplete(entity: Entity, text: string): void {
@@ -2812,6 +2823,16 @@ export class RichTextEditorComponent implements OnInit, AfterViewInit, OnDestroy
     return this.allRefsFor(entity).some(v => v.toLowerCase().includes(lower));
   }
 
+  /** Ranks how closely an autocomplete variation matches the typed text:
+   *  0 = exact, 1 = starts with, 2 = contains, 3 = no match (lower sorts first). */
+  private autocompleteMatchRank(text: string, lower: string): number {
+    const t = text.toLowerCase();
+    if (t === lower) return 0;
+    if (t.startsWith(lower)) return 1;
+    if (t.includes(lower)) return 2;
+    return 3;
+  }
+
   buildEntityAnnotatedFragment(text: string): DocumentFragment {
     const fragment = document.createDocumentFragment();
     const entities = this.entities().filter(e => !e.deleted && !e.archived);
@@ -2917,15 +2938,26 @@ export class RichTextEditorComponent implements OnInit, AfterViewInit, OnDestroy
     const result = this.getCurrentWordAtCursor();
     if (!result || result.word.length < 2) { this.autocompleteItems.set([]); this.currentWordRange = null; return; }
     const lower = result.word.toLowerCase();
-    const flat: { entity: Entity; text: string; isPreferred: boolean }[] = [];
+    const flat: { entity: Entity; text: string; isPreferred: boolean; lastOfEntity: boolean }[] = [];
     for (const entity of this.entities()) {
       if (!this.entityMatchesWord(entity, lower)) continue;
       const preferred = this.getPreferredText(entity);
       const seen = new Set<string>([preferred]);
-      flat.push({ entity, text: preferred, isPreferred: true });
+      const items = [{ entity, text: preferred, isPreferred: true, lastOfEntity: false }];
       for (const v of this.allRefsFor(entity)) {
-        if (!seen.has(v)) { seen.add(v); flat.push({ entity, text: v, isPreferred: false }); }
+        if (!seen.has(v)) { seen.add(v); items.push({ entity, text: v, isPreferred: false, lastOfEntity: false }); }
       }
+      // Order this entity's variations so the ones that most closely match what
+      // the user typed surface first. Rank by match quality (exact > prefix >
+      // substring > no match), then preferred reference, then shorter text.
+      items.sort((a, b) =>
+        this.autocompleteMatchRank(a.text, lower) - this.autocompleteMatchRank(b.text, lower) ||
+        (a.isPreferred === b.isPreferred ? 0 : a.isPreferred ? -1 : 1) ||
+        a.text.length - b.text.length,
+      );
+      // Mark the last reference so the template can draw a separator between entities.
+      items[items.length - 1].lastOfEntity = true;
+      flat.push(...items);
     }
     if (flat.length === 0) { this.autocompleteItems.set([]); this.currentWordRange = null; return; }
     this.currentWordRange = result.range;
@@ -2939,7 +2971,12 @@ export class RichTextEditorComponent implements OnInit, AfterViewInit, OnDestroy
       const above = rect.bottom + GAP + DROPDOWN_MAX_HEIGHT > window.innerHeight;
       this.autocompleteAbove.set(above);
       this.autocompleteTop.set(above ? rect.top - GAP - off.y : rect.bottom + GAP - off.y);
-      this.autocompleteLeft.set(rect.left - off.x);
+      // Keep the dropdown within the editor's horizontal bounds so it never spills
+      // over the sidebar (which would otherwise paint on top of it).
+      const DROPDOWN_MAX_WIDTH = 320;
+      const editorRect = this.editorRef.nativeElement.getBoundingClientRect();
+      const left = Math.max(editorRect.left, Math.min(rect.left, editorRect.right - DROPDOWN_MAX_WIDTH));
+      this.autocompleteLeft.set(left - off.x);
     }
   }
 

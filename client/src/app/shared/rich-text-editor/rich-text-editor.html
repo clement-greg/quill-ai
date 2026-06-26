@@ -301,10 +301,11 @@
       <div class="rte-autocomplete-item"
         [class.active]="i === autocompleteIndex()"
         [class.is-preferred]="item.isPreferred"
+        [class.is-entity-end]="item.lastOfEntity && !$last"
         (mousedown)="selectAutocomplete(item.entity, item.text)">
-        @if (item.isPreferred && item.entity.thumbnailUrl) {
+        @if (i === 0 && item.entity.thumbnailUrl) {
           <img [src]="proxyUrl(item.entity.thumbnailUrl)!" class="rte-autocomplete-thumb" alt="" />
-        } @else if (item.isPreferred) {
+        } @else if (i === 0) {
           <span class="rte-autocomplete-thumb-placeholder"></span>
         } @else {
           <span class="rte-autocomplete-alt-indent"></span>
