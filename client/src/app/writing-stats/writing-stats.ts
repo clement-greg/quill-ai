@@ -10,6 +10,7 @@ import { MatButtonModule } from '@angular/material/button';
 import { MatIconModule } from '@angular/material/icon';
 import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
 import { HeaderService } from '../services/header.service';
+import { UserSettingsService } from '../services/user-settings.service';
 import {
   Chart,
   BarController,
@@ -106,7 +107,21 @@ const localTz = Intl.DateTimeFormat().resolvedOptions().timeZone;
   },
   template: `
     <div class="stats-page">
-      <h2 class="page-title">Writing Stats</h2>
+      <div class="page-header">
+        @if (userSettings.avatarVideoUrl()) {
+          <video class="profile-avatar profile-avatar-video"
+                 [src]="proxyUrl(userSettings.avatarVideoUrl())"
+                 muted autoplay playsinline aria-hidden="true"
+                 (ended)="onAvatarVideoEnded($event)"></video>
+        } @else if (userSettings.avatarUrl()) {
+          <img class="profile-avatar" [src]="userSettings.avatarUrl()" alt="" />
+        } @else {
+          <span class="profile-avatar profile-avatar-placeholder" aria-hidden="true">
+            <mat-icon>person</mat-icon>
+          </span>
+        }
+        <div class="header-stack">
+        <h2 class="page-title">Writing Stats</h2>
 
       <div class="range-controls">
         <div class="range-row" role="group" aria-label="Time range">
@@ -193,6 +208,8 @@ const localTz = Intl.DateTimeFormat().resolvedOptions().timeZone;
           </div>
         </div>
         }
+      </div>
+        </div>
       </div>
 
       @if (loading()) {
@@ -355,10 +372,53 @@ const localTz = Intl.DateTimeFormat().resolvedOptions().timeZone;
       box-sizing: border-box;
     }
 
+    .page-header {
+      display: flex;
+      align-items: center;
+      gap: 18px;
+      margin: 0 0 24px;
+    }
+
+    .header-stack {
+      flex: 1 1 auto;
+      min-width: 0;
+    }
+
     .page-title {
-      margin: 0 0 20px;
+      margin: 0 0 16px;
       font-size: 1.5rem;
       font-weight: 500;
+    }
+
+    .header-stack .range-controls {
+      margin-bottom: 0;
+    }
+
+    .profile-avatar {
+      width: 96px;
+      height: 96px;
+      border-radius: 50%;
+      object-fit: cover;
+      border: 2px solid var(--mat-sys-outline-variant, #ddd);
+      flex: none;
+    }
+
+    .profile-avatar-video {
+      background: #000;
+    }
+
+    .profile-avatar-placeholder {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: var(--mat-sys-surface-variant, #e8e8e8);
+
+      mat-icon {
+        font-size: 44px;
+        width: 44px;
+        height: 44px;
+        color: var(--mat-sys-on-surface-variant);
+      }
     }
 
     /* ── Range row ──────────────────────────────────────── */
@@ -1013,6 +1073,7 @@ export class WritingStatsComponent implements OnInit, AfterViewInit, OnDestroy {
   private http = inject(HttpClient);
   private header = inject(HeaderService);
   private zone = inject(NgZone);
+  readonly userSettings = inject(UserSettingsService);
 
   @ViewChild('chartCanvas') private chartCanvas!: ElementRef<HTMLCanvasElement>;
 
@@ -1264,6 +1325,20 @@ export class WritingStatsComponent implements OnInit, AfterViewInit, OnDestroy {
 
   fmtCount(n: number, prefix = ''): string {
     return n === 0 ? '—' : `${prefix}${n.toLocaleString()}`;
+  }
+
+  /** Rewrites a stored upload URL to the same-origin image proxy. */
+  proxyUrl(url: string): string {
+    const filename = url.split('/').pop();
+    return filename ? `/api/image/${filename}` : url;
+  }
+
+  /** Profile-video avatars pause for 10s between loops rather than looping continuously. */
+  onAvatarVideoEnded(event: Event): void {
+    const video = event.target as HTMLVideoElement;
+    setTimeout(() => {
+      if (video.isConnected) void video.play().catch(() => {});
+    }, 10_000);
   }
 
   private fmtDate(ds: string): string {
