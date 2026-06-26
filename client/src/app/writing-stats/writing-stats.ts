@@ -1,6 +1,6 @@
 import {
   Component, inject, signal, computed,
-  ViewChild, ElementRef, effect,
+  ViewChild, ElementRef, effect, NgZone,
   AfterViewInit, OnDestroy, ChangeDetectionStrategy, OnInit,
 } from '@angular/core';
 import { DecimalPipe } from '@angular/common';
@@ -22,10 +22,20 @@ import {
 
 Chart.register(BarController, BarElement, CategoryScale, LinearScale, Tooltip, Legend);
 
+interface ChapterDayStat {
+  chapterId: string;
+  title: string;
+  thumbnailUrl: string | null;
+  wordsAdded: number;
+  wordsDeleted: number;
+  netWords: number;
+}
+
 interface DailyStats {
   date: string;
   wordsAdded: number;
   wordsDeleted: number;
+  chapters: ChapterDayStat[];
 }
 
 interface ChapterStats {
@@ -56,6 +66,16 @@ interface StatsResponse {
 interface PeriodBucket {
   label: string;
   net: number;
+  dates: string[];
+}
+
+interface DayBreakdown {
+  title: string;
+  net: number;
+  chapters: ChapterDayStat[];
+  x: number;
+  y: number;
+  below: boolean;
 }
 
 interface CalDay {
@@ -79,7 +99,11 @@ const localTz = Intl.DateTimeFormat().resolvedOptions().timeZone;
   selector: 'app-writing-stats',
   imports: [DecimalPipe, RouterLink, MatButtonModule, MatIconModule, MatProgressSpinnerModule],
   changeDetection: ChangeDetectionStrategy.OnPush,
-  host: { class: 'writing-stats-host' },
+  host: {
+    class: 'writing-stats-host',
+    '(document:keydown.escape)': 'selectedDay.set(null)',
+    '(window:resize)': 'selectedDay.set(null)',
+  },
   template: `
     <div class="stats-page">
       <h2 class="page-title">Writing Stats</h2>
@@ -216,9 +240,61 @@ const localTz = Intl.DateTimeFormat().resolvedOptions().timeZone;
         <div class="chart-section">
           <div class="chart-wrap">
             <canvas #chartCanvas
-                    [attr.aria-label]="'Net words written per ' + chartGranularity()"
+                    [attr.aria-label]="'Net words written per ' + chartGranularity() + '. Select a bar for a chapter breakdown.'"
                     role="img"></canvas>
+
+            @if (selectedDay(); as sel) {
+              <div class="db-backdrop" (click)="selectedDay.set(null)" aria-hidden="true"></div>
+              <div class="db-popover"
+                   [class.below]="sel.below"
+                   [style.left.px]="sel.x"
+                   [style.top.px]="sel.y"
+                   role="dialog"
+                   aria-label="Chapter breakdown for selected period">
+                <div class="db-header">
+                  <div class="db-titles">
+                    <h3 class="db-title">{{ sel.title }}</h3>
+                    <span class="db-net" [class.negative]="sel.net < 0">
+                      {{ sel.net >= 0 ? '+' : '' }}{{ sel.net | number }} net words
+                    </span>
+                  </div>
+                  <button mat-icon-button class="db-close" (click)="selectedDay.set(null)" aria-label="Close breakdown">
+                    <mat-icon>close</mat-icon>
+                  </button>
+                </div>
+                @if (sel.chapters.length) {
+                  <div class="db-list">
+                    @for (c of sel.chapters; track c.chapterId) {
+                      <div class="db-row">
+                        <span class="db-thumb">
+                          @if (c.thumbnailUrl) {
+                            <img [src]="c.thumbnailUrl" [alt]="c.title" class="db-thumb-img" />
+                          } @else {
+                            <span class="db-thumb-placeholder" aria-hidden="true">
+                              <mat-icon>menu_book</mat-icon>
+                            </span>
+                          }
+                        </span>
+                        <a [routerLink]="['/chapters', c.chapterId, 'edit']" class="db-link" [title]="c.title">{{ c.title }}</a>
+                        <div class="db-stats">
+                          <span class="db-added">{{ fmtCount(c.wordsAdded, '+') }}</span>
+                          <span class="db-deleted">{{ fmtCount(c.wordsDeleted, '−') }}</span>
+                          <span class="db-rownet"
+                                [class.positive]="c.netWords > 0"
+                                [class.negative]="c.netWords < 0">
+                            {{ fmtCount(c.netWords, c.netWords >= 0 ? '+' : '') }}
+                          </span>
+                        </div>
+                      </div>
+                    }
+                  </div>
+                } @else {
+                  <p class="db-empty">No chapter activity recorded for this {{ chartGranularity() }}.</p>
+                }
+              </div>
+            }
           </div>
+          <p class="chart-hint">Select a bar to see which chapters were worked on that {{ chartGranularity() }}.</p>
         </div>
 
         @if (allData()?.byChapter?.length) {
@@ -559,6 +635,202 @@ const localTz = Intl.DateTimeFormat().resolvedOptions().timeZone;
       height: 280px;
     }
 
+    .chart-hint {
+      margin: 10px 0 0;
+      text-align: center;
+      font-size: 0.75rem;
+      color: var(--mat-sys-on-surface-variant);
+    }
+
+    /* ── Day breakdown popover ──────────────────────────── */
+
+    .db-backdrop {
+      position: fixed;
+      inset: 0;
+      z-index: 20;
+    }
+
+    .db-popover {
+      position: absolute;
+      z-index: 21;
+      width: 320px;
+      max-width: calc(100% - 8px);
+      max-height: 320px;
+      overflow-y: auto;
+      background: var(--mat-sys-surface-container-high);
+      border: 1px solid var(--mat-sys-outline-variant);
+      border-radius: 12px;
+      padding: 10px 14px 12px;
+      box-shadow: 0 6px 24px rgba(0, 0, 0, 0.28);
+      transform: translate(-50%, calc(-100% - 12px));
+      animation: db-pop 120ms ease-out;
+    }
+
+    .db-popover.below {
+      transform: translate(-50%, 12px);
+    }
+
+    /* arrow */
+    .db-popover::after {
+      content: '';
+      position: absolute;
+      left: 50%;
+      margin-left: -7px;
+      border: 7px solid transparent;
+      top: 100%;
+      border-top-color: var(--mat-sys-surface-container-high);
+    }
+
+    .db-popover.below::after {
+      top: auto;
+      bottom: 100%;
+      border-top-color: transparent;
+      border-bottom-color: var(--mat-sys-surface-container-high);
+    }
+
+    @keyframes db-pop {
+      from { opacity: 0; }
+      to   { opacity: 1; }
+    }
+
+    .db-header {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 8px;
+      margin-bottom: 6px;
+    }
+
+    .db-close {
+      flex: none;
+      margin: -4px -6px 0 0;
+    }
+
+    .db-titles {
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+    }
+
+    .db-title {
+      margin: 0;
+      font-size: 1rem;
+      font-weight: 600;
+      color: var(--mat-sys-on-surface);
+    }
+
+    .db-net {
+      font-size: 0.85rem;
+      font-weight: 500;
+      color: #4caf50;
+      font-variant-numeric: tabular-nums;
+
+      &.negative { color: #e57373; }
+    }
+
+    .db-list {
+      display: flex;
+      flex-direction: column;
+    }
+
+    .db-row {
+      display: grid;
+      grid-template-columns: 30px minmax(0, 1fr) 48px 48px 48px;
+      gap: 8px;
+      align-items: center;
+      padding: 7px 2px;
+      font-size: 0.85rem;
+      border-bottom: 1px solid var(--mat-sys-outline-variant);
+
+      &:last-child { border-bottom: none; }
+      &:hover { background: var(--mat-sys-surface-container); border-radius: 6px; }
+    }
+
+    .db-thumb {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .db-thumb-img {
+      width: 30px;
+      height: 30px;
+      border-radius: 4px;
+      object-fit: cover;
+      display: block;
+    }
+
+    .db-thumb-placeholder {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      width: 30px;
+      height: 30px;
+      border-radius: 4px;
+      background: var(--mat-sys-surface-container);
+
+      mat-icon {
+        font-size: 16px;
+        width: 16px;
+        height: 16px;
+        color: var(--mat-sys-on-surface-variant);
+      }
+    }
+
+    .db-link {
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      font-weight: 500;
+      color: var(--mat-sys-primary);
+      text-decoration: none;
+
+      &:hover { text-decoration: underline; }
+    }
+
+    .db-stats { display: contents; }
+
+    .db-added, .db-deleted, .db-rownet {
+      text-align: right;
+      font-variant-numeric: tabular-nums;
+    }
+
+    .db-added  { color: #4caf50; }
+    .db-deleted { color: #e57373; }
+
+    .db-rownet {
+      font-weight: 600;
+      color: var(--mat-sys-on-surface-variant);
+      &.positive { color: #4caf50; }
+      &.negative { color: #e57373; }
+    }
+
+    .db-empty {
+      margin: 4px 0 0;
+      font-size: 0.85rem;
+      color: var(--mat-sys-on-surface-variant);
+    }
+
+    @media (max-width: 599px) {
+      .db-row {
+        grid-template-columns: 36px 1fr;
+        grid-template-areas: "thumb title" "thumb stats";
+        gap: 4px 10px;
+        align-items: start;
+      }
+
+      .db-thumb { grid-area: thumb; align-self: center; }
+      .db-link { grid-area: title; align-self: end; }
+
+      .db-stats {
+        display: flex;
+        grid-area: stats;
+        gap: 14px;
+      }
+
+      .db-added, .db-deleted, .db-rownet { text-align: left; }
+    }
+
     /* ── Chapter breakdown ──────────────────────────────── */
 
     .chapter-section {
@@ -740,6 +1012,7 @@ const localTz = Intl.DateTimeFormat().resolvedOptions().timeZone;
 export class WritingStatsComponent implements OnInit, AfterViewInit, OnDestroy {
   private http = inject(HttpClient);
   private header = inject(HeaderService);
+  private zone = inject(NgZone);
 
   @ViewChild('chartCanvas') private chartCanvas!: ElementRef<HTMLCanvasElement>;
 
@@ -760,6 +1033,7 @@ export class WritingStatsComponent implements OnInit, AfterViewInit, OnDestroy {
   activeMode = signal<'30' | '90' | 'custom'>('30');
   customStart = signal<string | null>(null);
   customEnd = signal<string | null>(null);
+  selectedDay = signal<DayBreakdown | null>(null);
   private viewReady = signal(false);
 
   // ── Picker state ─────────────────────────────────────────
@@ -863,6 +1137,7 @@ export class WritingStatsComponent implements OnInit, AfterViewInit, OnDestroy {
   });
 
   private chart?: Chart;
+  private chartBuckets: PeriodBucket[] = [];
 
   constructor() {
     effect(() => {
@@ -892,6 +1167,7 @@ export class WritingStatsComponent implements OnInit, AfterViewInit, OnDestroy {
 
   setPreset(days: 30 | 90): void {
     this.showPicker.set(false);
+    this.selectedDay.set(null);
     this.activeMode.set(String(days) as '30' | '90');
   }
 
@@ -922,6 +1198,7 @@ export class WritingStatsComponent implements OnInit, AfterViewInit, OnDestroy {
     const e = this.pendingEnd();
     if (!s || !e) return;
     const [start, end] = s <= e ? [s, e] : [e, s];
+    this.selectedDay.set(null);
     this.customStart.set(start);
     this.customEnd.set(end);
     this.activeMode.set('custom');
@@ -1062,7 +1339,7 @@ export class WritingStatsComponent implements OnInit, AfterViewInit, OnDestroy {
       const endDate = new Date(end + 'T00:00:00');
       while (cur <= endDate) {
         const ds = localDateStr(cur);
-        buckets.push({ label: ds.slice(5).replace('-', '/'), net: netMap.get(ds) ?? 0 });
+        buckets.push({ label: ds.slice(5).replace('-', '/'), net: netMap.get(ds) ?? 0, dates: [ds] });
         cur.setDate(cur.getDate() + 1);
       }
       return buckets;
@@ -1075,16 +1352,19 @@ export class WritingStatsComponent implements OnInit, AfterViewInit, OnDestroy {
       const d = new Date(this._today);
       d.setDate(d.getDate() - i);
       const ds = localDateStr(d);
-      buckets.push({ label: ds.slice(5).replace('-', '/'), net: netMap.get(ds) ?? 0 });
+      buckets.push({ label: ds.slice(5).replace('-', '/'), net: netMap.get(ds) ?? 0, dates: [ds] });
     }
     return buckets;
   }
 
   private monthlyBuckets(daily: DailyStats[], start: string, end: string): PeriodBucket[] {
     const monthMap = new Map<string, number>();
+    const monthDates = new Map<string, string[]>();
     for (const d of daily) {
       const key = d.date.slice(0, 7);
       monthMap.set(key, (monthMap.get(key) ?? 0) + (d.wordsAdded - d.wordsDeleted));
+      if (!monthDates.has(key)) monthDates.set(key, []);
+      monthDates.get(key)!.push(d.date);
     }
     const [sy, sm] = start.split('-').map(Number);
     const [ey, em] = end.split('-').map(Number);
@@ -1095,11 +1375,60 @@ export class WritingStatsComponent implements OnInit, AfterViewInit, OnDestroy {
       buckets.push({
         label: new Date(y, m - 1, 1).toLocaleString('default', { month: 'short' }) + ' \'' + String(y).slice(2),
         net: monthMap.get(key) ?? 0,
+        dates: monthDates.get(key) ?? [],
       });
       m++;
       if (m > 12) { m = 1; y++; }
     }
     return buckets;
+  }
+
+  // ── Day/period breakdown ─────────────────────────────────
+
+  // Approx popover width — used to keep it inside the chart on the x-axis
+  private readonly POPOVER_W = 320;
+
+  private selectBucket(idx: number, barX: number, barY: number, wrapW: number): void {
+    const bucket = this.chartBuckets[idx];
+    if (!bucket) { this.selectedDay.set(null); return; }
+
+    const dayByDate = new Map(this.filteredDaily().map(d => [d.date, d]));
+    const agg = new Map<string, ChapterDayStat>();
+    for (const date of bucket.dates) {
+      const day = dayByDate.get(date);
+      if (!day) continue;
+      for (const c of day.chapters) {
+        const existing = agg.get(c.chapterId);
+        if (existing) {
+          existing.wordsAdded += c.wordsAdded;
+          existing.wordsDeleted += c.wordsDeleted;
+          existing.netWords = existing.wordsAdded - existing.wordsDeleted;
+        } else {
+          agg.set(c.chapterId, { ...c });
+        }
+      }
+    }
+    const chapters = [...agg.values()]
+      .sort((a, b) => (b.wordsAdded + b.wordsDeleted) - (a.wordsAdded + a.wordsDeleted));
+    const net = chapters.reduce((s, c) => s + c.netWords, 0);
+
+    // Anchor the popover above the bar by default; flip below if the bar is
+    // near the top of the chart. Clamp x so the popover stays inside the chart.
+    const half = Math.min(this.POPOVER_W, wrapW - 8) / 2;
+    const x = Math.max(half + 4, Math.min(wrapW - half - 4, barX));
+    const below = barY < 180;
+
+    this.selectedDay.set({ title: this.bucketTitle(bucket), net, chapters, x, y: barY, below });
+  }
+
+  private bucketTitle(bucket: PeriodBucket): string {
+    if (this.chartGranularity() === 'day' && bucket.dates.length === 1) {
+      const [y, m, d] = bucket.dates[0].split('-').map(Number);
+      return new Date(y, m - 1, d).toLocaleDateString(undefined, {
+        weekday: 'long', month: 'long', day: 'numeric', year: 'numeric',
+      });
+    }
+    return bucket.label;
   }
 
   private daysBetween(start: string, end: string): number {
@@ -1123,6 +1452,7 @@ export class WritingStatsComponent implements OnInit, AfterViewInit, OnDestroy {
     this.chart?.destroy();
 
     const buckets = this.getChartBuckets();
+    this.chartBuckets = buckets;
     const onSurfaceVariant = this.resolveColor('--mat-sys-on-surface-variant', 'rgba(128,128,128,0.9)');
     const outlineVariant   = this.resolveColor('--mat-sys-outline-variant', 'rgba(128,128,128,0.25)');
 
@@ -1142,6 +1472,18 @@ export class WritingStatsComponent implements OnInit, AfterViewInit, OnDestroy {
       options: {
         responsive: true,
         maintainAspectRatio: false,
+        onClick: (_evt, elements, chart) => {
+          if (!elements.length) return;
+          const { index, element } = elements[0];
+          const barX = element.x;
+          const barY = element.y;
+          const wrapW = chart.width;
+          this.zone.run(() => this.selectBucket(index, barX, barY, wrapW));
+        },
+        onHover: (evt, elements) => {
+          const target = evt.native?.target as HTMLElement | undefined;
+          if (target) target.style.cursor = elements.length ? 'pointer' : 'default';
+        },
         plugins: {
           legend: { display: false },
           tooltip: {

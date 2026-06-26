@@ -94,6 +94,16 @@ router.get('/writing', async (req: Request, res: Response): Promise<void> => {
       return dailyMap.get(date)!;
     };
 
+    // Per-day, per-chapter breakdown: date → chapterId → words added/deleted that day
+    const dailyChapterMap = new Map<string, Map<string, DayBucket>>();
+    const chapterBucket = (date: string, chapterId: string): DayBucket => {
+      let cm = dailyChapterMap.get(date);
+      if (!cm) { cm = new Map(); dailyChapterMap.set(date, cm); }
+      let cb = cm.get(chapterId);
+      if (!cb) { cb = { added: 0, deleted: 0 }; cm.set(chapterId, cb); }
+      return cb;
+    };
+
     // Per-chapter totals accumulated alongside per-day totals
     interface ChapterTotals { added: number; deleted: number; lastSaved: string }
     const chapterTotals = new Map<string, ChapterTotals>();
@@ -111,6 +121,9 @@ router.get('/writing', async (req: Request, res: Response): Promise<void> => {
           const b = bucket(date);
           b.added += added;
           b.deleted += removed;
+          const cb = chapterBucket(date, chapterId);
+          cb.added += added;
+          cb.deleted += removed;
           chapAdded += added;
           chapDeleted += removed;
           lastSaved = date;
@@ -118,28 +131,6 @@ router.get('/writing', async (req: Request, res: Response): Promise<void> => {
         prevTokens = currTokens;
       }
       chapterTotals.set(chapterId, { added: chapAdded, deleted: chapDeleted, lastSaved });
-    }
-
-    const daily = Array.from(dailyMap.entries())
-      .sort(([a], [b]) => a.localeCompare(b))
-      .map(([date, { added, deleted }]) => ({ date, wordsAdded: added, wordsDeleted: deleted }));
-
-    const totalAdded   = daily.reduce((s, d) => s + d.wordsAdded, 0);
-    const totalDeleted = daily.reduce((s, d) => s + d.wordsDeleted, 0);
-    const activeDays   = daily.filter(d => d.wordsAdded > 0 || d.wordsDeleted > 0).length;
-
-    // Streak: consecutive active days up to and including today
-    const dateSet = new Set(daily.map(d => d.date));
-    const today = new Date();
-    const todayStr = toLocalDateStr(today.toISOString(), tz);
-    let streak = 0;
-    const startOffset = dateSet.has(todayStr) ? 0 : 1;
-    for (let i = startOffset; i < days; i++) {
-      const d = new Date(today);
-      d.setDate(d.getDate() - i);
-      const ds = toLocalDateStr(d.toISOString(), tz);
-      if (dateSet.has(ds)) streak++;
-      else break;
     }
 
     function proxyImageUrl(azureUrl: string | undefined): string | null {
@@ -174,10 +165,55 @@ router.get('/writing', async (req: Request, res: Response): Promise<void> => {
       })
     );
 
+    const metaFor = (id: string): ChapterMeta =>
+      chapterMetaMap.get(id) ?? { title: 'Untitled Chapter', thumbnailUrl: null };
+
+    // Daily totals, each carrying a per-chapter breakdown of that day's activity
+    const daily = Array.from(dailyMap.entries())
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([date, { added, deleted }]) => {
+        const cm = dailyChapterMap.get(date);
+        const chapters = cm
+          ? Array.from(cm.entries())
+              .map(([id, b]) => {
+                const meta = metaFor(id);
+                return {
+                  chapterId: id,
+                  title: meta.title,
+                  thumbnailUrl: meta.thumbnailUrl,
+                  wordsAdded: b.added,
+                  wordsDeleted: b.deleted,
+                  netWords: b.added - b.deleted,
+                };
+              })
+              .filter(c => c.wordsAdded > 0 || c.wordsDeleted > 0)
+              .sort((a, b) => (b.wordsAdded + b.wordsDeleted) - (a.wordsAdded + a.wordsDeleted))
+          : [];
+        return { date, wordsAdded: added, wordsDeleted: deleted, chapters };
+      });
+
+    const totalAdded   = daily.reduce((s, d) => s + d.wordsAdded, 0);
+    const totalDeleted = daily.reduce((s, d) => s + d.wordsDeleted, 0);
+    const activeDays   = daily.filter(d => d.wordsAdded > 0 || d.wordsDeleted > 0).length;
+
+    // Streak: consecutive active days up to and including today
+    const dateSet = new Set(daily.map(d => d.date));
+    const today = new Date();
+    const todayStr = toLocalDateStr(today.toISOString(), tz);
+    let streak = 0;
+    const startOffset = dateSet.has(todayStr) ? 0 : 1;
+    for (let i = startOffset; i < days; i++) {
+      const d = new Date(today);
+      d.setDate(d.getDate() - i);
+      const ds = toLocalDateStr(d.toISOString(), tz);
+      if (dateSet.has(ds)) streak++;
+      else break;
+    }
+
     const byChapterStats = chapterIds
       .map(id => {
         const { added, deleted, lastSaved } = chapterTotals.get(id)!;
-        const meta = chapterMetaMap.get(id)!;
+        const meta = metaFor(id);
         return {
           chapterId: id,
           title: meta.title,
