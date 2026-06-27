@@ -1,5 +1,6 @@
-import { Injectable, signal, computed } from '@angular/core';
+import { Injectable, signal, computed, inject } from '@angular/core';
 import { EditorReviewBlock, EditorSuggestion, SuggestionSeverity } from '@shared/models';
+import { AuthFetchService } from './auth-fetch.service';
 
 /** Resolution state of a streamed suggestion, tracked client-side only. */
 export type ReviewStatus = 'open' | 'accepted' | 'rejected';
@@ -22,6 +23,7 @@ export class EditorReviewService {
   readonly running = signal(false);
   readonly suggestions = signal<ReviewSuggestion[]>([]);
   readonly error = signal<string | null>(null);
+  private readonly authFetchService = inject(AuthFetchService);
 
   /** True once a run has produced suggestions still awaiting a decision. */
   readonly hasOpenSuggestions = computed(() =>
@@ -188,10 +190,7 @@ export class EditorReviewService {
   }
 
   private authFetch(input: string, init: RequestInit = {}): Promise<Response> {
-    const token = localStorage.getItem('app_auth_token');
-    const headers = new Headers(init.headers as HeadersInit);
-    if (token) headers.set('Authorization', `Bearer ${token}`);
-    return fetch(input, { ...init, headers });
+    return this.authFetchService.fetch(input, init);
   }
 }
 

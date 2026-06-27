@@ -8,6 +8,7 @@ import { MatSelectModule } from '@angular/material/select';
 import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
 import { ChatFolder } from '@shared/models';
 import { Series } from '@shared/models/series.model';
+import { AuthFetchService } from '../services/auth-fetch.service';
 
 interface Crumb {
   id: string | null;
@@ -146,6 +147,7 @@ export interface FolderLocation {
 export class FolderLocationPickerDialogComponent implements OnInit {
   private readonly dialogRef = inject(MatDialogRef<FolderLocationPickerDialogComponent, FolderLocation>);
   readonly data = inject<FolderLocationPickerData>(MAT_DIALOG_DATA);
+  private readonly authFetchService = inject(AuthFetchService);
 
   readonly series = signal<Series[]>([]);
   readonly loadingSeries = signal(true);
@@ -241,10 +243,7 @@ export class FolderLocationPickerDialogComponent implements OnInit {
 
   private async fetchJson<T>(url: string): Promise<T | null> {
     try {
-      const token = localStorage.getItem('app_auth_token');
-      const headers = new Headers();
-      if (token) headers.set('Authorization', `Bearer ${token}`);
-      const res = await fetch(url, { headers });
+      const res = await this.authFetchService.fetch(url, {});
       if (res.ok) return await res.json() as T;
     } catch {
       // Best-effort

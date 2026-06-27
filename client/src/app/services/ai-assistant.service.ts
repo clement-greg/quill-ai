@@ -2,12 +2,14 @@ import { Injectable, inject, signal, computed } from '@angular/core';
 import { ChapterCitation, ChatFolder, ChatMessageHighlight, ChatSession, ChatSessionMessage, ChatSessionSummary, FolderFile, FolderNote } from '@shared/models';
 import { Series } from '@shared/models/series.model';
 import { SeriesContextService } from './series-context.service';
+import { AuthFetchService } from './auth-fetch.service';
 
 const PENDING_ID = '__pending__';
 
 @Injectable({ providedIn: 'root' })
 export class AiAssistantService {
   private readonly seriesContext = inject(SeriesContextService);
+  private readonly authFetchService = inject(AuthFetchService);
 
   // Panel open/closed state
   readonly isOpen = signal(false);
@@ -724,9 +726,6 @@ export class AiAssistantService {
   }
 
   private authFetch(input: string, init: RequestInit = {}): Promise<Response> {
-    const token = localStorage.getItem('app_auth_token');
-    const headers = new Headers(init.headers as HeadersInit);
-    if (token) headers.set('Authorization', `Bearer ${token}`);
-    return fetch(input, { ...init, headers });
+    return this.authFetchService.fetch(input, init);
   }
 }

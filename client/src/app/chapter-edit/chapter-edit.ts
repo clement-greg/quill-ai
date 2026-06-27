@@ -42,6 +42,7 @@ import { AuthService } from '../auth/auth.service';
 import { SeriesContextService } from '../services/series-context.service';
 import { EditorBridgeService } from '../services/editor-bridge.service';
 import { QuickChatService } from '../services/quick-chat.service';
+import { AuthFetchService } from '../services/auth-fetch.service';
 import { ChapterSyncService } from '../services/chapter-sync.service';
 import { RecentChaptersService } from '../services/recent-chapters.service';
 import { EditorReviewService, ReviewSuggestion } from '../services/editor-review.service';
@@ -87,6 +88,7 @@ export class ChapterEditComponent implements OnInit, OnDestroy {
   private seriesContext = inject(SeriesContextService);
   private editorBridge = inject(EditorBridgeService);
   private quickChat = inject(QuickChatService);
+  private authFetchService = inject(AuthFetchService);
   private chapterSync = inject(ChapterSyncService);
   private recentChapters = inject(RecentChaptersService);
   /** Public so the template can read the streamed review suggestions. */
@@ -807,14 +809,9 @@ export class ChapterEditComponent implements OnInit, OnDestroy {
       });
     } else {
       // Session isn't active — patch it directly and refresh the list
-      void fetch(`/api/chat-sessions/${sessionId}`, {
+      void this.authFetchService.fetch(`/api/chat-sessions/${sessionId}`, {
         method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json',
-          ...(localStorage.getItem('app_auth_token')
-            ? { Authorization: `Bearer ${localStorage.getItem('app_auth_token')}` }
-            : {}),
-        },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ chapterId: null }),
       }).then(() => {
         if (chapterId) void this.loadLinkedChats(chapterId);

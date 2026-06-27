@@ -5,6 +5,7 @@ import { EditorBridgeService } from './editor-bridge.service';
 import { AiAssistantService } from './ai-assistant.service';
 import { ChapterSyncService, ChapterExternalUpdate } from './chapter-sync.service';
 import { EditorReviewService } from './editor-review.service';
+import { AuthFetchService } from './auth-fetch.service';
 
 /** Remembers the last active session so a page refresh reopens it. */
 const LAST_SESSION_KEY = 'quill_last_chat_session_id';
@@ -22,6 +23,7 @@ export class QuickChatService {
   private readonly aiAssistant = inject(AiAssistantService);
   private readonly chapterSync = inject(ChapterSyncService);
   private readonly editorReview = inject(EditorReviewService);
+  private readonly authFetchService = inject(AuthFetchService);
 
   /** The panel is always present — it cannot be fully closed, only minimized. */
   readonly isOpen = signal(true);
@@ -696,9 +698,6 @@ export class QuickChatService {
   }
 
   private authFetch(input: string, init: RequestInit = {}): Promise<Response> {
-    const token = localStorage.getItem('app_auth_token');
-    const headers = new Headers(init.headers as HeadersInit);
-    if (token) headers.set('Authorization', `Bearer ${token}`);
-    return fetch(input, { ...init, headers });
+    return this.authFetchService.fetch(input, init);
   }
 }

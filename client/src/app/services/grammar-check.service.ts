@@ -1,4 +1,5 @@
-import { Injectable } from '@angular/core';
+import { Injectable, inject } from '@angular/core';
+import { AuthFetchService } from './auth-fetch.service';
 
 export interface GrammarError {
   text: string;
@@ -18,11 +19,10 @@ export interface SuggestedEntity {
 
 @Injectable({ providedIn: 'root' })
 export class GrammarCheckService {
+  private readonly authFetchService = inject(AuthFetchService);
+
   private authFetch(input: string, init: RequestInit = {}): Promise<Response> {
-    const token = localStorage.getItem('app_auth_token');
-    const headers = new Headers(init.headers as HeadersInit);
-    if (token) headers.set('Authorization', `Bearer ${token}`);
-    return fetch(input, { ...init, headers });
+    return this.authFetchService.fetch(input, init);
   }
 
   async check(text: string, knownEntityNames: string[] = [], signal?: AbortSignal): Promise<{ errors: GrammarError[]; suggestedEntities: SuggestedEntity[] }> {
