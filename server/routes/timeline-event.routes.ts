@@ -14,6 +14,7 @@ import {
 import { Entity } from '../../shared/models/entity.model';
 import { Chapter } from '../../shared/models/chapter.model';
 import { withOwnerFilter, readOwnedItem } from '../owner-guard';
+import { resolveEntityByName } from '../entity-name-match';
 import {
   indexTimelineEvent,
   deleteTimelineEventChunk,
@@ -210,16 +211,16 @@ You receive:
 Return a JSON object with exactly three keys:
 
 1. "adds": NEW major events in the chapter text that are not already covered by an existing timeline event. Each item must have:
-   - "entityId": the id of the known entity (usually a character) the event most directly belongs to. Must be one of the provided entity ids. If no provided entity clearly owns the event, omit the event entirely.
+   - "entityName": the name of the known entity (usually a character) the event most directly belongs to, written EXACTLY as it appears in the "Known entities" list. It MUST be one of the listed entities. If no listed entity clearly owns the event — for example the event is about a character who is not in the list — omit the event entirely. Never attribute an event to an entity that does not actually appear in the chapter text.
    - "name": a short event title (under ten words)
    - "timeframe": free-form timing if the text establishes one (e.g. "Three years before the war"); omit when unknown
    - "description": one or two sentences describing the event as established by the text
-   - For location: if the place clearly matches one of the known PLACE entities, provide "locationEntityId" with that entity's id. Otherwise provide "location" as a free-text string (city, country, region, landmark, or fictional place name). Never provide both. Omit both when the location is unknown or vague.
+   - For location: if the place clearly matches one of the known PLACE entities, provide "locationName" with that place's name exactly as listed. Otherwise provide "location" as a free-text string (city, country, region, landmark, or fictional place name). Never provide both. Omit both when the location is unknown or vague.
 
 2. "updates": existing timeline events whose underlying facts have SUBSTANTIVELY changed in the chapter text — a different outcome, different participants, or materially different circumstances. Each item must have:
    - "id": the existing event id
    - "name", "timeframe", "description": the corrected values (always include "name"; reuse the current value for anything unchanged)
-   - For location changes: provide "locationEntityId" if the new location is a known PLACE entity, or "location" as a free-text string if not. Omit both to leave location unchanged.
+   - For location changes: provide "locationName" if the new location is a known PLACE entity (exactly as listed), or "location" as a free-text string if not. Omit both to leave location unchanged.
    - "reason": one short sentence explaining what substantively changed
    Never propose an update for rewording, tone, or trivial detail differences.
 
@@ -260,7 +261,7 @@ function fieldsChanged(a: TimelineEventFields, b: TimelineEventFields): boolean 
     (a.locationEntityId ?? '') !== (b.locationEntityId ?? '');
 }
 
-type PlaceEntity = Pick<Entity, 'id' | 'name' | 'type' | 'deleted' | 'archived'>;
+type ExtractionEntity = Pick<Entity, 'id' | 'name' | 'type' | 'firstName' | 'lastName' | 'nickname' | 'title' | 'aliases' | 'deleted' | 'archived'>;
 
 /** Resolve locationEntityId + location from raw AI output. Returns both fields.
  *  The entity name is copied into `location` as a fallback string so that
@@ -268,17 +269,15 @@ type PlaceEntity = Pick<Entity, 'id' | 'name' | 'type' | 'deleted' | 'archived'>
  */
 function resolveLocation(
   rawLocation: unknown,
-  rawLocationEntityId: unknown,
-  entityById: Map<string, PlaceEntity>,
+  rawLocationName: unknown,
+  placeEntities: ExtractionEntity[],
   fallbackLocation?: string,
   fallbackLocationEntityId?: string,
 ): { location?: string; locationEntityId?: string } {
-  // AI provided a PLACE entity reference — validate it
-  if (typeof rawLocationEntityId === 'string' && rawLocationEntityId.trim()) {
-    const entity = entityById.get(rawLocationEntityId.trim());
-    if (entity && entity.type === 'PLACE') {
-      return { locationEntityId: entity.id, location: entity.name };
-    }
+  // AI named a known PLACE entity — resolve it to its id.
+  const place = resolveEntityByName(rawLocationName, placeEntities);
+  if (place) {
+    return { locationEntityId: place.id, location: place.name };
   }
   // AI provided a plain string
   if (typeof rawLocation === 'string' && rawLocation.trim()) {
@@ -308,13 +307,14 @@ router.post('/extract-from-chapter', async (req: Request, res: Response) => {
 
     const { resources: entityResources } = await entitiesContainer.items
       .query(withOwnerFilter(req, {
-        query: 'SELECT c.id, c.name, c.type, c.deleted, c.archived FROM c WHERE c.seriesId = @seriesId',
+        query: 'SELECT c.id, c.name, c.type, c.firstName, c.lastName, c.nickname, c.title, c.aliases, c.deleted, c.archived FROM c WHERE c.seriesId = @seriesId',
         parameters: [{ name: '@seriesId', value: seriesId }],
       }))
       .fetchAll();
-    const entities = (entityResources as Pick<Entity, 'id' | 'name' | 'type' | 'deleted' | 'archived'>[])
+    const entities = (entityResources as ExtractionEntity[])
       .filter(e => !e.deleted && !e.archived);
     const entityById = new Map(entities.map(e => [e.id, e]));
+    const placeEntities = entities.filter(e => e.type === 'PLACE');
 
     // Only events this process previously created for this chapter are candidates
     // for update/removal — manual events are never touched.
@@ -332,17 +332,16 @@ router.post('/extract-from-chapter', async (req: Request, res: Response) => {
 
     const userContent = [
       'Known entities:',
-      JSON.stringify(entities.map(e => ({ id: e.id, name: e.name, type: e.type }))),
+      JSON.stringify(entities.map(e => ({ name: e.name, type: e.type }))),
       '',
       'Existing timeline events previously extracted from this chapter:',
       JSON.stringify(existingEvents.map(e => ({
         id: e.id,
-        entityId: e.entityId,
+        entityName: entityById.get(e.entityId)?.name,
         name: e.name,
         timeframe: e.timeframe,
         description: e.description,
         location: e.location,
-        locationEntityId: e.locationEntityId,
       }))),
       '',
       'Chapter text:',
@@ -367,29 +366,35 @@ router.post('/extract-from-chapter', async (req: Request, res: Response) => {
     }
 
     const adds: TimelineAddProposal[] = (Array.isArray(parsed.adds) ? parsed.adds : [])
-      .filter((a: { entityId?: unknown; name?: unknown }) =>
-        a && typeof a.entityId === 'string' && entityById.has(a.entityId) &&
-        typeof a.name === 'string' && a.name.trim().length > 0)
-      .map((a: { entityId: string; name: string; timeframe?: unknown; description?: unknown; location?: unknown; locationEntityId?: unknown }) => {
-        const loc = resolveLocation(a.location, a.locationEntityId, entityById);
+      .map((a: { entityName?: unknown; name?: unknown; timeframe?: unknown; description?: unknown; location?: unknown; locationName?: unknown }) => {
+        if (!a || typeof a.name !== 'string' || a.name.trim().length === 0) return null;
+        // The name is the source of truth: resolve it to a known entity, and drop the
+        // event when it names a character not in this series rather than mis-attributing it.
+        const entity = resolveEntityByName(a.entityName, entities);
+        if (!entity) {
+          console.warn(`Dropping extracted event "${a.name}": unresolved entity "${String(a.entityName)}"`);
+          return null;
+        }
+        const loc = resolveLocation(a.location, a.locationName, placeEntities);
         return {
-          entityId: a.entityId,
-          entityName: entityById.get(a.entityId)!.name,
+          entityId: entity.id,
+          entityName: entity.name,
           ...normalizeFields(a.name, a.timeframe, a.description, loc.location, loc.locationEntityId),
         };
-      });
+      })
+      .filter((a): a is TimelineAddProposal => a !== null);
 
     const updates: TimelineUpdateProposal[] = (Array.isArray(parsed.updates) ? parsed.updates : [])
       .filter((u: { id?: unknown; name?: unknown }) =>
         u && typeof u.id === 'string' && eventById.has(u.id) &&
         typeof u.name === 'string' && u.name.trim().length > 0)
-      .map((u: { id: string; name: string; timeframe?: unknown; description?: unknown; location?: unknown; locationEntityId?: unknown; reason?: unknown }) => {
+      .map((u: { id: string; name: string; timeframe?: unknown; description?: unknown; location?: unknown; locationName?: unknown; reason?: unknown }) => {
         const existing = eventById.get(u.id)!;
         const current = normalizeFields(existing.name, existing.timeframe, existing.description, existing.location, existing.locationEntityId);
         const aiChangedLocation = (typeof u.location === 'string' && u.location.trim()) ||
-          (typeof u.locationEntityId === 'string' && u.locationEntityId.trim());
+          (typeof u.locationName === 'string' && u.locationName.trim());
         const loc = aiChangedLocation
-          ? resolveLocation(u.location, u.locationEntityId, entityById)
+          ? resolveLocation(u.location, u.locationName, placeEntities)
           : { location: current.location, locationEntityId: current.locationEntityId };
         const proposed: TimelineEventFields = {
           name: u.name.trim(),

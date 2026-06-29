@@ -177,7 +177,13 @@
   width: 100%;
 }
 
-/* Let tab bodies expand to natural content height — outer page scrolls. */
+/* Let tab bodies expand to natural content height — outer page scrolls.
+   Material's active tab body defaults to overflow-y:auto, which creates an
+   inner scrollbar; neutralize it along with the inner content wrapper. */
+::ng-deep .entity-tabs .mat-mdc-tab-body.mat-mdc-tab-body-active {
+  overflow: visible !important;
+}
+
 ::ng-deep .entity-tabs .mat-mdc-tab-body-content {
   overflow: visible !important;
 }
