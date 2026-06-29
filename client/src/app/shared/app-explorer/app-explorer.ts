@@ -61,6 +61,7 @@ export class AppExplorerComponent {
       { icon: 'smart_toy', label: 'Resource Manager', run: () => this.openResourceManager() },
       { icon: 'people', label: 'Entities', run: () => this.navigateTo(['/entities']) },
       { icon: 'account_tree', label: 'Relationships', run: () => this.navigateToRelationships() },
+      { icon: 'map', label: 'Maps', run: () => this.navigateTo(['/maps']) },
       { icon: 'photo_library', label: 'Photo Gallery', run: () => this.navigateTo(['/gallery']) },
       { icon: 'archive', label: 'Archived Items', run: () => this.navigateTo(['/archived']) },
     ]),
