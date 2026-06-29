@@ -4,7 +4,16 @@
     <div class="container">
 
       <div class="greeting-banner">
-        <p class="greeting-text">{{ greeting() }}</p>
+        <div class="greeting-row">
+          @if (userSettings.avatarVideoUrl()) {
+            <video class="greeting-avatar greeting-avatar-video" [src]="proxyUrl(userSettings.avatarVideoUrl())"
+                   muted playsinline autoplay aria-hidden="true"
+                   (ended)="onAvatarVideoEnded($event)"></video>
+          } @else if (userSettings.avatarUrl()) {
+            <img class="greeting-avatar" [src]="userSettings.avatarUrl()" alt="" />
+          }
+          <p class="greeting-text">{{ greeting() }}</p>
+        </div>
         <div class="quote-row">
           <blockquote class="writing-quote" [class.is-hidden]="!quoteVisible()">
             <p class="quote-text">"{{ quote().text }}"</p>

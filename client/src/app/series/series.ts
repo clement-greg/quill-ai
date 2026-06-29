@@ -276,6 +276,7 @@ import { AuthService } from '../auth/auth.service';
 import { Series } from '@shared/models/series.model';
 import { RecentChaptersService } from '../services/recent-chapters.service';
 import { HeaderService } from '../services/header.service';
+import { UserSettingsService } from '../services/user-settings.service';
 import { v4 as uuidv4 } from 'uuid';
 import { SlideOutPanelContainer } from '../shared/slide-out-panel-container/slide-out-panel-container';
 import { WritingStatsSummaryComponent } from '../writing-stats/writing-stats-summary';
@@ -308,6 +309,7 @@ export class SeriesComponent implements OnInit {
   private recentChaptersService = inject(RecentChaptersService);
   private headerService = inject(HeaderService);
   private http = inject(HttpClient);
+  readonly userSettings = inject(UserSettingsService);
 
   readonly recentChapters = this.recentChaptersService.recentChapters;
 
@@ -570,6 +572,15 @@ export class SeriesComponent implements OnInit {
     if (!azureUrl) return null;
     const filename = azureUrl.split('/').pop();
     return filename ? `/api/image/${filename}` : null;
+  }
+
+  /** Profile-video avatars pause for 10s between loops rather than looping continuously. */
+  onAvatarVideoEnded(event: Event): void {
+    const video = event.target as HTMLVideoElement;
+    setTimeout(() => {
+      // The element may have been removed by the time this fires.
+      if (video.isConnected) void video.play().catch(() => {});
+    }, 10_000);
   }
 
   addCollaborator(): void {
