@@ -1,5 +1,5 @@
 import { Injectable } from '@angular/core';
-import { ImageElement, PathElement } from '@shared/models/map.model';
+import { ImageElement, PathElement, RegionElement } from '@shared/models/map.model';
 
 /**
  * A drawable line preset (river, road, border, …). Selecting one puts the
@@ -25,6 +25,27 @@ export interface PathPreset {
 }
 
 /**
+ * A filled-area preset (kingdom, forest, sea, …). Selecting one puts the
+ * editor into draw mode; clicking the canvas adds points to a new
+ * RegionElement that is closed off and filled when finished.
+ */
+export interface RegionPreset {
+  typeId: string;
+  name: string;
+  /** Material Symbol name for the palette button. */
+  icon: string;
+  /** Interior + border colour. */
+  fill: string;
+  /** Interior opacity 0–1 (mostly transparent). */
+  fillOpacity: number;
+  /** Border opacity 0–1 (mostly opaque). */
+  strokeOpacity: number;
+  strokeWidth: number;
+  /** Konva line tension; > 0 smooths the outline. */
+  tension: number;
+}
+
+/**
  * Single source of truth for the built-in element *kinds* and their defaults.
  *
  * Extensibility model:
@@ -46,8 +67,16 @@ export class MapElementRegistry {
     { typeId: 'path', name: 'Path', icon: 'footprint', stroke: '#6d4c2f', strokeWidth: 7, tension: 0.5, dash: [14, 10] },
   ];
 
+  readonly regionPresets: readonly RegionPreset[] = [
+    { typeId: 'region', name: 'Region', icon: 'pentagon', fill: '#3a7bd5', fillOpacity: 0.18, strokeOpacity: 0.9, strokeWidth: 3, tension: 0.5 },
+  ];
+
   pathPreset(typeId: string): PathPreset | undefined {
     return this.pathPresets.find(p => p.typeId === typeId);
+  }
+
+  regionPreset(typeId: string): RegionPreset | undefined {
+    return this.regionPresets.find(p => p.typeId === typeId);
   }
 
   /** Builds a new image element centered at the given logical coordinates. */
@@ -79,6 +108,24 @@ export class MapElementRegistry {
       strokeWidth: preset.strokeWidth,
       tension: preset.tension,
       ...(preset.dash ? { dash: preset.dash } : {}),
+      labelVisible: true,
+      z: 0,
+    };
+  }
+
+  /** Builds a new, empty region element from a preset. */
+  createRegionElement(id: string, preset: RegionPreset): RegionElement {
+    return {
+      id,
+      kind: 'region',
+      typeId: preset.typeId,
+      points: [],
+      fill: preset.fill,
+      fillOpacity: preset.fillOpacity,
+      stroke: preset.fill,
+      strokeOpacity: preset.strokeOpacity,
+      strokeWidth: preset.strokeWidth,
+      tension: preset.tension,
       labelVisible: true,
       z: 0,
     };

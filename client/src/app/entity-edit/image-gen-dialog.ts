@@ -16,19 +16,26 @@ export interface ImageGenSource {
 }
 
 export interface ImageGenDialogData {
+  /** Dialog heading. Defaults to 'Generate Image'. */
+  title?: string;
   /** Photos selectable as the reference image. Omit to hide the source picker. */
   sources?: ImageGenSource[];
+  /** Heading for the source picker. Defaults to 'Source photo'. */
+  sourceLabel?: string;
+  /** Explanatory text under the source heading. */
+  sourceHint?: string;
   /** URL of the source selected by default (e.g. the entity's profile picture). */
   defaultSourceUrl?: string;
-  /** Provider selected by default. Defaults to 'gpt'. */
-  defaultProvider?: 'gpt' | 'gemini';
+  /** Existing categories to choose from. Omit/empty to hide the category picker. */
+  categories?: string[];
 }
 
 export interface ImageGenResult {
   prompt: string;
-  provider: 'gpt' | 'gemini';
   /** URL of the reference image to keep the same face/body, if one was chosen. */
   referenceImageUrl?: string;
+  /** Chosen category, when a category picker was shown. */
+  category?: string;
 }
 
 @Component({
@@ -44,7 +51,7 @@ export interface ImageGenResult {
     TextFieldModule,
   ],
   template: `
-    <h2 mat-dialog-title>Generate Image</h2>
+    <h2 mat-dialog-title>{{ title }}</h2>
     <mat-dialog-content>
       <mat-form-field appearance="outline" class="prompt-field">
         <mat-label>Image prompt</mat-label>
@@ -58,8 +65,8 @@ export interface ImageGenResult {
 
       @if (sources.length) {
         <div class="source-section">
-          <span class="source-label">Source photo</span>
-          <p class="source-hint">The generated image will reuse this face and body.</p>
+          <span class="source-label">{{ sourceLabel }}</span>
+          <p class="source-hint">{{ sourceHint }}</p>
           <div class="source-grid">
             <button type="button" class="source-card"
                     [class.source-card--selected]="selectedSourceUrl() === null"
@@ -81,13 +88,17 @@ export interface ImageGenResult {
         </div>
       }
 
-      <mat-form-field appearance="outline" class="model-field">
-        <mat-label>Model</mat-label>
-        <mat-select [(ngModel)]="provider">
-          <mat-option value="gpt">GPT Image (Azure Foundry)</mat-option>
-          <mat-option value="gemini">Gemini (Google AI Studio)</mat-option>
-        </mat-select>
-      </mat-form-field>
+      @if (categories.length) {
+        <mat-form-field appearance="outline" class="category-field">
+          <mat-label>Category</mat-label>
+          <mat-select [(ngModel)]="category">
+            <mat-option [value]="''">— None —</mat-option>
+            @for (c of categories; track c) {
+              <mat-option [value]="c">{{ c }}</mat-option>
+            }
+          </mat-select>
+        </mat-form-field>
+      }
     </mat-dialog-content>
     <mat-dialog-actions align="end">
       <button mat-button mat-dialog-close>Cancel</button>
@@ -98,7 +109,7 @@ export interface ImageGenResult {
   `,
   styles: [`
     .prompt-field { width: 100%; margin-top: 8px; }
-    .model-field { width: 100%; margin-top: 8px; }
+    .category-field { width: 100%; margin-top: 8px; }
     mat-dialog-content { width: min(460px, 90vw); box-sizing: border-box; }
     .source-section { margin: 4px 0 12px; }
     .source-label { font-weight: 500; font-size: 0.9rem; }
@@ -124,11 +135,13 @@ export class ImageGenDialogComponent {
   private data = inject<ImageGenDialogData | null>(MAT_DIALOG_DATA, { optional: true });
 
   prompt = '';
-  provider: 'gpt' | 'gemini' = this.data?.defaultProvider ?? 'gpt';
+  readonly title = this.data?.title ?? 'Generate Image';
+  readonly sourceLabel = this.data?.sourceLabel ?? 'Source photo';
+  readonly sourceHint = this.data?.sourceHint ?? 'The generated image will reuse this face and body.';
   readonly sources: ImageGenSource[] = this.data?.sources ?? [];
-  selectedSourceUrl = signal<string | null>(
-    this.data?.defaultSourceUrl ?? this.sources[0]?.url ?? null,
-  );
+  readonly categories: string[] = this.data?.categories ?? [];
+  category = '';
+  selectedSourceUrl = signal<string | null>(this.data?.defaultSourceUrl ?? null);
 
   proxyUrl(url: string): string {
     const filename = url.split('/').pop();
@@ -140,8 +153,8 @@ export class ImageGenDialogComponent {
     if (!text) return;
     this.dialogRef.close({
       prompt: text,
-      provider: this.provider,
       referenceImageUrl: this.selectedSourceUrl() ?? undefined,
+      category: this.category || undefined,
     } satisfies ImageGenResult);
   }
 }

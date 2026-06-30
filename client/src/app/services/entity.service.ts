@@ -82,12 +82,10 @@ export class EntityService {
 
   generateImage(
     prompt: string,
-    provider: 'gpt' | 'gemini' = 'gpt',
     referenceImageUrl?: string,
   ): Observable<{ url: string; thumbnailUrl: string }> {
     return this.http.post<{ url: string; thumbnailUrl: string }>('/api/image/generate', {
       prompt,
-      provider,
       referenceImageUrl,
     });
   }

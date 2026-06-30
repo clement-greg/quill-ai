@@ -69,14 +69,6 @@ Provides the primary LLM (text chat and streaming), text embeddings for semantic
 | `foundry.imageGenerationKey` | `FOUNDRY_IMAGE_GENERATION_KEY` |
 | `foundry.imageGenerationModel` | `FOUNDRY_IMAGE_GENERATION_MODEL` |
 
-### Google AI Studio (Gemini)
-Alternative LLM provider used for certain AI features.
-
-| Config Key | Environment Variable |
-|---|---|
-| `googleAIStudio.apiKey` | `GOOGLE_AI_STUDIO_API_KEY` |
-| `googleAIStudio.model` | `GOOGLE_AI_STUDIO_MODEL` |
-
 ### Google Identity Services
 Handles user authentication. Users sign in with their Google account; the server verifies the Google ID token and issues a short-lived custom JWT.
 

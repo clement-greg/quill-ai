@@ -12,9 +12,12 @@ import {
 } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
 import { ActivatedRoute, Router } from '@angular/router';
+import { CdkDragDrop, DragDropModule, moveItemInArray } from '@angular/cdk/drag-drop';
 import { FormsModule } from '@angular/forms';
 import { MatButtonModule } from '@angular/material/button';
+import { MatDialog } from '@angular/material/dialog';
 import { MatIconModule } from '@angular/material/icon';
+import { MatMenuModule } from '@angular/material/menu';
 import { MatFormFieldModule } from '@angular/material/form-field';
 import { MatInputModule } from '@angular/material/input';
 import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
@@ -23,7 +26,7 @@ import { MatSlideToggleModule } from '@angular/material/slide-toggle';
 import { MatTooltipModule } from '@angular/material/tooltip';
 import Konva from 'konva';
 import { v4 as uuidv4 } from 'uuid';
-import { SeriesMap, MapElement, ImageElement, PathElement } from '@shared/models/map.model';
+import { SeriesMap, MapElement, ImageElement, PathElement, RegionElement } from '@shared/models/map.model';
 import { MapAsset } from '@shared/models/map-asset.model';
 import { Entity } from '@shared/models/entity.model';
 import { MapService } from '../map.service';
@@ -32,16 +35,31 @@ import { MapElementRegistry } from '../map-element.registry';
 import { EntityService } from '../../services/entity.service';
 import { SeriesContextService } from '../../services/series-context.service';
 import { HeaderService } from '../../services/header.service';
+import {
+  ImageGenDialogComponent,
+  ImageGenResult,
+  ImageGenSource,
+} from '../../entity-edit/image-gen-dialog';
 
 type SaveStatus = 'idle' | 'saving' | 'saved' | 'error';
+
+/** Presentation order for the stamp palette, persisted per series in localStorage. */
+interface PaletteLayout {
+  /** Category names in display order (includes empty, user-created categories). */
+  categories: string[];
+  /** Drop-list id → ordered asset ids within that bucket. */
+  itemOrder: Record<string, string[]>;
+}
 
 @Component({
   selector: 'app-map-editor',
   changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [
+    DragDropModule,
     FormsModule,
     MatButtonModule,
     MatIconModule,
+    MatMenuModule,
     MatFormFieldModule,
     MatInputModule,
     MatProgressSpinnerModule,
@@ -63,6 +81,7 @@ export class MapEditorComponent implements OnDestroy {
   private entityService = inject(EntityService);
   private seriesContext = inject(SeriesContextService);
   private headerService = inject(HeaderService);
+  private dialog = inject(MatDialog);
 
   readonly stageContainer = viewChild<ElementRef<HTMLDivElement>>('stageContainer');
 
@@ -75,6 +94,61 @@ export class MapEditorComponent implements OnDestroy {
   readonly mode = signal<'select' | string>('select'); // 'select' or a path preset typeId
   readonly drawing = signal(false);
   readonly uploading = signal(false);
+  readonly generatingStamp = signal(false);
+  /** When on, the palette reveals the "New Stamp" button and per-stamp delete controls. */
+  readonly editingStamps = signal(false);
+  readonly newCategoryName = signal('');
+
+  /**
+   * Per-series palette layout (category order + item order within each bucket).
+   * Category *membership* lives on each asset; this only governs presentation
+   * order, mirroring how panel widths are kept in localStorage. Empty categories
+   * persist here so they survive until populated.
+   */
+  readonly layout = signal<PaletteLayout>({ categories: [], itemOrder: {} });
+  /** Names of categories collapsed in the viewer (non-edit mode only). */
+  readonly collapsed = signal<ReadonlySet<string>>(new Set());
+
+  /** Stable drop-list id for the uncategorized bucket. */
+  readonly UNCAT_LIST = 'stamp-uncat';
+  private listId(name: string): string { return 'stamp-cat:' + name; }
+
+  /** Category names in display order: layout order first, then any newly-used ones. */
+  readonly orderedCategories = computed<string[]>(() => {
+    const result: string[] = [];
+    const seen = new Set<string>();
+    for (const c of this.layout().categories) {
+      if (!seen.has(c)) { result.push(c); seen.add(c); }
+    }
+    const extras = new Set<string>();
+    for (const a of this.assets()) if (a.category && !seen.has(a.category)) extras.add(a.category);
+    for (const c of [...extras].sort((a, b) => a.localeCompare(b))) result.push(c);
+    return result;
+  });
+
+  /** Orders a bucket's assets by the saved item order; unknown assets sort to the end by name. */
+  private orderAssets(listKey: string, list: MapAsset[]): MapAsset[] {
+    const order = this.layout().itemOrder[listKey] ?? [];
+    const pos = new Map(order.map((id, i) => [id, i] as const));
+    const at = (id: string) => (pos.has(id) ? pos.get(id)! : Number.MAX_SAFE_INTEGER);
+    return [...list].sort((a, b) => at(a.id) - at(b.id) || a.name.localeCompare(b.name));
+  }
+
+  readonly uncategorizedAssets = computed(() =>
+    this.orderAssets(this.UNCAT_LIST, this.assets().filter(a => !a.category)),
+  );
+
+  /** Named category groups in display order, each with its ordered assets and drop-list id. */
+  readonly namedGroups = computed(() =>
+    this.orderedCategories().map(name => ({
+      name,
+      listId: this.listId(name),
+      assets: this.orderAssets(this.listId(name), this.assets().filter(a => a.category === name)),
+    })),
+  );
+
+  /** All item drop-list ids, so each list can accept stamps dragged from any other. */
+  readonly itemListIds = computed(() => [this.UNCAT_LIST, ...this.orderedCategories().map(n => this.listId(n))]);
   readonly saveStatus = signal<SaveStatus>('idle');
   readonly bgColor = signal('#e8dcc0');
   readonly gridSize = signal(50);
@@ -89,6 +163,7 @@ export class MapEditorComponent implements OnDestroy {
   });
 
   readonly pathPresets = this.registry.pathPresets;
+  readonly regionPresets = this.registry.regionPresets;
 
   // ----- Panel resize state -----
   private static readPanelWidth(key: string, fallback: number): number {
@@ -175,6 +250,7 @@ export class MapEditorComponent implements OnDestroy {
             { label: 'Maps', link: '/series/' + map.seriesId + '/maps' },
             { label: map.title },
           ]);
+          this.loadLayout();
           this.loadAssets(map.seriesId);
           this.loadPlaces(map.seriesId);
           this.tryRender();
@@ -321,6 +397,7 @@ export class MapEditorComponent implements OnDestroy {
     const ordered = [...this.elements()].sort((a, b) => a.z - b.z);
     for (const element of ordered) {
       if (element.kind === 'image') this.addImageNode(element);
+      else if (element.kind === 'region') this.addRegionNode(element);
       else this.addPathNode(element);
     }
     this.elementLayer.batchDraw();
@@ -408,6 +485,57 @@ export class MapEditorComponent implements OnDestroy {
     if (label) this.elementLayer!.add(label);
     this.nodes.set(element.id, { node: line, label });
     this.positionLabel(element.id);
+  }
+
+  /**
+   * Renders a region as a closed, filled, smooth curve through its points.
+   * The interior uses the fill colour at a low opacity while the border uses
+   * it at a high opacity, so the area reads as a translucent wash with a
+   * defined edge.
+   */
+  private addRegionNode(element: RegionElement): void {
+    const flat = element.points.flatMap(p => [p.x, p.y]);
+    const line = new Konva.Line({
+      points: flat,
+      closed: true,
+      tension: element.tension ?? 0,
+      fill: this.rgba(element.fill, element.fillOpacity),
+      stroke: this.rgba(element.stroke, element.strokeOpacity),
+      strokeWidth: element.strokeWidth,
+      lineCap: 'round',
+      lineJoin: 'round',
+      draggable: true,
+      name: element.id,
+    });
+    line.setAttr('isRegion', true);
+    line.on('click tap', () => this.zone.run(() => this.select(element.id)));
+    line.on('dragmove', () => this.positionLabel(element.id));
+    line.on('dragend', () => {
+      const dx = line.x();
+      const dy = line.y();
+      line.position({ x: 0, y: 0 });
+      const moved = element.points.map(p => ({ x: p.x + dx, y: p.y + dy }));
+      line.points(moved.flatMap(p => [p.x, p.y]));
+      this.updateElementModel(element.id, { points: moved });
+      this.positionLabel(element.id);
+    });
+
+    this.elementLayer!.add(line);
+    const label = this.makeLabel(element);
+    if (label) this.elementLayer!.add(label);
+    this.nodes.set(element.id, { node: line, label });
+    this.positionLabel(element.id);
+  }
+
+  /** Converts a hex colour + 0–1 alpha into an `rgba()` string. */
+  private rgba(hex: string, alpha: number): string {
+    const h = hex.replace('#', '');
+    const full = h.length === 3 ? h.split('').map(c => c + c).join('') : h;
+    const r = parseInt(full.slice(0, 2), 16);
+    const g = parseInt(full.slice(2, 4), 16);
+    const b = parseInt(full.slice(4, 6), 16);
+    const a = Math.max(0, Math.min(1, alpha));
+    return `rgba(${r}, ${g}, ${b}, ${a})`;
   }
 
   /**
@@ -525,8 +653,20 @@ export class MapEditorComponent implements OnDestroy {
     label.offsetX(label.width() / 2);
     if (node instanceof Konva.Image) {
       label.position({ x: node.x(), y: node.y() + node.height() / 2 + 6 });
+    } else if (node instanceof Konva.Line && node.getAttr('isRegion')) {
+      // Centre the label on the polygon's centroid.
+      const pts = node.points();
+      let cx = 0;
+      let cy = 0;
+      const n = pts.length / 2;
+      for (let i = 0; i < pts.length; i += 2) {
+        cx += pts[i];
+        cy += pts[i + 1];
+      }
+      label.offsetY(label.height() / 2);
+      label.position({ x: node.x() + cx / n, y: node.y() + cy / n });
     } else if (node instanceof Konva.Line) {
-      const pts = (node as Konva.Line).points();
+      const pts = node.points();
       label.position({ x: node.x() + (pts[0] ?? 0), y: node.y() + (pts[1] ?? 0) - 22 });
     }
     label.getLayer()?.batchDraw();
@@ -552,7 +692,7 @@ export class MapEditorComponent implements OnDestroy {
   }
 
   /** Geometry write-back: updates the model + autosave without a full redraw. */
-  private updateElementModel(id: string, patch: Partial<ImageElement> & Partial<PathElement>): void {
+  private updateElementModel(id: string, patch: Partial<ImageElement> & Partial<PathElement> & Partial<RegionElement>): void {
     this.zone.run(() => {
       this.elements.update(els => els.map(e => (e.id === id ? ({ ...e, ...patch } as MapElement) : e)));
       this.markDirty();
@@ -567,6 +707,45 @@ export class MapEditorComponent implements OnDestroy {
 
   toggleLabelVisible(id: string, visible: boolean): void {
     this.elements.update(els => els.map(e => (e.id === id ? { ...e, labelVisible: visible } : e)));
+    this.markDirty();
+    this.zone.runOutsideAngular(() => this.renderElements());
+  }
+
+  /** Sets a region's colour (interior + border share the same hue). */
+  setRegionColor(id: string, color: string): void {
+    this.patchRegion(id, { fill: color, stroke: color });
+  }
+
+  /** Sets a region's interior opacity (0–1). */
+  setRegionFillOpacity(id: string, opacity: number): void {
+    this.patchRegion(id, { fillOpacity: Math.max(0, Math.min(1, opacity)) });
+  }
+
+  /** Sets a region's border opacity (0–1). */
+  setRegionStrokeOpacity(id: string, opacity: number): void {
+    this.patchRegion(id, { strokeOpacity: Math.max(0, Math.min(1, opacity)) });
+  }
+
+  private patchRegion(id: string, patch: Partial<RegionElement>): void {
+    this.elements.update(els =>
+      els.map(e => (e.id === id && e.kind === 'region' ? { ...e, ...patch } : e)),
+    );
+    this.markDirty();
+    this.zone.runOutsideAngular(() => this.renderElements());
+  }
+
+  /**
+   * Reorders the z-stack from a drag-and-drop in the elements panel. The list
+   * is rendered top-of-stack first (highest z), so after moving the dragged
+   * item we reassign z descending from the top of the list.
+   */
+  reorderElements(event: CdkDragDrop<MapElement[]>): void {
+    if (event.previousIndex === event.currentIndex) return;
+    const ordered = [...this.elementsByZ()];
+    moveItemInArray(ordered, event.previousIndex, event.currentIndex);
+    const top = ordered.length - 1;
+    const updated = ordered.map((e, i) => ({ ...e, z: top - i } as MapElement));
+    this.elements.set(updated);
     this.markDirty();
     this.zone.runOutsideAngular(() => this.renderElements());
   }
@@ -650,13 +829,23 @@ export class MapEditorComponent implements OnDestroy {
   }
 
   finishPath(): void {
-    const preset = this.registry.pathPreset(this.mode());
-    if (preset && this.draftPoints.length >= 2) {
-      const element = this.registry.createPathElement(uuidv4(), preset);
-      element.points = this.draftPoints.slice();
-      element.z = this.nextZ();
+    const pathPreset = this.registry.pathPreset(this.mode());
+    const regionPreset = this.registry.regionPreset(this.mode());
+    let element: MapElement | null = null;
+    if (pathPreset && this.draftPoints.length >= 2) {
+      const path = this.registry.createPathElement(uuidv4(), pathPreset);
+      path.points = this.draftPoints.slice();
+      element = path;
+    } else if (regionPreset && this.draftPoints.length >= 3) {
+      const region = this.registry.createRegionElement(uuidv4(), regionPreset);
+      region.points = this.draftPoints.slice();
+      element = region;
+    }
+    if (element) {
+      const created = element;
+      created.z = this.nextZ();
       this.zone.run(() => {
-        this.elements.update(els => [...els, element]);
+        this.elements.update(els => [...els, created]);
         this.markDirty();
       });
     }
@@ -679,21 +868,36 @@ export class MapEditorComponent implements OnDestroy {
 
   private renderDraft(): void {
     if (!this.overlayLayer) return;
-    const preset = this.registry.pathPreset(this.mode());
-    if (!preset) return;
+    const pathPreset = this.registry.pathPreset(this.mode());
+    const regionPreset = this.registry.regionPreset(this.mode());
+    if (!pathPreset && !regionPreset) return;
     const pts = [...this.draftPoints];
     if (this.draftPreview) pts.push(this.draftPreview);
     const flat = pts.flatMap(p => [p.x, p.y]);
     if (!this.draftLine) {
-      this.draftLine = new Konva.Line({
-        stroke: preset.stroke,
-        strokeWidth: preset.strokeWidth,
-        tension: preset.tension,
-        dash: preset.dash ?? [10, 6],
-        lineCap: 'round',
-        lineJoin: 'round',
-        listening: false,
-      });
+      this.draftLine = new Konva.Line(
+        regionPreset
+          ? {
+              stroke: this.rgba(regionPreset.fill, regionPreset.strokeOpacity),
+              strokeWidth: regionPreset.strokeWidth,
+              tension: regionPreset.tension,
+              dash: [10, 6],
+              closed: true,
+              fill: this.rgba(regionPreset.fill, regionPreset.fillOpacity),
+              lineCap: 'round',
+              lineJoin: 'round',
+              listening: false,
+            }
+          : {
+              stroke: pathPreset!.stroke,
+              strokeWidth: pathPreset!.strokeWidth,
+              tension: pathPreset!.tension,
+              dash: pathPreset!.dash ?? [10, 6],
+              lineCap: 'round',
+              lineJoin: 'round',
+              listening: false,
+            },
+      );
       this.overlayLayer.add(this.draftLine);
     }
     this.draftLine.points(flat);
@@ -703,7 +907,10 @@ export class MapEditorComponent implements OnDestroy {
   // ===================== Asset palette =====================
 
   private loadAssets(seriesId: string): void {
-    this.assetService.getBySeries(seriesId).subscribe(assets => this.assets.set(assets));
+    this.assetService.getBySeries(seriesId).subscribe(assets => {
+      this.assets.set(assets);
+      this.reconcileLayout();
+    });
   }
 
   private loadPlaces(seriesId: string): void {
@@ -749,6 +956,130 @@ export class MapEditorComponent implements OnDestroy {
     });
   }
 
+  // ----- Categories & ordering -----
+
+  private layoutKey(): string | null {
+    return this.map ? `map-palette-layout:${this.map.seriesId}` : null;
+  }
+
+  private loadLayout(): void {
+    const key = this.layoutKey();
+    if (!key) return;
+    try {
+      const raw = localStorage.getItem(key);
+      if (raw) {
+        const parsed = JSON.parse(raw) as Partial<PaletteLayout> & { collapsed?: string[] };
+        this.layout.set({ categories: parsed.categories ?? [], itemOrder: parsed.itemOrder ?? {} });
+        this.collapsed.set(new Set(parsed.collapsed ?? []));
+      }
+    } catch { /* ignore malformed layout */ }
+  }
+
+  /** Writes the current order + collapsed state to localStorage for this series. */
+  private persistLayout(): void {
+    const key = this.layoutKey();
+    if (!key) return;
+    const l = this.layout();
+    localStorage.setItem(key, JSON.stringify({
+      categories: l.categories,
+      itemOrder: l.itemOrder,
+      collapsed: [...this.collapsed()],
+    }));
+  }
+
+  private patchLayout(partial: Partial<PaletteLayout>): void {
+    this.layout.update(l => ({
+      categories: partial.categories ?? l.categories,
+      itemOrder: partial.itemOrder ? { ...l.itemOrder, ...partial.itemOrder } : l.itemOrder,
+    }));
+    this.persistLayout();
+  }
+
+  /** Folds any categories used by stamps into the saved order (called after assets load). */
+  private reconcileLayout(): void {
+    const cats = [...this.layout().categories];
+    let changed = false;
+    for (const a of this.assets()) {
+      if (a.category && !cats.includes(a.category)) { cats.push(a.category); changed = true; }
+    }
+    if (changed) this.patchLayout({ categories: cats });
+  }
+
+  /** Adds a new, empty category as a drop target (deduped, case-insensitive). */
+  addCategory(): void {
+    const name = this.newCategoryName().trim();
+    if (!name) return;
+    if (!this.orderedCategories().some(c => c.toLowerCase() === name.toLowerCase())) {
+      this.patchLayout({ categories: [...this.layout().categories, name] });
+    }
+    this.newCategoryName.set('');
+  }
+
+  /** Removes an empty category from the saved order. */
+  removeCategory(name: string): void {
+    this.patchLayout({
+      categories: this.layout().categories.filter(c => c !== name),
+      itemOrder: { [this.listId(name)]: [] },
+    });
+  }
+
+  isCollapsed(name: string): boolean {
+    return this.collapsed().has(name);
+  }
+
+  toggleCollapse(name: string): void {
+    this.collapsed.update(set => {
+      const next = new Set(set);
+      next.has(name) ? next.delete(name) : next.add(name);
+      return next;
+    });
+    this.persistLayout();
+  }
+
+  /** Reorders a category among its siblings. */
+  onCategoryDrop(event: CdkDragDrop<string[]>): void {
+    if (event.previousIndex === event.currentIndex) return;
+    const names = [...this.orderedCategories()];
+    moveItemInArray(names, event.previousIndex, event.currentIndex);
+    this.patchLayout({ categories: names });
+  }
+
+  /**
+   * Handles a stamp dropped onto a bucket: reorders within the bucket, or moves
+   * it to another category (updating both buckets' order and the asset's category).
+   */
+  onItemDrop(event: CdkDragDrop<MapAsset[]>, targetListId: string, targetCategory: string): void {
+    const targetIds = event.container.data.map(a => a.id);
+    if (event.previousContainer === event.container) {
+      if (event.previousIndex === event.currentIndex) return;
+      moveItemInArray(targetIds, event.previousIndex, event.currentIndex);
+      this.patchLayout({ itemOrder: { [targetListId]: targetIds } });
+      return;
+    }
+    const asset = event.item.data;
+    const srcListId = event.previousContainer.id;
+    const srcIds = event.previousContainer.data.map(a => a.id).filter(id => id !== asset.id);
+    targetIds.splice(event.currentIndex, 0, asset.id);
+    this.patchLayout({ itemOrder: { [srcListId]: srcIds, [targetListId]: targetIds } });
+    if ((asset.category ?? '') !== targetCategory) {
+      const next = targetCategory || undefined;
+      this.assets.update(list => list.map(a => (a.id === asset.id ? { ...a, category: next } : a)));
+      this.assetService.update(asset.id, { category: targetCategory }).subscribe({
+        error: () => this.loadAssets(this.map!.seriesId),
+      });
+    }
+  }
+
+  /** Renames a stamp from the inline edit-mode input. */
+  renameAsset(asset: MapAsset, name: string): void {
+    const trimmed = name.trim();
+    if (!trimmed || trimmed === asset.name) return;
+    this.assets.update(list => list.map(a => (a.id === asset.id ? { ...a, name: trimmed } : a)));
+    this.assetService.update(asset.id, { name: trimmed }).subscribe({
+      error: () => this.loadAssets(this.map!.seriesId),
+    });
+  }
+
   onUploadFile(ev: Event): void {
     const input = ev.target as HTMLInputElement;
     const file = input.files?.[0];
@@ -765,6 +1096,48 @@ export class MapEditorComponent implements OnDestroy {
         this.uploading.set(false);
         input.value = '';
       },
+    });
+  }
+
+  /**
+   * Opens the AI image generation dialog, offering existing stamps as optional
+   * style references, and registers the generated image as a new palette stamp.
+   */
+  openGenerateStampDialog(): void {
+    if (!this.map) return;
+    const seriesId = this.map.seriesId;
+    const sources: ImageGenSource[] = this.assets().map(a => ({
+      url: a.imageUrl,
+      thumbnailUrl: a.thumbnailUrl,
+      label: a.name,
+    }));
+
+    const dialogRef = this.dialog.open(ImageGenDialogComponent, {
+      width: '500px',
+      data: {
+        title: 'Generate Stamp',
+        sources,
+        sourceLabel: 'Style reference',
+        sourceHint: 'Optionally match the look of an existing stamp.',
+        categories: this.orderedCategories(),
+      },
+    });
+
+    dialogRef.afterClosed().subscribe((result: ImageGenResult | undefined) => {
+      if (!result) return;
+      const name = result.prompt.trim().slice(0, 40) || 'Generated stamp';
+      // Stamps sit on top of the map, so always ask for a cut-out with no backdrop.
+      const prompt = `${result.prompt.trim()}. The image must have a transparent background with no scenery or backdrop behind the subject.`;
+      this.generatingStamp.set(true);
+      this.assetService
+        .generateStamp(seriesId, prompt, name, result.referenceImageUrl, result.category)
+        .subscribe({
+          next: asset => {
+            this.assets.update(list => [...list, asset]);
+            this.generatingStamp.set(false);
+          },
+          error: () => this.generatingStamp.set(false),
+        });
     });
   }
 

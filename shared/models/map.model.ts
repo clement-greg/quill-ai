@@ -58,11 +58,32 @@ export interface PathElement extends BaseElement {
 }
 
 /**
- * Discriminated union of element kinds. Adding a new behavioral kind later
- * (e.g. a polygon region) is additive: extend this union and add a render
- * branch in the editor — existing maps are unaffected.
+ * A closed, filled area (kingdom, forest, sea, …). Drawn as a smooth closed
+ * curve through its points; the interior is mostly transparent while the
+ * border is mostly opaque, so regions read as washes over the map.
  */
-export type MapElement = ImageElement | PathElement;
+export interface RegionElement extends BaseElement {
+  kind: 'region';
+  points: { x: number; y: number }[];
+  /** Interior + border colour (hex). */
+  fill: string;
+  /** Interior opacity 0–1 (regions are mostly transparent inside). */
+  fillOpacity: number;
+  /** Border colour (hex); usually matches `fill`. */
+  stroke: string;
+  /** Border opacity 0–1 (regions have a mostly-opaque border). */
+  strokeOpacity: number;
+  strokeWidth: number;
+  /** Konva line tension; > 0 smooths the outline into bezier curves. */
+  tension?: number;
+}
+
+/**
+ * Discriminated union of element kinds. Adding a new behavioral kind later
+ * is additive: extend this union and add a render branch in the editor —
+ * existing maps are unaffected.
+ */
+export type MapElement = ImageElement | PathElement | RegionElement;
 
 /** A user-built map of an imaginary world, owned by a series. */
 export interface SeriesMap extends AuditedRecord {

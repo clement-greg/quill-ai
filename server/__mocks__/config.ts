@@ -19,7 +19,6 @@ const config = {
     imageGenerationKey: '',
     imageGenerationModel: '',
   },
-  googleAIStudio: { apiKey: '', model: '' },
 };
 
 export default config;

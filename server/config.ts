@@ -23,10 +23,6 @@ interface AppConfig {
     imageGenerationKey: string;
     imageGenerationModel: string;
   };
-  googleAIStudio: {
-    apiKey: string;
-    model: string;
-  };
 }
 
 function loadConfig(): AppConfig {
@@ -56,10 +52,6 @@ function loadConfig(): AppConfig {
       imageGenerationEndpoint: process.env['FOUNDRY_IMAGE_GENERATION_ENDPOINT']!,
       imageGenerationKey: process.env['FOUNDRY_IMAGE_GENERATION_KEY']!,
       imageGenerationModel: process.env['FOUNDRY_IMAGE_GENERATION_MODEL']!,
-    },
-    googleAIStudio: {
-      apiKey: process.env['GOOGLE_AI_STUDIO_API_KEY']!,
-      model: process.env['GOOGLE_AI_STUDIO_MODEL']!,
     },
   };
 }

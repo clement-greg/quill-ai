@@ -59,31 +59,146 @@
     <!-- Palette -->
     <aside class="palette" aria-label="Map element palette"
           [style.width.px]="paletteWidth()" [style.flex-basis.px]="paletteWidth()">
-      <h3>Stamps</h3>
-      <button mat-stroked-button class="upload-btn" (click)="fileInput.click()" [disabled]="uploading()">
-        @if (uploading()) { <mat-spinner diameter="18" /> } @else { <mat-icon>upload</mat-icon> }
-        Upload stamp
-      </button>
-      <input #fileInput type="file" accept="image/*,.svg" hidden (change)="onUploadFile($event)" />
-
-      @if (assets().length === 0) {
-        <p class="hint">Upload images (mountains, towns, lakes…) to drag onto the map.</p>
+      <div class="section-header">
+        <h3>Stamps</h3>
+        <button mat-icon-button class="section-edit" (click)="editingStamps.set(!editingStamps())"
+                [class.section-edit--active]="editingStamps()" [attr.aria-pressed]="editingStamps()"
+                aria-label="Edit stamps" matTooltip="Edit stamps">
+          <mat-icon>{{ editingStamps() ? 'done' : 'edit' }}</mat-icon>
+        </button>
+      </div>
+      @if (assets().length === 0 && !editingStamps()) {
+        <p class="hint">Add images (mountains, towns, lakes…) to drag onto the map.</p>
       } @else {
-        <div class="stamp-grid">
-          @for (asset of assets(); track asset.id) {
-            <figure class="stamp" draggable="true" (dragstart)="onAssetDragStart($event, asset)"
-                    [title]="'Drag ' + asset.name + ' onto the map'">
-              <img [src]="proxyUrl(asset.thumbnailUrl)" [alt]="asset.name" />
-              <figcaption>{{ asset.name }}</figcaption>
-              <button class="stamp-delete" (click)="deleteAsset(asset.id)"
-                      [attr.aria-label]="'Remove ' + asset.name + ' from palette'"
-                      matTooltip="Remove stamp" type="button">
-                <mat-icon aria-hidden="true">close</mat-icon>
-              </button>
-            </figure>
+        <!-- Uncategorized bucket: fixed first, connected so stamps can move in/out -->
+        @if (uncategorizedAssets().length || editingStamps()) {
+          @if (editingStamps() && orderedCategories().length) {
+            <div class="stamp-cat-header"><h4 class="stamp-cat-header--muted">Uncategorized</h4></div>
+          }
+          <div class="stamp-grid" [class.stamp-grid--drop]="editingStamps()"
+               cdkDropList [id]="UNCAT_LIST" [cdkDropListData]="uncategorizedAssets()"
+               [cdkDropListConnectedTo]="itemListIds()" [cdkDropListDisabled]="!editingStamps()"
+               (cdkDropListDropped)="onItemDrop($event, UNCAT_LIST, '')">
+            @for (asset of uncategorizedAssets(); track asset.id) {
+              <figure class="stamp" cdkDrag [cdkDragData]="asset" [cdkDragDisabled]="!editingStamps()"
+                      [attr.draggable]="editingStamps() ? null : true"
+                      (dragstart)="onAssetDragStart($event, asset)"
+                      [title]="editingStamps() ? '' : 'Drag ' + asset.name + ' onto the map'">
+                <div class="stamp-drag-placeholder" *cdkDragPlaceholder></div>
+                <img cdkDragHandle [src]="proxyUrl(asset.thumbnailUrl)" [alt]="asset.name" />
+                @if (editingStamps()) {
+                  <input class="stamp-name-input" [value]="asset.name"
+                         (click)="$event.stopPropagation()"
+                         (change)="renameAsset(asset, $any($event.target).value)"
+                         [attr.aria-label]="'Rename ' + asset.name" />
+                  <button class="stamp-delete" type="button" (click)="deleteAsset(asset.id)"
+                          [attr.aria-label]="'Remove ' + asset.name + ' from palette'"
+                          matTooltip="Remove stamp">
+                    <mat-icon aria-hidden="true">close</mat-icon>
+                  </button>
+                } @else {
+                  <figcaption>{{ asset.name }}</figcaption>
+                }
+              </figure>
+            }
+          </div>
+        }
+
+        <!-- Named categories: drag the header handle to reorder them -->
+        <div cdkDropList class="category-list" [cdkDropListData]="orderedCategories()"
+             [cdkDropListDisabled]="!editingStamps()" (cdkDropListDropped)="onCategoryDrop($event)">
+          @for (group of namedGroups(); track group.name) {
+            <div class="category-section" cdkDrag [cdkDragData]="group.name" [cdkDragDisabled]="!editingStamps()">
+              <div class="category-drag-placeholder" *cdkDragPlaceholder></div>
+              <div class="stamp-cat-header">
+                @if (editingStamps()) {
+                  <button class="cat-drag-handle" cdkDragHandle type="button" tabindex="-1"
+                          aria-label="Drag to reorder category" matTooltip="Drag to reorder">
+                    <mat-icon aria-hidden="true">drag_indicator</mat-icon>
+                  </button>
+                } @else {
+                  <button class="cat-collapse" type="button" (click)="toggleCollapse(group.name)"
+                          [attr.aria-expanded]="!isCollapsed(group.name)"
+                          [attr.aria-label]="(isCollapsed(group.name) ? 'Expand ' : 'Collapse ') + group.name">
+                    <mat-icon aria-hidden="true">{{ isCollapsed(group.name) ? 'chevron_right' : 'expand_more' }}</mat-icon>
+                  </button>
+                }
+                <h4>{{ group.name }}</h4>
+                <span class="cat-count">{{ group.assets.length }}</span>
+                @if (editingStamps() && group.assets.length === 0) {
+                  <button class="cat-delete" type="button" (click)="removeCategory(group.name)"
+                          aria-label="Remove empty category" matTooltip="Remove category">
+                    <mat-icon aria-hidden="true">close</mat-icon>
+                  </button>
+                }
+              </div>
+
+              @if (editingStamps() || !isCollapsed(group.name)) {
+                <div class="stamp-grid" [class.stamp-grid--drop]="editingStamps()"
+                     cdkDropList [id]="group.listId" [cdkDropListData]="group.assets"
+                     [cdkDropListConnectedTo]="itemListIds()" [cdkDropListDisabled]="!editingStamps()"
+                     (cdkDropListDropped)="onItemDrop($event, group.listId, group.name)">
+                  @for (asset of group.assets; track asset.id) {
+                    <figure class="stamp" cdkDrag [cdkDragData]="asset" [cdkDragDisabled]="!editingStamps()"
+                            [attr.draggable]="editingStamps() ? null : true"
+                            (dragstart)="onAssetDragStart($event, asset)"
+                            [title]="editingStamps() ? '' : 'Drag ' + asset.name + ' onto the map'">
+                      <div class="stamp-drag-placeholder" *cdkDragPlaceholder></div>
+                      <img cdkDragHandle [src]="proxyUrl(asset.thumbnailUrl)" [alt]="asset.name" />
+                      @if (editingStamps()) {
+                        <input class="stamp-name-input" [value]="asset.name"
+                               (click)="$event.stopPropagation()"
+                               (change)="renameAsset(asset, $any($event.target).value)"
+                               [attr.aria-label]="'Rename ' + asset.name" />
+                        <button class="stamp-delete" type="button" (click)="deleteAsset(asset.id)"
+                                [attr.aria-label]="'Remove ' + asset.name + ' from palette'"
+                                matTooltip="Remove stamp">
+                          <mat-icon aria-hidden="true">close</mat-icon>
+                        </button>
+                      } @else {
+                        <figcaption>{{ asset.name }}</figcaption>
+                      }
+                    </figure>
+                  }
+                  @if (editingStamps() && group.assets.length === 0) {
+                    <p class="stamp-drop-hint">Drag stamps here</p>
+                  }
+                </div>
+              }
+            </div>
           }
         </div>
       }
+
+      @if (editingStamps()) {
+        <div class="new-category">
+          <input class="new-category-input" placeholder="New category…"
+                 [value]="newCategoryName()"
+                 (input)="newCategoryName.set($any($event.target).value)"
+                 (keydown.enter)="addCategory()" aria-label="New category name" />
+          <button mat-icon-button (click)="addCategory()" [disabled]="!newCategoryName().trim()"
+                  aria-label="Add category" matTooltip="Add category">
+            <mat-icon>create_new_folder</mat-icon>
+          </button>
+        </div>
+
+        <button mat-stroked-button class="upload-btn" [matMenuTriggerFor]="newStampMenu"
+                [disabled]="uploading() || generatingStamp()" aria-label="Add a new stamp">
+          @if (uploading() || generatingStamp()) { <mat-spinner diameter="18" /> } @else { <mat-icon>add</mat-icon> }
+          New Stamp
+        </button>
+      }
+      <mat-menu #newStampMenu="matMenu">
+        <button mat-menu-item type="button" (click)="fileInput.click()">
+          <mat-icon>upload</mat-icon>
+          <span>Upload image</span>
+        </button>
+        <button mat-menu-item type="button" (click)="openGenerateStampDialog()">
+          <mat-icon>auto_awesome</mat-icon>
+          <span>Generate with AI</span>
+        </button>
+      </mat-menu>
+      <input #fileInput type="file" accept="image/*,.svg" hidden (change)="onUploadFile($event)" />
 
       <h3>Lines</h3>
       <div class="tool-grid">
@@ -91,6 +206,17 @@
           <button type="button" class="tool-btn" [class.tool-btn--active]="mode() === preset.typeId"
                   (click)="selectTool(preset.typeId)" [attr.aria-pressed]="mode() === preset.typeId">
             <mat-icon [style.color]="preset.stroke" aria-hidden="true">{{ preset.icon }}</mat-icon>
+            <span class="tool-name">{{ preset.name }}</span>
+          </button>
+        }
+      </div>
+
+      <h3>Regions</h3>
+      <div class="tool-grid">
+        @for (preset of regionPresets; track preset.typeId) {
+          <button type="button" class="tool-btn" [class.tool-btn--active]="mode() === preset.typeId"
+                  (click)="selectTool(preset.typeId)" [attr.aria-pressed]="mode() === preset.typeId">
+            <mat-icon [style.color]="preset.fill" aria-hidden="true">{{ preset.icon }}</mat-icon>
             <span class="tool-name">{{ preset.name }}</span>
           </button>
         }
@@ -125,13 +251,20 @@
       @if (elementsByZ().length === 0) {
         <p class="hint">No elements yet.</p>
       } @else {
-        <ul class="element-list">
+        <p class="hint">Drag to reorder. Items at the top of the list draw on top.</p>
+        <ul class="element-list" cdkDropList [cdkDropListData]="elementsByZ()"
+            (cdkDropListDropped)="reorderElements($event)">
           @for (el of elementsByZ(); track el.id) {
-            <li>
+            <li class="element-item" cdkDrag [cdkDragData]="el">
+              <div class="element-drag-placeholder" *cdkDragPlaceholder></div>
+              <button class="element-drag-handle" cdkDragHandle type="button"
+                      aria-label="Drag to reorder" matTooltip="Drag to reorder" tabindex="-1">
+                <mat-icon aria-hidden="true">drag_indicator</mat-icon>
+              </button>
               <button class="element-row" [class.element-row--selected]="el.id === selectedId()"
                       (click)="select(el.id)" [attr.aria-pressed]="el.id === selectedId()">
-                <mat-icon aria-hidden="true">{{ el.kind === 'path' ? 'timeline' : 'image' }}</mat-icon>
-                <span class="element-name">{{ el.label || (el.kind === 'path' ? 'Line' : 'Stamp') }}</span>
+                <mat-icon aria-hidden="true">{{ el.kind === 'image' ? 'image' : el.kind === 'region' ? 'pentagon' : 'timeline' }}</mat-icon>
+                <span class="element-name">{{ el.label || (el.kind === 'image' ? 'Stamp' : el.kind === 'region' ? 'Region' : 'Line') }}</span>
               </button>
             </li>
           }
@@ -172,6 +305,29 @@
                 <mat-hint>No Place entities in this series yet.</mat-hint>
               }
             </mat-form-field>
+          }
+
+          @if (sel.kind === 'region') {
+            <div class="region-controls">
+              <label class="region-control">
+                <span>Color</span>
+                <input type="color" [value]="sel.fill"
+                       (input)="setRegionColor(sel.id, $any($event.target).value)"
+                       aria-label="Region color" />
+              </label>
+              <label class="region-control">
+                <span>Fill opacity</span>
+                <input type="range" min="0" max="1" step="0.05" [value]="sel.fillOpacity"
+                       (input)="setRegionFillOpacity(sel.id, +$any($event.target).value)"
+                       [attr.aria-valuenow]="sel.fillOpacity" aria-label="Region fill opacity" />
+              </label>
+              <label class="region-control">
+                <span>Border opacity</span>
+                <input type="range" min="0" max="1" step="0.05" [value]="sel.strokeOpacity"
+                       (input)="setRegionStrokeOpacity(sel.id, +$any($event.target).value)"
+                       [attr.aria-valuenow]="sel.strokeOpacity" aria-label="Region border opacity" />
+              </label>
+            </div>
           }
 
           <div class="prop-actions">

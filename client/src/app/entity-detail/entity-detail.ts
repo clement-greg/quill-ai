@@ -573,7 +573,6 @@ export class EntityDetailComponent implements OnDestroy {
       data: {
         sources,
         defaultSourceUrl: sources[0]?.url,
-        defaultProvider: 'gpt',
       } satisfies ImageGenDialogData,
     });
 
@@ -582,7 +581,7 @@ export class EntityDetailComponent implements OnDestroy {
       const entityId = this.entity()?.id;
       if (!entityId) return;
       this.photoGenerating.set(true);
-      this.entityService.generateImage(result.prompt, result.provider, result.referenceImageUrl).pipe(
+      this.entityService.generateImage(result.prompt, result.referenceImageUrl).pipe(
         concatMap(({ url, thumbnailUrl }) => this.entityService.addPhoto(entityId, url, thumbnailUrl))
       ).subscribe({
         next: (updated) => {

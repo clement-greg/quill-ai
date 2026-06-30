@@ -3,8 +3,6 @@ import { v4 as uuidv4 } from 'uuid';
 import { uploadFileToBlob } from './storage';
 import config from './config';
 
-export type ImageProvider = 'gpt' | 'gemini';
-
 /** An optional source image used to keep the same face/body in the generated image. */
 export interface ReferenceImage {
   data: Buffer;
@@ -12,72 +10,25 @@ export interface ReferenceImage {
 }
 
 /**
- * Generates an image from a text prompt, stores the original PNG and a WebP
- * thumbnail in blob storage, and returns their URLs. Supports Azure Foundry
- * (GPT image) and Google AI Studio (Gemini) providers.
+ * Generates an image from a text prompt using Azure Foundry (GPT image), stores
+ * the original PNG and a WebP thumbnail in blob storage, and returns their URLs.
  *
- * When a reference image is supplied, it is passed to the model so the new
- * image keeps the same face/body — Gemini receives it as an inline image part,
- * GPT image uses the Azure `/images/edits` endpoint.
+ * When a reference image is supplied, it is passed to the model via the Azure
+ * `/images/edits` endpoint so the new image keeps the same face/body.
  *
  * Throws on API failure so callers can translate to an appropriate response.
  */
 export async function generateImage(
   prompt: string,
-  provider: ImageProvider = 'gpt',
   referenceImage?: ReferenceImage,
+  options: { transparentBackground?: boolean } = {},
 ): Promise<{ url: string; thumbnailUrl: string }> {
   const trimmed = prompt.trim();
   if (!trimmed) throw new Error('prompt is required');
 
   let imageBuffer: Buffer;
 
-  if (provider === 'gemini') {
-    // Google AI Studio — Gemini image generation via generateContent.
-    // A reference image is added as an inline image part alongside the prompt.
-    const modelId = config.googleAIStudio.model;
-    const parts: { text?: string; inlineData?: { mimeType: string; data: string } }[] = [{ text: trimmed }];
-    if (referenceImage) {
-      parts.push({
-        inlineData: {
-          mimeType: referenceImage.mimeType,
-          data: referenceImage.data.toString('base64'),
-        },
-      });
-    }
-    const geminiRes = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(modelId)}:generateContent`,
-      {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'x-goog-api-key': config.googleAIStudio.apiKey,
-        },
-        body: JSON.stringify({
-          contents: [{ parts }],
-          generationConfig: { responseModalities: ['TEXT', 'IMAGE'] },
-        }),
-      }
-    );
-
-    if (!geminiRes.ok) {
-      const errText = await geminiRes.text();
-      console.error('Gemini image generation API error:', errText);
-      throw new Error('Image generation failed');
-    }
-
-    const geminiData = await geminiRes.json() as {
-      candidates: { content: { parts: { text?: string; inlineData?: { mimeType: string; data: string } }[] } }[]
-    };
-
-    const responseParts = geminiData.candidates?.[0]?.content?.parts ?? [];
-    const imagePart = responseParts.find(p => p.inlineData);
-    if (!imagePart?.inlineData) {
-      throw new Error('No image returned from Gemini API');
-    }
-
-    imageBuffer = Buffer.from(imagePart.inlineData.data, 'base64');
-  } else if (referenceImage) {
+  if (referenceImage) {
     // Azure Foundry — GPT image edit: multipart upload of the reference image.
     // The edits route requires a recent preview api-version, so override whatever
     // version the generations endpoint is pinned to.
@@ -86,13 +37,25 @@ export async function generateImage(
     );
     editsUrl.searchParams.set('api-version', '2025-04-01-preview');
     const editsEndpoint = editsUrl.toString();
+
+    // The edits endpoint only accepts PNG/JPEG/WebP. Stamps may be SVGs (or any
+    // other format), so rasterize anything unsupported to PNG first.
+    const SUPPORTED = ['image/png', 'image/jpeg', 'image/webp'];
+    let refData = referenceImage.data;
+    let refMime = referenceImage.mimeType || 'image/png';
+    if (!SUPPORTED.includes(refMime)) {
+      refData = await sharp(refData).png().toBuffer();
+      refMime = 'image/png';
+    }
+
     const form = new FormData();
     form.append('prompt', trimmed);
     form.append('n', '1');
     form.append('size', '1024x1024');
+    if (options.transparentBackground) form.append('background', 'transparent');
     form.append(
       'image',
-      new Blob([new Uint8Array(referenceImage.data)], { type: referenceImage.mimeType || 'image/png' }),
+      new Blob([new Uint8Array(refData)], { type: refMime }),
       'reference.png',
     );
 
@@ -131,6 +94,7 @@ export async function generateImage(
         prompt: trimmed,
         n: 1,
         size: '1024x1024',
+        ...(options.transparentBackground ? { background: 'transparent' } : {}),
       }),
     });
 

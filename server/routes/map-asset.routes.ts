@@ -47,6 +47,33 @@ router.post('/', async (req: Request, res: Response) => {
   }
 });
 
+// PATCH update an asset's name and/or category.
+//   { name?: string, category?: string | null } — an empty/null category clears it.
+router.patch('/:id', async (req: Request, res: Response) => {
+  try {
+    const id = req.params['id'] as string;
+    const existing = await readOwnedItem<MapAsset>(container, id, id, req);
+    if (!existing) {
+      res.status(404).json({ error: 'Asset not found' });
+      return;
+    }
+    const { name, category } = req.body as { name?: string; category?: string | null };
+    if (typeof name === 'string' && name.trim()) existing.name = name.trim();
+    if (category !== undefined) {
+      const trimmed = (category ?? '').trim();
+      if (trimmed) existing.category = trimmed;
+      else delete existing.category;
+    }
+    existing.modifiedBy = req.user!.email;
+    existing.modifiedAt = new Date().toISOString();
+    const { resource } = await container.item(id, id).replace(existing);
+    res.json(resource);
+  } catch (err) {
+    console.error('Error updating map asset:', err);
+    res.status(500).json({ error: 'Failed to update map asset' });
+  }
+});
+
 // DELETE asset (also removes its blobs)
 router.delete('/:id', async (req: Request, res: Response) => {
   try {

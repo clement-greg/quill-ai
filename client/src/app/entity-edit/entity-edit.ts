@@ -245,7 +245,7 @@ export class EntityEditComponent {
     dialogRef.afterClosed().subscribe((result: ImageGenResult | undefined) => {
       if (!result) return;
       this.generatingImage.set(true);
-      this.entityService.generateImage(result.prompt, result.provider).subscribe({
+      this.entityService.generateImage(result.prompt).subscribe({
         next: ({ url, thumbnailUrl }) => {
           const current = this.draft();
           if (current) {
