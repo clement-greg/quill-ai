@@ -472,6 +472,11 @@
   right: 56px;
   max-height: 240px;
   overflow-y: auto;
+  /* Touch: enable momentum scrolling on iOS (without this the menu won't scroll
+     on swipe) and keep the swipe from chaining to the page behind the panel. */
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior: contain;
+  touch-action: pan-y;
   margin: 0;
   padding: 4px;
   list-style: none;
