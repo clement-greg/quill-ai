@@ -12,3 +12,4 @@ export * from './entity-quote.model';
 export * from './chat-session.model';
 export * from './editor-review.model';
 export * from './folder-note.model';
+export * from './thought.model';

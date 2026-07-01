@@ -9,6 +9,7 @@ import { searchTimelineEvents, TimelineEventSearchResult } from '../timeline-eve
 import { Chapter, ChapterNote, OutlineItem } from '../../shared/models/chapter.model';
 import { ChapterCitation } from '../../shared/models/chat-session.model';
 import { BookNote } from '../../shared/models/book-note.model';
+import { Thought } from '../../shared/models/thought.model';
 import { Book } from '../../shared/models/book.model';
 import { Entity } from '../../shared/models/entity.model';
 import { TimelineEvent } from '../../shared/models/timeline-event.model';
@@ -84,6 +85,14 @@ const SMART_EDIT_GUIDANCE =
   'per turn. After a successful call, briefly tell the author the proposed edit is ready below to review, ' +
   'refine, or apply — do not repeat the full new text in your message. If the author then asks for ' +
   'changes to placement or wording, call propose_chapter_edit again with the revised edit.';
+
+// Appended whenever the save_thought tool is available (always).
+const SAVE_THOUGHT_GUIDANCE =
+  '\n\nSAVING THOUGHTS: The author can save a general thought, idea, or note (not tied to any specific ' +
+  'series, book, or chapter) to their Thoughts list. When the author uses the /thought command, or asks ' +
+  'you to "save a thought", "add a thought", "remember this", "jot this down", or "save this idea", you ' +
+  'MUST call save_thought with "content" set to the text of the thought. You may infer a short "title" ' +
+  'from the content if it\'s not explicitly provided. After saving, briefly confirm the thought was saved.';
 
 // Appended whenever the research_entity tool is available (always).
 const ENTITY_RESEARCH_GUIDANCE =
@@ -1118,6 +1127,59 @@ function getResearchEntityTool(req: Request): ChatTool {
   };
 }
 
+/** Tool that saves a freeform thought to the author's global Thoughts list. */
+function getSaveThoughtTool(req: Request): ChatTool {
+  return {
+    successLottie: 'https://lottie.host/883c202e-9be4-4254-9dba-3fdc86a4ac69/7iuM3NQkyu.json',
+    definition: {
+      type: 'function',
+      function: {
+        name: 'save_thought',
+        description:
+          'Save a general thought, idea, or note to the author\'s Thoughts list. ' +
+          'Use this when the author uses the /thought command, or asks to save a thought, idea, ' +
+          'reminder, or note that is not tied to any specific series, book, or chapter. ' +
+          'Pass "content" as the text of the thought. Optionally pass "title" as a short label.',
+        parameters: {
+          type: 'object',
+          properties: {
+            content: { type: 'string', description: 'The text of the thought to save.' },
+            title: { type: 'string', description: 'Optional short title or label for the thought.' },
+          },
+          required: ['content'],
+        },
+      },
+    },
+    execute: async args => {
+      const content = String(args['content'] ?? '').trim();
+      const title = String(args['title'] ?? '').trim() || undefined;
+      if (!content) {
+        return { toolResult: { saved: false, message: 'No thought content was provided. Ask the author what they would like to save.' } };
+      }
+      const now = new Date().toISOString();
+      const email = req.user!.email;
+      const thought: Thought = {
+        id: randomUUID(),
+        title,
+        content,
+        owner: email,
+        createdBy: email,
+        createdAt: now,
+        modifiedBy: email,
+        modifiedAt: now,
+      };
+      try {
+        await getContainer('thought-items').items.create<Thought>(thought);
+        console.log('[save_thought] saved — owner="%s" title="%s"', email, title ?? '(none)');
+        return { toolResult: { saved: true, message: 'Thought saved successfully.' }, success: true };
+      } catch (err) {
+        console.error('save_thought error:', err);
+        return { toolResult: { saved: false, message: 'Failed to save the thought. Please try again.' } };
+      }
+    },
+  };
+}
+
 /** Tools available to the quick-chat (cross-series) assistant. */
 function quickChatTools(req: Request): Record<string, ChatTool> {
   return {
@@ -1635,6 +1697,7 @@ function quickChatTools(req: Request): Record<string, ChatTool> {
         };
       },
     },
+    save_thought: getSaveThoughtTool(req),
     generate_image: generateImageTool(),
   };
 }
@@ -1691,6 +1754,7 @@ function seriesChatTools(req: Request): Record<string, ChatTool> {
   return {
     generate_image: generateImageTool(),
     research_entity: getResearchEntityTool(req),
+    save_thought: getSaveThoughtTool(req),
   };
 }
 
@@ -1941,7 +2005,7 @@ router.post('/:id/chat', async (req: Request, res: Response) => {
   res.setHeader('Connection', 'keep-alive');
   res.flushHeaders();
 
-  await streamChatResponse(res, systemPrompt + IMAGE_TOOL_GUIDANCE + ENTITY_RESEARCH_GUIDANCE, messages, citations, seriesChatTools(req));
+  await streamChatResponse(res, systemPrompt + IMAGE_TOOL_GUIDANCE + ENTITY_RESEARCH_GUIDANCE + SAVE_THOUGHT_GUIDANCE, messages, citations, seriesChatTools(req));
 });
 
 // POST /quick-chat — stateless RAG chat for the quick-launch overlay. Normally
@@ -2062,7 +2126,7 @@ router.post('/quick-chat', async (req: Request, res: Response) => {
       }
     : quickChatTools(req);
   const guidance =
-    IMAGE_TOOL_GUIDANCE + ENTITY_RESEARCH_GUIDANCE + (chapterContext?.chapterId ? LINK_REFERENCES_GUIDANCE + SMART_EDIT_GUIDANCE : '');
+    IMAGE_TOOL_GUIDANCE + ENTITY_RESEARCH_GUIDANCE + SAVE_THOUGHT_GUIDANCE + (chapterContext?.chapterId ? LINK_REFERENCES_GUIDANCE + SMART_EDIT_GUIDANCE : '');
   await streamChatResponse(res, systemPrompt + guidance, messages, citations, tools);
 });
 

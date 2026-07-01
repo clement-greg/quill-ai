@@ -116,6 +116,30 @@ const timelineEventChunksContainerDef = {
   },
 };
 
+// Stores thoughts with a single vector embedding over (title + content).
+// Cosine distance over 1536-dim float32 vectors; vector path excluded from
+// the standard index (same pattern as chapters and chapter-chunks).
+const thoughtsContainerDef = {
+  id: 'thought-items',
+  partitionKey: { paths: ['/id'] },
+  vectorEmbeddingPolicy: {
+    vectorEmbeddings: [
+      {
+        path: '/contentVector',
+        dataType: 'float32',
+        distanceFunction: 'cosine',
+        dimensions: 1536,
+      },
+    ],
+  },
+  indexingPolicy: {
+    automatic: true,
+    indexingMode: 'consistent',
+    includedPaths: [{ path: '/*' }],
+    excludedPaths: [{ path: '/contentVector/*' }],
+  },
+};
+
 export function getContainer(containerName: string): Container {
   return database.container(containerName);
 }
@@ -140,4 +164,5 @@ export async function initDatabase(): Promise<void> {
   await database.containers.createIfNotExists(chaptersContainerDef as any);
   await database.containers.createIfNotExists(chapterChunksContainerDef as any);
   await database.containers.createIfNotExists(timelineEventChunksContainerDef as any);
+  await database.containers.createIfNotExists(thoughtsContainerDef as any);
 }

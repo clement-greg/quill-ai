@@ -137,6 +137,14 @@ const SLASH_COMMANDS: readonly SlashCommand[] = [
     scaffold: 'Add a note to ',
   },
   {
+    command: 'thought',
+    keywords: ['idea', 'save', 'jot', 'remember'],
+    icon: 'lightbulb',
+    label: 'Save a thought',
+    hint: 'Capture an idea not tied to any series or chapter',
+    scaffold: '/thought ',
+  },
+  {
     command: 'edit',
     keywords: ['review', 'proofread', 'suggestions', 'quill editor'],
     icon: 'rate_review',

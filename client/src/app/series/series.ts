@@ -334,6 +334,7 @@ export class SeriesComponent implements OnInit {
   }
 
   readonly featureLinks = [
+    { label: 'Thoughts',      icon: 'lightbulb',     path: '/thoughts' },
     { label: 'Entities',      icon: 'people',        path: '/entities' },
     { label: 'Relationships', icon: 'account_tree',  path: '/relationships' },
     { label: 'Maps',          icon: 'map',           path: '/maps' },

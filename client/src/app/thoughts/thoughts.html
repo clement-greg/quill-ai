@@ -1,0 +1,87 @@
+<app-slide-out-panel-container [showRightPanel]="showPanel()" (showRightPanelChange)="onPanelChanged($event)">
+
+  <div main-content>
+    <div class="container">
+
+      <div class="page-header">
+        <h1 class="page-title">Thoughts</h1>
+        <button mat-flat-button (click)="openNew()" aria-label="New Thought">
+          <mat-icon>add</mat-icon><span class="btn-text"> New Thought</span>
+        </button>
+      </div>
+
+      @if (loading()) {
+        <p class="loading">Loading...</p>
+      } @else if (sortedThoughts().length === 0) {
+        <div class="empty-state">
+          <mat-icon class="empty-icon">lightbulb</mat-icon>
+          <p class="empty-text">No thoughts yet. Capture an idea, note, or spark of inspiration.</p>
+          <button mat-stroked-button (click)="openNew()">Add your first thought</button>
+        </div>
+      } @else {
+        <div class="thoughts-list">
+          @for (thought of sortedThoughts(); track thought.id) {
+            <div class="thought-card" (click)="openEdit(thought)" role="button" [attr.aria-label]="'Edit thought: ' + (thought.title || thought.content.slice(0, 40))">
+              <div class="thought-card-body">
+                @if (thought.title) {
+                  <h3 class="thought-title">{{ thought.title }}</h3>
+                }
+                <p class="thought-content">{{ thought.content }}</p>
+              </div>
+              <div class="thought-card-footer">
+                <span class="thought-date">{{ formatDate(thought.modifiedAt ?? thought.createdAt) }}</span>
+                <button mat-icon-button class="delete-btn" (click)="$event.stopPropagation(); delete(thought)" aria-label="Delete thought">
+                  <mat-icon>delete</mat-icon>
+                </button>
+              </div>
+            </div>
+          }
+        </div>
+      }
+
+    </div>
+  </div>
+
+  <div right-panel>
+    <div class="panel-col">
+      <h3>{{ isNew() ? 'New Thought' : 'Edit Thought' }}</h3>
+
+      <mat-form-field appearance="outline">
+        <mat-label>Title (optional)</mat-label>
+        <input matInput [formControl]="$any(form.get('title'))" placeholder="Give it a short title…" />
+      </mat-form-field>
+
+      <mat-form-field appearance="outline" class="content-field">
+        <mat-label>Thought</mat-label>
+        <textarea
+          matInput
+          cdkTextareaAutosize
+          cdkAutosizeMinRows="5"
+          cdkAutosizeMaxRows="20"
+          [formControl]="$any(form.get('content'))"
+          placeholder="What's on your mind?"
+        ></textarea>
+      </mat-form-field>
+
+      <div class="panel-actions">
+        <button mat-flat-button (click)="save()" [disabled]="form.invalid || saving()">
+          @if (saving()) {
+            <mat-spinner diameter="18" />
+          }
+          {{ saving() ? 'Saving…' : 'Save' }}
+        </button>
+        <button mat-button (click)="closePanel()">Cancel</button>
+      </div>
+
+      @if (!isNew() && editingThought()) {
+        <mat-divider />
+        <div class="danger-zone">
+          <button mat-button color="warn" (click)="delete(editingThought()!)">
+            <mat-icon>delete</mat-icon> Delete thought
+          </button>
+        </div>
+      }
+    </div>
+  </div>
+
+</app-slide-out-panel-container>

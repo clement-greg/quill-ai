@@ -19,6 +19,7 @@ import { WritingStatsComponent } from './writing-stats/writing-stats';
 import { EntityPageComponent } from './entity-page/entity-page';
 import { MapListComponent } from './maps/map-list/map-list';
 import { MapEditorComponent } from './maps/map-editor/map-editor';
+import { ThoughtsComponent } from './thoughts/thoughts';
 import { authGuard } from './auth/auth.guard';
 import { authInterceptor, authErrorInterceptor } from './auth/auth.interceptor';
 
@@ -41,6 +42,7 @@ const routes: Routes = [
   { path: 'series/:seriesId/maps', component: MapListComponent, canActivate: [authGuard] },
   { path: 'maps', component: MapListComponent, canActivate: [authGuard] },
   { path: 'maps/:id', component: MapEditorComponent, canActivate: [authGuard] },
+  { path: 'thoughts', component: ThoughtsComponent, canActivate: [authGuard] },
   { path: 'home', component: Home, canActivate: [authGuard] },
   {
     path: 'quilly-demo',

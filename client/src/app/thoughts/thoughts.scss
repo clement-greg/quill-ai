@@ -1,0 +1,151 @@
+:host {
+  display: block;
+  height: 100%;
+}
+
+[main-content] {
+  height: 100%;
+  overflow-y: auto;
+}
+
+.container {
+  max-width: 800px;
+  margin: 0 auto;
+  padding: 24px 16px;
+}
+
+.page-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 24px;
+}
+
+.page-title {
+  margin: 0;
+  font-size: 1.75rem;
+  font-weight: 600;
+}
+
+.btn-text {
+  margin-left: 4px;
+}
+
+.loading {
+  color: var(--mat-sys-on-surface-variant);
+  text-align: center;
+  margin-top: 48px;
+}
+
+.empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  margin-top: 80px;
+  text-align: center;
+}
+
+.empty-icon {
+  font-size: 48px;
+  width: 48px;
+  height: 48px;
+  color: var(--mat-sys-on-surface-variant);
+  opacity: 0.5;
+}
+
+.empty-text {
+  color: var(--mat-sys-on-surface-variant);
+  max-width: 360px;
+}
+
+.thoughts-list {
+  display: grid;
+  gap: 12px;
+}
+
+.thought-card {
+  background: var(--mat-sys-surface-container);
+  border-radius: 12px;
+  padding: 16px;
+  cursor: pointer;
+  transition: background 0.15s;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+
+  &:hover {
+    background: var(--mat-sys-surface-container-high);
+  }
+}
+
+.thought-card-body {
+  flex: 1;
+}
+
+.thought-title {
+  margin: 0 0 6px;
+  font-size: 1rem;
+  font-weight: 600;
+}
+
+.thought-content {
+  margin: 0;
+  color: var(--mat-sys-on-surface-variant);
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 4;
+  overflow: hidden;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.thought-card-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.thought-date {
+  font-size: 0.75rem;
+  color: var(--mat-sys-on-surface-variant);
+}
+
+.delete-btn {
+  opacity: 0.5;
+  transition: opacity 0.15s;
+
+  .thought-card:hover & {
+    opacity: 1;
+  }
+}
+
+/* Right panel */
+[right-panel] {
+  height: 100%;
+  overflow-y: auto;
+}
+
+.panel-col {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding: 24px 16px;
+}
+
+.panel-col h3 {
+  margin: 0;
+}
+
+.content-field {
+  width: 100%;
+}
+
+.panel-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.danger-zone {
+  margin-top: 8px;
+}
