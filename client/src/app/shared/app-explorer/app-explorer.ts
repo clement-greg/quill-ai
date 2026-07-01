@@ -59,6 +59,7 @@ export class AppExplorerComponent {
   readonly primaryActions = computed<ExplorerAction[]>(() =>
     this.byQuery([
       { icon: 'smart_toy', label: 'Resource Manager', run: () => this.openResourceManager() },
+      { icon: 'lightbulb', label: 'Thoughts', run: () => this.navigateTo(['/thoughts']) },
       { icon: 'people', label: 'Entities', run: () => this.navigateTo(['/entities']) },
       { icon: 'account_tree', label: 'Relationships', run: () => this.navigateToRelationships() },
       { icon: 'map', label: 'Maps', run: () => this.navigateTo(['/maps']) },

@@ -345,7 +345,7 @@ export class SeriesComponent implements OnInit {
   ];
 
   /** Number of feature links shown before the "More" toggle is expanded. */
-  private static readonly PRIMARY_FEATURE_COUNT = 4;
+  private static readonly PRIMARY_FEATURE_COUNT = 5;
 
   /** Whether the secondary feature links (beyond the primary set) are revealed. */
   readonly showAllFeatures = signal(false);
