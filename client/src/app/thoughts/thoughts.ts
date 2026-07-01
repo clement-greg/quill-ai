@@ -14,6 +14,7 @@ import { MatFormFieldModule } from '@angular/material/form-field';
 import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
 import { MatChipsModule } from '@angular/material/chips';
 import { MatDividerModule } from '@angular/material/divider';
+import { MatSnackBar } from '@angular/material/snack-bar';
 import { TextFieldModule } from '@angular/cdk/text-field';
 import { ThoughtsService } from '../services/thoughts.service';
 import { HeaderService } from '../services/header.service';
@@ -44,6 +45,7 @@ export class ThoughtsComponent implements OnInit {
   private thoughtsService = inject(ThoughtsService);
   private headerService = inject(HeaderService);
   private fb = inject(FormBuilder);
+  private snackBar = inject(MatSnackBar);
 
   thoughts = signal<Thought[]>([]);
   loading = signal(false);
@@ -151,6 +153,15 @@ export class ThoughtsComponent implements OnInit {
       next: () => {
         this.thoughts.update((list) => list.filter((t) => t.id !== thought.id));
         if (this.editingThought()?.id === thought.id) this.closePanel();
+
+        const ref = this.snackBar.open('Thought deleted', 'Undo', { duration: 5000 });
+        ref.onAction().subscribe(() => {
+          this.thoughtsService.restore(thought.id).subscribe({
+            next: (restored) => {
+              this.thoughts.update((list) => [restored, ...list]);
+            },
+          });
+        });
       },
     });
   }

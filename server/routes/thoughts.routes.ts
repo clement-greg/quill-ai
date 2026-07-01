@@ -94,6 +94,28 @@ router.put('/:id', async (req: Request, res: Response) => {
   }
 });
 
+// PATCH restore thought (undo soft delete)
+router.patch('/:id/restore', async (req: Request, res: Response) => {
+  try {
+    const id = req.params['id'] as string;
+    const existing = await readOwnedItem<Thought>(container, id, id, req);
+    if (!existing) {
+      res.status(404).json({ error: 'Thought not found' });
+      return;
+    }
+    const { resource } = await container.item(id, id).replace<Thought>({
+      ...existing,
+      deleted: false,
+      modifiedBy: req.user!.email,
+      modifiedAt: new Date().toISOString(),
+    });
+    res.json(resource);
+  } catch (err) {
+    console.error('Error restoring thought:', err);
+    res.status(500).json({ error: 'Failed to restore thought' });
+  }
+});
+
 // DELETE thought (soft delete)
 router.delete('/:id', async (req: Request, res: Response) => {
   try {

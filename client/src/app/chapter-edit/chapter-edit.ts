@@ -302,6 +302,10 @@ export class ChapterEditComponent implements OnInit, OnDestroy {
       this.notes.set([]);
       this.outline.set([]);
       this.lastSavedContent = null;
+      this.historyVersions.set([]);
+      this.selectedVersion.set(null);
+      this.previousVersion.set(null);
+      this.diffLines.set([]);
 
       this.chapterService.getById(id).subscribe({
       next: async (data) => {
