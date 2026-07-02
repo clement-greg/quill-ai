@@ -8,7 +8,7 @@ import { MatDialog } from '@angular/material/dialog';
 import { forkJoin, Subscription } from 'rxjs';
 import { v4 as uuidv4 } from 'uuid';
 import { Entity } from '@shared/models/entity.model';
-import { EntityRelationship, DiagramLayout, DiagramNodePosition, RELATIONSHIP_TYPES } from '@shared/models/entity-relationship.model';
+import { EntityRelationship, DiagramLayout, DiagramNodePosition, relationshipTypeLabel } from '@shared/models/entity-relationship.model';
 import { Series } from '@shared/models/series.model';
 import { EntityService } from '../services/entity.service';
 import { EntityRelationshipService } from '../services/entity-relationship.service';
@@ -16,13 +16,13 @@ import { HeaderService } from '../services/header.service';
 import { SeriesService } from '../series/series.service';
 import { SeriesContextService } from '../services/series-context.service';
 import { RelationshipDialogComponent, RelationshipDialogResult } from './relationship-dialog';
+import { routeOrthogonal, toRoundedPath, labelAnchor, Rect } from './edge-routing';
 
-interface ConnectionLine {
+interface ConnectionPath {
   id: string;
-  x1: number;
-  y1: number;
-  x2: number;
-  y2: number;
+  d: string;
+  labelX: number;
+  labelY: number;
   label: string;
 }
 
@@ -83,32 +83,69 @@ export class EntityRelationshipDiagramComponent implements OnInit, OnDestroy {
     return this.allEntities().filter((e) => !onCanvas.has(e.id));
   });
 
-  // SVG connection lines
-  connectionLines = computed<ConnectionLine[]>(() => {
+  // Orthogonal SVG connection paths routed around the other nodes.
+  connectionPaths = computed<ConnectionPath[]>(() => {
     const nodes = this.diagramNodes();
     const rels = this.relationships();
     const nodeMap = new Map(nodes.map((n) => [n.entityId, n]));
+    const rectOf = (n: DiagramNodePosition): Rect => ({ x: n.x, y: n.y, w: NODE_WIDTH, h: NODE_HEIGHT });
 
-    return rels
-      .filter((r) => nodeMap.has(r.sourceEntityId) && nodeMap.has(r.targetEntityId))
-      .map((r) => {
-        const src = nodeMap.get(r.sourceEntityId)!;
-        const tgt = nodeMap.get(r.targetEntityId)!;
-        const typeLabel = RELATIONSHIP_TYPES.find((t) => t.value === r.relationshipType)?.label ?? r.relationshipType;
-        return {
-          id: r.id,
-          x1: src.x + NODE_WIDTH / 2,
-          y1: src.y + NODE_HEIGHT / 2,
-          x2: tgt.x + NODE_WIDTH / 2,
-          y2: tgt.y + NODE_HEIGHT / 2,
-          label: typeLabel,
-        };
-      });
+    const visible = rels.filter((r) => nodeMap.has(r.sourceEntityId) && nodeMap.has(r.targetEntityId));
+
+    // Group edges by unordered pair so parallel edges get separate lanes.
+    const pairKey = (r: EntityRelationship) => [r.sourceEntityId, r.targetEntityId].sort().join(':');
+    const groups = new Map<string, EntityRelationship[]>();
+    for (const r of visible) {
+      const key = pairKey(r);
+      const group = groups.get(key);
+      if (group) group.push(r);
+      else groups.set(key, [r]);
+    }
+
+    return visible.map((r) => {
+      const src = nodeMap.get(r.sourceEntityId)!;
+      const tgt = nodeMap.get(r.targetEntityId)!;
+      const typeLabel = relationshipTypeLabel(r.relationshipType);
+      const invLabel = r.inverseRelationshipType ? relationshipTypeLabel(r.inverseRelationshipType) : '';
+      const label = invLabel && invLabel !== typeLabel ? `${typeLabel} / ${invLabel}` : typeLabel;
+
+      const group = groups.get(pairKey(r))!;
+      const lane = (group.indexOf(r) - (group.length - 1) / 2) * 14;
+
+      const obstacles = nodes
+        .filter((n) => n.entityId !== r.sourceEntityId && n.entityId !== r.targetEntityId)
+        .map(rectOf);
+      const points = routeOrthogonal(rectOf(src), rectOf(tgt), obstacles, lane);
+      if (points) {
+        const anchor = labelAnchor(points);
+        return { id: r.id, d: toRoundedPath(points), labelX: anchor.x, labelY: anchor.y, label };
+      }
+
+      // Fallback: straight center-to-center line, shifted perpendicular by the lane offset.
+      const x1 = src.x + NODE_WIDTH / 2;
+      const y1 = src.y + NODE_HEIGHT / 2;
+      const x2 = tgt.x + NODE_WIDTH / 2;
+      const y2 = tgt.y + NODE_HEIGHT / 2;
+      const len = Math.hypot(x2 - x1, y2 - y1) || 1;
+      const nx = (-(y2 - y1) / len) * lane;
+      const ny = ((x2 - x1) / len) * lane;
+      return {
+        id: r.id,
+        d: `M ${x1 + nx} ${y1 + ny} L ${x2 + nx} ${y2 + ny}`,
+        labelX: (x1 + x2) / 2 + nx,
+        labelY: (y1 + y2) / 2 + ny - 6,
+        label,
+      };
+    });
   });
 
   // ── drag state (node dragging) ──
   private draggingNode: DiagramNodePosition | null = null;
   private dragOffset = { x: 0, y: 0 };
+  // rAF-throttled drag updates: rerouting all edges on every mousemove is
+  // wasteful, so apply at most one position update per animation frame.
+  private pendingDrag: { entityId: string; x: number; y: number } | null = null;
+  private dragRaf = 0;
   private boundOnMouseMove = this.onMouseMove.bind(this);
   private boundOnMouseUp = this.onMouseUp.bind(this);
 
@@ -173,6 +210,9 @@ export class EntityRelationshipDiagramComponent implements OnInit, OnDestroy {
     this.headerService.clearAll();
     document.removeEventListener('mousemove', this.boundOnMouseMove);
     document.removeEventListener('mouseup', this.boundOnMouseUp);
+    if (this.dragRaf) {
+      cancelAnimationFrame(this.dragRaf);
+    }
   }
 
   selectSeries(id: string): void {
@@ -305,11 +345,17 @@ export class EntityRelationshipDiagramComponent implements OnInit, OnDestroy {
     }
     if (this.draggingNode) {
       const point = this.clientToContent(event.clientX, event.clientY);
-      const x = Math.max(0, point.x - this.dragOffset.x);
-      const y = Math.max(0, point.y - this.dragOffset.y);
-      this.diagramNodes.update((nodes) =>
-        nodes.map((n) => (n.entityId === this.draggingNode!.entityId ? { ...n, x, y } : n))
-      );
+      this.pendingDrag = {
+        entityId: this.draggingNode.entityId,
+        x: Math.max(0, point.x - this.dragOffset.x),
+        y: Math.max(0, point.y - this.dragOffset.y),
+      };
+      if (!this.dragRaf) {
+        this.dragRaf = requestAnimationFrame(() => {
+          this.dragRaf = 0;
+          this.flushDrag();
+        });
+      }
     }
     if (this.connectingFrom()) {
       this.tempLineEnd.set(this.clientToContent(event.clientX, event.clientY));
@@ -328,11 +374,25 @@ export class EntityRelationshipDiagramComponent implements OnInit, OnDestroy {
     };
   }
 
+  private flushDrag(): void {
+    const p = this.pendingDrag;
+    if (!p) return;
+    this.pendingDrag = null;
+    this.diagramNodes.update((nodes) =>
+      nodes.map((n) => (n.entityId === p.entityId ? { ...n, x: p.x, y: p.y } : n))
+    );
+  }
+
   private onMouseUp(_event: MouseEvent): void {
     if (this.isPanning()) {
       this.isPanning.set(false);
     }
     if (this.draggingNode) {
+      if (this.dragRaf) {
+        cancelAnimationFrame(this.dragRaf);
+        this.dragRaf = 0;
+      }
+      this.flushDrag();
       this.draggingNode = null;
       this.saveLayout();
     }
@@ -406,6 +466,7 @@ export class EntityRelationshipDiagramComponent implements OnInit, OnDestroy {
         sourceEntityId: sourceId,
         targetEntityId: targetId,
         relationshipType: result.relationshipType,
+        inverseRelationshipType: result.inverseRelationshipType,
         description: result.description,
       };
 
@@ -425,6 +486,13 @@ export class EntityRelationshipDiagramComponent implements OnInit, OnDestroy {
     this.selectedNodeId.set(null);
   }
 
+  onConnectionDblClick(event: MouseEvent, relationshipId: string): void {
+    event.stopPropagation();
+    this.selectedRelationshipId.set(relationshipId);
+    this.selectedNodeId.set(null);
+    this.editSelectedRelationship();
+  }
+
   editSelectedRelationship(): void {
     const relId = this.selectedRelationshipId();
     if (!relId) return;
@@ -437,7 +505,13 @@ export class EntityRelationshipDiagramComponent implements OnInit, OnDestroy {
 
     const dialogRef = this.dialog.open(RelationshipDialogComponent, {
       width: '440px',
-      data: { source, target, relationshipType: rel.relationshipType, description: rel.description },
+      data: {
+        source,
+        target,
+        relationshipType: rel.relationshipType,
+        inverseRelationshipType: rel.inverseRelationshipType,
+        description: rel.description,
+      },
     });
 
     dialogRef.afterClosed().subscribe((result: RelationshipDialogResult | undefined) => {

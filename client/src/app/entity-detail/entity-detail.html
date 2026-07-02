@@ -293,7 +293,7 @@
           @for (rel of relationships(); track rel.id) {
             <li>
               <button class="relationship-item" (click)="navigateToEntity(rel.partnerEntityId)"
-                      [attr.aria-label]="relationshipTypeLabel(rel.relationshipType) + ' of ' + rel.partnerEntityName">
+                      [attr.aria-label]="relationshipLabel(rel) + ' of ' + rel.partnerEntityName">
                 <div class="rel-avatar">
                   @if (rel.partnerEntityThumbnailUrl) {
                     <img [src]="proxyUrl(rel.partnerEntityThumbnailUrl)" [alt]="rel.partnerEntityName" />
@@ -309,7 +309,7 @@
                     <span class="rel-desc">{{ rel.description }}</span>
                   }
                 </div>
-                <span class="rel-type-badge">{{ relationshipTypeLabel(rel.relationshipType) }}</span>
+                <span class="rel-type-badge">{{ relationshipLabel(rel) }}</span>
                 <mat-icon class="rel-arrow">chevron_right</mat-icon>
               </button>
             </li>

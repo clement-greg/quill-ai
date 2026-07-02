@@ -31,12 +31,38 @@ export const RELATIONSHIP_TYPES: { value: RelationshipType; label: string }[] = 
   { value: 'subordinate', label: 'Subordinate' },
 ];
 
+// Maps each relationship type to the type describing the opposite direction.
+// Symmetric types map to themselves.
+export const INVERSE_RELATIONSHIP: Record<RelationshipType, RelationshipType> = {
+  parent: 'child',
+  child: 'parent',
+  mentor: 'student',
+  student: 'mentor',
+  boss: 'subordinate',
+  subordinate: 'boss',
+  sibling: 'sibling',
+  spouse: 'spouse',
+  friend: 'friend',
+  enemy: 'enemy',
+  coworker: 'coworker',
+  rival: 'rival',
+  ally: 'ally',
+};
+
+export function relationshipTypeLabel(type: RelationshipType | undefined): string {
+  if (!type) return '';
+  return RELATIONSHIP_TYPES.find((t) => t.value === type)?.label ?? type;
+}
+
 export interface EntityRelationship extends AuditedRecord {
   id: string;
   seriesId: string;
   sourceEntityId: string;
   targetEntityId: string;
+  /** The source entity's role toward the target (e.g. source is the parent → 'parent'). */
   relationshipType: RelationshipType;
+  /** The target entity's role toward the source (e.g. target is the child → 'child'). */
+  inverseRelationshipType?: RelationshipType;
   description?: string;
 }
 
@@ -46,6 +72,7 @@ export interface RelationshipAddProposal {
   targetEntityId: string;
   targetEntityName: string;
   relationshipType: RelationshipType;
+  inverseRelationshipType?: RelationshipType;
   description?: string;
 }
 
@@ -70,6 +97,7 @@ export interface EntityRelationshipSummary {
   partnerEntityType: 'PERSON' | 'PLACE' | 'THING';
   partnerEntityThumbnailUrl?: string;
   relationshipType: RelationshipType;
+  inverseRelationshipType?: RelationshipType;
   description?: string;
   direction: 'source' | 'target';
 }

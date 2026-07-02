@@ -6,17 +6,19 @@ import { MatSelectModule } from '@angular/material/select';
 import { MatFormFieldModule } from '@angular/material/form-field';
 import { MatInputModule } from '@angular/material/input';
 import { Entity } from '@shared/models/entity.model';
-import { RelationshipType, RELATIONSHIP_TYPES } from '@shared/models/entity-relationship.model';
+import { RelationshipType, RELATIONSHIP_TYPES, INVERSE_RELATIONSHIP } from '@shared/models/entity-relationship.model';
 
 export interface RelationshipDialogData {
   source: Entity;
   target: Entity;
   relationshipType?: RelationshipType;
+  inverseRelationshipType?: RelationshipType;
   description?: string;
 }
 
 export interface RelationshipDialogResult {
   relationshipType: RelationshipType;
+  inverseRelationshipType: RelationshipType;
   description: string;
 }
 
@@ -34,11 +36,19 @@ export interface RelationshipDialogResult {
     <h2 mat-dialog-title>Define Relationship</h2>
     <mat-dialog-content>
       <p class="relationship-summary">
-        <strong>{{ data.source.name }}</strong> → <strong>{{ data.target.name }}</strong>
+        <strong>{{ data.source.name }}</strong> ↔ <strong>{{ data.target.name }}</strong>
       </p>
       <mat-form-field appearance="outline" class="full-width">
-        <mat-label>Relationship Type</mat-label>
-        <mat-select [(ngModel)]="relationshipType">
+        <mat-label>{{ data.source.name }} is {{ data.target.name }}'s…</mat-label>
+        <mat-select [(ngModel)]="relationshipType" (selectionChange)="onTypeChange($event.value)">
+          @for (type of relationshipTypes; track type.value) {
+            <mat-option [value]="type.value">{{ type.label }}</mat-option>
+          }
+        </mat-select>
+      </mat-form-field>
+      <mat-form-field appearance="outline" class="full-width">
+        <mat-label>{{ data.target.name }} is {{ data.source.name }}'s…</mat-label>
+        <mat-select [(ngModel)]="inverseRelationshipType" (selectionChange)="inverseTouched = true">
           @for (type of relationshipTypes; track type.value) {
             <mat-option [value]="type.value">{{ type.label }}</mat-option>
           }
@@ -66,12 +76,24 @@ export class RelationshipDialogComponent {
 
   relationshipTypes = RELATIONSHIP_TYPES;
   relationshipType: RelationshipType | null = this.data.relationshipType ?? null;
+  inverseRelationshipType: RelationshipType | null =
+    this.data.inverseRelationshipType ??
+    (this.data.relationshipType ? INVERSE_RELATIONSHIP[this.data.relationshipType] : null);
   description = this.data.description ?? '';
+  // Once the user picks the inverse themselves, stop auto-filling it from the primary type.
+  inverseTouched = !!this.data.inverseRelationshipType;
+
+  onTypeChange(type: RelationshipType): void {
+    if (!this.inverseTouched) {
+      this.inverseRelationshipType = INVERSE_RELATIONSHIP[type];
+    }
+  }
 
   confirm(): void {
     if (this.relationshipType) {
       this.dialogRef.close({
         relationshipType: this.relationshipType,
+        inverseRelationshipType: this.inverseRelationshipType ?? INVERSE_RELATIONSHIP[this.relationshipType],
         description: this.description,
       } as RelationshipDialogResult);
     }

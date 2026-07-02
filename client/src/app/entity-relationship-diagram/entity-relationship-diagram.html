@@ -61,17 +61,16 @@
 
     <!-- SVG layer for connection lines -->
     <svg class="connections-layer">
-      @for (conn of connectionLines(); track conn.id) {
-        <g class="connection-group" (click)="onConnectionClick($event, conn.id)">
-          <line [attr.x1]="conn.x1" [attr.y1]="conn.y1"
-                [attr.x2]="conn.x2" [attr.y2]="conn.y2"
-                class="connection-line-hit" />
-          <line [attr.x1]="conn.x1" [attr.y1]="conn.y1"
-                [attr.x2]="conn.x2" [attr.y2]="conn.y2"
+      @for (conn of connectionPaths(); track conn.id) {
+        <g class="connection-group"
+           (click)="onConnectionClick($event, conn.id)"
+           (dblclick)="onConnectionDblClick($event, conn.id)">
+          <path [attr.d]="conn.d" class="connection-line-hit" />
+          <path [attr.d]="conn.d"
                 class="connection-line"
                 [class.connection-selected]="selectedRelationshipId() === conn.id" />
-          <text [attr.x]="(conn.x1 + conn.x2) / 2"
-                [attr.y]="(conn.y1 + conn.y2) / 2 - 6"
+          <text [attr.x]="conn.labelX"
+                [attr.y]="conn.labelY"
                 class="connection-label"
                 text-anchor="middle">{{ conn.label }}</text>
         </g>

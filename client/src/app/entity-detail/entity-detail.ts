@@ -96,6 +96,15 @@ export class EntityDetailComponent implements OnDestroy {
 
   readonly relationshipTypeLabel = (type: string) =>
     RELATIONSHIP_TYPES.find(r => r.value === type)?.label ?? type;
+
+  // The viewed entity's role toward the partner: relationshipType describes the
+  // source's role, so when this entity is the target use the inverse type.
+  readonly relationshipLabel = (rel: EntityRelationshipSummary) =>
+    this.relationshipTypeLabel(
+      rel.direction === 'source'
+        ? rel.relationshipType
+        : rel.inverseRelationshipType ?? rel.relationshipType
+    );
   pendingDelete = signal<TimelineEvent | null>(null);
   lightboxOpen = signal(false);
   lightboxIndex = signal(0);

@@ -9,6 +9,7 @@ import {
   RelationshipExtractionResult,
   RelationshipAddProposal,
   ApplyRelationshipProposalsRequest,
+  INVERSE_RELATIONSHIP,
 } from '../../shared/models/entity-relationship.model';
 import { Entity } from '../../shared/models/entity.model';
 import { Chapter } from '../../shared/models/chapter.model';
@@ -44,7 +45,7 @@ Return a JSON object with exactly one key:
 "adds": NEW relationships clearly established between characters in the chapter that are NOT already in "Existing relationships". Each item must have:
   - "sourceEntityId": the id of one entity (must be a provided entity id)
   - "targetEntityId": the id of the other entity (must be a provided entity id, different from source)
-  - "relationshipType": exactly one of: parent, child, sibling, spouse, friend, enemy, coworker, mentor, student, rival, ally, boss, subordinate
+  - "relationshipType": exactly one of: parent, child, sibling, spouse, friend, enemy, coworker, mentor, student, rival, ally, boss, subordinate. This describes the SOURCE entity's role toward the TARGET (e.g. if the source is the target's parent, use "parent").
   - "description": one sentence describing the relationship as shown in the text (optional)
 
 Rules:
@@ -84,6 +85,13 @@ router.post('/', async (req: Request, res: Response) => {
       res.status(400).json({ error: 'seriesId, sourceEntityId, targetEntityId, and relationshipType are required' });
       return;
     }
+    if (rel.inverseRelationshipType && !VALID_RELATIONSHIP_TYPES.has(rel.inverseRelationshipType)) {
+      res.status(400).json({ error: 'Invalid inverseRelationshipType' });
+      return;
+    }
+    if (!rel.inverseRelationshipType) {
+      rel.inverseRelationshipType = INVERSE_RELATIONSHIP[rel.relationshipType];
+    }
     const now = new Date().toISOString();
     rel.owner = rel.owner || req.user!.email;
     rel.createdBy = req.user!.email;
@@ -102,6 +110,10 @@ router.post('/', async (req: Request, res: Response) => {
 router.put('/:id', async (req: Request, res: Response) => {
   try {
     const id = req.params['id'] as string;
+    if (req.body.inverseRelationshipType && !VALID_RELATIONSHIP_TYPES.has(req.body.inverseRelationshipType)) {
+      res.status(400).json({ error: 'Invalid inverseRelationshipType' });
+      return;
+    }
     const rel: EntityRelationship = {
       ...req.body,
       id,
@@ -243,6 +255,7 @@ router.post('/apply-chapter-proposals', async (req: Request, res: Response) => {
         sourceEntityId: add.sourceEntityId,
         targetEntityId: add.targetEntityId,
         relationshipType: add.relationshipType,
+        inverseRelationshipType: INVERSE_RELATIONSHIP[add.relationshipType],
         description: add.description?.trim() || undefined,
         owner: req.user!.email,
         createdBy: req.user!.email,
@@ -316,6 +329,7 @@ router.get('/entity/:entityId', async (req: Request, res: Response) => {
           partnerEntityType: partner.type,
           partnerEntityThumbnailUrl: partner.thumbnailUrl,
           relationshipType: r.relationshipType,
+          inverseRelationshipType: r.inverseRelationshipType,
           description: r.description,
           direction: isSource ? 'source' : 'target',
         };
