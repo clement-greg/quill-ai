@@ -70,6 +70,7 @@ export class LoginComponent implements AfterViewInit {
   ngAfterViewInit(): void {
     if (!isPlatformBrowser(this.platformId)) return;
 
+    this.bgVideoRef.nativeElement.muted = true;
     this.bgVideoRef.nativeElement.play().catch(() => {});
     this.showNextMessage();
     this.destroyRef.onDestroy(() => {
