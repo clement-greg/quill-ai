@@ -107,6 +107,14 @@ const ENTITY_RESEARCH_GUIDANCE =
   'author you have no record of that entity. Do not invent biography, timeline, or relationship details ' +
   'that the tool did not return.';
 
+// Appended whenever the search_chapter_text tool is available (always, alongside research_entity).
+const SEARCH_CHAPTER_TEXT_GUIDANCE =
+  '\n\nFINDING WHICH CHAPTER: If the author asks which chapter something was mentioned, used, or first ' +
+  'appeared in — including a fact you just learned from research_entity, such as an alias or nickname — ' +
+  'and the story passages already provided don\'t show it, call search_chapter_text with that exact word ' +
+  'or phrase (e.g. the alias itself, not the question) to find the source chapter. Cite its result the ' +
+  'same way as the story passages, using the bracketed number it returns.';
+
 
 /**
  * Builds a RAG-grounded system prompt for a chat turn. Embeds the last user
@@ -1127,6 +1135,96 @@ function getResearchEntityTool(req: Request): ChatTool {
   };
 }
 
+/**
+ * Tool that searches chapter prose for a specific word or phrase (e.g. an
+ * alias surfaced by research_entity) and returns the chapters where it
+ * appears. The up-front RAG retrieval in `buildRagSystemPrompt` only embeds
+ * the author's raw question, so it can miss a fact the model only learns
+ * mid-turn — e.g. it can find that Mara's alias is "Mara Wilson" but never
+ * search chapters for that exact phrase to find which one used it. This tool
+ * lets the model re-query with the resolved term. Hits are appended to the
+ * shared `citations` list (continuing its numbering) so they render as
+ * clickable "Used: …" sources exactly like the up-front RAG excerpts.
+ */
+function getSearchChapterTextTool(
+  scope: { seriesId?: string; bookId?: string; chapterId?: string },
+  citations: ChapterCitation[],
+  req: Request,
+): ChatTool {
+  return {
+    definition: {
+      type: 'function',
+      function: {
+        name: 'search_chapter_text',
+        description:
+          'Search the full text of the author\'s chapters for a specific word or phrase — an alias, ' +
+          'nickname, item, or place name — and return the passages where it appears, with the chapter each ' +
+          'is from. Call this when the author asks WHICH chapter something was mentioned, used, or first ' +
+          'appeared in, especially after research_entity surfaces a fact (like an alias) whose source ' +
+          'chapter isn\'t already shown in the story passages you were given. Pass the exact word or ' +
+          'phrase to search for, e.g. "Mara Wilson".',
+        parameters: {
+          type: 'object',
+          properties: {
+            query: { type: 'string', description: 'The word, phrase, or alias to search the chapter text for.' },
+          },
+          required: ['query'],
+        },
+      },
+    },
+    execute: async args => {
+      const query = String(args['query'] ?? '').trim();
+      if (!query) {
+        return { toolResult: { found: false, message: 'No search text was given. Ask the author what to search for.' } };
+      }
+      const chunks = await searchChapterChunks(query, { ...scope, topK: 5 }, req);
+      if (chunks.length === 0) {
+        return { toolResult: { found: false, message: `No chapter passages matched "${query}".` } };
+      }
+
+      const chaptersContainer = getContainer('chapters');
+      const titleById = new Map<string, string>();
+      const distinctChapterIds = [...new Set(chunks.map(c => c.chapterId))];
+      await Promise.all(
+        distinctChapterIds.map(async cid => {
+          try {
+            const { resource } = await chaptersContainer.item(cid, cid).read<Chapter>();
+            if (resource?.title) titleById.set(cid, resource.title);
+          } catch {
+            // Leave untitled if the chapter can't be read.
+          }
+        })
+      );
+
+      // Reuse a citation number already assigned to a chapter this turn (e.g. by
+      // the up-front RAG retrieval); otherwise append a new one, continuing the
+      // numbering the model has already been shown.
+      const numberByChapterId = new Map(citations.map(c => [c.chapterId, c.n]));
+      let nextNumber = citations.reduce((max, c) => Math.max(max, c.n), 0) + 1;
+      const passages = chunks.map(c => {
+        let n = numberByChapterId.get(c.chapterId);
+        if (n === undefined) {
+          n = nextNumber++;
+          numberByChapterId.set(c.chapterId, n);
+          citations.push({ n, chapterId: c.chapterId, title: titleById.get(c.chapterId) ?? 'Untitled chapter' });
+        }
+        return { n, chapter: titleById.get(c.chapterId) ?? 'Untitled chapter', excerpt: c.content };
+      });
+
+      console.log('[search_chapter_text] invoked — query="%s" hits=%d', query, passages.length);
+      return {
+        toolResult: {
+          found: true,
+          passages,
+          message:
+            'Cite these using the bracketed number EXACTLY as shown (e.g. [3]), following the same ' +
+            'citation rules as the story excerpts already provided.',
+        },
+      };
+    },
+  };
+}
+
 /** Tool that saves a freeform thought to the author's global Thoughts list. */
 function getSaveThoughtTool(req: Request): ChatTool {
   return {
@@ -1181,9 +1279,14 @@ function getSaveThoughtTool(req: Request): ChatTool {
 }
 
 /** Tools available to the quick-chat (cross-series) assistant. */
-function quickChatTools(req: Request): Record<string, ChatTool> {
+function quickChatTools(
+  req: Request,
+  scope: { seriesId?: string; bookId?: string; chapterId?: string },
+  citations: ChapterCitation[],
+): Record<string, ChatTool> {
   return {
     research_entity: getResearchEntityTool(req),
+    search_chapter_text: getSearchChapterTextTool(scope, citations, req),
     create_chapter: {
       definition: {
         type: 'function',
@@ -1750,11 +1853,12 @@ function generateImageTool(): ChatTool {
 }
 
 /** Tools available to the series-scoped Resource Manager chat. */
-function seriesChatTools(req: Request): Record<string, ChatTool> {
+function seriesChatTools(req: Request, scope: { seriesId?: string }, citations: ChapterCitation[]): Record<string, ChatTool> {
   return {
     generate_image: generateImageTool(),
     research_entity: getResearchEntityTool(req),
     save_thought: getSaveThoughtTool(req),
+    search_chapter_text: getSearchChapterTextTool(scope, citations, req),
   };
 }
 
@@ -2005,7 +2109,13 @@ router.post('/:id/chat', async (req: Request, res: Response) => {
   res.setHeader('Connection', 'keep-alive');
   res.flushHeaders();
 
-  await streamChatResponse(res, systemPrompt + IMAGE_TOOL_GUIDANCE + ENTITY_RESEARCH_GUIDANCE + SAVE_THOUGHT_GUIDANCE, messages, citations, seriesChatTools(req));
+  await streamChatResponse(
+    res,
+    systemPrompt + IMAGE_TOOL_GUIDANCE + ENTITY_RESEARCH_GUIDANCE + SEARCH_CHAPTER_TEXT_GUIDANCE + SAVE_THOUGHT_GUIDANCE,
+    messages,
+    citations,
+    seriesChatTools(req, { seriesId: session?.seriesId ?? undefined }, citations),
+  );
 });
 
 // POST /quick-chat — stateless RAG chat for the quick-launch overlay. Normally
@@ -2119,14 +2229,15 @@ router.post('/quick-chat', async (req: Request, res: Response) => {
 
   const tools = chapterContext?.chapterId
     ? {
-        ...quickChatTools(req),
+        ...quickChatTools(req, {}, citations),
         get_chapter_text: getChapterTextTool(chapterContext.chapterId, req),
         link_entity_references: getLinkEntityReferencesTool(req),
         propose_chapter_edit: getProposeChapterEditTool(chapterContext.chapterId, req),
       }
-    : quickChatTools(req);
+    : quickChatTools(req, {}, citations);
   const guidance =
-    IMAGE_TOOL_GUIDANCE + ENTITY_RESEARCH_GUIDANCE + SAVE_THOUGHT_GUIDANCE + (chapterContext?.chapterId ? LINK_REFERENCES_GUIDANCE + SMART_EDIT_GUIDANCE : '');
+    IMAGE_TOOL_GUIDANCE + ENTITY_RESEARCH_GUIDANCE + SEARCH_CHAPTER_TEXT_GUIDANCE + SAVE_THOUGHT_GUIDANCE +
+    (chapterContext?.chapterId ? LINK_REFERENCES_GUIDANCE + SMART_EDIT_GUIDANCE : '');
   await streamChatResponse(res, systemPrompt + guidance, messages, citations, tools);
 });
 

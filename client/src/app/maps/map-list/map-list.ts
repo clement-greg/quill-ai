@@ -123,7 +123,7 @@ import { HeaderService } from '../../services/header.service';
 
         mat-icon { font-size: 16px; width: 16px; height: 16px; line-height: 16px; }
 
-        &--armed {
+        &.card-delete--armed {
           display: flex;
           background: var(--mat-sys-error, #b3261e);
           animation: armed-pulse 0.6s ease infinite alternate;
