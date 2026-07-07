@@ -49,6 +49,7 @@ declare const google: {
 })
 export class LoginComponent implements AfterViewInit {
   @ViewChild('googleBtn') googleBtnRef!: ElementRef<HTMLDivElement>;
+  @ViewChild('bgVideo') bgVideoRef!: ElementRef<HTMLVideoElement>;
 
   /** How long each speech bubble stays visible. */
   protected readonly speechMs = 5000;
@@ -69,6 +70,7 @@ export class LoginComponent implements AfterViewInit {
   ngAfterViewInit(): void {
     if (!isPlatformBrowser(this.platformId)) return;
 
+    this.bgVideoRef.nativeElement.play().catch(() => {});
     this.showNextMessage();
     this.destroyRef.onDestroy(() => {
       if (this.speechTimer !== null) clearTimeout(this.speechTimer);
