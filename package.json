@@ -20,8 +20,8 @@
   "jest": {
     "testEnvironment": "node",
     "testMatch": [
-      "**/server/**/*.spec.ts",
-      "**/shared/**/*.spec.ts"
+      "<rootDir>/server/**/*.spec.ts",
+      "<rootDir>/shared/**/*.spec.ts"
     ],
     "transform": {
       "^.+\\.tsx?$": [

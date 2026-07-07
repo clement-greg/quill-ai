@@ -11,15 +11,23 @@
 <div class="login-container">
   <mat-card>
     <mat-card-content>
-      <div style="text-align: center;">
-        <app-quilly-character
-          sequence="idle"
-          [size]="150"
-          [speech]="speech()"
-          [speechDuration]="speechMs"
-          speechPosition="above"
-          ariaLabel="Quilly, the Quill AI mascot"
-        />
+      <div class="robot-area">
+        @if (speech()) {
+          <div class="robot-speech" role="status" aria-live="polite">
+            <span class="robot-speech-text">{{ speech() }}</span>
+            <span class="robot-speech-tail" aria-hidden="true"></span>
+          </div>
+        }
+        <lottie-player
+          class="robot-lottie"
+          src="https://lottie.host/ae16df6a-44fb-4214-9b60-3e0320abdd00/k2kDltgCdz.json"
+          background="transparent"
+          speed="1"
+          loop
+          autoplay
+          role="img"
+          aria-label="Quill AI robot assistant"
+        ></lottie-player>
         <p>Please sign in with your Google account to access the app.</p>
       </div>
       <div #googleBtn class="google-btn-wrapper"></div>

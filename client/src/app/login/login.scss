@@ -31,6 +31,74 @@ mat-card {
   backdrop-filter: blur(12px);
 }
 
+.robot-area {
+  position: relative;
+  text-align: center;
+}
+
+.robot-lottie {
+  width: 170px;
+  height: 170px;
+  margin: 0 auto;
+  display: block;
+}
+
+.robot-speech {
+  position: absolute;
+  bottom: calc(100% - 28px);
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 2;
+  width: max-content;
+  max-width: 280px;
+  min-width: 64px;
+  padding: 0.6rem 0.9rem;
+  background: rgba(8, 20, 32, 0.88);
+  border: 1px solid rgba(64, 224, 255, 0.75);
+  border-radius: 6px;
+  box-shadow: 0 0 12px rgba(64, 224, 255, 0.35), inset 0 0 18px rgba(64, 224, 255, 0.08);
+  animation: speech-pop 0.18s ease-out;
+}
+
+.robot-speech-text {
+  font-family: 'Share Tech Mono', 'Consolas', monospace;
+  font-size: 0.95rem;
+  line-height: 1.35;
+  color: #b8f3ff;
+  text-shadow: 0 0 6px rgba(64, 224, 255, 0.45);
+  overflow-wrap: break-word;
+}
+
+/* Bordered square rotated into a diamond; only two borders show, forming the tail point. */
+.robot-speech-tail {
+  position: absolute;
+  bottom: -7px;
+  left: calc(50% - 6px);
+  width: 12px;
+  height: 12px;
+  background: rgba(8, 20, 32, 0.88);
+  border-right: 1px solid rgba(64, 224, 255, 0.75);
+  border-bottom: 1px solid rgba(64, 224, 255, 0.75);
+  transform: rotate(45deg);
+}
+
+@keyframes speech-pop {
+  from {
+    opacity: 0;
+    transform: translateX(-50%) scale(0.85);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(-50%) scale(1);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .robot-speech {
+    animation: none;
+  }
+}
+
 .google-btn-wrapper {
   margin-top: 24px;
   display: flex;

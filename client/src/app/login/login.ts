@@ -1,13 +1,12 @@
-import { Component, ElementRef, ViewChild, AfterViewInit, inject, PLATFORM_ID, NgZone, DestroyRef, signal, ChangeDetectionStrategy } from '@angular/core';
+import { Component, ElementRef, ViewChild, AfterViewInit, inject, PLATFORM_ID, NgZone, DestroyRef, signal, ChangeDetectionStrategy, CUSTOM_ELEMENTS_SCHEMA } from '@angular/core';
 import { isPlatformBrowser } from '@angular/common';
 import { Router } from '@angular/router';
 import { MatCardModule } from '@angular/material/card';
 import { AuthService } from '../auth/auth.service';
-import { QuillyCharacterComponent } from '../shared/quilly-character/quilly-character';
 import { environment } from '../../environments/environment';
 
-/** Lines Quilly cycles through while the user is on the login page. */
-const QUILLY_MESSAGES = [
+/** Lines the robot cycles through while the user is on the login page. */
+const ROBOT_MESSAGES = [
   'Welcome back! Sign in to continue.',
   'Every great story starts with a single word.',
   'Your characters missed you while you were gone.',
@@ -42,9 +41,10 @@ declare const google: {
 
 @Component({
   selector: 'app-login',
-  imports: [MatCardModule, QuillyCharacterComponent],
+  imports: [MatCardModule],
   templateUrl: './login.html',
   styleUrl: './login.scss',
+  schemas: [CUSTOM_ELEMENTS_SCHEMA],
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
 export class LoginComponent implements AfterViewInit {
@@ -102,8 +102,8 @@ export class LoginComponent implements AfterViewInit {
 
   /** Show the next message, then queue the following one after the bubble hides. */
   private showNextMessage(): void {
-    this.speech.set(QUILLY_MESSAGES[this.messageIndex]);
-    this.messageIndex = (this.messageIndex + 1) % QUILLY_MESSAGES.length;
+    this.speech.set(ROBOT_MESSAGES[this.messageIndex]);
+    this.messageIndex = (this.messageIndex + 1) % ROBOT_MESSAGES.length;
     this.speechTimer = setTimeout(() => {
       this.speech.set('');
       this.speechTimer = setTimeout(() => this.showNextMessage(), this.intermissionMs);
