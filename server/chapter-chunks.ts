@@ -23,6 +23,44 @@ export async function deleteChapterChunks(chapterId: string): Promise<void> {
 }
 
 /**
+ * Retries a filtered passage paragraph-by-paragraph, keeping whichever
+ * paragraphs embed successfully and dropping the one(s) the content filter
+ * objects to. Returns the surviving text re-embedded as a whole, or null if
+ * every paragraph was filtered (or there was only one to begin with, so
+ * there's nothing left to isolate).
+ */
+async function embedOmittingFilteredParagraphs(
+  passage: string,
+  chapterId: string,
+): Promise<{ content: string; vector: number[] } | null> {
+  const paragraphs = passage.split(/\n{2,}/).map(p => p.trim()).filter(Boolean);
+  if (paragraphs.length <= 1) {
+    console.error(`Skipping unembeddable passage in chapter ${chapterId} (no paragraph boundary to isolate it by)`);
+    return null;
+  }
+
+  const survivors: string[] = [];
+  for (const paragraph of paragraphs) {
+    try {
+      await generateEmbedding(paragraph);
+      survivors.push(paragraph);
+    } catch (err) {
+      console.error(`Omitting a paragraph that trips the content filter from chapter ${chapterId}:`, err);
+    }
+  }
+  if (survivors.length === 0) return null;
+
+  const content = survivors.join('\n\n');
+  try {
+    const vector = await generateEmbedding(content);
+    return { content, vector };
+  } catch (err) {
+    console.error(`Combined surviving text still filtered for chapter ${chapterId}:`, err);
+    return null;
+  }
+}
+
+/**
  * Rebuilds the chunk/embedding index for a chapter: removes any existing chunks,
  * splits the chapter content into passages, embeds them in one batch, and stores
  * the resulting ChapterChunk documents. A no-content chapter is left with no
@@ -46,11 +84,36 @@ export async function reindexChapterChunks(chapter: Chapter): Promise<void> {
       // Leave seriesId undefined if the book can't be read.
     }
 
-    const vectors = await generateEmbeddings(passages);
+    // Embed as a batch first; if the batch as a whole gets rejected (e.g. by
+    // Azure's content filter reacting to one passage), fall back to embedding
+    // passages individually. A passage that's still rejected on its own gets
+    // split into its constituent paragraphs (chunkHtmlContent joins them with
+    // "\n\n") so only the specific offending paragraph(s) are dropped -- the
+    // rest of that passage still gets indexed.
+    let results: ({ content: string; vector: number[] } | null)[];
+    try {
+      const vectors = await generateEmbeddings(passages);
+      results = passages.map((content, index) => ({ content, vector: vectors[index] }));
+    } catch (err) {
+      console.error(`Batch embedding failed for chapter ${chapter.id}, retrying passage-by-passage:`, err);
+      results = await Promise.all(
+        passages.map(async passage => {
+          try {
+            const vector = await generateEmbedding(passage);
+            return { content: passage, vector };
+          } catch (passageErr) {
+            console.error(`Passage embedding filtered for chapter ${chapter.id}, isolating offending paragraph(s):`, passageErr);
+            return embedOmittingFilteredParagraphs(passage, chapter.id);
+          }
+        })
+      );
+    }
+
     const now = new Date().toISOString();
 
     await Promise.all(
-      passages.map((content, index) => {
+      results.map((result, index) => {
+        if (!result) return undefined;
         const doc: ChapterChunk = {
           id: `${chapter.id}:${index}`,
           chapterId: chapter.id,
@@ -58,8 +121,8 @@ export async function reindexChapterChunks(chapter: Chapter): Promise<void> {
           seriesId,
           owner: chapter.owner ?? '',
           chunkIndex: index,
-          content,
-          contentVector: vectors[index],
+          content: result.content,
+          contentVector: result.vector,
           createdAt: now,
           modifiedAt: now,
         };

@@ -1,16 +1,25 @@
 <div class="bg-wrapper" aria-hidden="true">
-  @for (n of [1, 2, 3, 4, 5, 6]; track n) {
-    <div
-      [class]="'bg-slide slide-' + n + (currentIndex() === n - 1 ? ' active' : '')"
-      [style.background-image]="'url(/bg-images/bg-' + n + '.png)'"
-    ></div>
-  }
+  <video
+    class="bg-video"
+    src="/video/bg-quill-fantasy-25.mp4"
+    autoplay
+    muted
+    loop
+    playsinline
+  ></video>
 </div>
 <div class="login-container">
   <mat-card>
     <mat-card-content>
       <div style="text-align: center;">
-        <img src="/quill-ai-logo.svg" style="height: 150px;" alt="Quill AI">
+        <app-quilly-character
+          sequence="idle"
+          [size]="150"
+          [speech]="speech()"
+          [speechDuration]="speechMs"
+          speechPosition="above"
+          ariaLabel="Quilly, the Quill AI mascot"
+        />
         <p>Please sign in with your Google account to access the app.</p>
       </div>
       <div #googleBtn class="google-btn-wrapper"></div>

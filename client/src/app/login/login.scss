@@ -5,19 +5,12 @@
   overflow: hidden;
 }
 
-.bg-slide {
+.bg-video {
   position: absolute;
-  inset: -20px; /* compensate for blur bleeding at edges */
-  background-size: cover;
-  background-position: center;
-  opacity: 0;
-  filter: blur(6px);
-  transition: opacity 2s ease-in-out, transform 2s ease-in-out;
-  will-change: transform, opacity;
-}
-
-.bg-slide.active {
-  opacity: 1;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
 }
 
 .login-container {
@@ -33,6 +26,9 @@ mat-card {
   max-width: 400px;
   width: 100%;
   padding: 24px;
+  --mat-card-elevated-container-color: rgba(255, 255, 255, 0.6);
+  --mat-card-outlined-container-color: rgba(255, 255, 255, 0.6);
+  backdrop-filter: blur(12px);
 }
 
 .google-btn-wrapper {

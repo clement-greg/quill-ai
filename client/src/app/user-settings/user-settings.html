@@ -323,5 +323,39 @@
     </div>
   </section>
 
+  <!-- Content Moderation Section -->
+  <section class="settings-section">
+    <div class="section-header">
+      <h3>Content Moderation</h3>
+      <p class="section-desc">
+        Words or phrases redacted from text before it's sent to the AI, so that in-fiction
+        language doesn't trip the content filter and block summarization or embedding.
+      </p>
+    </div>
+
+    <div class="attribute-options-col">
+      <div class="attribute-chips">
+        @for (term of contentFilterTerms(); track term) {
+          <div class="attribute-chip">
+            <span>{{ term }}</span>
+            <button mat-icon-button (click)="removeContentFilterTerm(term)" title="Remove">
+              <mat-icon>close</mat-icon>
+            </button>
+          </div>
+        }
+      </div>
+      <div class="attribute-add-row">
+        <mat-form-field appearance="outline" class="attribute-add-field">
+          <mat-label>New term</mat-label>
+          <input matInput [value]="newContentFilterTerm()"
+            (input)="newContentFilterTerm.set($any($event.target).value)"
+            (keyup.enter)="addContentFilterTerm()" />
+        </mat-form-field>
+        <button mat-flat-button (click)="addContentFilterTerm()">
+          <mat-icon>add</mat-icon> Add
+        </button>
+      </div>
+    </div>
+  </section>
 
 </div>

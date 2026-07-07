@@ -1,5 +1,6 @@
 import { AzureOpenAI } from 'openai';
 import config from './config';
+import { sanitizeForModeration } from './content-sanitize';
 
 const client = new AzureOpenAI({
   endpoint: config.foundry.endpoint,
@@ -10,7 +11,7 @@ const client = new AzureOpenAI({
 export async function generateEmbedding(text: string): Promise<number[]> {
   const response = await client.embeddings.create({
     model: config.foundry.embeddingModel,
-    input: text,
+    input: await sanitizeForModeration(text),
   });
   return response.data[0].embedding;
 }
@@ -24,7 +25,7 @@ export async function generateEmbeddings(texts: string[]): Promise<number[][]> {
   if (texts.length === 0) return [];
   const response = await client.embeddings.create({
     model: config.foundry.embeddingModel,
-    input: texts,
+    input: await Promise.all(texts.map(sanitizeForModeration)),
   });
   return response.data
     .sort((a, b) => a.index - b.index)

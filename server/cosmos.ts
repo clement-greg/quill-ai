@@ -10,6 +10,9 @@ const database: Database = client.database(config.cosmosDatabase);
 
 const standardContainerDefs = [
   { id: 'user-settings', partitionKey: { paths: ['/id'] } },
+  // Global (not per-user) app-wide settings, one document per setting keyed by a
+  // fixed well-known id, e.g. { id: 'content-filter', terms: string[] }.
+  { id: 'app-settings', partitionKey: { paths: ['/id'] } },
   // Append-only log of chapter visits, partitioned per user. One insert per
   // visit — never updated or deleted. The "Continue writing" list is derived by
   // querying this log newest-first and taking the most recent distinct chapters.

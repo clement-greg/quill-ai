@@ -9,6 +9,7 @@ import { MatSlideToggleModule } from '@angular/material/slide-toggle';
 import { MatSnackBar } from '@angular/material/snack-bar';
 import { UserSettingsService, GhostCompleteItem, DEFAULT_GENDER_OPTIONS, DEFAULT_RACE_OPTIONS, DEFAULT_ORIENTATION_OPTIONS } from '../services/user-settings.service';
 import { HeaderService } from '../services/header.service';
+import { ContentFilterService } from '../services/content-filter.service';
 
 export interface ColorThemeOption {
   id: string;
@@ -51,6 +52,7 @@ export class UserSettingsComponent {
   private settingsService = inject(UserSettingsService);
   private snackBar = inject(MatSnackBar);
   private headerService = inject(HeaderService);
+  private contentFilterService = inject(ContentFilterService);
 
   @ViewChild('avatarFileInput') avatarFileInput!: ElementRef<HTMLInputElement>;
   @ViewChild('avatarVideoInput') avatarVideoInput!: ElementRef<HTMLInputElement>;
@@ -92,6 +94,7 @@ export class UserSettingsComponent {
         this.displayNameDraft.set(this.settingsService.displayName());
       }
     });
+    this.contentFilterService.loadFromServer();
   }
 
   onDisplayNameInput(): void {
@@ -312,6 +315,25 @@ export class UserSettingsComponent {
 
   resetOrientationOptions(): void {
     this.settingsService.setOrientationOptions([...DEFAULT_ORIENTATION_OPTIONS]);
+  }
+
+  // ── Content Moderation ────────────────────
+  readonly contentFilterTerms = this.contentFilterService.terms;
+  newContentFilterTerm = signal('');
+
+  addContentFilterTerm(): void {
+    const term = this.newContentFilterTerm().trim();
+    if (!term) return;
+    if (this.contentFilterTerms().includes(term)) {
+      this.snackBar.open('That term already exists.', undefined, { duration: 2000 });
+      return;
+    }
+    this.contentFilterService.addTerm(term);
+    this.newContentFilterTerm.set('');
+  }
+
+  removeContentFilterTerm(term: string): void {
+    this.contentFilterService.removeTerm(term);
   }
 
 }
