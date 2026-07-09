@@ -56,44 +56,53 @@ const localTz = Intl.DateTimeFormat().resolvedOptions().timeZone;
         </a>
       </div>
 
-      <div class="wss-cards">
-        <div class="wss-card added">
-          <mat-icon aria-hidden="true">add_circle_outline</mat-icon>
-          <span class="wss-value">{{ snap().added | number }}</span>
-          <span class="wss-label">Words Added</span>
-        </div>
-        <div class="wss-card deleted">
-          <mat-icon aria-hidden="true">remove_circle_outline</mat-icon>
-          <span class="wss-value">{{ snap().deleted | number }}</span>
-          <span class="wss-label">Words Deleted</span>
-        </div>
-        <div class="wss-card net">
-          <mat-icon aria-hidden="true">swap_vert</mat-icon>
-          <span class="wss-value" [class.negative]="snap().net < 0">
-            {{ snap().net >= 0 ? '+' : '' }}{{ snap().net | number }}
-          </span>
-          <span class="wss-label">Net Change</span>
-        </div>
-        <div class="wss-card streak">
-          <mat-icon aria-hidden="true">local_fire_department</mat-icon>
-          <span class="wss-value">{{ snap().streak }}</span>
-          <span class="wss-label">Day Streak</span>
-        </div>
-        <div class="wss-card best-day">
-          <mat-icon aria-hidden="true">emoji_events</mat-icon>
-          @if (snap().bestDay) {
-            <span class="wss-value">{{ snap().bestDay!.words | number }}</span>
-            <span class="wss-label">Best Day · {{ formatBestDayDate(snap().bestDay!.date) }}</span>
-          } @else {
-            <span class="wss-value">—</span>
-            <span class="wss-label">Best Day</span>
+      @if (loading()) {
+        <div class="wss-cards" aria-hidden="true">
+          @for (_ of skeletonCards; track $index) {
+            <div class="wss-card wss-card--skeleton"></div>
           }
         </div>
-      </div>
+        <div class="wss-chart-wrap wss-chart-wrap--skeleton" aria-hidden="true"></div>
+      } @else {
+        <div class="wss-cards">
+          <div class="wss-card added">
+            <mat-icon aria-hidden="true">add_circle_outline</mat-icon>
+            <span class="wss-value">{{ snap().added | number }}</span>
+            <span class="wss-label">Words Added</span>
+          </div>
+          <div class="wss-card deleted">
+            <mat-icon aria-hidden="true">remove_circle_outline</mat-icon>
+            <span class="wss-value">{{ snap().deleted | number }}</span>
+            <span class="wss-label">Words Deleted</span>
+          </div>
+          <div class="wss-card net">
+            <mat-icon aria-hidden="true">swap_vert</mat-icon>
+            <span class="wss-value" [class.negative]="snap().net < 0">
+              {{ snap().net >= 0 ? '+' : '' }}{{ snap().net | number }}
+            </span>
+            <span class="wss-label">Net Change</span>
+          </div>
+          <div class="wss-card streak">
+            <mat-icon aria-hidden="true">local_fire_department</mat-icon>
+            <span class="wss-value">{{ snap().streak }}</span>
+            <span class="wss-label">Day Streak</span>
+          </div>
+          <div class="wss-card best-day">
+            <mat-icon aria-hidden="true">emoji_events</mat-icon>
+            @if (snap().bestDay) {
+              <span class="wss-value">{{ snap().bestDay!.words | number }}</span>
+              <span class="wss-label">Best Day · {{ formatBestDayDate(snap().bestDay!.date) }}</span>
+            } @else {
+              <span class="wss-value">—</span>
+              <span class="wss-label">Best Day</span>
+            }
+          </div>
+        </div>
 
-      <div class="wss-chart-wrap">
-        <canvas #chartCanvas aria-label="Net words changed per day" role="img"></canvas>
-      </div>
+        <div class="wss-chart-wrap">
+          <canvas #chartCanvas aria-label="Net words changed per day" role="img"></canvas>
+        </div>
+      }
     </div>
   `,
   styles: [`
@@ -191,6 +200,32 @@ const localTz = Intl.DateTimeFormat().resolvedOptions().timeZone;
       position: relative;
       height: 160px;
     }
+
+    .wss-card.wss-card--skeleton,
+    .wss-chart-wrap.wss-chart-wrap--skeleton {
+      background: linear-gradient(
+        100deg,
+        var(--mat-sys-surface-variant, #e8e0f0) 30%,
+        rgba(255, 255, 255, 0.5) 50%,
+        var(--mat-sys-surface-variant, #e8e0f0) 70%
+      );
+      background-size: 200% 100%;
+      animation: wss-skeleton-shimmer 1.4s ease-in-out infinite;
+    }
+
+    .wss-card--skeleton {
+      min-height: 78px;
+      border-radius: 10px;
+    }
+
+    .wss-chart-wrap--skeleton {
+      border-radius: 10px;
+    }
+
+    @keyframes wss-skeleton-shimmer {
+      0% { background-position: 200% 0; }
+      100% { background-position: -200% 0; }
+    }
   `],
 })
 export class WritingStatsSummaryComponent implements OnInit, AfterViewInit, OnDestroy {
@@ -199,7 +234,9 @@ export class WritingStatsSummaryComponent implements OnInit, AfterViewInit, OnDe
   @ViewChild('chartCanvas') private chartCanvas!: ElementRef<HTMLCanvasElement>;
 
   snap = signal<Snapshot>({ added: 0, deleted: 0, net: 0, streak: 0, bestDay: null });
+  loading = signal(true);
   readonly formatBestDayDate = formatBestDayDate;
+  readonly skeletonCards = [0, 1, 2, 3, 4];
 
   private dailyData: DailyEntry[] = [];
   private viewReady = false;
@@ -219,6 +256,7 @@ export class WritingStatsSummaryComponent implements OnInit, AfterViewInit, OnDe
           ? { date: bestEntry.date, words: bestEntry.wordsAdded - bestEntry.wordsDeleted }
           : null;
         this.snap.set({ added, deleted, net: added - deleted, streak: summary.currentStreak, bestDay });
+        this.loading.set(false);
         if (this.viewReady) setTimeout(() => this.renderChart(), 0);
       },
     });

@@ -8,7 +8,6 @@ import { RouterLink } from '@angular/router';
 import { HttpClient } from '@angular/common/http';
 import { MatButtonModule } from '@angular/material/button';
 import { MatIconModule } from '@angular/material/icon';
-import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
 import { HeaderService } from '../services/header.service';
 import { UserSettingsService } from '../services/user-settings.service';
 import {
@@ -98,7 +97,7 @@ const localTz = Intl.DateTimeFormat().resolvedOptions().timeZone;
 
 @Component({
   selector: 'app-writing-stats',
-  imports: [DecimalPipe, RouterLink, MatButtonModule, MatIconModule, MatProgressSpinnerModule],
+  imports: [DecimalPipe, RouterLink, MatButtonModule, MatIconModule],
   changeDetection: ChangeDetectionStrategy.OnPush,
   host: {
     class: 'writing-stats-host',
@@ -214,9 +213,13 @@ const localTz = Intl.DateTimeFormat().resolvedOptions().timeZone;
       </div>
 
       @if (loading()) {
-        <div class="center-spinner" aria-label="Loading stats">
-          <mat-spinner diameter="56" />
+        <div class="stat-cards" aria-hidden="true">
+          @for (_ of skeletonCards; track $index) {
+            <div class="stat-card stat-card--skeleton"></div>
+          }
         </div>
+        <div class="chart-wrap chart-wrap--skeleton chart-wrap--skeleton-standalone" aria-hidden="true"></div>
+        <div class="chapter-wrap--skeleton" aria-hidden="true"></div>
       } @else if (errorMsg()) {
         <p class="error-msg">{{ errorMsg() }}</p>
       } @else {
@@ -617,13 +620,27 @@ const localTz = Intl.DateTimeFormat().resolvedOptions().timeZone;
       margin-left: auto;
     }
 
-    /* ── Spinner / error ────────────────────────────────── */
+    /* ── Skeleton / error ───────────────────────────────── */
 
-    .center-spinner {
-      display: flex;
-      justify-content: center;
-      align-items: center;
-      min-height: 300px;
+    .stat-card.stat-card--skeleton,
+    .chart-wrap.chart-wrap--skeleton {
+      background: linear-gradient(
+        100deg,
+        var(--mat-sys-surface-variant, #e8e0f0) 30%,
+        rgba(255, 255, 255, 0.5) 50%,
+        var(--mat-sys-surface-variant, #e8e0f0) 70%
+      );
+      background-size: 200% 100%;
+      animation: stats-skeleton-shimmer 1.4s ease-in-out infinite;
+    }
+
+    .stat-card--skeleton {
+      min-height: 92px;
+    }
+
+    @keyframes stats-skeleton-shimmer {
+      0% { background-position: 200% 0; }
+      100% { background-position: -200% 0; }
     }
 
     .error-msg {
@@ -694,6 +711,25 @@ const localTz = Intl.DateTimeFormat().resolvedOptions().timeZone;
     .chart-wrap {
       position: relative;
       height: 280px;
+    }
+
+    .chart-wrap--skeleton-standalone {
+      height: 316px;
+      border-radius: 12px;
+    }
+
+    .chapter-wrap--skeleton {
+      margin-top: 24px;
+      height: 240px;
+      border-radius: 12px;
+      background: linear-gradient(
+        100deg,
+        var(--mat-sys-surface-variant, #e8e0f0) 30%,
+        rgba(255, 255, 255, 0.5) 50%,
+        var(--mat-sys-surface-variant, #e8e0f0) 70%
+      );
+      background-size: 200% 100%;
+      animation: stats-skeleton-shimmer 1.4s ease-in-out infinite;
     }
 
     .chart-hint {
@@ -1090,6 +1126,7 @@ export class WritingStatsComponent implements OnInit, AfterViewInit, OnDestroy {
 
   // ── Main state ───────────────────────────────────────────
   loading = signal(true);
+  readonly skeletonCards = [0, 1, 2, 3, 4];
   errorMsg = signal<string | null>(null);
   allData = signal<StatsResponse | null>(null);
   activeMode = signal<'30' | '90' | 'custom'>('30');
