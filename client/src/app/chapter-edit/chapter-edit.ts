@@ -1,7 +1,6 @@
 import {
   Component, inject, signal, computed, OnInit, OnDestroy,
-  ElementRef, ViewChild, HostListener, effect, untracked,
-  CUSTOM_ELEMENTS_SCHEMA,
+  ElementRef, ViewChild, HostListener, effect, untracked, viewChild,
 } from '@angular/core';
 import { ActivatedRoute, Router } from '@angular/router';
 import { FormsModule } from '@angular/forms';
@@ -21,7 +20,7 @@ import { ChapterService } from '../chapter/chapter.service';
 import { ContentFilterWarning } from '@shared/models/chapter-chunk.model';
 import { ChapterDraftService } from './chapter-draft.service';
 import { ChapterVersionService } from './chapter-version.service';
-import { Chapter, ChapterNote, ChapterVersion, OutlineItem } from '@shared/models/chapter.model';
+import { Chapter, ChapterNote, OutlineItem } from '@shared/models/chapter.model';
 import { ChatSessionSummary } from '@shared/models';
 import { Entity } from '@shared/models/entity.model';
 import { EntityQuote } from '@shared/models';
@@ -45,16 +44,14 @@ import { EditorBridgeService } from '../services/editor-bridge.service';
 import { QuickChatService } from '../services/quick-chat.service';
 import { ChapterSyncService } from '../services/chapter-sync.service';
 import { RecentChaptersService } from '../services/recent-chapters.service';
-import { EditorReviewService, ReviewSuggestion } from '../services/editor-review.service';
+import { EditorReviewService } from '../services/editor-review.service';
+import { QuillReviewPanelComponent } from './quill-review-panel/quill-review-panel';
+import { VersionHistoryPanelComponent } from './version-history-panel/version-history-panel';
 import { ConfirmDialogComponent } from '../shared/confirm-dialog/confirm-dialog';
 import { MoveTextDialogComponent, MoveTextDialogData, MoveTextDialogResult } from './move-text-dialog';
 import { insertHtmlAtAnchor } from './chapter-content-blocks';
-import { diffWords } from 'diff';
 import { forkJoin, Subscription } from 'rxjs';
 import { v4 as uuidv4 } from 'uuid';
-
-interface DiffWord { type: 'same' | 'add' | 'remove'; text: string; }
-interface DiffParagraph { hasChanges: boolean; segments: DiffWord[]; }
 
 @Component({
   selector: 'app-chapter-edit',
@@ -63,13 +60,15 @@ interface DiffParagraph { hasChanges: boolean; segments: DiffWord[]; }
     MatButtonModule, MatIconModule, MatInputModule, MatFormFieldModule,
     MatProgressSpinnerModule, MatTabsModule, MatExpansionModule, MatDialogModule, MatMenuModule, MatSelectModule, MatTooltipModule,
     SlideOutPanelContainer, EntityEditComponent, RichTextEditorComponent, AiStatsComponent, ChapterOutlineComponent,
+    QuillReviewPanelComponent, VersionHistoryPanelComponent,
   ],
   templateUrl: './chapter-edit.html',
   styleUrl: './chapter-edit.scss',
-  schemas: [CUSTOM_ELEMENTS_SCHEMA],
 })
 export class ChapterEditComponent implements OnInit, OnDestroy {
   @ViewChild(RichTextEditorComponent) editorRef!: RichTextEditorComponent;
+  private quillPanel = viewChild(QuillReviewPanelComponent);
+  private historyPanel = viewChild(VersionHistoryPanelComponent);
   @ViewChild('noteInputEl') noteInputEl!: ElementRef<HTMLTextAreaElement>;
   @ViewChild('searchInputEl') searchInputEl?: ElementRef<HTMLInputElement>;
 
@@ -139,14 +138,6 @@ export class ChapterEditComponent implements OnInit, OnDestroy {
   linkedChats = signal<ChatSessionSummary[]>([]);
   linkedChatsLoading = signal(false);
 
-  // ── Version history ──────────────────────────────────────────────────────
-  historyLoading = signal(false);
-  historyVersions = signal<ChapterVersion[]>([]);
-  selectedVersion = signal<ChapterVersion | null>(null);
-  previousVersion = signal<ChapterVersion | null>(null);
-  diffLines = signal<DiffParagraph[]>([]);
-  historyListHeight = signal(180);
-
   // ── Chapter image ──────────────────────────────────────────────────────
   imageUrl = signal<string | null>(null);
   imageThumbnailUrl = signal<string | null>(null);
@@ -182,25 +173,13 @@ export class ChapterEditComponent implements OnInit, OnDestroy {
   // ── Quill Editor (AI review pass) ─────────────────────────────────────────
   /** Index of the "Quill Editor" sidebar tab. */
   static readonly QUILL_REVIEW_TAB = 3;
-  /** When false, low-severity suggestions are hidden (the default). */
-  quillShowLow = signal(false);
-  /** Suggestions filtered by the current severity toggle. */
-  quillSuggestions = computed(() => this.editorReview.visible(this.quillShowLow()));
+  /** Open-suggestion count for the sidebar/mobile tab badges; the panel itself
+   *  lives in QuillReviewPanelComponent. */
   quillOpenCount = computed(() =>
-    this.quillSuggestions().filter(s => s.status === 'open').length,
+    this.editorReview.visible(false).filter(s => s.status === 'open').length,
   );
   /** Suggestion id currently hovered in the document (doc→sidebar highlight). */
   quillHoveredId = signal<string | null>(null);
-  /** Ids of suggestions currently decorated in the document. */
-  private decoratedReviewIds = new Set<string>();
-  /** Suggestion whose free-form refine box is open. */
-  quillRefineOpenId = signal<string | null>(null);
-  /** Suggestion currently being refined (shows a spinner). */
-  quillRefiningId = signal<string | null>(null);
-  quillRefineText = signal('');
-  /** Suggestion whose replacement text is being manually edited before accept. */
-  quillEditOpenId = signal<string | null>(null);
-  quillEditText = signal('');
 
   // Track emails whose avatar endpoint returned an error so we fall back to the placeholder icon
   private _avatarErrors = signal<ReadonlySet<string>>(new Set());
@@ -221,15 +200,6 @@ export class ChapterEditComponent implements OnInit, OnDestroy {
     moveHandler: (e: MouseEvent) => void; upHandler: () => void;
   } | null = null;
 
-  private historyResizerDrag: {
-    startY: number; startHeight: number;
-    moveHandler: (e: MouseEvent) => void; upHandler: () => void;
-  } | null = null;
-
-  private static readonly HISTORY_LIST_HEIGHT_KEY = 'chapter-edit-history-list-height';
-  private static readonly HISTORY_LIST_MIN = 80;
-  private static readonly HISTORY_LIST_MAX = 400;
-
   private autoSaveTimer: ReturnType<typeof setTimeout> | null = null;
   private periodicSaveTimer: ReturnType<typeof setInterval> | null = null;
   private static readonly PERIODIC_SAVE_INTERVAL_MS = 2 * 60 * 1000; // 2 minutes
@@ -243,26 +213,6 @@ export class ChapterEditComponent implements OnInit, OnDestroy {
   ];
 
   constructor() {
-    // Keep the document's inline review decorations in sync with the streamed,
-    // severity-filtered, still-open suggestions.
-    effect(() => {
-      this.quillSuggestions(); // track changes (stream, filter toggle, accept/reject)
-      untracked(() => this.reconcileReviewDecorations());
-    });
-
-    // Auto-load version history when history tab becomes active
-    effect(() => {
-      const idx = this.sidebarTabIndex();
-      const chapter = this.chapter();
-      if (idx === 2 && chapter) {
-        untracked(() => {
-          if (!this.historyLoading() && this.historyVersions().length === 0) {
-            this.loadHistory(chapter.id);
-          }
-        });
-      }
-    });
-
     // Reload linked chats whenever the active session's chapter pin changes
     effect(() => {
       this.quickChat.pinnedChapterId(); // track both pin and unpin
@@ -296,7 +246,6 @@ export class ChapterEditComponent implements OnInit, OnDestroy {
   ngOnInit(): void {
     document.addEventListener('keydown', this.onDocumentKeyDown);
     this.loadSidebarWidth();
-    this.loadHistoryListHeight();
 
     this.routeSub = this.route.paramMap.subscribe(params => {
       const id = params.get('id')!;
@@ -305,10 +254,6 @@ export class ChapterEditComponent implements OnInit, OnDestroy {
       this.notes.set([]);
       this.outline.set([]);
       this.lastSavedContent = null;
-      this.historyVersions.set([]);
-      this.selectedVersion.set(null);
-      this.previousVersion.set(null);
-      this.diffLines.set([]);
 
       this.chapterService.getById(id).subscribe({
       next: async (data) => {
@@ -424,17 +369,12 @@ export class ChapterEditComponent implements OnInit, OnDestroy {
     this.chapterSyncSub?.unsubscribe();
     this.draftAcceptedSub?.unsubscribe();
     this.editorReview.clear();
-    this.decoratedReviewIds.clear();
     this.headerService.clear();
     if (this.autoSaveTimer) clearTimeout(this.autoSaveTimer);
     this.stopPeriodicSave();
     if (this.resizerDrag) {
       document.removeEventListener('mousemove', this.resizerDrag.moveHandler);
       document.removeEventListener('mouseup', this.resizerDrag.upHandler);
-    }
-    if (this.historyResizerDrag) {
-      document.removeEventListener('mousemove', this.historyResizerDrag.moveHandler);
-      document.removeEventListener('mouseup', this.historyResizerDrag.upHandler);
     }
   }
 
@@ -750,7 +690,7 @@ export class ChapterEditComponent implements OnInit, OnDestroy {
           this.userSettings.displayName() || this.authService.currentUser()?.name || undefined,
         ).subscribe();
 
-        if (this.historyVersions().length > 0) this.loadHistory(chapter.id);
+        this.historyPanel()?.refreshAfterSave();
         await this.draftService.clearDraft(chapter.id);
         this.hasDraft.set(false);
         this.lastSavedContent = content;
@@ -1211,150 +1151,10 @@ export class ChapterEditComponent implements OnInit, OnDestroy {
       this.snackBar.open('Nothing to review yet — write some prose first.', 'OK', { duration: 3000 });
       return;
     }
-    this.decoratedReviewIds.clear();
+    this.quillPanel()?.resetDecorations();
     this.editorRef.setEditable(false);
     this.onSidebarTabChange(ChapterEditComponent.QUILL_REVIEW_TAB);
     void this.editorReview.run(chapter.id, blocks);
-  }
-
-  acceptQuillSuggestion(s: ReviewSuggestion): void {
-    // Comments are informational — acknowledging one just resolves it (no edit).
-    if (s.type === 'comment') {
-      this.editorRef?.undecorateSuggestion(s.id);
-      this.editorReview.markAccepted(s.id);
-      this.maybeUnlockEditor();
-      return;
-    }
-    const applied = this.editorRef?.acceptSuggestionEdit(s);
-    if (applied) {
-      this.editorReview.markAccepted(s.id);
-    } else {
-      this.editorReview.markRejected(s.id);
-      this.snackBar.open("Couldn't locate that text — it may have changed.", 'OK', { duration: 3000 });
-    }
-    this.maybeUnlockEditor();
-  }
-
-  rejectQuillSuggestion(s: ReviewSuggestion): void {
-    this.editorReview.markRejected(s.id);
-    this.maybeUnlockEditor();
-  }
-
-  /** Applies every still-open visible text edit. Comments are left for the
-   *  author to read and dismiss individually (there's nothing to apply). */
-  acceptAllQuillSuggestions(): void {
-    for (const s of this.quillSuggestions()) {
-      if (s.status !== 'open' || s.type === 'comment') continue;
-      const applied = this.editorRef?.acceptSuggestionEdit(s);
-      if (applied) this.editorReview.markAccepted(s.id);
-      else this.editorReview.markRejected(s.id);
-    }
-    this.maybeUnlockEditor();
-  }
-
-  rejectAllQuillSuggestions(): void {
-    for (const s of this.quillSuggestions()) {
-      if (s.status === 'open') this.editorReview.markRejected(s.id);
-    }
-    this.maybeUnlockEditor();
-  }
-
-  /** Ends the review entirely and unlocks the editor. */
-  dismissQuillReview(): void {
-    this.editorReview.clear();
-    this.editorRef?.clearAllReviewDecorations();
-    this.decoratedReviewIds.clear();
-    this.editorRef?.setEditable(true);
-  }
-
-  onQuillSuggestionHover(s: ReviewSuggestion): void {
-    if (s.status !== 'open') return;
-    this.editorRef?.emphasizeDecoration(s.id);
-  }
-
-  onQuillSuggestionLeave(): void {
-    this.editorRef?.clearEmphasis();
-  }
-
-  /** Clicking a card scrolls the document to its highlight. */
-  scrollToQuillSuggestion(s: ReviewSuggestion): void {
-    if (s.status !== 'open') return;
-    this.editorRef?.scrollToDecoration(s.id);
-  }
-
-  /** Re-opens a resolved suggestion; reverts the edit if it was accepted. */
-  undoQuillSuggestion(s: ReviewSuggestion): void {
-    if (s.status === 'accepted' && s.type !== 'comment') {
-      const reverted = this.editorRef?.revertSuggestionEdit(s);
-      if (!reverted) {
-        this.snackBar.open("Couldn't undo — the text has changed since.", 'OK', { duration: 3000 });
-        return;
-      }
-    }
-    this.editorReview.markOpen(s.id);
-    this.editorRef?.setEditable(false); // re-lock while it's open again
-  }
-
-  /** Toggles the free-form refine box for a suggestion. */
-  toggleQuillRefine(s: ReviewSuggestion): void {
-    if (this.quillRefineOpenId() === s.id) {
-      this.quillRefineOpenId.set(null);
-    } else {
-      this.quillRefineOpenId.set(s.id);
-      this.quillRefineText.set('');
-    }
-  }
-
-  /** Sends the author's free-form instruction and updates the suggestion in place. */
-  async submitQuillRefine(s: ReviewSuggestion): Promise<void> {
-    const instruction = this.quillRefineText().trim();
-    const chapter = this.chapter();
-    if (!instruction || !chapter || this.quillRefiningId()) return;
-    this.quillRefiningId.set(s.id);
-    const blockText = this.editorRef?.getReviewBlockText(s.blockIndex) ?? '';
-    const result = await this.editorReview.refineSuggestion({
-      chapterId: chapter.id,
-      blockText,
-      originalText: s.originalText,
-      currentReplacement: s.replacementText ?? '',
-      reason: s.reason,
-      instruction,
-      category: s.category,
-      severity: s.severity,
-    });
-    this.quillRefiningId.set(null);
-    if (!result) {
-      this.snackBar.open('Could not refine that suggestion — try rephrasing.', 'OK', { duration: 3000 });
-      return;
-    }
-    this.editorReview.updateSuggestion(s.id, result);
-    const updated = this.editorReview.suggestions().find(x => x.id === s.id);
-    if (updated) this.editorRef?.updateReviewSuggestion(updated);
-    this.quillRefineOpenId.set(null);
-    this.quillRefineText.set('');
-  }
-
-  toggleQuillEdit(s: ReviewSuggestion): void {
-    if (this.quillEditOpenId() === s.id) {
-      this.quillEditOpenId.set(null);
-    } else {
-      this.quillEditOpenId.set(s.id);
-      this.quillEditText.set(s.replacementText ?? '');
-    }
-  }
-
-  acceptQuillSuggestionEdited(s: ReviewSuggestion): void {
-    const editedText = this.quillEditText().trim();
-    const modified = { ...s, replacementText: editedText };
-    const applied = this.editorRef?.acceptSuggestionEdit(modified);
-    if (applied) {
-      this.editorReview.markAccepted(s.id);
-    } else {
-      this.editorReview.markRejected(s.id);
-      this.snackBar.open("Couldn't locate that text — it may have changed.", 'OK', { duration: 3000 });
-    }
-    this.quillEditOpenId.set(null);
-    this.maybeUnlockEditor();
   }
 
   /** Document→sidebar hover sync (from the editor's hover output). */
@@ -1364,68 +1164,11 @@ export class ChapterEditComponent implements OnInit, OnDestroy {
 
   /** Accept/reject invoked from a decoration's inline popover. */
   onInlineReviewAction(event: { id: string; action: 'accept' | 'reject' }): void {
-    const s = this.editorReview.suggestions().find(x => x.id === event.id);
-    if (!s) return;
-    if (event.action === 'accept') this.acceptQuillSuggestion(s);
-    else this.rejectQuillSuggestion(s);
-  }
-
-  /** Reconciles document decorations to match the visible, open suggestions. */
-  private reconcileReviewDecorations(): void {
-    const editor = this.editorRef;
-    if (!editor) return;
-    const desired = new Map(
-      this.quillSuggestions().filter(s => s.status === 'open').map(s => [s.id, s] as const),
-    );
-    for (const id of [...this.decoratedReviewIds]) {
-      if (!desired.has(id)) {
-        editor.undecorateSuggestion(id);
-        this.decoratedReviewIds.delete(id);
-      }
-    }
-    for (const [id, s] of desired) {
-      if (!this.decoratedReviewIds.has(id)) {
-        editor.decorateSuggestion(s);
-        this.decoratedReviewIds.add(id);
-      }
-    }
-  }
-
-  /** Re-enables editing once nothing is left awaiting a decision. */
-  private maybeUnlockEditor(): void {
-    if (!this.editorReview.running() && !this.editorReview.hasOpenSuggestions()) {
-      this.editorRef?.setEditable(true);
-    }
+    this.quillPanel()?.handleInlineAction(event);
   }
 
   onRightPanelChange(open: boolean): void {
     if (!open) { this.editingEntity.set(null); this.showAiStats.set(false); }
-  }
-
-  // ── Version history ──────────────────────────────────────────────────────
-
-  loadHistory(chapterId: string): void {
-    this.historyLoading.set(true);
-    this.chapterVersionService.getByChapter(chapterId).subscribe({
-      next: (versions) => { this.historyVersions.set(versions); this.historyLoading.set(false); },
-      error: () => this.historyLoading.set(false),
-    });
-  }
-
-  selectVersion(version: ChapterVersion): void {
-    this.selectedVersion.set(version);
-    const versions = this.historyVersions();
-    const idx = versions.findIndex(v => v.id === version.id);
-    // versions are newest-first, so previous version is at idx+1
-    const prev = idx >= 0 && idx + 1 < versions.length ? versions[idx + 1] : null;
-    this.previousVersion.set(prev);
-    const oldText = this.stripHtml(prev ? prev.content : '');
-    const newText = this.stripHtml(version.content);
-    this.diffLines.set(this.computeDiff(oldText, newText));
-  }
-
-  formatVersionDate(savedAt: string): string {
-    return new Date(savedAt).toLocaleString();
   }
 
   private stripHtml(html: string): string {
@@ -1434,32 +1177,10 @@ export class ChapterEditComponent implements OnInit, OnDestroy {
     return (div.innerText || div.textContent || '').trim();
   }
 
-  private computeDiff(oldText: string, newText: string): DiffParagraph[] {
-    const changes = diffWords(oldText, newText);
-    const paragraphs: DiffParagraph[] = [{ hasChanges: false, segments: [] }];
-    for (const change of changes) {
-      const type: 'same' | 'add' | 'remove' = change.added ? 'add' : change.removed ? 'remove' : 'same';
-      const parts = change.value.split('\n');
-      for (let i = 0; i < parts.length; i++) {
-        if (i > 0) paragraphs.push({ hasChanges: false, segments: [] });
-        if (parts[i]) {
-          const para = paragraphs[paragraphs.length - 1];
-          para.segments.push({ type, text: parts[i] });
-          if (type !== 'same') para.hasChanges = true;
-        }
-      }
-    }
-    return paragraphs.filter(p => p.segments.length > 0);
-  }
-
   // ── Sidebar ──────────────────────────────────────────────────────────────
 
   onSidebarTabChange(index: number): void {
     this.sidebarTabIndex.set(index);
-    if (index === 2) {
-      const chapter = this.chapter();
-      if (chapter && !this.historyLoading() && this.historyVersions().length === 0) this.loadHistory(chapter.id);
-    }
   }
 
   activateSidebarTab(index: number): void {
@@ -1503,42 +1224,6 @@ export class ChapterEditComponent implements OnInit, OnDestroy {
     document.addEventListener('mousemove', moveHandler);
     document.addEventListener('mouseup', upHandler);
     this.resizerDrag = { startX, startWidth, moveHandler, upHandler };
-  }
-
-  private loadHistoryListHeight(): void {
-    const stored = localStorage.getItem(ChapterEditComponent.HISTORY_LIST_HEIGHT_KEY);
-    if (stored) {
-      const h = parseInt(stored, 10);
-      if (!isNaN(h) && h >= ChapterEditComponent.HISTORY_LIST_MIN && h <= ChapterEditComponent.HISTORY_LIST_MAX) {
-        this.historyListHeight.set(h);
-      }
-    }
-  }
-
-  onHistoryResizerMouseDown(event: MouseEvent): void {
-    event.preventDefault();
-    const startY = event.clientY;
-    const startHeight = this.historyListHeight();
-    const moveHandler = (e: MouseEvent) => {
-      const delta = e.clientY - startY;
-      this.historyListHeight.set(Math.round(Math.max(
-        ChapterEditComponent.HISTORY_LIST_MIN,
-        Math.min(startHeight + delta, ChapterEditComponent.HISTORY_LIST_MAX),
-      )));
-    };
-    const upHandler = () => {
-      document.removeEventListener('mousemove', moveHandler);
-      document.removeEventListener('mouseup', upHandler);
-      document.body.style.cursor = '';
-      document.body.style.userSelect = '';
-      localStorage.setItem(ChapterEditComponent.HISTORY_LIST_HEIGHT_KEY, String(this.historyListHeight()));
-      this.historyResizerDrag = null;
-    };
-    document.body.style.cursor = 'row-resize';
-    document.body.style.userSelect = 'none';
-    document.addEventListener('mousemove', moveHandler);
-    document.addEventListener('mouseup', upHandler);
-    this.historyResizerDrag = { startY, startHeight, moveHandler, upHandler };
   }
 
   @HostListener('document:mousedown', ['$event'])

@@ -99,7 +99,7 @@
               </div>
             }
 
-            <app-rich-text-editor
+            <app-rich-text-editor #rte
               [seriesId]="seriesId()"
               [externalEntities]="entities()"
               [aiEndpoint]="aiEndpoint()"
@@ -368,63 +368,9 @@
               <!-- Tab 2: Version History -->
               <mat-tab>
                 <ng-template mat-tab-label><mat-icon>history</mat-icon></ng-template>
-                <div class="sidebar-tab-content tab-history">
-                  <div class="history-sidebar-list" [class.history-sidebar-list-full]="!selectedVersion()"
-                    [style.height.px]="selectedVersion() ? historyListHeight() : null">
-                    <div class="history-list-title">
-                      <span>Version History</span>
-                      <button mat-icon-button class="history-refresh-btn" [disabled]="historyLoading()"
-                        (click)="loadHistory(chapter()!.id)" title="Refresh">
-                        <mat-icon>refresh</mat-icon>
-                      </button>
-                    </div>
-                    @if (historyLoading()) {
-                      <p class="history-status">Loading…</p>
-                    } @else if (historyVersions().length === 0) {
-                      <p class="history-status">No saved versions yet.</p>
-                    } @else {
-                      @for (version of historyVersions(); track version.id) {
-                        <button class="history-version-item"
-                          [class.selected]="selectedVersion()?.id === version.id"
-                          (click)="selectVersion(version)">
-                          @if (version.createdBy && !avatarFailed(version.createdBy)) {
-                            <img class="version-author-avatar" [src]="'/api/avatar/' + version.createdBy" (error)="onAvatarError(version.createdBy!)" [alt]="version.createdByName || 'Author'" />
-                          } @else if (version.createdByAvatar) {
-                            <img class="version-author-avatar" [src]="version.createdByAvatar" [alt]="version.createdByName || 'Author'" />
-                          } @else {
-                            <span class="version-author-avatar-placeholder">
-                              <mat-icon style="font-size:14px;width:14px;height:14px;line-height:14px">person</mat-icon>
-                            </span>
-                          }
-                          @if (version.createdByName) {
-                            <span class="version-author-name">{{ version.createdByName }}</span>
-                          }
-                          <span class="version-date">{{ formatVersionDate(version.savedAt) }}</span>
-                        </button>
-                      }
-                    }
-                  </div>
-                  @if (!selectedVersion()) {
-                    <p class="history-status history-select-hint">Select a version to compare it with the previous version.</p>
-                  } @else {
-                    <div class="history-panel-resizer" (mousedown)="onHistoryResizerMouseDown($event)"></div>
-                    <div class="history-sidebar-diff">
-                      <div class="history-diff-legend">
-                        <span class="legend-remove">&#8722; {{ previousVersion() ? formatVersionDate(previousVersion()!.savedAt) : 'Beginning' }}</span>
-                        <span class="legend-add">&#43; {{ formatVersionDate(selectedVersion()!.savedAt) }}</span>
-                      </div>
-                      <div class="history-diff-content">
-                        @for (para of diffLines(); track $index) {
-                          <p class="diff-paragraph" [class.diff-paragraph-changed]="para.hasChanges">
-                            @for (seg of para.segments; track $index) {
-                              <span [class.diff-word-add]="seg.type === 'add'" [class.diff-word-remove]="seg.type === 'remove'">{{ seg.text }}</span>
-                            }
-                          </p>
-                        }
-                      </div>
-                    </div>
-                  }
-                </div>
+                <app-version-history-panel class="sidebar-tab-content tab-history"
+                  [chapterId]="chapter()!.id"
+                  [active]="sidebarTabIndex() === 2" />
               </mat-tab>
 
             <!-- Tab 3: Quill Editor (AI review pass) -->
@@ -437,212 +383,11 @@
                   }
                 </span>
               </ng-template>
-              <div class="sidebar-tab-content">
-                <div class="notes-panel-header">
-                  <mat-icon>rate_review</mat-icon>
-                  <span>Quill Editor</span>
-                  @if (quillSuggestions().length > 0) {
-                    <span class="notes-panel-count">({{ quillOpenCount() }} open)</span>
-                  }
-                </div>
-
-                <div class="quill-review-toolbar">
-                  <!-- <label class="quill-show-low">
-                    <input type="checkbox" [checked]="quillShowLow()"
-                      (change)="quillShowLow.set($any($event.target).checked)" />
-                    Show minor
-                  </label> -->
-                  @if (quillOpenCount() > 0) {
-                    <span class="quill-toolbar-spacer"></span>
-                    <button mat-button class="quill-accept-all" (click)="acceptAllQuillSuggestions()">Accept all</button>
-                    <button mat-button (click)="rejectAllQuillSuggestions()">Reject all</button>
-                  }
-                </div>
-
-                @if (editorReview.error()) {
-                  <p class="quill-review-error">{{ editorReview.error() }}</p>
-                }
-
-                @if (editorReview.running() && quillSuggestions().length === 0) {
-                  <div class="quill-scanning">
-                    <lottie-player
-                      src="https://lottie.host/03d88623-09f2-424f-864d-9586ccaf27a1/fxQwB2FOoW.json"
-                      background="transparent"
-                      speed="1"
-                      loop
-                      autoplay
-                      aria-hidden="true"
-                      class="quill-scan-lottie">
-                    </lottie-player>
-                    <p class="quill-scanning-label">Reading your chapter…</p>
-                  </div>
-                } @else if (!editorReview.running() && quillSuggestions().length === 0) {
-                  <div class="quill-run-empty" style="text-align:center">
-                    <p class="notes-empty">Run an AI editorial pass to get suggestions on pacing, clarity, and style.</p>
-                    <button mat-flat-button (click)="startQuillReview()" [disabled]="!chapter()">
-                      <mat-icon>rate_review</mat-icon>
-                      Run Quill Editor
-                    </button>
-                  </div>
-                }
-
-                @if (editorReview.running() && quillSuggestions().length > 0) {
-                  <div class="quill-scanning-inline" aria-live="polite" aria-label="Scan in progress">
-                    <lottie-player
-                      src="https://lottie.host/03d88623-09f2-424f-864d-9586ccaf27a1/fxQwB2FOoW.json"
-                      background="transparent"
-                      speed="1"
-                      loop
-                      autoplay
-                      aria-hidden="true"
-                      class="quill-scan-lottie-inline">
-                    </lottie-player>
-                    <span class="quill-scanning-inline-label">Scanning…</span>
-                  </div>
-                }
-
-                <div class="quill-review-list">
-                  @for (s of quillSuggestions(); track s.id) {
-                    @if (s.status === 'open' && s.type === 'comment') {
-                      <div class="quill-suggestion-card quill-comment-card quill-card-clickable"
-                        [class.sev-high]="s.severity === 'high'"
-                        [class.sev-medium]="s.severity === 'medium'"
-                        [class.sev-low]="s.severity === 'low'"
-                        [class.is-hovered]="quillHoveredId() === s.id"
-                        (click)="scrollToQuillSuggestion(s)"
-                        (mouseenter)="onQuillSuggestionHover(s)"
-                        (mouseleave)="onQuillSuggestionLeave()">
-                        <div class="quill-suggestion-head">
-                          <mat-icon class="quill-comment-icon">chat_bubble_outline</mat-icon>
-                          <span class="quill-cat-badge">{{ s.category }}</span>
-                          <span class="quill-sev-badge">{{ s.severity }}</span>
-                        </div>
-                        <p class="quill-comment-text">{{ s.reason }}</p>
-                        <div class="quill-comment-anchor">on &ldquo;{{ s.originalText }}&rdquo;</div>
-                        <div class="quill-suggestion-actions" (click)="$event.stopPropagation()">
-                          <button mat-stroked-button (click)="rejectQuillSuggestion(s)">
-                            <mat-icon>close</mat-icon> Dismiss
-                          </button>
-                          <button mat-icon-button class="quill-refine-toggle" [class.active]="quillRefineOpenId() === s.id"
-                            (click)="toggleQuillRefine(s)" title="Refine — tell Quill what to do instead">
-                            <mat-icon>tune</mat-icon>
-                          </button>
-                        </div>
-                        @if (quillRefineOpenId() === s.id) {
-                          <div class="quill-refine-row" (click)="$event.stopPropagation()">
-                            <input class="quill-refine-input" type="text"
-                              [value]="quillRefineText()"
-                              (input)="quillRefineText.set($any($event.target).value)"
-                              (keydown.enter)="submitQuillRefine(s)"
-                              placeholder="Tell Quill what to do instead…"
-                              [disabled]="quillRefiningId() === s.id" />
-                            <button mat-icon-button (click)="submitQuillRefine(s)"
-                              [disabled]="quillRefiningId() === s.id || !quillRefineText().trim()" title="Send">
-                              @if (quillRefiningId() === s.id) {
-                                <mat-progress-spinner diameter="18" mode="indeterminate" />
-                              } @else {
-                                <mat-icon>send</mat-icon>
-                              }
-                            </button>
-                          </div>
-                        }
-                      </div>
-                    } @else if (s.status === 'open') {
-                      <div class="quill-suggestion-card quill-card-clickable"
-                        [class.sev-high]="s.severity === 'high'"
-                        [class.sev-medium]="s.severity === 'medium'"
-                        [class.sev-low]="s.severity === 'low'"
-                        [class.is-hovered]="quillHoveredId() === s.id"
-                        (click)="scrollToQuillSuggestion(s)"
-                        (mouseenter)="onQuillSuggestionHover(s)"
-                        (mouseleave)="onQuillSuggestionLeave()">
-                        <div class="quill-suggestion-head">
-                          <span class="quill-cat-badge">{{ s.category }}</span>
-                          <span class="quill-sev-badge">{{ s.severity }}</span>
-                        </div>
-                        <div class="quill-diff">
-                          <span class="quill-old">{{ s.originalText }}</span>
-                          <mat-icon class="quill-arrow">arrow_forward</mat-icon>
-                          <span class="quill-new">{{ s.replacementText }}</span>
-                        </div>
-                        <p class="quill-reason">{{ s.reason }}</p>
-                        @if (quillEditOpenId() === s.id) {
-                          <div class="quill-edit-row" (click)="$event.stopPropagation()">
-                            <textarea class="quill-edit-textarea"
-                              rows="3"
-                              [value]="quillEditText()"
-                              (input)="quillEditText.set($any($event.target).value)"
-                              (keydown.escape)="quillEditOpenId.set(null)"
-                              aria-label="Edit replacement text"></textarea>
-                            <div class="quill-edit-actions">
-                              <button mat-flat-button class="quill-accept-btn"
-                                (click)="acceptQuillSuggestionEdited(s)"
-                                [disabled]="!quillEditText().trim()">
-                                <mat-icon>check</mat-icon> Apply
-                              </button>
-                              <button mat-button (click)="quillEditOpenId.set(null)">Cancel</button>
-                            </div>
-                          </div>
-                        }
-                        <div class="quill-suggestion-actions" (click)="$event.stopPropagation()">
-                          @if (quillEditOpenId() !== s.id) {
-                            <button mat-flat-button class="quill-accept-btn" (click)="acceptQuillSuggestion(s)">
-                              <mat-icon>check</mat-icon> Accept
-                            </button>
-                          }
-                          <button mat-stroked-button (click)="rejectQuillSuggestion(s)">
-                            <mat-icon>close</mat-icon> Reject
-                          </button>
-                          <button mat-icon-button class="quill-refine-toggle"
-                            [class.active]="quillEditOpenId() === s.id"
-                            (click)="toggleQuillEdit(s)"
-                            title="Edit replacement text before accepting">
-                            <mat-icon>edit</mat-icon>
-                          </button>
-                          <button mat-icon-button class="quill-refine-toggle" [class.active]="quillRefineOpenId() === s.id"
-                            (click)="toggleQuillRefine(s)" title="Refine — tell Quill what to do instead">
-                            <mat-icon>tune</mat-icon>
-                          </button>
-                        </div>
-                        @if (quillRefineOpenId() === s.id) {
-                          <div class="quill-refine-row" (click)="$event.stopPropagation()">
-                            <input class="quill-refine-input" type="text"
-                              [value]="quillRefineText()"
-                              (input)="quillRefineText.set($any($event.target).value)"
-                              (keydown.enter)="submitQuillRefine(s)"
-                              placeholder="Tell Quill what to do instead…"
-                              [disabled]="quillRefiningId() === s.id" />
-                            <button mat-icon-button (click)="submitQuillRefine(s)"
-                              [disabled]="quillRefiningId() === s.id || !quillRefineText().trim()" title="Send">
-                              @if (quillRefiningId() === s.id) {
-                                <mat-progress-spinner diameter="18" mode="indeterminate" />
-                              } @else {
-                                <mat-icon>send</mat-icon>
-                              }
-                            </button>
-                          </div>
-                        }
-                      </div>
-                    } @else {
-                      <div class="quill-suggestion-card is-resolved"
-                        [class.is-accepted]="s.status === 'accepted'">
-                        <mat-icon class="quill-collapsed-icon">{{ s.status === 'accepted' ? 'check_circle' : 'cancel' }}</mat-icon>
-                        <span class="quill-collapsed-text">{{ s.type === 'comment' ? s.reason : (s.status === 'accepted' ? s.replacementText : s.originalText) }}</span>
-                        <button mat-icon-button class="quill-undo-btn" (click)="undoQuillSuggestion(s)" title="Undo">
-                          <mat-icon>undo</mat-icon>
-                        </button>
-                      </div>
-                    }
-                  }
-                </div>
-
-                @if (quillSuggestions().length > 0 && !editorReview.running()) {
-                  <button mat-flat-button class="quill-dismiss-btn" (click)="dismissQuillReview()">
-                    <mat-icon>lock_open</mat-icon>
-                    Done — clear review &amp; unlock editor
-                  </button>
-                }
-              </div>
+              <app-quill-review-panel class="sidebar-tab-content"
+                [chapterId]="chapter()!.id"
+                [editor]="rte"
+                [hoveredId]="quillHoveredId()"
+                (runReview)="startQuillReview()" />
             </mat-tab>
 
             </mat-tab-group>
