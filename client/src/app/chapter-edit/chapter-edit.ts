@@ -43,12 +43,14 @@ import { AuthService } from '../auth/auth.service';
 import { SeriesContextService } from '../services/series-context.service';
 import { EditorBridgeService } from '../services/editor-bridge.service';
 import { QuickChatService } from '../services/quick-chat.service';
-import { AuthFetchService } from '../services/auth-fetch.service';
 import { ChapterSyncService } from '../services/chapter-sync.service';
 import { RecentChaptersService } from '../services/recent-chapters.service';
 import { EditorReviewService, ReviewSuggestion } from '../services/editor-review.service';
+import { ConfirmDialogComponent } from '../shared/confirm-dialog/confirm-dialog';
+import { MoveTextDialogComponent, MoveTextDialogData, MoveTextDialogResult } from './move-text-dialog';
 import { diffWords } from 'diff';
 import { forkJoin, Subscription } from 'rxjs';
+import { v4 as uuidv4 } from 'uuid';
 
 interface DiffWord { type: 'same' | 'add' | 'remove'; text: string; }
 interface DiffParagraph { hasChanges: boolean; segments: DiffWord[]; }
@@ -89,7 +91,6 @@ export class ChapterEditComponent implements OnInit, OnDestroy {
   private seriesContext = inject(SeriesContextService);
   private editorBridge = inject(EditorBridgeService);
   private quickChat = inject(QuickChatService);
-  private authFetchService = inject(AuthFetchService);
   private chapterSync = inject(ChapterSyncService);
   private recentChapters = inject(RecentChaptersService);
   /** Public so the template can read the streamed review suggestions. */
@@ -519,6 +520,104 @@ export class ChapterEditComponent implements OnInit, OnDestroy {
     }
   }
 
+  // ── Move text to another chapter ─────────────────────────────────────────
+
+  onMoveTextRequest(event: { text: string }): void {
+    const chapter = this.chapter();
+    if (!chapter) return;
+    const dialogRef = this.dialog.open(MoveTextDialogComponent, {
+      data: {
+        bookId: chapter.bookId,
+        currentChapterId: chapter.id,
+        selectionPreview: event.text,
+      } satisfies MoveTextDialogData,
+      width: '540px',
+      maxHeight: '80vh',
+    });
+    dialogRef.afterClosed().subscribe((result: MoveTextDialogResult | undefined) => {
+      if (result) this.moveSelectedText(result);
+    });
+  }
+
+  private moveSelectedText(target: MoveTextDialogResult): void {
+    const chapter = this.chapter();
+    if (!chapter || !this.editorRef) return;
+    const previousContent = this.editorRef.getContent();
+    const blocks = this.editorRef.extractMoveSelection();
+    if (!blocks) {
+      this.snackBar.open("Couldn't move the text — the selection was lost. Please select it again.", undefined, { duration: 4000 });
+      return;
+    }
+    const movedHtml = blocks.join('');
+
+    if (target.mode === 'new') {
+      const newChapter: Chapter = {
+        id: uuidv4(),
+        title: target.title,
+        bookId: chapter.bookId,
+        content: movedHtml,
+        sortOrder: target.sortOrder,
+      };
+      this.chapterService.create(newChapter).subscribe({
+        next: created => this.finishMove(created.id, created.title),
+        error: () => this.revertMove(previousContent),
+      });
+    } else {
+      const content = this.insertBlocksIntoContent(target.chapter.content ?? '', movedHtml, target.anchorIndex, target.position);
+      this.chapterService.update({ ...target.chapter, content }).subscribe({
+        next: updated => this.finishMove(updated.id, updated.title),
+        error: () => this.revertMove(previousContent),
+      });
+    }
+  }
+
+  /** Target save failed: put the extracted text back so nothing is lost. */
+  private revertMove(previousContent: string): void {
+    this.editorRef?.setContent(previousContent);
+    this.scheduleDraftSave();
+    this.snackBar.open('Moving the text failed — nothing was changed.', undefined, { duration: 5000 });
+  }
+
+  private finishMove(targetId: string, targetTitle: string): void {
+    this.persistSourceAfterMove();
+    const ref = this.snackBar.open(`Text moved to "${targetTitle || 'Chapter'}"`, 'Open chapter', { duration: 8000 });
+    ref.onAction().subscribe(() => window.open(`/chapters/${targetId}/edit`, '_blank'));
+  }
+
+  /** Persists the source chapter after a move — mirrors save() but without the
+   *  "Chapter saved" toast, which would stomp the "Text moved" one. */
+  private persistSourceAfterMove(): void {
+    const chapter = this.chapter();
+    if (!chapter) return;
+    const content = this.editorRef?.getContent() ?? chapter.content ?? '';
+    const toSave = { ...chapter, content, notes: this.notes(), outline: this.outline() };
+    this.chapterService.update(toSave).subscribe({
+      next: async () => {
+        this.chapterVersionService.create(
+          chapter.id, content,
+          this.userSettings.displayName() || this.authService.currentUser()?.name || undefined,
+        ).subscribe();
+        await this.draftService.clearDraft(chapter.id);
+        this.hasDraft.set(false);
+        this.lastSavedContent = content;
+      },
+      error: () => this.snackBar.open('Text moved, but saving this chapter failed — click Save to retry', undefined, { duration: 5000 }),
+    });
+  }
+
+  /** Inserts the moved blocks into the target chapter's HTML relative to the
+   *  anchor paragraph (an element-child index). anchorIndex -1 = append. */
+  private insertBlocksIntoContent(content: string, blocksHtml: string, anchorIndex: number, position: 'before' | 'after'): string {
+    const container = document.createElement('div');
+    container.innerHTML = content;
+    const anchor = anchorIndex >= 0 ? container.children[anchorIndex] ?? null : null;
+    const frag = document.createRange().createContextualFragment(blocksHtml);
+    if (!anchor) container.appendChild(frag);
+    else if (position === 'before') container.insertBefore(frag, anchor);
+    else container.insertBefore(frag, anchor.nextSibling);
+    return container.innerHTML;
+  }
+
   onNoteRequest(): void {
     // Capture current selection rect to position the note input popup
     const rect = this.editorRef?.getSelectionRect();
@@ -830,21 +929,9 @@ export class ChapterEditComponent implements OnInit, OnDestroy {
 
   unlinkChat(sessionId: string): void {
     const chapterId = this.chapter()?.id;
-    // If this session is currently open in quick chat, clear its pin signal too
-    if (this.quickChat.activeSessionId() === sessionId) {
-      void this.quickChat.unpinFromChapter().then(() => {
-        if (chapterId) void this.loadLinkedChats(chapterId);
-      });
-    } else {
-      // Session isn't active — patch it directly and refresh the list
-      void this.authFetchService.fetch(`/api/chat-sessions/${sessionId}`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ chapterId: null }),
-      }).then(() => {
-        if (chapterId) void this.loadLinkedChats(chapterId);
-      });
-    }
+    void this.quickChat.unpinSession(sessionId).then(() => {
+      if (chapterId) void this.loadLinkedChats(chapterId);
+    });
   }
 
   toggleNotesList(): void { this.activateSidebarTab(0); }
@@ -1480,22 +1567,6 @@ export class ChapterEditComponent implements OnInit, OnDestroy {
     if (chapter?.bookId) this.router.navigate(['/books', chapter.bookId]);
     else this.router.navigate(['/series']);
   }
-}
-
-@Component({
-  selector: 'app-confirm-dialog',
-  imports: [MatButtonModule, MatDialogModule],
-  template: `
-    <h2 mat-dialog-title>{{ data.title }}</h2>
-    <mat-dialog-content>{{ data.message }}</mat-dialog-content>
-    <mat-dialog-actions align="end">
-      <button mat-button [mat-dialog-close]="false">Cancel</button>
-      <button mat-flat-button color="warn" [mat-dialog-close]="true">{{ data.confirm }}</button>
-    </mat-dialog-actions>
-  `,
-})
-export class ConfirmDialogComponent {
-  data = inject<{ title: string; message: string; confirm: string }>(MAT_DIALOG_DATA);
 }
 
 export interface ContentWarningsDialogData {

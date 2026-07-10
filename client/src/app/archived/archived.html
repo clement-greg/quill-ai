@@ -8,173 +8,224 @@
   }
 
   <!-- Archived Series -->
-  <section class="archived-section">
-    <h3 class="section-title">Series</h3>
-    @if (!loading() && archivedSeries().length === 0) {
-      <p class="empty">No archived series.</p>
-    }
-    <div class="archived-list">
-      @for (series of archivedSeries(); track series.id) {
-        <div class="archived-item">
-          <div class="item-thumb">
-            @if (series.thumnailUrl) {
-              <img [src]="proxyUrl(series.thumnailUrl)!" [alt]="series.title" />
-            } @else {
-              <mat-icon>menu_book</mat-icon>
-            }
+  @if (archivedSeries().length > 0) {
+    <section class="archived-section">
+      <div class="section-header">
+        <h3 class="section-title">Series</h3>
+        <button mat-stroked-button color="warn" (click)="deleteAllSeries()" matTooltip="Permanently delete all archived series">
+          <mat-icon>delete_sweep</mat-icon>
+          Delete All
+        </button>
+      </div>
+      <div class="archived-list">
+        @for (series of archivedSeries(); track series.id) {
+          <div class="archived-item">
+            <div class="item-thumb">
+              @if (series.thumnailUrl) {
+                <img [src]="proxyUrl(series.thumnailUrl)!" [alt]="series.title" />
+              } @else {
+                <mat-icon>menu_book</mat-icon>
+              }
+            </div>
+            <div class="item-info">
+              <span class="item-title">{{ series.title }}</span>
+              <span class="item-type">Series</span>
+            </div>
+            <div class="item-actions">
+              <button mat-stroked-button (click)="unarchiveSeries(series.id)" matTooltip="Restore this series">
+                <mat-icon>unarchive</mat-icon>
+                Restore
+              </button>
+              <button mat-stroked-button color="warn" (click)="deleteSeries(series)" matTooltip="Delete this series">
+                <mat-icon>delete</mat-icon>
+                Delete
+              </button>
+            </div>
           </div>
-          <div class="item-info">
-            <span class="item-title">{{ series.title }}</span>
-            <span class="item-type">Series</span>
-          </div>
-          <div class="item-actions">
-            <button mat-stroked-button (click)="unarchiveSeries(series.id)" matTooltip="Restore this series">
-              <mat-icon>unarchive</mat-icon>
-              Restore
-            </button>
-            <button mat-stroked-button color="warn" (click)="deleteSeries(series)" matTooltip="Delete this series">
-              <mat-icon>delete</mat-icon>
-              Delete
-            </button>
-          </div>
-        </div>
-      }
-    </div>
-  </section>
+        }
+      </div>
+    </section>
+  }
 
   <!-- Archived Books -->
-  <section class="archived-section">
-    <h3 class="section-title">Books</h3>
-    @if (!loading() && archivedBooks().length === 0) {
-      <p class="empty">No archived books.</p>
-    }
-    <div class="archived-list">
-      @for (book of archivedBooks(); track book.id) {
-        <div class="archived-item">
-          <div class="item-thumb">
-            @if (book.thumnailUrl) {
-              <img [src]="proxyUrl(book.thumnailUrl)!" [alt]="book.title" />
-            } @else {
-              <mat-icon>book</mat-icon>
-            }
+  @if (archivedBooks().length > 0) {
+    <section class="archived-section">
+      <div class="section-header">
+        <h3 class="section-title">Books</h3>
+        <button mat-stroked-button color="warn" (click)="deleteAllBooks()" matTooltip="Permanently delete all archived books">
+          <mat-icon>delete_sweep</mat-icon>
+          Delete All
+        </button>
+      </div>
+      <div class="archived-list">
+        @for (book of archivedBooks(); track book.id) {
+          <div class="archived-item">
+            <div class="item-thumb">
+              @if (book.thumnailUrl) {
+                <img [src]="proxyUrl(book.thumnailUrl)!" [alt]="book.title" />
+              } @else {
+                <mat-icon>book</mat-icon>
+              }
+            </div>
+            <div class="item-info">
+              <span class="item-title">{{ book.title }}</span>
+              <span class="item-type">Book</span>
+            </div>
+            <div class="item-actions">
+              <button mat-stroked-button (click)="unarchiveBook(book.id)" matTooltip="Restore this book">
+                <mat-icon>unarchive</mat-icon>
+                Restore
+              </button>
+              <button mat-stroked-button color="warn" (click)="deleteBook(book)" matTooltip="Delete this book">
+                <mat-icon>delete</mat-icon>
+                Delete
+              </button>
+            </div>
           </div>
-          <div class="item-info">
-            <span class="item-title">{{ book.title }}</span>
-            <span class="item-type">Book</span>
-          </div>
-          <div class="item-actions">
-            <button mat-stroked-button (click)="unarchiveBook(book.id)" matTooltip="Restore this book">
-              <mat-icon>unarchive</mat-icon>
-              Restore
-            </button>
-            <button mat-stroked-button color="warn" (click)="deleteBook(book)" matTooltip="Delete this book">
-              <mat-icon>delete</mat-icon>
-              Delete
-            </button>
-          </div>
-        </div>
-      }
-    </div>
-  </section>
+        }
+      </div>
+    </section>
+  }
 
   <!-- Archived Chapters -->
-  <section class="archived-section">
-    <h3 class="section-title">Chapters</h3>
-    @if (!loading() && archivedChapters().length === 0) {
-      <p class="empty">No archived chapters.</p>
-    }
-    <div class="archived-list">
-      @for (chapter of archivedChapters(); track chapter.id) {
-        <div class="archived-item">
-          <div class="item-thumb">
-            @if (chapter.imageThumbnailUrl || chapter.imageUrl) {
-              <img [src]="proxyUrl(chapter.imageThumbnailUrl || chapter.imageUrl)!" [alt]="chapter.title" />
-            } @else {
-              <mat-icon>article</mat-icon>
-            }
+  @if (archivedChapters().length > 0) {
+    <section class="archived-section">
+      <div class="section-header">
+        <h3 class="section-title">Chapters</h3>
+        <button mat-stroked-button color="warn" (click)="deleteAllChapters()" matTooltip="Permanently delete all archived chapters">
+          <mat-icon>delete_sweep</mat-icon>
+          Delete All
+        </button>
+      </div>
+      <div class="archived-list">
+        @for (chapter of archivedChapters(); track chapter.id) {
+          <div class="archived-item">
+            <div class="item-thumb">
+              @if (chapter.imageThumbnailUrl || chapter.imageUrl) {
+                <img [src]="proxyUrl(chapter.imageThumbnailUrl || chapter.imageUrl)!" [alt]="chapter.title" />
+              } @else {
+                <mat-icon>article</mat-icon>
+              }
+            </div>
+            <div class="item-info">
+              <span class="item-title">{{ chapter.title }}</span>
+              <span class="item-type">Chapter</span>
+            </div>
+            <div class="item-actions">
+              <button mat-stroked-button (click)="unarchiveChapter(chapter.id)" matTooltip="Restore this chapter">
+                <mat-icon>unarchive</mat-icon>
+                Restore
+              </button>
+              <button mat-stroked-button color="warn" (click)="deleteChapter(chapter)" matTooltip="Delete this chapter">
+                <mat-icon>delete</mat-icon>
+                Delete
+              </button>
+            </div>
           </div>
-          <div class="item-info">
-            <span class="item-title">{{ chapter.title }}</span>
-            <span class="item-type">Chapter</span>
-          </div>
-          <div class="item-actions">
-            <button mat-stroked-button (click)="unarchiveChapter(chapter.id)" matTooltip="Restore this chapter">
-              <mat-icon>unarchive</mat-icon>
-              Restore
-            </button>
-            <button mat-stroked-button color="warn" (click)="deleteChapter(chapter)" matTooltip="Delete this chapter">
-              <mat-icon>delete</mat-icon>
-              Delete
-            </button>
-          </div>
-        </div>
-      }
-    </div>
-  </section>
+        }
+      </div>
+    </section>
+  }
 
   <!-- Archived Entities -->
-  <section class="archived-section">
-    <h3 class="section-title">Entities</h3>
-    @if (!loading() && archivedEntities().length === 0) {
-      <p class="empty">No archived entities.</p>
-    }
-    <div class="archived-list">
-      @for (entity of archivedEntities(); track entity.id) {
-        <div class="archived-item">
-          <div class="item-thumb">
-            @if (entity.thumbnailUrl) {
-              <img [src]="proxyUrl(entity.thumbnailUrl)!" [alt]="entity.name" />
-            } @else {
-              <mat-icon>person</mat-icon>
-            }
+  @if (archivedEntities().length > 0) {
+    <section class="archived-section">
+      <div class="section-header">
+        <h3 class="section-title">Entities</h3>
+        <button mat-stroked-button color="warn" (click)="deleteAllEntities()" matTooltip="Permanently delete all archived entities">
+          <mat-icon>delete_sweep</mat-icon>
+          Delete All
+        </button>
+      </div>
+      <div class="archived-list">
+        @for (entity of archivedEntities(); track entity.id) {
+          <div class="archived-item">
+            <div class="item-thumb">
+              @if (entity.thumbnailUrl) {
+                <img [src]="proxyUrl(entity.thumbnailUrl)!" [alt]="entity.name" />
+              } @else {
+                <mat-icon>person</mat-icon>
+              }
+            </div>
+            <div class="item-info">
+              <span class="item-title">{{ entity.name || '(unnamed)' }}</span>
+              <span class="item-type">{{ entity.type }}</span>
+            </div>
+            <div class="item-actions">
+              <button mat-stroked-button (click)="unarchiveEntity(entity.id)" matTooltip="Restore this entity">
+                <mat-icon>unarchive</mat-icon>
+                Restore
+              </button>
+              <button mat-stroked-button color="warn" (click)="deleteEntity(entity)" matTooltip="Delete this entity">
+                <mat-icon>delete</mat-icon>
+                Delete
+              </button>
+            </div>
           </div>
-          <div class="item-info">
-            <span class="item-title">{{ entity.name || '(unnamed)' }}</span>
-            <span class="item-type">{{ entity.type }}</span>
-          </div>
-          <div class="item-actions">
-            <button mat-stroked-button (click)="unarchiveEntity(entity.id)" matTooltip="Restore this entity">
-              <mat-icon>unarchive</mat-icon>
-              Restore
-            </button>
-            <button mat-stroked-button color="warn" (click)="deleteEntity(entity)" matTooltip="Delete this entity">
-              <mat-icon>delete</mat-icon>
-              Delete
-            </button>
-          </div>
-        </div>
-      }
-    </div>
-  </section>
+        }
+      </div>
+    </section>
+  }
 
   <!-- Archived Chat Sessions -->
-  <section class="archived-section">
-    <h3 class="section-title">AI Chat Sessions</h3>
-    @if (!loading() && archivedChatSessions().length === 0) {
-      <p class="empty">No archived chat sessions.</p>
-    }
-    <div class="archived-list">
-      @for (session of archivedChatSessions(); track session.id) {
-        <div class="archived-item">
-          <div class="item-thumb">
-            <mat-icon>smart_toy</mat-icon>
+  @if (archivedChatSessions().length > 0) {
+    <section class="archived-section">
+      <div class="section-header">
+        <h3 class="section-title">AI Chat Sessions</h3>
+        <button mat-stroked-button color="warn" (click)="deleteAllChatSessions()" matTooltip="Permanently delete all archived chat sessions">
+          <mat-icon>delete_sweep</mat-icon>
+          Delete All
+        </button>
+      </div>
+      <div class="archived-list">
+        @for (session of archivedChatSessions(); track session.id) {
+          <div class="archived-item">
+            <div class="item-thumb">
+              <lottie-player
+                class="item-thumb-lottie"
+                src="https://lottie.host/ae16df6a-44fb-4214-9b60-3e0320abdd00/k2kDltgCdz.json"
+                background="transparent"
+                speed="1"
+                loop
+                autoplay
+                role="img"
+                aria-label="Chat session"
+              ></lottie-player>
+            </div>
+            <div class="item-info">
+              <span class="item-title">{{ session.name }}</span>
+              <span class="item-type">Chat session</span>
+            </div>
+            <div class="item-actions">
+              <button mat-stroked-button (click)="unarchiveChatSession(session.id)" matTooltip="Restore this session">
+                <mat-icon>unarchive</mat-icon>
+                Restore
+              </button>
+              <button mat-stroked-button color="warn" (click)="deleteChatSession(session)" matTooltip="Permanently delete">
+                <mat-icon>delete</mat-icon>
+                Delete
+              </button>
+            </div>
           </div>
-          <div class="item-info">
-            <span class="item-title">{{ session.name }}</span>
-            <span class="item-type">Chat session</span>
-          </div>
-          <div class="item-actions">
-            <button mat-stroked-button (click)="unarchiveChatSession(session.id)" matTooltip="Restore this session">
-              <mat-icon>unarchive</mat-icon>
-              Restore
-            </button>
-            <button mat-stroked-button color="warn" (click)="deleteChatSession(session)" matTooltip="Permanently delete">
-              <mat-icon>delete</mat-icon>
-              Delete
-            </button>
-          </div>
-        </div>
-      }
+        }
+      </div>
+    </section>
+  }
+
+  @if (!loading() && isEmpty()) {
+    <div class="empty-state">
+      <lottie-player
+        class="empty-state-lottie"
+        src="https://lottie.host/e88247ed-3b2d-4de2-8c38-278b9ae71b1d/ctuZhToKfi.json"
+        background="transparent"
+        speed="1"
+        loop
+        intermission="5000"
+        autoplay
+        role="img"
+        aria-label="Empty archive illustration"
+      ></lottie-player>
+      <h3 class="empty-state-title">Nothing to see here, move it along</h3>
     </div>
-  </section>
+  }
 </div>

@@ -43,8 +43,10 @@ export class AiAssistantService {
     this.sessions().filter(s => s.pinned).sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
   );
 
+  /** Sessions shown in the resource manager: chats pinned to a chapter live on
+   * that chapter's page instead, so they're excluded here. */
   readonly recentSessions = computed(() =>
-    this.sessions().filter(s => !s.pinned).sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
+    this.sessions().filter(s => !s.pinned && !s.chapterId).sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
   );
 
   /** Auto-selects the series from context (e.g. current page) if none is selected yet. */

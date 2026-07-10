@@ -67,6 +67,8 @@ export class RichTextEditorComponent implements OnInit, AfterViewInit, OnDestroy
   ctxMenuExtraItems = input<{ id: string; label: string; icon: string }[]>([]);
   /** Show an "Add Note" button in the formatting toolbar. */
   showNoteButton = input<boolean>(false);
+  /** Show a "Move to chapter" button in the formatting toolbar. */
+  showMoveButton = input<boolean>(false);
 
   // ── Outputs ─────────────────────────────────────────────────────────────
   /** Debounced (800 ms) clean HTML whenever content changes. */
@@ -77,6 +79,9 @@ export class RichTextEditorComponent implements OnInit, AfterViewInit, OnDestroy
   pendingSuggestionsChange = output<SuggestedEntityCard[]>();
   /** User clicked "Add Note" in the formatting toolbar. */
   noteRequest = output<void>();
+  /** User clicked "Move to chapter" in the formatting toolbar. The selection
+   *  range is held internally until the host calls extractMoveSelection(). */
+  moveTextRequest = output<{ text: string }>();
   /** An extra ctx-menu item was selected; includes captured text context. */
   ctxMenuExtraItemSelected = output<{ id: string; captureText: string; narratorCaptureText: string; surroundingText: string }>();
   /** User invoked AI assist (long-press or ctx-menu "AI Insert/Reword"). The host
@@ -539,6 +544,75 @@ export class RichTextEditorComponent implements OnInit, AfterViewInit, OnDestroy
     if (this.editorRef) this.editorContent = this.editorRef.nativeElement.innerHTML;
     this.scheduleEmit();
     return selectedText;
+  }
+
+  // ── Move text to another chapter ─────────────────────────────────────────
+
+  private moveSelectionRange: Range | null = null;
+
+  /** Toolbar "Move to chapter" click: snapshot the selection range (a dialog is
+   *  about to steal focus) and hand the host the selected plain text. */
+  requestMoveText(): void {
+    const editorEl = this.editorRef?.nativeElement;
+    const sel = window.getSelection();
+    if (!editorEl || !sel || sel.isCollapsed || sel.rangeCount === 0) return;
+    const range = sel.getRangeAt(0);
+    if (!editorEl.contains(range.commonAncestorContainer)) return;
+    this.moveSelectionRange = range.cloneRange();
+    this.formattingToolbarVisible.set(false);
+    this.moveTextRequest.emit({ text: range.toString() });
+  }
+
+  /** Removes the range captured by requestMoveText() from the editor and
+   *  returns it as a list of block-level HTML strings ready to insert into
+   *  another chapter. Note/quote spans are unwrapped (their anchors belong to
+   *  this chapter). Returns null if the selection is gone or empty. */
+  extractMoveSelection(): string[] | null {
+    const editorEl = this.editorRef?.nativeElement;
+    const range = this.moveSelectionRange;
+    this.moveSelectionRange = null;
+    if (!editorEl || !range || range.collapsed || !editorEl.contains(range.commonAncestorContainer)) return null;
+
+    const container = document.createElement('div');
+    container.appendChild(range.extractContents());
+    container.querySelectorAll('span.note-indicator, span.entity-quote').forEach(span => {
+      const parent = span.parentNode!;
+      while (span.firstChild) parent.insertBefore(span.firstChild, span);
+      parent.removeChild(span);
+    });
+
+    const BLOCK_TAGS = new Set(['P', 'DIV', 'UL', 'OL', 'H1', 'H2', 'H3', 'H4', 'H5', 'H6', 'BLOCKQUOTE', 'PRE']);
+    const hasContent = (el: Element): boolean => !!el.textContent?.trim() || !!el.querySelector('img');
+    const blocks: string[] = [];
+    let inline: Node[] = [];
+    const flushInline = (): void => {
+      if (inline.length === 0) return;
+      const p = document.createElement('p');
+      inline.forEach(n => p.appendChild(n));
+      if (hasContent(p)) blocks.push(p.outerHTML);
+      inline = [];
+    };
+    Array.from(container.childNodes).forEach(node => {
+      if (node.nodeType === Node.ELEMENT_NODE && BLOCK_TAGS.has((node as Element).tagName)) {
+        flushInline();
+        if (hasContent(node as Element)) blocks.push((node as Element).outerHTML);
+      } else {
+        inline.push(node);
+      }
+    });
+    flushInline();
+
+    // Clean up hollow shells extractContents() left at the seam. Blocks with a
+    // <br> or image are intentional spacing/content and are kept.
+    Array.from(editorEl.children).forEach(el => {
+      if (!el.textContent?.trim() && !el.querySelector('img, br')) el.remove();
+    });
+    editorEl.normalize();
+    this.editorContent = editorEl.innerHTML;
+    this.wordCount.set(this.countWords(editorEl.textContent ?? ''));
+    this.scheduleEmit();
+    setTimeout(() => this.scheduleMinimap());
+    return blocks.length > 0 ? blocks : null;
   }
 
   removeNoteSpan(noteId: string): void {

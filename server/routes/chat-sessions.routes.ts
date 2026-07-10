@@ -1875,7 +1875,7 @@ router.get('/', async (req: Request, res: Response) => {
     }
     const { resources } = await container.items
       .query({
-        query: `SELECT c.id, c.name, c.pinned, c.folderId, c.seriesId, c.updatedAt FROM c
+        query: `SELECT c.id, c.name, c.pinned, c.folderId, c.seriesId, c.chapterId, c.updatedAt FROM c
                 WHERE c.owner = @owner
                   AND (NOT IS_DEFINED(c.deleted) OR c.deleted = false)
                   AND (NOT IS_DEFINED(c.archived) OR c.archived = false)${seriesFilter}

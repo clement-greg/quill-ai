@@ -385,6 +385,11 @@ export class QuickChatService {
   async unpinFromChapter(): Promise<void> {
     const sessionId = this.activeSessionId();
     if (!sessionId) return;
+    await this.unpinSession(sessionId);
+  }
+
+  /** Removes the chapter association from any session (active or not). */
+  async unpinSession(sessionId: string): Promise<void> {
     try {
       const res = await this.authFetch(`/api/chat-sessions/${sessionId}`, {
         method: 'PUT',
@@ -392,7 +397,7 @@ export class QuickChatService {
         body: JSON.stringify({ chapterId: null }),
       });
       if (res.ok) {
-        this.pinnedChapterId.set(null);
+        if (this.activeSessionId() === sessionId) this.pinnedChapterId.set(null);
         void this.aiAssistant.loadSessions();
       }
     } catch {
