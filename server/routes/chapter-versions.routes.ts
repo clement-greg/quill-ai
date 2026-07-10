@@ -1,8 +1,8 @@
 import { Router, Request, Response } from 'express';
 import { v4 as uuidv4 } from 'uuid';
-import { getContainer } from '../cosmos';
+import { getContainer } from '../services/cosmos';
 import { ChapterVersion } from '../../shared/models/chapter.model';
-import { withOwnerFilter } from '../owner-guard';
+import { withOwnerFilter } from '../middleware/owner-guard';
 
 const router = Router();
 const container = getContainer('chapter-versions');

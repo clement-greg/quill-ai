@@ -2,10 +2,10 @@ import { Router, Request, Response } from 'express';
 import { AzureOpenAI } from 'openai';
 import { randomUUID } from 'crypto';
 import config from '../config';
-import { getContainer } from '../cosmos';
-import { withOwnerFilter } from '../owner-guard';
-import { searchChapterChunks, reindexChapterChunks } from '../chapter-chunks';
-import { searchTimelineEvents, TimelineEventSearchResult } from '../timeline-event-chunks';
+import { getContainer } from '../services/cosmos';
+import { withOwnerFilter } from '../middleware/owner-guard';
+import { searchChapterChunks, reindexChapterChunks } from '../services/chapter-chunks';
+import { searchTimelineEvents, TimelineEventSearchResult } from '../services/timeline-event-chunks';
 import { Chapter, ChapterNote, OutlineItem } from '../../shared/models/chapter.model';
 import { ChapterCitation } from '../../shared/models/chat-session.model';
 import { BookNote } from '../../shared/models/book-note.model';
@@ -14,9 +14,9 @@ import { Book } from '../../shared/models/book.model';
 import { Entity } from '../../shared/models/entity.model';
 import { TimelineEvent } from '../../shared/models/timeline-event.model';
 import { EntityRelationship } from '../../shared/models/entity-relationship.model';
-import { generateImage } from '../image-generation';
-import { buildChapterContextPrompt } from '../chapter-ai-context';
-import { buildChapterDraftingContext, generateChapterBeatSheet } from '../chapter-drafting-context';
+import { generateImage } from '../services/image-generation';
+import { buildChapterContextPrompt } from '../services/chapter-ai-context';
+import { buildChapterDraftingContext, generateChapterBeatSheet } from '../services/chapter-drafting-context';
 
 /** True when the author is asking to draft a whole chapter (vs. a small inline
  * edit/insert), e.g. "write the chapter based on the outline and notes" or

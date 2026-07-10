@@ -1,9 +1,9 @@
 import express, { Request, Response } from 'express';
 import path from 'path';
 import { HelloResponse } from '../shared/models';
-import { initDatabase } from './cosmos';
+import { initDatabase } from './services/cosmos';
 import config from './config';
-import { requireAuth } from './auth.middleware';
+import { requireAuth } from './middleware/auth.middleware';
 import authRoutes from './routes/auth.routes';
 import seriesRoutes from './routes/series.routes';
 import bookRoutes from './routes/book.routes';

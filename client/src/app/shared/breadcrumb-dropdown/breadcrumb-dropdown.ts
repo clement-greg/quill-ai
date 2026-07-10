@@ -2,7 +2,7 @@ import { Component, input } from '@angular/core';
 import { RouterLink } from '@angular/router';
 import { MatMenuModule } from '@angular/material/menu';
 import { MatIconModule } from '@angular/material/icon';
-import { BreadcrumbItem } from '../../services/header.service';
+import { BreadcrumbItem } from '@app/core/services/header.service';
 
 @Component({
   selector: 'app-breadcrumb-dropdown',

@@ -1,7 +1,7 @@
 import { Router, Request, Response } from 'express';
 import { randomUUID } from 'crypto';
 import { AzureOpenAI } from 'openai';
-import { getContainer } from '../cosmos';
+import { getContainer } from '../services/cosmos';
 import {
   TimelineEvent,
   TimelineEventFields,
@@ -13,12 +13,12 @@ import {
 } from '../../shared/models/timeline-event.model';
 import { Entity } from '../../shared/models/entity.model';
 import { Chapter } from '../../shared/models/chapter.model';
-import { withOwnerFilter, readOwnedItem } from '../owner-guard';
-import { resolveEntityByName } from '../entity-name-match';
+import { withOwnerFilter, readOwnedItem } from '../middleware/owner-guard';
+import { resolveEntityByName } from '../services/entity-name-match';
 import {
   indexTimelineEvent,
   deleteTimelineEventChunk,
-} from '../timeline-event-chunks';
+} from '../services/timeline-event-chunks';
 import config from '../config';
 
 const router = Router();

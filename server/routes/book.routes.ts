@@ -1,7 +1,7 @@
 import { Router, Request, Response } from 'express';
-import { getContainer } from '../cosmos';
+import { getContainer } from '../services/cosmos';
 import { Book } from '../../shared/models/book.model';
-import { withOwnerFilter, readOwnedItem, readAccessibleItem } from '../owner-guard';
+import { withOwnerFilter, readOwnedItem, readAccessibleItem } from '../middleware/owner-guard';
 import { Series } from '../../shared/models/series.model';
 
 const router = Router();

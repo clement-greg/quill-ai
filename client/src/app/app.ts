@@ -5,17 +5,17 @@ import { filter, map, startWith } from 'rxjs';
 import { MatToolbarModule } from '@angular/material/toolbar';
 import { MatButtonModule } from '@angular/material/button';
 import { MatIconModule } from '@angular/material/icon';
-import { AuthService } from './auth/auth.service';
-import { HeaderService } from './services/header.service';
-import { UpdateCheckService } from './services/update-check.service';
-import { AiAssistantComponent } from './ai-assistant/ai-assistant';
-import { AiAssistantService } from './services/ai-assistant.service';
-import { UserSettingsService } from './services/user-settings.service';
-import { ExplorerService } from './services/explorer.service';
-import { BreadcrumbDropdownComponent } from './shared/breadcrumb-dropdown/breadcrumb-dropdown';
-import { AppExplorerComponent } from './shared/app-explorer/app-explorer';
-import { QuickChatComponent } from './quick-chat/quick-chat';
-import { QuickChatService } from './services/quick-chat.service';
+import { AuthService } from '@app/core/auth/auth.service';
+import { HeaderService } from '@app/core/services/header.service';
+import { UpdateCheckService } from '@app/core/services/update-check.service';
+import { AiAssistantComponent } from '@app/features/ai/ai-assistant/ai-assistant';
+import { AiAssistantService } from '@app/features/ai/ai-assistant.service';
+import { UserSettingsService } from '@app/core/services/user-settings.service';
+import { ExplorerService } from '@app/core/services/explorer.service';
+import { BreadcrumbDropdownComponent } from '@app/shared/breadcrumb-dropdown/breadcrumb-dropdown';
+import { AppExplorerComponent } from '@app/shared/app-explorer/app-explorer';
+import { QuickChatComponent } from '@app/features/ai/quick-chat/quick-chat';
+import { QuickChatService } from '@app/features/ai/quick-chat.service';
 
 @Component({
   selector: 'app-root',

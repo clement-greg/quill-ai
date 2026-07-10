@@ -1,7 +1,7 @@
 import { Router, Request, Response } from 'express';
 import { randomUUID } from 'crypto';
 import { AzureOpenAI } from 'openai';
-import { getContainer } from '../cosmos';
+import { getContainer } from '../services/cosmos';
 import config from '../config';
 import { FolderNote } from '../../shared/models/folder-note.model';
 

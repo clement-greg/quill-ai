@@ -1,15 +1,15 @@
 import { Router, Request, Response } from 'express';
 import { AzureOpenAI } from 'openai';
 import config from '../config';
-import { getContainer } from '../cosmos';
-import { deleteBlob } from '../storage';
+import { getContainer } from '../services/cosmos';
+import { deleteBlob } from '../services/storage';
 import { Entity } from '../../shared/models/entity.model';
 import { Chapter } from '../../shared/models/chapter.model';
 import { Book } from '../../shared/models/book.model';
 import { TimelineEvent } from '../../shared/models/timeline-event.model';
-import { withOwnerFilter, readOwnedItem } from '../owner-guard';
-import { searchChapterChunks } from '../chapter-chunks';
-import { deleteTimelineEventChunksForEntity } from '../timeline-event-chunks';
+import { withOwnerFilter, readOwnedItem } from '../middleware/owner-guard';
+import { searchChapterChunks } from '../services/chapter-chunks';
+import { deleteTimelineEventChunksForEntity } from '../services/timeline-event-chunks';
 
 const aiClient = new AzureOpenAI({
   endpoint: config.foundry.endpoint,

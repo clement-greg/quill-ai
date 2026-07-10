@@ -2,8 +2,8 @@ import { Router, Request, Response } from 'express';
 import multer from 'multer';
 import { randomUUID } from 'crypto';
 import path from 'path';
-import { getContainer } from '../cosmos';
-import { uploadFileToBlob, downloadBlob, deleteBlob } from '../storage';
+import { getContainer } from '../services/cosmos';
+import { uploadFileToBlob, downloadBlob, deleteBlob } from '../services/storage';
 
 const router = Router();
 

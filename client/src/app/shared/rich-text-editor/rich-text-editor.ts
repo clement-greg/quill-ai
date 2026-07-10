@@ -10,9 +10,9 @@ import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
 import { MatTooltipModule } from '@angular/material/tooltip';
 import { Entity, EntityReference } from '@shared/models/entity.model';
 import { ChapterEditProposal, EntityLinkGroup } from '@shared/models/chat-session.model';
-import { EntityService } from '../../services/entity.service';
-import { GrammarCheckService, GrammarError, SuggestedEntity } from '../../services/grammar-check.service';
-import { UserSettingsService } from '../../services/user-settings.service';
+import { EntityService } from '@app/features/entities/entity.service';
+import { GrammarCheckService, GrammarError, SuggestedEntity } from './grammar-check.service';
+import { UserSettingsService } from '@app/core/services/user-settings.service';
 
 /** Minimal shape the editor needs to decorate/act on a Quill Editor suggestion.
  *  Structurally compatible with the review service's `ReviewSuggestion`. */

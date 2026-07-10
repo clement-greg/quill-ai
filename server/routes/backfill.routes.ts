@@ -1,6 +1,6 @@
 import { Router, Request, Response } from 'express';
-import { getContainer } from '../cosmos';
-import { listBlobs, deleteBlob } from '../storage';
+import { getContainer } from '../services/cosmos';
+import { listBlobs, deleteBlob } from '../services/storage';
 import { Entity } from '../../shared/models/entity.model';
 
 const router = Router();

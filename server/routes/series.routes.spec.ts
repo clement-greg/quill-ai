@@ -1,6 +1,6 @@
 import request from 'supertest';
 
-jest.mock('../cosmos', () => {
+jest.mock('../services/cosmos', () => {
   const { createFakeCosmos } = jest.requireActual('../testing/fake-cosmos');
   const fake = createFakeCosmos();
   return { getContainer: fake.getContainer, __fake: fake };
@@ -13,7 +13,7 @@ import seriesRoutes from './series.routes';
 import { makeTestApp, USER_A, USER_B, COLLABORATOR } from '../testing/test-app';
 import { FakeCosmos } from '../testing/fake-cosmos';
 
-const fake = jest.requireMock('../cosmos').__fake as FakeCosmos;
+const fake = jest.requireMock('../services/cosmos').__fake as FakeCosmos;
 const app = makeTestApp('/api/series', seriesRoutes);
 
 function seed(): void {

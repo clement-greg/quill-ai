@@ -11,11 +11,11 @@ import {
   AlignmentType,
 } from 'docx';
 import PDFDocument from 'pdfkit';
-import { getContainer } from '../cosmos';
-import { downloadBlob } from '../storage';
+import { getContainer } from '../services/cosmos';
+import { downloadBlob } from '../services/storage';
 import { Book } from '../../shared/models/book.model';
 import { Chapter } from '../../shared/models/chapter.model';
-import { withOwnerFilter, readOwnedItem } from '../owner-guard';
+import { withOwnerFilter, readOwnedItem } from '../middleware/owner-guard';
 
 const router = Router();
 const booksContainer = getContainer('books');

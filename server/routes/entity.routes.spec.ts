@@ -1,6 +1,6 @@
 import request from 'supertest';
 
-jest.mock('../cosmos', () => {
+jest.mock('../services/cosmos', () => {
   const { createFakeCosmos } = jest.requireActual('../testing/fake-cosmos');
   const fake = createFakeCosmos();
   return { getContainer: fake.getContainer, __fake: fake };
@@ -8,15 +8,15 @@ jest.mock('../cosmos', () => {
 jest.mock('openai', () => ({
   AzureOpenAI: jest.fn(() => ({ chat: { completions: { create: jest.fn() } } })),
 }));
-jest.mock('../storage', () => ({ deleteBlob: jest.fn() }));
-jest.mock('../chapter-chunks', () => ({ searchChapterChunks: jest.fn() }));
-jest.mock('../timeline-event-chunks', () => ({ deleteTimelineEventChunksForEntity: jest.fn() }));
+jest.mock('../services/storage', () => ({ deleteBlob: jest.fn() }));
+jest.mock('../services/chapter-chunks', () => ({ searchChapterChunks: jest.fn() }));
+jest.mock('../services/timeline-event-chunks', () => ({ deleteTimelineEventChunksForEntity: jest.fn() }));
 
 import entityRoutes from './entity.routes';
 import { makeTestApp, USER_A, USER_B } from '../testing/test-app';
 import { FakeCosmos } from '../testing/fake-cosmos';
 
-const fake = jest.requireMock('../cosmos').__fake as FakeCosmos;
+const fake = jest.requireMock('../services/cosmos').__fake as FakeCosmos;
 const app = makeTestApp('/api/entities', entityRoutes);
 
 function seed(): void {

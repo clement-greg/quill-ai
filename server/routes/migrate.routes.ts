@@ -1,6 +1,6 @@
 import { Router, Request, Response } from 'express';
-import { listBlobs, downloadBlobRaw, uploadFileToBlobRaw, evictBlobCache } from '../storage';
-import { encrypt } from '../crypto';
+import { listBlobs, downloadBlobRaw, uploadFileToBlobRaw, evictBlobCache } from '../services/storage';
+import { encrypt } from '../services/crypto';
 
 const router = Router();
 

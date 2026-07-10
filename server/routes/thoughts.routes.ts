@@ -1,9 +1,9 @@
 import { Router, Request, Response } from 'express';
 import { randomUUID } from 'crypto';
-import { getContainer } from '../cosmos';
-import { generateEmbedding } from '../embeddings';
+import { getContainer } from '../services/cosmos';
+import { generateEmbedding } from '../services/embeddings';
 import { Thought } from '../../shared/models/thought.model';
-import { readOwnedItem } from '../owner-guard';
+import { readOwnedItem } from '../middleware/owner-guard';
 
 const router = Router();
 const container = getContainer('thought-items');

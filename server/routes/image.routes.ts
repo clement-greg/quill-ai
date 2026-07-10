@@ -1,6 +1,6 @@
 import { Router, Request, Response } from 'express';
-import { downloadBlob } from '../storage';
-import { generateImage } from '../image-generation';
+import { downloadBlob } from '../services/storage';
+import { generateImage } from '../services/image-generation';
 
 const router = Router();
 

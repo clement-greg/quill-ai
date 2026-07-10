@@ -1,9 +1,9 @@
 import { Router, Request, Response } from 'express';
 import { AzureOpenAI } from 'openai';
 import config from '../config';
-import { getContainer } from '../cosmos';
+import { getContainer } from '../services/cosmos';
 import { Entity } from '../../shared/models/entity.model';
-import { buildChapterContextPrompt } from '../chapter-ai-context';
+import { buildChapterContextPrompt } from '../services/chapter-ai-context';
 
 const router = Router();
 

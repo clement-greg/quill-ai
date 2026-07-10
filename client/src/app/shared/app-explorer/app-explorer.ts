@@ -4,11 +4,11 @@ import { MatButtonModule } from '@angular/material/button';
 import { MatIconModule } from '@angular/material/icon';
 import { MatDividerModule } from '@angular/material/divider';
 import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
-import { ExplorerService } from '../../services/explorer.service';
-import { AiAssistantService } from '../../services/ai-assistant.service';
-import { AuthService } from '../../auth/auth.service';
-import { HeaderService } from '../../services/header.service';
-import { SeriesContextService } from '../../services/series-context.service';
+import { ExplorerService } from '@app/core/services/explorer.service';
+import { AiAssistantService } from '@app/features/ai/ai-assistant.service';
+import { AuthService } from '@app/core/auth/auth.service';
+import { HeaderService } from '@app/core/services/header.service';
+import { SeriesContextService } from '@app/core/services/series-context.service';
 
 export type ViewMode = 'list' | 'tiles' | 'large';
 

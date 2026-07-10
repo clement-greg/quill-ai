@@ -3,7 +3,7 @@ import multer from 'multer';
 import path from 'path';
 import sharp from 'sharp';
 import { v4 as uuidv4 } from 'uuid';
-import { uploadFileToBlob } from '../storage';
+import { uploadFileToBlob } from '../services/storage';
 
 const router = Router();
 const DEFAULT_THUMBNAIL_SIZE = 400; // max width or height in px for palette stamps

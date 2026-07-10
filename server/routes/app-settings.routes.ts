@@ -1,6 +1,6 @@
 import { Router, Request, Response } from 'express';
-import { getContainer } from '../cosmos';
-import { refreshRedactionTerms } from '../content-sanitize';
+import { getContainer } from '../services/cosmos';
+import { refreshRedactionTerms } from '../services/content-sanitize';
 
 const router = Router();
 

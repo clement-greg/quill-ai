@@ -2,7 +2,7 @@ import { Router, Request, Response } from 'express';
 import { AzureOpenAI } from 'openai';
 import { randomUUID } from 'crypto';
 import config from '../config';
-import { buildChapterContext } from '../chapter-drafting-context';
+import { buildChapterContext } from '../services/chapter-drafting-context';
 import {
   EditorReviewBlock,
   EditorSuggestion,

@@ -1,7 +1,7 @@
 import { Router, Request, Response } from 'express';
-import { getContainer } from '../cosmos';
+import { getContainer } from '../services/cosmos';
 import { SeriesMap } from '../../shared/models/map.model';
-import { withOwnerFilter, readOwnedItem } from '../owner-guard';
+import { withOwnerFilter, readOwnedItem } from '../middleware/owner-guard';
 
 const router = Router();
 const container = getContainer('maps');

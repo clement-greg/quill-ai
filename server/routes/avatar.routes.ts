@@ -1,6 +1,6 @@
 import { Router, Request, Response } from 'express';
 import crypto from 'crypto';
-import { getContainer } from '../cosmos';
+import { getContainer } from '../services/cosmos';
 
 const router = Router();
 

@@ -1,6 +1,6 @@
 import { Router, Request, Response } from 'express';
-import { getContainer } from '../cosmos';
-import { withOwnerFilter } from '../owner-guard';
+import { getContainer } from '../services/cosmos';
+import { withOwnerFilter } from '../middleware/owner-guard';
 
 const router = Router();
 

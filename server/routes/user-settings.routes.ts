@@ -1,5 +1,5 @@
 import { Router, Request, Response } from 'express';
-import { getContainer } from '../cosmos';
+import { getContainer } from '../services/cosmos';
 
 const router = Router();
 

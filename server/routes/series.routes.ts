@@ -1,9 +1,9 @@
 import { Router, Request, Response } from 'express';
 import { AzureOpenAI } from 'openai';
 import config from '../config';
-import { getContainer } from '../cosmos';
+import { getContainer } from '../services/cosmos';
 import { Series } from '../../shared/models/series.model';
-import { readOwnedItem, readAccessibleItem } from '../owner-guard';
+import { readOwnedItem, readAccessibleItem } from '../middleware/owner-guard';
 
 const aiClient = new AzureOpenAI({
   endpoint: config.foundry.endpoint,

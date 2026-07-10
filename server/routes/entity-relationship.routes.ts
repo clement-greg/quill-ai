@@ -1,7 +1,7 @@
 import { Router, Request, Response } from 'express';
 import { randomUUID } from 'crypto';
 import { AzureOpenAI } from 'openai';
-import { getContainer } from '../cosmos';
+import { getContainer } from '../services/cosmos';
 import {
   EntityRelationship,
   DiagramLayout,
@@ -13,7 +13,7 @@ import {
 } from '../../shared/models/entity-relationship.model';
 import { Entity } from '../../shared/models/entity.model';
 import { Chapter } from '../../shared/models/chapter.model';
-import { withOwnerFilter, readOwnedItem } from '../owner-guard';
+import { withOwnerFilter, readOwnedItem } from '../middleware/owner-guard';
 import config from '../config';
 
 const router = Router();

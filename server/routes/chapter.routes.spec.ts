@@ -1,15 +1,15 @@
 import request from 'supertest';
 
-jest.mock('../cosmos', () => {
+jest.mock('../services/cosmos', () => {
   const { createFakeCosmos } = jest.requireActual('../testing/fake-cosmos');
   const fake = createFakeCosmos();
   return { getContainer: fake.getContainer, __fake: fake };
 });
-jest.mock('../chapter-chunks', () => ({
+jest.mock('../services/chapter-chunks', () => ({
   reindexChapterChunks: jest.fn(),
   deleteChapterChunks: jest.fn(),
 }));
-jest.mock('../chapter-summary', () => ({
+jest.mock('../services/chapter-summary', () => ({
   refreshChapterSummary: jest.fn(),
 }));
 
@@ -17,7 +17,7 @@ import chapterRoutes from './chapter.routes';
 import { makeTestApp, USER_A, USER_B, COLLABORATOR } from '../testing/test-app';
 import { FakeCosmos } from '../testing/fake-cosmos';
 
-const fake = jest.requireMock('../cosmos').__fake as FakeCosmos;
+const fake = jest.requireMock('../services/cosmos').__fake as FakeCosmos;
 const app = makeTestApp('/api/chapters', chapterRoutes);
 
 function seed(): void {

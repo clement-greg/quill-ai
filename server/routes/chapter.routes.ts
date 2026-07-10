@@ -1,12 +1,12 @@
 import { Router, Request, Response } from 'express';
-import { getContainer } from '../cosmos';
-import { reindexChapterChunks, deleteChapterChunks } from '../chapter-chunks';
-import { refreshChapterSummary } from '../chapter-summary';
+import { getContainer } from '../services/cosmos';
+import { reindexChapterChunks, deleteChapterChunks } from '../services/chapter-chunks';
+import { refreshChapterSummary } from '../services/chapter-summary';
 import { Chapter } from '../../shared/models/chapter.model';
 import { ContentFilterWarning } from '../../shared/models/chapter-chunk.model';
 import { Book } from '../../shared/models/book.model';
 import { Series } from '../../shared/models/series.model';
-import { withOwnerFilter, readOwnedItem, readAccessibleItem } from '../owner-guard';
+import { withOwnerFilter, readOwnedItem, readAccessibleItem } from '../middleware/owner-guard';
 
 const router = Router();
 const container = getContainer('chapters');

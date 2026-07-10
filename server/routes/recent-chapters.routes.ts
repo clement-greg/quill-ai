@@ -1,6 +1,6 @@
 import { Router, Request, Response } from 'express';
 import { randomUUID } from 'crypto';
-import { getContainer } from '../cosmos';
+import { getContainer } from '../services/cosmos';
 import { ChapterVisit, RecentChapter } from '../../shared/models/recent-chapter.model';
 
 const router = Router();

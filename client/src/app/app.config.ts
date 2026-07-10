@@ -3,25 +3,25 @@ import { provideHttpClient, withInterceptors } from '@angular/common/http';
 import { provideRouter, Routes } from '@angular/router';
 import { MatIconRegistry } from '@angular/material/icon';
 import { provideServiceWorker } from '@angular/service-worker';
-import { SeriesComponent } from './series/series';
-import { SeriesDetailComponent } from './series-detail/series-detail';
-import { BookComponent } from './book/book';
-import { BookDetailComponent } from './book-detail/book-detail';
-import { ChapterComponent } from './chapter/chapter';
-import { ChapterEditComponent } from './chapter-edit/chapter-edit';
-import { EntityRelationshipDiagramComponent } from './entity-relationship-diagram/entity-relationship-diagram';
-import { LoginComponent } from './login/login';
-import { ArchivedComponent } from './archived/archived';
-import { Home } from './home/home';
-import { UserSettingsComponent } from './user-settings/user-settings';
-import { PhotoGalleryComponent } from './photo-gallery/photo-gallery';
-import { WritingStatsComponent } from './writing-stats/writing-stats';
-import { EntityPageComponent } from './entity-page/entity-page';
-import { MapListComponent } from './maps/map-list/map-list';
-import { MapEditorComponent } from './maps/map-editor/map-editor';
-import { ThoughtsComponent } from './thoughts/thoughts';
-import { authGuard } from './auth/auth.guard';
-import { authInterceptor, authErrorInterceptor } from './auth/auth.interceptor';
+import { SeriesComponent } from '@app/features/series/series/series';
+import { SeriesDetailComponent } from '@app/features/series/series-detail/series-detail';
+import { BookComponent } from '@app/features/books/book/book';
+import { BookDetailComponent } from '@app/features/books/book-detail/book-detail';
+import { ChapterComponent } from '@app/features/chapters/chapter/chapter';
+import { ChapterEditComponent } from '@app/features/chapters/chapter-edit/chapter-edit';
+import { EntityRelationshipDiagramComponent } from '@app/features/entities/entity-relationship-diagram/entity-relationship-diagram';
+import { LoginComponent } from '@app/features/login/login';
+import { ArchivedComponent } from '@app/features/archived/archived';
+import { Home } from '@app/features/home/home';
+import { UserSettingsComponent } from '@app/features/user-settings/user-settings';
+import { PhotoGalleryComponent } from '@app/features/photo-gallery/photo-gallery';
+import { WritingStatsComponent } from '@app/features/writing-stats/writing-stats';
+import { EntityPageComponent } from '@app/features/entities/entity-page/entity-page';
+import { MapListComponent } from '@app/features/maps/map-list/map-list';
+import { MapEditorComponent } from '@app/features/maps/map-editor/map-editor';
+import { ThoughtsComponent } from '@app/features/thoughts/thoughts';
+import { authGuard } from '@app/core/auth/auth.guard';
+import { authInterceptor, authErrorInterceptor } from '@app/core/auth/auth.interceptor';
 
 const routes: Routes = [
   { path: 'login', component: LoginComponent },
@@ -47,13 +47,13 @@ const routes: Routes = [
   {
     path: 'quilly-demo',
     loadComponent: () =>
-      import('./quilly-demo/quilly-demo').then((m) => m.QuillyDemoComponent),
+      import('@app/features/ai/quilly-demo/quilly-demo').then((m) => m.QuillyDemoComponent),
   },
   { path: '', redirectTo: 'home', pathMatch: 'full' },
   {
     path: '**',
     loadComponent: () =>
-      import('./not-found/not-found').then((m) => m.NotFoundComponent),
+      import('@app/features/not-found/not-found').then((m) => m.NotFoundComponent),
   },
 ];
 

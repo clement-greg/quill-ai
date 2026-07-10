@@ -1,8 +1,8 @@
 import { Router, Request, Response } from 'express';
-import { getContainer } from '../cosmos';
-import { deleteBlob } from '../storage';
+import { getContainer } from '../services/cosmos';
+import { deleteBlob } from '../services/storage';
 import { MapAsset } from '../../shared/models/map-asset.model';
-import { withOwnerFilter, readOwnedItem } from '../owner-guard';
+import { withOwnerFilter, readOwnedItem } from '../middleware/owner-guard';
 
 const router = Router();
 const container = getContainer('map-assets');
