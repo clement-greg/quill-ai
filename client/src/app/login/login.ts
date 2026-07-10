@@ -66,15 +66,20 @@ export class LoginComponent implements AfterViewInit {
 
   private messageIndex = 0;
   private speechTimer: ReturnType<typeof setTimeout> | null = null;
+  private reversePlaybackHandle: number | null = null;
 
   ngAfterViewInit(): void {
     if (!isPlatformBrowser(this.platformId)) return;
 
-    this.bgVideoRef.nativeElement.muted = true;
-    this.bgVideoRef.nativeElement.play().catch(() => {});
+    const video = this.bgVideoRef.nativeElement;
+    video.muted = true;
+    video.play().catch(() => {});
+    video.addEventListener('ended', this.onVideoEnded);
     this.showNextMessage();
     this.destroyRef.onDestroy(() => {
       if (this.speechTimer !== null) clearTimeout(this.speechTimer);
+      video.removeEventListener('ended', this.onVideoEnded);
+      if (this.reversePlaybackHandle !== null) cancelAnimationFrame(this.reversePlaybackHandle);
     });
 
     const waitForGoogle = () => {
@@ -101,6 +106,27 @@ export class LoginComponent implements AfterViewInit {
       }
     };
     waitForGoogle();
+  }
+
+  /** Plays the background video forward, then reverse, forever, to keep a seamless loop. */
+  private readonly onVideoEnded = (): void => {
+    this.ngZone.runOutsideAngular(() => this.stepReverse());
+  };
+
+  private stepReverse(): void {
+    const video = this.bgVideoRef.nativeElement;
+    // Roughly one frame's worth of time at 30fps; reverse playback has no native browser support.
+    const frameSeconds = 1 / 30;
+    const nextTime = video.currentTime - frameSeconds;
+
+    if (nextTime <= 0) {
+      video.currentTime = 0;
+      video.play().catch(() => {});
+      return;
+    }
+
+    video.currentTime = nextTime;
+    this.reversePlaybackHandle = requestAnimationFrame(() => this.stepReverse());
   }
 
   /** Show the next message, then queue the following one after the bubble hides. */

@@ -18,6 +18,7 @@ import { MatTooltipModule } from '@angular/material/tooltip';
 import { MatSnackBar } from '@angular/material/snack-bar';
 import { MatDialog, MatDialogModule, MAT_DIALOG_DATA } from '@angular/material/dialog';
 import { ChapterService } from '../chapter/chapter.service';
+import { ContentFilterWarning } from '@shared/models/chapter-chunk.model';
 import { ChapterDraftService } from './chapter-draft.service';
 import { ChapterVersionService } from './chapter-version.service';
 import { Chapter, ChapterNote, ChapterVersion, OutlineItem } from '@shared/models/chapter.model';
@@ -656,7 +657,7 @@ export class ChapterEditComponent implements OnInit, OnDestroy {
     const toSave = { ...chapter, content, notes: this.notes(), outline };
 
     this.chapterService.update(toSave).subscribe({
-      next: async () => {
+      next: async (saved) => {
         this.chapterVersionService.create(
           chapter.id, content,
           this.userSettings.displayName() || this.authService.currentUser()?.name || undefined,
@@ -668,9 +669,32 @@ export class ChapterEditComponent implements OnInit, OnDestroy {
         this.lastSavedContent = content;
         this.saving.set(false);
         this.recordRecentChapter();
-        this.snackBar.open('Chapter saved', undefined, { duration: 3000 });
+        this.notifyContentWarnings(saved.contentWarnings);
       },
       error: () => this.saving.set(false),
+    });
+  }
+
+  /** Shows a dismissible toast when a save left some paragraphs out of the
+   *  search index (Azure content filter), with a "Details" action that lists
+   *  the offending text so the author can find and address it. */
+  private notifyContentWarnings(warnings: ContentFilterWarning[] | undefined): void {
+    if (!warnings || warnings.length === 0) {
+      this.snackBar.open('Chapter saved', undefined, { duration: 3000 });
+      return;
+    }
+    const count = warnings.length;
+    const ref = this.snackBar.open(
+      `Chapter saved — ${count} paragraph${count === 1 ? '' : 's'} couldn't be added to the search index`,
+      'Details',
+      { duration: 8000 },
+    );
+    ref.onAction().subscribe(() => {
+      this.dialog.open(ContentWarningsDialogComponent, {
+        data: { warnings } satisfies ContentWarningsDialogData,
+        width: '480px',
+        maxHeight: '80vh',
+      });
     });
   }
 
@@ -1472,4 +1496,42 @@ export class ChapterEditComponent implements OnInit, OnDestroy {
 })
 export class ConfirmDialogComponent {
   data = inject<{ title: string; message: string; confirm: string }>(MAT_DIALOG_DATA);
+}
+
+export interface ContentWarningsDialogData {
+  warnings: ContentFilterWarning[];
+}
+
+@Component({
+  selector: 'app-content-warnings-dialog',
+  imports: [MatButtonModule, MatDialogModule],
+  template: `
+    <h2 mat-dialog-title>Paragraphs left out of the search index</h2>
+    <mat-dialog-content>
+      <p class="intro">
+        Azure's content filter flagged the paragraphs below, so they weren't embedded for
+        Ask Quill's chapter search. The rest of the chapter saved and indexed normally.
+      </p>
+      @for (warning of data.warnings; track $index) {
+        <blockquote class="warning-preview">{{ warning.preview }}</blockquote>
+      }
+    </mat-dialog-content>
+    <mat-dialog-actions align="end">
+      <button mat-flat-button [mat-dialog-close]="true">Got it</button>
+    </mat-dialog-actions>
+  `,
+  styles: `
+    .intro { margin-top: 0; }
+    .warning-preview {
+      margin: 0 0 12px;
+      padding: 8px 12px;
+      border-left: 3px solid var(--mat-sys-error, #b3261e);
+      background: rgba(0, 0, 0, 0.04);
+      font-style: italic;
+      white-space: pre-wrap;
+    }
+  `,
+})
+export class ContentWarningsDialogComponent {
+  data = inject<ContentWarningsDialogData>(MAT_DIALOG_DATA);
 }

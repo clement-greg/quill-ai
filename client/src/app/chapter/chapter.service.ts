@@ -2,6 +2,11 @@ import { Injectable, inject } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
 import { Observable } from 'rxjs';
 import { Chapter } from '@shared/models/chapter.model';
+import { ContentFilterWarning } from '@shared/models/chapter-chunk.model';
+
+/** A chapter save response, optionally carrying paragraphs the content filter
+ * kept out of the search index. */
+export type ChapterSaveResult = Chapter & { contentWarnings?: ContentFilterWarning[] };
 
 @Injectable({ providedIn: 'root' })
 export class ChapterService {
@@ -20,12 +25,12 @@ export class ChapterService {
     return this.http.get<Chapter>(`${this.apiUrl}/${id}`);
   }
 
-  create(chapter: Chapter): Observable<Chapter> {
-    return this.http.post<Chapter>(this.apiUrl, chapter);
+  create(chapter: Chapter): Observable<ChapterSaveResult> {
+    return this.http.post<ChapterSaveResult>(this.apiUrl, chapter);
   }
 
-  update(chapter: Chapter): Observable<Chapter> {
-    return this.http.put<Chapter>(`${this.apiUrl}/${chapter.id}`, chapter);
+  update(chapter: Chapter): Observable<ChapterSaveResult> {
+    return this.http.put<ChapterSaveResult>(`${this.apiUrl}/${chapter.id}`, chapter);
   }
 
   delete(id: string): Observable<void> {

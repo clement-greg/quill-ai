@@ -6,10 +6,14 @@ import { chunkHtmlContent } from './chunking';
 import { withOwnerFilter } from './owner-guard';
 import { Chapter } from '../shared/models/chapter.model';
 import { Book } from '../shared/models/book.model';
-import { ChapterChunk } from '../shared/models/chapter-chunk.model';
+import { ChapterChunk, ContentFilterWarning } from '../shared/models/chapter-chunk.model';
 
 const chunksContainer = getContainer('chapter-chunks');
 const booksContainer = getContainer('books');
+
+const PREVIEW_MAX = 200;
+const preview = (text: string): string =>
+  text.length > PREVIEW_MAX ? `${text.slice(0, PREVIEW_MAX)}...` : text;
 
 /** Deletes all chunk documents belonging to a chapter (single partition). */
 export async function deleteChapterChunks(chapterId: string): Promise<void> {
@@ -32,7 +36,7 @@ export async function deleteChapterChunks(chapterId: string): Promise<void> {
 async function embedOmittingFilteredParagraphs(
   passage: string,
   chapterId: string,
-): Promise<{ content: string; vector: number[] } | null> {
+): Promise<{ content: string; vector: number[]; omitted: string[] } | null> {
   const paragraphs = passage.split(/\n{2,}/).map(p => p.trim()).filter(Boolean);
   if (paragraphs.length <= 1) {
     console.error(`Skipping unembeddable passage in chapter ${chapterId} (no paragraph boundary to isolate it by)`);
@@ -40,12 +44,14 @@ async function embedOmittingFilteredParagraphs(
   }
 
   const survivors: string[] = [];
+  const omitted: string[] = [];
   for (const paragraph of paragraphs) {
     try {
       await generateEmbedding(paragraph);
       survivors.push(paragraph);
     } catch (err) {
       console.error(`Omitting a paragraph that trips the content filter from chapter ${chapterId}:`, err);
+      omitted.push(paragraph);
     }
   }
   if (survivors.length === 0) return null;
@@ -53,7 +59,7 @@ async function embedOmittingFilteredParagraphs(
   const content = survivors.join('\n\n');
   try {
     const vector = await generateEmbedding(content);
-    return { content, vector };
+    return { content, vector, omitted };
   } catch (err) {
     console.error(`Combined surviving text still filtered for chapter ${chapterId}:`, err);
     return null;
@@ -65,14 +71,16 @@ async function embedOmittingFilteredParagraphs(
  * splits the chapter content into passages, embeds them in one batch, and stores
  * the resulting ChapterChunk documents. A no-content chapter is left with no
  * chunks. Embedding failures are logged but do not throw, so a chapter save is
- * never blocked by the AI service being unavailable.
+ * never blocked by the AI service being unavailable. Returns any paragraphs
+ * that were dropped by the content filter, so callers can surface them to the
+ * author.
  */
-export async function reindexChapterChunks(chapter: Chapter): Promise<void> {
+export async function reindexChapterChunks(chapter: Chapter): Promise<ContentFilterWarning[]> {
   try {
     await deleteChapterChunks(chapter.id);
 
     const passages = chunkHtmlContent(chapter.content);
-    if (passages.length === 0) return;
+    if (passages.length === 0) return [];
 
     // Denormalize seriesId (chapter -> book -> series) so chunks can be searched
     // series-wide without a join.
@@ -90,7 +98,7 @@ export async function reindexChapterChunks(chapter: Chapter): Promise<void> {
     // split into its constituent paragraphs (chunkHtmlContent joins them with
     // "\n\n") so only the specific offending paragraph(s) are dropped -- the
     // rest of that passage still gets indexed.
-    let results: ({ content: string; vector: number[] } | null)[];
+    let results: ({ content: string; vector: number[]; omitted?: string[] } | null)[];
     try {
       const vectors = await generateEmbeddings(passages);
       results = passages.map((content, index) => ({ content, vector: vectors[index] }));
@@ -129,8 +137,15 @@ export async function reindexChapterChunks(chapter: Chapter): Promise<void> {
         return chunksContainer.items.upsert<ChapterChunk>(doc);
       })
     );
+
+    const warnings: ContentFilterWarning[] = [];
+    results.forEach((result, index) => {
+      result?.omitted?.forEach(paragraph => warnings.push({ passageIndex: index, preview: preview(paragraph) }));
+    });
+    return warnings;
   } catch (err) {
     console.error(`Failed to reindex chunks for chapter ${chapter.id}:`, err);
+    return [];
   }
 }
 

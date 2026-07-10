@@ -130,8 +130,29 @@ describe('reindexChapterChunks', () => {
     chunksContainer.items.query.mockImplementation(() => {
       throw new Error('cosmos down');
     });
-    await expect(reindexChapterChunks(makeChapter())).resolves.toBeUndefined();
+    await expect(reindexChapterChunks(makeChapter())).resolves.toEqual([]);
     expect(chunksContainer.items.upsert).not.toHaveBeenCalled();
+  });
+});
+
+describe('reindexChapterChunks content filter warnings', () => {
+  it('returns a warning for each paragraph omitted from a rejected passage', async () => {
+    const good = 'Arthur mends the gate before nightfall.';
+    const bad = 'The forbidden verse is recited in full.';
+    embedBatchMock.mockRejectedValue(new Error('filtered'));
+    embedMock.mockImplementation(async (text: string) => {
+      if (text.includes('forbidden')) throw new Error('filtered');
+      return [0.5];
+    });
+
+    const warnings = await reindexChapterChunks(makeChapter({ content: `<p>${good}</p><p>${bad}</p>` }));
+
+    expect(warnings).toEqual([{ passageIndex: 0, preview: bad }]);
+  });
+
+  it('returns no warnings when everything embeds cleanly', async () => {
+    const warnings = await reindexChapterChunks(makeChapter());
+    expect(warnings).toEqual([]);
   });
 });
 

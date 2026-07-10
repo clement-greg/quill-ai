@@ -3,6 +3,7 @@ import { getContainer } from '../cosmos';
 import { reindexChapterChunks, deleteChapterChunks } from '../chapter-chunks';
 import { refreshChapterSummary } from '../chapter-summary';
 import { Chapter } from '../../shared/models/chapter.model';
+import { ContentFilterWarning } from '../../shared/models/chapter-chunk.model';
 import { Book } from '../../shared/models/book.model';
 import { Series } from '../../shared/models/series.model';
 import { withOwnerFilter, readOwnedItem, readAccessibleItem } from '../owner-guard';
@@ -108,11 +109,12 @@ router.post('/', async (req: Request, res: Response) => {
     chapter.modifiedBy = req.user!.email;
     chapter.modifiedAt = now;
     const { resource } = await container.items.create<Chapter>(chapter);
+    let contentWarnings: ContentFilterWarning[] = [];
     if (resource) {
-      await reindexChapterChunks(resource);
+      contentWarnings = (await reindexChapterChunks(resource)) ?? [];
       void refreshChapterSummary(resource);
     }
-    res.status(201).json(resource);
+    res.status(201).json(contentWarnings.length ? { ...resource, contentWarnings } : resource);
   } catch (err) {
     console.error('Error creating chapter:', err);
     res.status(500).json({ error: 'Failed to create chapter' });
@@ -147,13 +149,14 @@ router.put('/:id', async (req: Request, res: Response) => {
     // whole-chapter vector so it doesn't linger on the document (lazy migration).
     delete (chapter as { contentVector?: unknown }).contentVector;
     const { resource } = await container.item(id, id).replace<Chapter>(chapter);
+    let contentWarnings: ContentFilterWarning[] = [];
     if (resource) {
-      await reindexChapterChunks(resource);
+      contentWarnings = (await reindexChapterChunks(resource)) ?? [];
       // Regenerate the continuity summary in the background — never block the
       // save on the AI service (mirrors reindex's fire-and-forget tolerance).
       void refreshChapterSummary(resource);
     }
-    res.json(resource);
+    res.json(contentWarnings.length ? { ...resource, contentWarnings } : resource);
   } catch (err) {
     console.error('Error updating chapter:', err);
     res.status(500).json({ error: 'Failed to update chapter' });

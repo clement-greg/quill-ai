@@ -16,3 +16,13 @@ export interface ChapterChunk {
     createdAt: string;
     modifiedAt: string;
 }
+
+/** A paragraph that Azure's content filter rejected during (re)indexing, so it
+ * was left out of the searchable chunk index. Surfaced to the author so they
+ * know that passage won't be found by Ask Quill's chapter search. */
+export interface ContentFilterWarning {
+    /** Index of the chunked passage the paragraph was pulled from. */
+    passageIndex: number;
+    /** Preview of the omitted paragraph's text (truncated for display). */
+    preview: string;
+}

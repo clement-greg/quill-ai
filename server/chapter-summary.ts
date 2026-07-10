@@ -114,12 +114,15 @@ export async function generateChapterSummary(
   if (paragraphs.length <= 1) return null; // nothing left to isolate
 
   const survivors: string[] = [];
-  for (const paragraph of paragraphs) {
+  for (const [index, paragraph] of paragraphs.entries()) {
     try {
       if (await isPromptSafe(paragraph)) {
         survivors.push(paragraph);
       } else {
-        console.warn('Omitting a paragraph that trips the content filter from the chapter summary input.');
+        const preview = paragraph.length > 200 ? `${paragraph.slice(0, 200)}...` : paragraph;
+        console.warn(
+          `Omitting paragraph ${index + 1}/${paragraphs.length} that trips the content filter from the chapter summary input:\n${preview}`,
+        );
       }
     } catch (err) {
       console.error('Content filter probe failed; keeping paragraph:', err);
