@@ -48,6 +48,7 @@ import { RecentChaptersService } from '../services/recent-chapters.service';
 import { EditorReviewService, ReviewSuggestion } from '../services/editor-review.service';
 import { ConfirmDialogComponent } from '../shared/confirm-dialog/confirm-dialog';
 import { MoveTextDialogComponent, MoveTextDialogData, MoveTextDialogResult } from './move-text-dialog';
+import { insertHtmlAtAnchor } from './chapter-content-blocks';
 import { diffWords } from 'diff';
 import { forkJoin, Subscription } from 'rxjs';
 import { v4 as uuidv4 } from 'uuid';
@@ -563,7 +564,7 @@ export class ChapterEditComponent implements OnInit, OnDestroy {
         error: () => this.revertMove(previousContent),
       });
     } else {
-      const content = this.insertBlocksIntoContent(target.chapter.content ?? '', movedHtml, target.anchorIndex, target.position);
+      const content = insertHtmlAtAnchor(target.chapter.content ?? '', movedHtml, target.anchor, target.position);
       this.chapterService.update({ ...target.chapter, content }).subscribe({
         next: updated => this.finishMove(updated.id, updated.title),
         error: () => this.revertMove(previousContent),
@@ -603,19 +604,6 @@ export class ChapterEditComponent implements OnInit, OnDestroy {
       },
       error: () => this.snackBar.open('Text moved, but saving this chapter failed — click Save to retry', undefined, { duration: 5000 }),
     });
-  }
-
-  /** Inserts the moved blocks into the target chapter's HTML relative to the
-   *  anchor paragraph (an element-child index). anchorIndex -1 = append. */
-  private insertBlocksIntoContent(content: string, blocksHtml: string, anchorIndex: number, position: 'before' | 'after'): string {
-    const container = document.createElement('div');
-    container.innerHTML = content;
-    const anchor = anchorIndex >= 0 ? container.children[anchorIndex] ?? null : null;
-    const frag = document.createRange().createContextualFragment(blocksHtml);
-    if (!anchor) container.appendChild(frag);
-    else if (position === 'before') container.insertBefore(frag, anchor);
-    else container.insertBefore(frag, anchor.nextSibling);
-    return container.innerHTML;
   }
 
   onNoteRequest(): void {

@@ -8,6 +8,7 @@ import { MatFormFieldModule } from '@angular/material/form-field';
 import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
 import { Chapter } from '@shared/models/chapter.model';
 import { ChapterService } from '../chapter/chapter.service';
+import { BlockAnchor, ContentBlock, parseContentBlocks } from './chapter-content-blocks';
 
 export interface MoveTextDialogData {
   bookId: string;
@@ -22,16 +23,10 @@ export type MoveTextDialogResult =
       mode: 'existing';
       /** The freshly-fetched target chapter (content included). */
       chapter: Chapter;
-      /** Element index of the anchor paragraph in the target content; -1 = append. */
-      anchorIndex: number;
+      /** Node-path anchor of the chosen paragraph; null = append at the end. */
+      anchor: BlockAnchor | null;
       position: 'before' | 'after';
     };
-
-interface TargetParagraph {
-  /** Element-child index in the target chapter's content — insertion anchor. */
-  index: number;
-  text: string;
-}
 
 const ABBREVIATE_THRESHOLD = 160;
 
@@ -108,16 +103,16 @@ const ABBREVIATE_THRESHOLD = 160;
             <span class="toggle-label">the selected paragraph:</span>
           </div>
           <div class="para-list" role="radiogroup" aria-label="Target paragraph">
-            @for (p of paragraphs(); track p.index) {
-              <div class="para-row" [class.selected]="selectedIndex() === p.index">
-                <button class="para-text" role="radio" [attr.aria-checked]="selectedIndex() === p.index"
-                  (click)="selectedIndex.set(p.index)">
-                  {{ isExpanded(p.index) ? p.text : abbreviate(p.text) }}
+            @for (p of paragraphs(); track $index; let i = $index) {
+              <div class="para-row" [class.selected]="selectedIndex() === i">
+                <button class="para-text" role="radio" [attr.aria-checked]="selectedIndex() === i"
+                  (click)="selectedIndex.set(i)">
+                  {{ isExpanded(i) ? p.text : abbreviate(p.text) }}
                 </button>
                 @if (p.text.length > abbreviateThreshold) {
-                  <button mat-icon-button class="expand-btn" (click)="toggleExpanded(p.index)"
-                    [attr.aria-label]="isExpanded(p.index) ? 'Show abbreviated paragraph' : 'Show full paragraph'">
-                    <mat-icon>{{ isExpanded(p.index) ? 'unfold_less' : 'unfold_more' }}</mat-icon>
+                  <button mat-icon-button class="expand-btn" (click)="toggleExpanded(i)"
+                    [attr.aria-label]="isExpanded(i) ? 'Show abbreviated paragraph' : 'Show full paragraph'">
+                    <mat-icon>{{ isExpanded(i) ? 'unfold_less' : 'unfold_more' }}</mat-icon>
                   </button>
                 }
               </div>
@@ -215,7 +210,7 @@ export class MoveTextDialogComponent implements OnInit {
 
   readonly targetChapter = signal<Chapter | null>(null);
   readonly targetLoading = signal(false);
-  readonly paragraphs = signal<TargetParagraph[]>([]);
+  readonly paragraphs = signal<ContentBlock[]>([]);
   readonly selectedIndex = signal(-1);
   readonly position = signal<'before' | 'after'>('after');
   private readonly expanded = signal<ReadonlySet<number>>(new Set());
@@ -245,9 +240,9 @@ export class MoveTextDialogComponent implements OnInit {
     this.chapterService.getById(chapter.id).subscribe({
       next: full => {
         this.targetChapter.set(full);
-        const paras = this.parseParagraphs(full.content ?? '');
+        const paras = parseContentBlocks(full.content ?? '');
         this.paragraphs.set(paras);
-        this.selectedIndex.set(paras.length > 0 ? paras[paras.length - 1].index : -1);
+        this.selectedIndex.set(paras.length - 1);
         this.position.set('after');
         this.targetLoading.set(false);
       },
@@ -270,7 +265,7 @@ export class MoveTextDialogComponent implements OnInit {
     this.dialogRef.close({
       mode: 'existing',
       chapter,
-      anchorIndex: this.selectedIndex(),
+      anchor: this.paragraphs()[this.selectedIndex()]?.anchor ?? null,
       position: this.position(),
     });
   }
@@ -290,15 +285,5 @@ export class MoveTextDialogComponent implements OnInit {
   abbreviate(text: string): string {
     if (text.length <= ABBREVIATE_THRESHOLD) return text;
     return `${text.slice(0, 90).trimEnd()} … ${text.slice(-60).trimStart()}`;
-  }
-
-  /** Top-level element children of the content are the paragraphs; the index
-   *  is the element-child index so the host can insert at the same spot. */
-  private parseParagraphs(content: string): TargetParagraph[] {
-    const container = document.createElement('div');
-    container.innerHTML = content;
-    return Array.from(container.children)
-      .map((el, index) => ({ index, text: (el.textContent ?? '').replace(/\s+/g, ' ').trim() }))
-      .filter(p => p.text.length > 0);
   }
 }
