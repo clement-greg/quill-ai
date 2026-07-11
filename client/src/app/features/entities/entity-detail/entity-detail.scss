@@ -313,6 +313,8 @@
   background: var(--mat-sys-surface-variant, #e8e0f0);
   position: relative;
   cursor: grab;
+  -webkit-touch-callout: none;
+  user-select: none;
 
   &:active {
     cursor: grabbing;
@@ -323,7 +325,17 @@
     height: 100%;
     object-fit: cover;
     display: block;
+    -webkit-touch-callout: none;
+    pointer-events: none;
   }
+}
+
+.sort-menu-anchor {
+  position: fixed;
+  width: 1px;
+  height: 1px;
+  pointer-events: none;
+  visibility: hidden;
 }
 
 .sort-drag-overlay {

@@ -18,7 +18,7 @@ import { MatButtonModule } from '@angular/material/button';
 import { MatIconModule } from '@angular/material/icon';
 import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
 import { MatTooltipModule } from '@angular/material/tooltip';
-import { MatMenuModule } from '@angular/material/menu';
+import { MatMenuModule, MatMenuTrigger } from '@angular/material/menu';
 import { MatDialog } from '@angular/material/dialog';
 import { MatSnackBar } from '@angular/material/snack-bar';
 import { MatTabsModule } from '@angular/material/tabs';
@@ -117,6 +117,9 @@ export class EntityDetailComponent implements OnDestroy {
   sortingPhotos = signal(false);
   photoSortSaving = signal(false);
   sortablePhotos = signal<EntityPhoto[]>([]);
+  sortMenuPos = signal({ x: 0, y: 0 });
+  private sortMenuTrigger = viewChild<MatMenuTrigger>('sortMenuTrigger');
+  private sortMenuPhotoIndex = -1;
   timelineDragOverId = signal<string | null>(null);
   hoveredMapEventId = signal<string | null>(null);
   locationEntities = signal<Map<string, Entity>>(new Map());
@@ -685,6 +688,68 @@ export class EntityDetailComponent implements OnDestroy {
     });
   }
 
+  private _sortPressTimer: ReturnType<typeof setTimeout> | null = null;
+  private _sortPressX = 0;
+  private _sortPressY = 0;
+
+  onSortCardPointerDown(event: PointerEvent, index: number): void {
+    this.cancelSortCardPress();
+    this._sortPressX = event.clientX;
+    this._sortPressY = event.clientY;
+    this._sortPressTimer = setTimeout(
+      () => this.openSortMenu(event.clientX, event.clientY, index),
+      500
+    );
+  }
+
+  onSortCardPointerMove(event: PointerEvent): void {
+    if (this._sortPressTimer === null) return;
+    // A real drag cancels the long-press; CDK drag-drop takes over.
+    if (
+      Math.abs(event.clientX - this._sortPressX) > 10 ||
+      Math.abs(event.clientY - this._sortPressY) > 10
+    ) {
+      this.cancelSortCardPress();
+    }
+  }
+
+  cancelSortCardPress(): void {
+    if (this._sortPressTimer !== null) {
+      clearTimeout(this._sortPressTimer);
+      this._sortPressTimer = null;
+    }
+  }
+
+  onSortCardContextMenu(event: MouseEvent, index: number): void {
+    event.preventDefault();
+    this.cancelSortCardPress();
+    this.openSortMenu(event.clientX, event.clientY, index);
+  }
+
+  private openSortMenu(x: number, y: number, index: number): void {
+    this._sortPressTimer = null;
+    this.sortMenuPhotoIndex = index;
+    this.sortMenuPos.set({ x, y });
+    this.sortMenuTrigger()?.openMenu();
+  }
+
+  movePhotoToFront(): void {
+    this.movePhotoTo(0);
+  }
+
+  movePhotoToBack(): void {
+    this.movePhotoTo(this.sortablePhotos().length - 1);
+  }
+
+  private movePhotoTo(target: number): void {
+    const from = this.sortMenuPhotoIndex;
+    const arr = [...this.sortablePhotos()];
+    if (from < 0 || from >= arr.length) return;
+    moveItemInArray(arr, from, target);
+    this.sortablePhotos.set(arr);
+    this.sortMenuPhotoIndex = -1;
+  }
+
   private advanceLightboxAfterRemoval(removedIndex: number): void {
     const newCount = this.visiblePhotos().length;
     if (newCount === 0) {
@@ -732,5 +797,7 @@ export class EntityDetailComponent implements OnDestroy {
     }
   }
 
-  ngOnDestroy(): void {}
+  ngOnDestroy(): void {
+    this.cancelSortCardPress();
+  }
 }
