@@ -77,7 +77,7 @@
             <input #photoFileInput type="file" accept="image/*" multiple hidden (change)="onPhotoFileSelected($event)" />
           </div>
         } @else {
-          <span class="photos-sort-label">Drag to reorder · hold a photo for options</span>
+          <span class="photos-sort-label">Drag to reorder</span>
           <div class="photos-actions">
             <button mat-button (click)="cancelSortMode()" aria-label="Cancel sorting">
               Cancel
