@@ -46,6 +46,8 @@ import { ChapterSyncService } from '../chapter-sync.service';
 import { RecentChaptersService } from '../recent-chapters.service';
 import { EditorReviewService } from '../editor-review.service';
 import { QuillReviewPanelComponent } from './quill-review-panel/quill-review-panel';
+import { MentionedEntitiesPanelComponent } from './mentioned-entities-panel';
+import { entityNameVariants } from '@app/shared/entity-references';
 import { VersionHistoryPanelComponent } from './version-history-panel/version-history-panel';
 import { ConfirmDialogComponent } from '@app/shared/confirm-dialog/confirm-dialog';
 import { MoveTextDialogComponent, MoveTextDialogData, MoveTextDialogResult } from './move-text-dialog';
@@ -60,7 +62,7 @@ import { v4 as uuidv4 } from 'uuid';
     MatButtonModule, MatIconModule, MatInputModule, MatFormFieldModule,
     MatProgressSpinnerModule, MatTabsModule, MatExpansionModule, MatDialogModule, MatMenuModule, MatSelectModule, MatTooltipModule,
     SlideOutPanelContainer, EntityEditComponent, RichTextEditorComponent, AiStatsComponent, ChapterOutlineComponent,
-    QuillReviewPanelComponent, VersionHistoryPanelComponent,
+    QuillReviewPanelComponent, VersionHistoryPanelComponent, MentionedEntitiesPanelComponent,
   ],
   templateUrl: './chapter-edit.html',
   styleUrl: './chapter-edit.scss',
@@ -142,6 +144,31 @@ export class ChapterEditComponent implements OnInit, OnDestroy {
   imageUrl = signal<string | null>(null);
   imageThumbnailUrl = signal<string | null>(null);
   imageUploading = signal(false);
+
+  // ── Mentioned entities (avatar stack over the editor) ────────────────────
+  /** Editor HTML sampled for mention detection — set on load and (debounced) on edit. */
+  private mentionContent = signal('');
+  private mentionRefreshTimer: ReturnType<typeof setTimeout> | null = null;
+  /** Entities referenced in the chapter, ordered by first appearance. */
+  mentionedEntities = computed<Entity[]>(() => {
+    const html = this.mentionContent();
+    const entities = this.entities();
+    if (!html || entities.length === 0) return [];
+    const text = this.stripHtml(html);
+    const found: { entity: Entity; pos: number }[] = [];
+    for (const entity of entities) {
+      let pos = -1;
+      for (const variant of entityNameVariants(entity)) {
+        const escaped = variant.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        const match = new RegExp(`\\b${escaped}\\b`, 'i').exec(text);
+        if (match && (pos === -1 || match.index < pos)) pos = match.index;
+      }
+      // Fall back to the entity-reference span id for renamed/free-form references
+      if (pos === -1 && html.includes(entity.id)) pos = Number.MAX_SAFE_INTEGER;
+      if (pos !== -1) found.push({ entity, pos });
+    }
+    return found.sort((a, b) => a.pos - b.pos).map(f => f.entity);
+  });
 
   // ── Entity editing slide-out ─────────────────────────────────────────────
   editingEntity = signal<Entity | null>(null);
@@ -254,6 +281,7 @@ export class ChapterEditComponent implements OnInit, OnDestroy {
       this.notes.set([]);
       this.outline.set([]);
       this.lastSavedContent = null;
+      this.mentionContent.set('');
 
       this.chapterService.getById(id).subscribe({
       next: async (data) => {
@@ -276,6 +304,7 @@ export class ChapterEditComponent implements OnInit, OnDestroy {
         this.imageUrl.set(data.imageUrl ?? null);
         this.imageThumbnailUrl.set(data.imageThumbnailUrl ?? null);
         this.lastSavedContent = data.content ?? '';
+        this.mentionContent.set(content);
 
         // Set editor content after view init (setTimeout ensures ViewChild is ready)
         setTimeout(() => {
@@ -371,6 +400,7 @@ export class ChapterEditComponent implements OnInit, OnDestroy {
     this.editorReview.clear();
     this.headerService.clear();
     if (this.autoSaveTimer) clearTimeout(this.autoSaveTimer);
+    if (this.mentionRefreshTimer) clearTimeout(this.mentionRefreshTimer);
     this.stopPeriodicSave();
     if (this.resizerDrag) {
       document.removeEventListener('mousemove', this.resizerDrag.moveHandler);
@@ -424,6 +454,15 @@ export class ChapterEditComponent implements OnInit, OnDestroy {
       this.searchQuery.set('');
     }
     this.scheduleDraftSave(html);
+    this.scheduleMentionRefresh(html);
+  }
+
+  private scheduleMentionRefresh(html: string): void {
+    if (this.mentionRefreshTimer) clearTimeout(this.mentionRefreshTimer);
+    this.mentionRefreshTimer = setTimeout(() => {
+      this.mentionContent.set(html);
+      this.mentionRefreshTimer = null;
+    }, 500);
   }
 
   onOutlineChange(items: OutlineItem[]): void {
@@ -759,6 +798,7 @@ export class ChapterEditComponent implements OnInit, OnDestroy {
           this.imageUrl.set(data.imageUrl ?? null);
           this.imageThumbnailUrl.set(data.imageThumbnailUrl ?? null);
           this.editorRef?.setContent(data.content ?? '');
+          this.mentionContent.set(data.content ?? '');
         },
       });
     });
