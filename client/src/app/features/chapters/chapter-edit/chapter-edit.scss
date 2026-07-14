@@ -665,6 +665,53 @@
   line-height: 1.45;
   word-break: break-word;
   color: var(--mat-sys-on-surface, #212121);
+  border-radius: 4px;
+  padding: 1px 3px;
+  margin: -1px -3px;
+  transition: background 0.12s;
+}
+
+.note-item:hover .note-text {
+  background: color-mix(in srgb, #ffa000 12%, transparent);
+}
+
+.note-edit-textarea {
+  width: 100%;
+  box-sizing: border-box;
+  resize: vertical;
+  min-height: 52px;
+  font: inherit;
+  font-size: 0.85rem;
+  line-height: 1.45;
+  color: var(--mat-sys-on-surface, #212121);
+  background: var(--mat-sys-surface, #fff);
+  border: 1px solid #ffa000;
+  border-radius: 4px;
+  padding: 6px 8px;
+}
+
+.note-edit-textarea:focus {
+  outline: none;
+  border-color: #ffa000;
+  box-shadow: 0 0 0 2px color-mix(in srgb, #ffa000 30%, transparent);
+}
+
+/* Badge marking a note not tied to a specific passage. */
+.note-general-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 0.72rem;
+  font-weight: 500;
+  color: var(--mat-sys-on-surface-variant, #888);
+  margin-bottom: 4px;
+
+  mat-icon { font-size: 14px; width: 14px; height: 14px; line-height: 14px; }
+}
+
+/* Add-general-note button at the top of the notes panel. */
+.note-add-btn {
+  align-self: flex-start;
 }
 
 /* ── Note author ─────────────────────────────────── */

@@ -24,7 +24,8 @@ import { RichTextEditorComponent } from '@app/shared/rich-text-editor/rich-text-
           [class.seek-active]="activeEntity()?.id === entity.id"
           [style.z-index]="entities().length - $index"
           (click)="entitySelected.emit(entity)"
-          (mouseenter)="setActive(entity)"
+          (mouseenter)="requestActive(entity)"
+          (mouseleave)="cancelPendingActive()"
           (focus)="setActive(entity)"
           [attr.aria-label]="'View details for ' + entity.name">
           @if (thumbUrl(entity); as url) {
@@ -42,7 +43,7 @@ import { RichTextEditorComponent } from '@app/shared/rich-text-editor/rich-text-
 
       <!-- Seeker bar: step through the hovered entity's mentions -->
       @if (activeEntity(); as active) {
-        <div class="seek-bar">
+        <div class="seek-bar" [style.left.px]="seekBarLeft()">
           <div class="seek-bar-inner" role="toolbar"
             [attr.aria-label]="'Find mentions of ' + active.name">
             <span class="seek-name">{{ active.name }}</span>
@@ -150,12 +151,13 @@ import { RichTextEditorComponent } from '@app/shared/rich-text-editor/rich-text-
     }
 
     /* ── Seeker bar ────────────────────────────────────── */
-    /* Anchored below the panel; padding-top bridges the gap so the pointer
+    /* Centered below the hovered avatar so the pointer path down to it never
+       crosses a sibling avatar; padding-top bridges the gap so the pointer
        never leaves the panel's hover area on the way down. */
     .seek-bar {
       position: absolute;
       top: 100%;
-      right: 0;
+      transform: translateX(-50%);
       padding-top: 6px;
       z-index: 110;
     }
@@ -224,6 +226,41 @@ export class MentionedEntitiesPanelComponent {
   /** 0-based position within the entity's mentions; -1 until the first seek. */
   seekIndex = signal(-1);
   seekCount = signal(0);
+  private pendingActiveTimer: ReturnType<typeof setTimeout> | null = null;
+
+  // Fanned-row geometry (must match the styles): panel padding 4px, avatar
+  // 30px, gap 4px → the bar centers under the active avatar.
+  private static readonly PANEL_PAD = 4;
+  private static readonly ROW_STEP = 34;
+  seekBarLeft = computed(() => {
+    const active = this.activeEntity();
+    if (!active) return 0;
+    const i = Math.max(0, this.entities().findIndex(e => e.id === active.id));
+    return MentionedEntitiesPanelComponent.PANEL_PAD +
+      i * MentionedEntitiesPanelComponent.ROW_STEP +
+      MentionedEntitiesPanelComponent.ROW_STEP / 2 - 2;
+  });
+
+  /** Hover-intent activation: switching to a different entity waits briefly so
+   *  brushing past a sibling avatar on the way to the seek bar doesn't steal it. */
+  requestActive(entity: Entity): void {
+    this.cancelPendingActive();
+    if (!this.activeEntity() || this.activeEntity()?.id === entity.id) {
+      this.setActive(entity);
+      return;
+    }
+    this.pendingActiveTimer = setTimeout(() => {
+      this.pendingActiveTimer = null;
+      this.setActive(entity);
+    }, 150);
+  }
+
+  cancelPendingActive(): void {
+    if (this.pendingActiveTimer) {
+      clearTimeout(this.pendingActiveTimer);
+      this.pendingActiveTimer = null;
+    }
+  }
 
   setActive(entity: Entity): void {
     if (this.activeEntity()?.id === entity.id) return;
@@ -234,6 +271,7 @@ export class MentionedEntitiesPanelComponent {
   }
 
   clearActive(): void {
+    this.cancelPendingActive();
     this.activeEntity.set(null);
     this.seekIndex.set(-1);
     this.editor()?.clearEntitySeekHighlight();

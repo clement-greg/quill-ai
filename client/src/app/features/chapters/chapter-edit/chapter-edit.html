@@ -165,10 +165,15 @@
                         </mat-panel-title>
                       </mat-expansion-panel-header>
                       <div class="meta-notes-body">
+                        <button mat-stroked-button class="note-add-btn" (click)="addGeneralNote()">
+                          <mat-icon>add</mat-icon>
+                          Add note
+                        </button>
                         @if (notes().length === 0) {
-                          <p class="notes-empty">No notes yet. Select text and click
+                          <p class="notes-empty">No notes yet. Add a general note above, or select
+                            text in the chapter and click
                             <mat-icon style="font-size:14px;vertical-align:middle">sticky_note_2</mat-icon>
-                            to add one.
+                            to annotate a passage.
                           </p>
                         }
                         @for (note of notes(); track note.id) {
@@ -190,8 +195,26 @@
                                 }
                               </div>
                             }
-                            <div class="note-selected-text">&ldquo;{{ note.selectedText }}&rdquo;</div>
-                            <div class="note-text">{{ note.noteText }}</div>
+                            @if (note.selectedText) {
+                              <div class="note-selected-text">&ldquo;{{ note.selectedText }}&rdquo;</div>
+                            } @else {
+                              <div class="note-general-badge">
+                                <mat-icon>notes</mat-icon>
+                                General note
+                              </div>
+                            }
+                            @if (editingNoteId() === note.id) {
+                              <textarea #editNoteEl class="note-edit-textarea" rows="3"
+                                placeholder="Enter your note… (Ctrl+Enter to save)"
+                                [value]="editingNoteText()"
+                                (click)="$event.stopPropagation()"
+                                (input)="editingNoteText.set($any($event.target).value)"
+                                (keydown)="onEditNoteKeyDown($event)"
+                                (blur)="saveEditNote()"></textarea>
+                            } @else {
+                              <div class="note-text" (click)="startEditNote(note, $event)"
+                                title="Click to edit">{{ note.noteText }}</div>
+                            }
                             <button class="note-delete-btn" mat-icon-button
                               (click)="deleteNote(note.id); $event.stopPropagation()" title="Delete note">
                               <mat-icon>delete</mat-icon>

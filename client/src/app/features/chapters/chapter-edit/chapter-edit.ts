@@ -72,6 +72,7 @@ export class ChapterEditComponent implements OnInit, OnDestroy {
   private quillPanel = viewChild(QuillReviewPanelComponent);
   private historyPanel = viewChild(VersionHistoryPanelComponent);
   @ViewChild('noteInputEl') noteInputEl!: ElementRef<HTMLTextAreaElement>;
+  @ViewChild('editNoteEl') editNoteEl?: ElementRef<HTMLTextAreaElement>;
   @ViewChild('searchInputEl') searchInputEl?: ElementRef<HTMLInputElement>;
 
   private route = inject(ActivatedRoute);
@@ -134,6 +135,9 @@ export class ChapterEditComponent implements OnInit, OnDestroy {
   noteInputLeft = signal(0);
   noteInputText = signal('');
   highlightedNoteId = signal<string | null>(null);
+  /** Id of the note currently being edited inline (click-to-edit), or null. */
+  editingNoteId = signal<string | null>(null);
+  editingNoteText = signal('');
   private noteSelectionRange: Range | null = null;
 
   // ── Linked chats ─────────────────────────────────────────────────────────
@@ -834,18 +838,76 @@ export class ChapterEditComponent implements OnInit, OnDestroy {
       createdByName: this.userSettings.displayName() || undefined,
     };
     this.notes.update(ns => [...ns, note]);
-
-    const current = this.chapter();
-    if (current) {
-      const content = this.editorRef?.getContent() ?? '';
-      if (this.autoSaveTimer) clearTimeout(this.autoSaveTimer);
-      this.autoSaveTimer = setTimeout(() => {
-        this.draftService.saveDraft(current.id, content, this.notes());
-        this.hasDraft.set(true);
-      }, 800);
-    }
+    this.scheduleNotesDraftSave();
 
     this.dismissNoteInput();
+  }
+
+  /** Add a general chapter note not tied to any selected passage. Opens it for
+   *  editing immediately; it is discarded if left empty (see cancelEditNote). */
+  addGeneralNote(): void {
+    const note: ChapterNote = {
+      id: crypto.randomUUID(),
+      noteText: '',
+      selectedText: '',
+      createdAt: new Date().toISOString(),
+      createdBy: this.authService.currentUser()?.email || undefined,
+      createdByName: this.userSettings.displayName() || undefined,
+    };
+    this.notes.update(ns => [...ns, note]);
+    this.startEditNote(note);
+  }
+
+  /** Debounced draft save reflecting the current notes and outline. */
+  private scheduleNotesDraftSave(): void {
+    const current = this.chapter();
+    if (!current) return;
+    const content = this.editorRef?.getContent() ?? '';
+    if (this.autoSaveTimer) clearTimeout(this.autoSaveTimer);
+    this.autoSaveTimer = setTimeout(() => {
+      this.draftService.saveDraft(current.id, content, this.notes(), this.outline());
+      this.hasDraft.set(true);
+    }, 800);
+  }
+
+  // ── Notes: inline click-to-edit ──────────────────────────────────────────
+
+  startEditNote(note: ChapterNote, event?: Event): void {
+    event?.stopPropagation();
+    this.editingNoteId.set(note.id);
+    this.editingNoteText.set(note.noteText);
+    setTimeout(() => {
+      const el = this.editNoteEl?.nativeElement;
+      el?.focus();
+      el?.select();
+    });
+  }
+
+  saveEditNote(): void {
+    const id = this.editingNoteId();
+    if (!id) return;
+    const text = this.editingNoteText().trim();
+    // Empty text is treated as a cancel (drops never-saved notes, keeps existing ones).
+    if (!text) { this.cancelEditNote(); return; }
+    this.notes.update(ns => ns.map(n => (n.id === id ? { ...n, noteText: text } : n)));
+    this.editingNoteId.set(null);
+    this.editingNoteText.set('');
+    this.scheduleNotesDraftSave();
+  }
+
+  cancelEditNote(): void {
+    const id = this.editingNoteId();
+    if (id) {
+      // Drop a note that was never given any text (e.g. a general note added then cancelled).
+      this.notes.update(ns => ns.filter(n => n.id !== id || n.noteText.trim() !== ''));
+    }
+    this.editingNoteId.set(null);
+    this.editingNoteText.set('');
+  }
+
+  onEditNoteKeyDown(event: KeyboardEvent): void {
+    if (event.key === 'Escape') { event.preventDefault(); this.cancelEditNote(); }
+    else if (event.key === 'Enter' && event.ctrlKey) { event.preventDefault(); this.saveEditNote(); }
   }
 
   dismissNoteInput(): void {
@@ -860,17 +922,10 @@ export class ChapterEditComponent implements OnInit, OnDestroy {
   }
 
   deleteNote(noteId: string): void {
+    if (this.editingNoteId() === noteId) this.cancelEditNote();
     this.notes.update(ns => ns.filter(n => n.id !== noteId));
     this.editorRef?.removeNoteSpan(noteId);
-    const current = this.chapter();
-    if (current) {
-      const content = this.editorRef?.getContent() ?? '';
-      if (this.autoSaveTimer) clearTimeout(this.autoSaveTimer);
-      this.autoSaveTimer = setTimeout(() => {
-        this.draftService.saveDraft(current.id, content, this.notes());
-        this.hasDraft.set(true);
-      }, 800);
-    }
+    this.scheduleNotesDraftSave();
   }
 
   scrollToNote(noteId: string): void {
