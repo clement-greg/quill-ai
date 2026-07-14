@@ -636,6 +636,33 @@ export class RichTextEditorComponent implements OnInit, AfterViewInit, OnDestroy
     setTimeout(() => span.classList.remove('note-highlighted'), 2000);
   }
 
+  /** Number of entity-reference spans for the given entity in the document. */
+  countEntityReferences(entityId: string): number {
+    return this.editorRef?.nativeElement
+      .querySelectorAll(`.entity-reference[data-id="${entityId}"]`).length ?? 0;
+  }
+
+  /** Scrolls to and highlights the nth (0-based) reference to the entity,
+   *  clearing any previous seek highlight; returns the total reference count. */
+  scrollToEntityReference(entityId: string, index: number): number {
+    const editor = this.editorRef?.nativeElement;
+    if (!editor) return 0;
+    this.clearEntitySeekHighlight();
+    const spans = editor.querySelectorAll<HTMLElement>(`.entity-reference[data-id="${entityId}"]`);
+    const target = spans[index];
+    if (target) {
+      target.classList.add('entity-seek-active');
+      target.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }
+    return spans.length;
+  }
+
+  /** Removes the entity-seek highlight (transient UI state, never persisted). */
+  clearEntitySeekHighlight(): void {
+    this.editorRef?.nativeElement.querySelectorAll('.entity-seek-active')
+      .forEach(el => el.classList.remove('entity-seek-active'));
+  }
+
   /** Strip entity-quote spans before persisting (chapter-specific concern). */
   unwrapEntityQuotes(): void {
     if (!this.editorRef) return;

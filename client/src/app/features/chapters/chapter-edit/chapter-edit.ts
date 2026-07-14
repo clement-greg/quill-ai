@@ -714,8 +714,11 @@ export class ChapterEditComponent implements OnInit, OnDestroy {
 
     if (this.autoSaveTimer) { clearTimeout(this.autoSaveTimer); this.autoSaveTimer = null; }
 
-    // Strip entity-quote spans before saving
-    if (this.editorRef) this.editorRef.unwrapEntityQuotes();
+    // Strip entity-quote spans and transient seek highlights before saving
+    if (this.editorRef) {
+      this.editorRef.unwrapEntityQuotes();
+      this.editorRef.clearEntitySeekHighlight();
+    }
     const content = this.editorRef?.getContent() ?? chapter.content ?? '';
 
     this.saving.set(true);

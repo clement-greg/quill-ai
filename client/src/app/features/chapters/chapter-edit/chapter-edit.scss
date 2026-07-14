@@ -1147,13 +1147,11 @@ button.mobile-only {
   position: relative;
 }
 
-/* ── Mentioned-entities avatar stack (desktop) ───────── */
+/* ── Mentioned-entities avatar stack (desktop top bar) ── */
 app-mentioned-entities-panel {
   display: block;
-  position: absolute;
-  top: 24px;
-  right: 112px; /* clear the editor minimap on the right edge */
-  z-index: 90; /* below the search bar (100) so search overlays it when open */
+  margin-left: auto; /* sit in the blank space before the top-bar actions */
+  flex-shrink: 0;
 }
 
 .search-bar {

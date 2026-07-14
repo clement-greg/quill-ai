@@ -61,6 +61,12 @@
   cursor: pointer;
 }
 
+:host ::ng-deep .entity-reference.entity-seek-active {
+  background: color-mix(in srgb, var(--mat-sys-primary, #1976d2) 25%, transparent);
+  outline: 2px solid color-mix(in srgb, var(--mat-sys-primary, #1976d2) 70%, transparent);
+  border-radius: 3px;
+}
+
 /* ── Note indicator ─────────────────────────────────── */
 :host ::ng-deep .note-indicator {
   background: color-mix(in srgb, #ffeb3b 40%, transparent);

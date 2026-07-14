@@ -33,6 +33,13 @@
         } @else {
           <h1 class="title-placeholder desktop-only">Edit Chapter</h1>
         }
+        <!-- Mentioned entities avatar stack (desktop only) -->
+        @if (mentionedEntities().length > 0) {
+          <app-mentioned-entities-panel class="desktop-only"
+            [entities]="mentionedEntities()"
+            [editor]="editorRef"
+            (entitySelected)="onEntityEditRequest($event)" />
+        }
         <div class="top-bar-actions">
           @if (hasDraft()) {
             <span class="draft-indicator">Unsaved draft</span>
@@ -65,13 +72,6 @@
 
           <!-- Rich text editor -->
           <div class="editor-panel">
-
-            <!-- Mentioned entities avatar stack (desktop only) -->
-            @if (mentionedEntities().length > 0) {
-              <app-mentioned-entities-panel class="desktop-only"
-                [entities]="mentionedEntities()"
-                (entitySelected)="onEntityEditRequest($event)" />
-            }
 
             <!-- Find-in-page search bar -->
             @if (searchVisible()) {
