@@ -16,10 +16,11 @@ import { BreadcrumbDropdownComponent } from '@app/shared/breadcrumb-dropdown/bre
 import { AppExplorerComponent } from '@app/shared/app-explorer/app-explorer';
 import { QuickChatComponent } from '@app/features/ai/quick-chat/quick-chat';
 import { QuickChatService } from '@app/features/ai/quick-chat.service';
+import { UnsavedDraftsMenuComponent } from '@app/shared/unsaved-drafts-menu/unsaved-drafts-menu';
 
 @Component({
   selector: 'app-root',
-  imports: [RouterOutlet, RouterLink, MatToolbarModule, MatButtonModule, MatIconModule, AiAssistantComponent, BreadcrumbDropdownComponent, AppExplorerComponent, QuickChatComponent],
+  imports: [RouterOutlet, RouterLink, MatToolbarModule, MatButtonModule, MatIconModule, AiAssistantComponent, BreadcrumbDropdownComponent, AppExplorerComponent, QuickChatComponent, UnsavedDraftsMenuComponent],
   templateUrl: './app.html',
   styleUrl: './app.scss',
   host: {

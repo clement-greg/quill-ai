@@ -1,0 +1,25 @@
+@if (count() > 0) {
+  <button
+    mat-icon-button
+    class="drafts-toggle-btn"
+    [matMenuTriggerFor]="draftsMenu"
+    title="Unsaved chapter drafts"
+    [attr.aria-label]="'Unsaved chapter drafts (' + count() + ')'"
+  >
+    <mat-icon>save</mat-icon>
+    <span class="drafts-badge">{{ count() }}</span>
+  </button>
+  <mat-menu #draftsMenu="matMenu" class="drafts-menu-panel">
+    <div class="drafts-menu-header">Unsaved drafts</div>
+    @for (chapter of draftChapters(); track chapter.id) {
+      <a mat-menu-item [routerLink]="['/chapters', chapter.id, 'edit']" class="drafts-menu-item">
+        @if (proxyUrl(chapter.imageThumbnailUrl || chapter.imageUrl); as src) {
+          <img matMenuItemIcon [src]="src" [alt]="chapter.title" class="drafts-menu-thumb" />
+        } @else {
+          <mat-icon matMenuItemIcon class="drafts-menu-thumb-placeholder">description</mat-icon>
+        }
+        <span class="drafts-menu-title">{{ chapter.title }}</span>
+      </a>
+    }
+  </mat-menu>
+}

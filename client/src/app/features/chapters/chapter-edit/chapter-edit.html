@@ -42,8 +42,20 @@
         }
         <div class="top-bar-actions">
           @if (hasDraft()) {
-            <span class="draft-indicator">Unsaved draft</span>
-            <button mat-button (click)="discardDraft()">Discard draft</button>
+            <button mat-button class="draft-indicator" [matMenuTriggerFor]="draftMenu">
+              Unsaved draft
+              <mat-icon>arrow_drop_down</mat-icon>
+            </button>
+            <mat-menu #draftMenu="matMenu">
+              <button mat-menu-item (click)="viewDraftDiff()">
+                <mat-icon>difference</mat-icon>
+                View changes
+              </button>
+              <button mat-menu-item (click)="discardDraft()">
+                <mat-icon>delete</mat-icon>
+                Discard draft
+              </button>
+            </mat-menu>
           }
           <button mat-flat-button (click)="save()" [disabled]="saving() || !chapter()">
             {{ saving() ? 'Saving…' : 'Save' }}

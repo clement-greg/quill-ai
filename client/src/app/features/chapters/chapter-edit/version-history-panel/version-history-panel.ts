@@ -6,17 +6,14 @@ import { MatButtonModule } from '@angular/material/button';
 import { MatIconModule } from '@angular/material/icon';
 import { ChapterVersion } from '@shared/models/chapter.model';
 import { ChapterVersionService } from '../chapter-version.service';
-import { diffWords } from 'diff';
-
-interface DiffWord { type: 'same' | 'add' | 'remove'; text: string; }
-interface DiffParagraph { hasChanges: boolean; segments: DiffWord[]; }
+import { TextDiffViewComponent } from '@app/shared/text-diff-view/text-diff-view';
 
 /** Sidebar tab that lists a chapter's saved versions and shows a word-level
  *  diff between the selected version and its predecessor. Loads lazily the
  *  first time its tab becomes active. */
 @Component({
   selector: 'app-version-history-panel',
-  imports: [MatButtonModule, MatIconModule],
+  imports: [MatButtonModule, MatIconModule, TextDiffViewComponent],
   templateUrl: './version-history-panel.html',
   styleUrl: './version-history-panel.scss',
   changeDetection: ChangeDetectionStrategy.OnPush,
@@ -32,7 +29,6 @@ export class VersionHistoryPanelComponent implements OnDestroy {
   historyVersions = signal<ChapterVersion[]>([]);
   selectedVersion = signal<ChapterVersion | null>(null);
   previousVersion = signal<ChapterVersion | null>(null);
-  diffLines = signal<DiffParagraph[]>([]);
   historyListHeight = signal(180);
 
   // Track emails whose avatar endpoint returned an error so we fall back to the placeholder icon
@@ -86,7 +82,6 @@ export class VersionHistoryPanelComponent implements OnDestroy {
     this.historyVersions.set([]);
     this.selectedVersion.set(null);
     this.previousVersion.set(null);
-    this.diffLines.set([]);
   }
 
   load(): void {
@@ -111,37 +106,10 @@ export class VersionHistoryPanelComponent implements OnDestroy {
     // versions are newest-first, so previous version is at idx+1
     const prev = idx >= 0 && idx + 1 < versions.length ? versions[idx + 1] : null;
     this.previousVersion.set(prev);
-    const oldText = this.stripHtml(prev ? prev.content : '');
-    const newText = this.stripHtml(version.content);
-    this.diffLines.set(this.computeDiff(oldText, newText));
   }
 
   formatVersionDate(savedAt: string): string {
     return new Date(savedAt).toLocaleString();
-  }
-
-  private stripHtml(html: string): string {
-    const div = document.createElement('div');
-    div.innerHTML = html;
-    return (div.innerText || div.textContent || '').trim();
-  }
-
-  private computeDiff(oldText: string, newText: string): DiffParagraph[] {
-    const changes = diffWords(oldText, newText);
-    const paragraphs: DiffParagraph[] = [{ hasChanges: false, segments: [] }];
-    for (const change of changes) {
-      const type: 'same' | 'add' | 'remove' = change.added ? 'add' : change.removed ? 'remove' : 'same';
-      const parts = change.value.split('\n');
-      for (let i = 0; i < parts.length; i++) {
-        if (i > 0) paragraphs.push({ hasChanges: false, segments: [] });
-        if (parts[i]) {
-          const para = paragraphs[paragraphs.length - 1];
-          para.segments.push({ type, text: parts[i] });
-          if (type !== 'same') para.hasChanges = true;
-        }
-      }
-    }
-    return paragraphs.filter(p => p.segments.length > 0);
   }
 
   private loadHistoryListHeight(): void {

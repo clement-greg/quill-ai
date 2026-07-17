@@ -24,6 +24,8 @@
   <span class="toolbar-spacer"></span>
 
   @if (auth.currentUser()) {
+    <app-unsaved-drafts-menu />
+
     <!-- Single hamburger that opens the Application Explorer -->
     <button mat-icon-button (click)="explorer.toggle()" title="Menu" aria-label="Open menu">
       <mat-icon>menu</mat-icon>

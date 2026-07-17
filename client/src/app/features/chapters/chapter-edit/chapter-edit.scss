@@ -48,6 +48,13 @@
   font-size: 0.8rem;
   color: var(--mat-sys-secondary, #9c27b0);
   font-style: italic;
+
+  mat-icon {
+    font-size: 18px;
+    width: 18px;
+    height: 18px;
+    vertical-align: middle;
+  }
 }
 
 /* ── Workspace ───────────────────────────────────────── */

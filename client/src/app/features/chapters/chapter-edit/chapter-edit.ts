@@ -29,6 +29,7 @@ import { EntityService } from '@app/features/entities/entity.service';
 import { EntityQuoteService } from '@app/features/entities/entity-quote.service';
 import { TimelineEventService } from '@app/features/entities/timeline-event.service';
 import { ChapterAnalysisDialogComponent, ChapterAnalysisDialogData, ChapterAnalysisDialogResult } from './chapter-analysis-dialog';
+import { DraftDiffDialogComponent, DraftDiffDialogData } from './draft-diff-dialog';
 import { EntityRelationshipService } from '@app/features/entities/entity-relationship.service';
 import { SeriesService } from '@app/features/series/series.service';
 import { SlideOutPanelContainer } from '@app/shared/slide-out-panel-container/slide-out-panel-container';
@@ -47,7 +48,6 @@ import { RecentChaptersService } from '../recent-chapters.service';
 import { EditorReviewService } from '../editor-review.service';
 import { QuillReviewPanelComponent } from './quill-review-panel/quill-review-panel';
 import { MentionedEntitiesPanelComponent } from './mentioned-entities-panel';
-import { entityNameVariants } from '@app/shared/entity-references';
 import { VersionHistoryPanelComponent } from './version-history-panel/version-history-panel';
 import { ConfirmDialogComponent } from '@app/shared/confirm-dialog/confirm-dialog';
 import { MoveTextDialogComponent, MoveTextDialogData, MoveTextDialogResult } from './move-text-dialog';
@@ -153,22 +153,19 @@ export class ChapterEditComponent implements OnInit, OnDestroy {
   /** Editor HTML sampled for mention detection — set on load and (debounced) on edit. */
   private mentionContent = signal('');
   private mentionRefreshTimer: ReturnType<typeof setTimeout> | null = null;
-  /** Entities referenced in the chapter, ordered by first appearance. */
+  /** Entities with at least one linked entity-reference span in the chapter,
+   *  ordered by first appearance. Matches the same source of truth as
+   *  `countEntityReferences`/seeking, so an entity never shows with 0 mentions. */
   mentionedEntities = computed<Entity[]>(() => {
     const html = this.mentionContent();
     const entities = this.entities();
     if (!html || entities.length === 0) return [];
-    const text = this.stripHtml(html);
+    const container = document.createElement('div');
+    container.innerHTML = html;
+    const spans = Array.from(container.querySelectorAll<HTMLElement>('.entity-reference[data-id]'));
     const found: { entity: Entity; pos: number }[] = [];
     for (const entity of entities) {
-      let pos = -1;
-      for (const variant of entityNameVariants(entity)) {
-        const escaped = variant.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-        const match = new RegExp(`\\b${escaped}\\b`, 'i').exec(text);
-        if (match && (pos === -1 || match.index < pos)) pos = match.index;
-      }
-      // Fall back to the entity-reference span id for renamed/free-form references
-      if (pos === -1 && html.includes(entity.id)) pos = Number.MAX_SAFE_INTEGER;
+      const pos = spans.findIndex(span => span.getAttribute('data-id') === entity.id);
       if (pos !== -1) found.push({ entity, pos });
     }
     return found.sort((a, b) => a.pos - b.pos).map(f => f.entity);
@@ -289,17 +286,11 @@ export class ChapterEditComponent implements OnInit, OnDestroy {
 
       this.chapterService.getById(id).subscribe({
       next: async (data) => {
-        const draft = await this.draftService.getDraft(data.id);
-        // Prefer server data when the server was modified more recently than the
-        // draft (e.g. an external tool updated the chapter while the user was away).
-        const serverMs = data.modifiedAt ? new Date(data.modifiedAt).getTime() : 0;
-        const draftIsStale = draft !== null && serverMs > draft.savedAt;
-        const contentDiffers = draft !== null && !draftIsStale && draft.content !== (data.content ?? '');
-        const outlineDiffers = draft !== null && !draftIsStale && JSON.stringify(draft.outline ?? []) !== JSON.stringify(data.outline ?? []);
-        const hasDraft = contentDiffers || outlineDiffers;
-        const content = hasDraft ? draft!.content : (data.content ?? '');
-        const notes = hasDraft ? draft!.notes : (data.notes ?? []);
-        const outline = hasDraft ? draft!.outline : (data.outline ?? []);
+        const draft = await this.draftService.resolvePendingDraft(data);
+        const hasDraft = draft !== null;
+        const content = hasDraft ? draft.content : (data.content ?? '');
+        const notes = hasDraft ? draft.notes : (data.notes ?? []);
+        const outline = hasDraft ? draft.outline : (data.outline ?? []);
         if (hasDraft) this.hasDraft.set(true);
         this.chapter.set({ ...data, content });
         this.notes.set(notes);
@@ -809,6 +800,12 @@ export class ChapterEditComponent implements OnInit, OnDestroy {
         },
       });
     });
+  }
+
+  viewDraftDiff(): void {
+    const draftContent = this.editorRef?.getContent() ?? this.chapter()?.content ?? '';
+    const data: DraftDiffDialogData = { savedContent: this.lastSavedContent ?? '', draftContent };
+    this.dialog.open(DraftDiffDialogComponent, { data, width: '640px', maxWidth: '90vw' });
   }
 
   // ── Notes (in-text) ──────────────────────────────────────────────────────

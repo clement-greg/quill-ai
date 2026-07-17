@@ -38,18 +38,10 @@
 } @else {
   <div class="history-panel-resizer" (mousedown)="onHistoryResizerMouseDown($event)"></div>
   <div class="history-sidebar-diff">
-    <div class="history-diff-legend">
-      <span class="legend-remove">&#8722; {{ previousVersion() ? formatVersionDate(previousVersion()!.savedAt) : 'Beginning' }}</span>
-      <span class="legend-add">&#43; {{ formatVersionDate(selectedVersion()!.savedAt) }}</span>
-    </div>
-    <div class="history-diff-content">
-      @for (para of diffLines(); track $index) {
-        <p class="diff-paragraph" [class.diff-paragraph-changed]="para.hasChanges">
-          @for (seg of para.segments; track $index) {
-            <span [class.diff-word-add]="seg.type === 'add'" [class.diff-word-remove]="seg.type === 'remove'">{{ seg.text }}</span>
-          }
-        </p>
-      }
-    </div>
+    <app-text-diff-view
+      [oldText]="previousVersion()?.content ?? ''"
+      [newText]="selectedVersion()!.content"
+      [oldLabel]="previousVersion() ? formatVersionDate(previousVersion()!.savedAt) : 'Beginning'"
+      [newLabel]="formatVersionDate(selectedVersion()!.savedAt)" />
   </div>
 }
