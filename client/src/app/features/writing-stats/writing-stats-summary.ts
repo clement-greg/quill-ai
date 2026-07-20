@@ -14,6 +14,7 @@ import {
   LinearScale,
   Tooltip,
 } from 'chart.js';
+import { WritingStatsCacheService } from './writing-stats-cache.service';
 
 Chart.register(BarController, BarElement, CategoryScale, LinearScale, Tooltip);
 
@@ -230,6 +231,7 @@ const localTz = Intl.DateTimeFormat().resolvedOptions().timeZone;
 })
 export class WritingStatsSummaryComponent implements OnInit, AfterViewInit, OnDestroy {
   private http = inject(HttpClient);
+  private cache = inject(WritingStatsCacheService);
 
   @ViewChild('chartCanvas') private chartCanvas!: ElementRef<HTMLCanvasElement>;
 
@@ -243,23 +245,34 @@ export class WritingStatsSummaryComponent implements OnInit, AfterViewInit, OnDe
   private chart?: Chart;
 
   ngOnInit(): void {
+    const cached = this.cache.get<StatsResponse>();
+    if (cached) {
+      this.applyResponse(cached);
+      return;
+    }
+
     this.http.get<StatsResponse>(`/api/user-stats/writing?days=30&tz=${encodeURIComponent(localTz)}`).subscribe({
-      next: ({ daily, summary }) => {
-        this.dailyData = daily;
-        const added   = daily.reduce((s, d) => s + d.wordsAdded, 0);
-        const deleted = daily.reduce((s, d) => s + d.wordsDeleted, 0);
-        const bestEntry = daily.reduce<DailyEntry | null>((best, d) => {
-          const net = d.wordsAdded - d.wordsDeleted;
-          return net > 0 && (best === null || net > (best.wordsAdded - best.wordsDeleted)) ? d : best;
-        }, null);
-        const bestDay = bestEntry
-          ? { date: bestEntry.date, words: bestEntry.wordsAdded - bestEntry.wordsDeleted }
-          : null;
-        this.snap.set({ added, deleted, net: added - deleted, streak: summary.currentStreak, bestDay });
-        this.loading.set(false);
-        if (this.viewReady) setTimeout(() => this.renderChart(), 0);
+      next: response => {
+        this.cache.set(response);
+        this.applyResponse(response);
       },
     });
+  }
+
+  private applyResponse({ daily, summary }: StatsResponse): void {
+    this.dailyData = daily;
+    const added   = daily.reduce((s, d) => s + d.wordsAdded, 0);
+    const deleted = daily.reduce((s, d) => s + d.wordsDeleted, 0);
+    const bestEntry = daily.reduce<DailyEntry | null>((best, d) => {
+      const net = d.wordsAdded - d.wordsDeleted;
+      return net > 0 && (best === null || net > (best.wordsAdded - best.wordsDeleted)) ? d : best;
+    }, null);
+    const bestDay = bestEntry
+      ? { date: bestEntry.date, words: bestEntry.wordsAdded - bestEntry.wordsDeleted }
+      : null;
+    this.snap.set({ added, deleted, net: added - deleted, streak: summary.currentStreak, bestDay });
+    this.loading.set(false);
+    if (this.viewReady) setTimeout(() => this.renderChart(), 0);
   }
 
   ngAfterViewInit(): void {
