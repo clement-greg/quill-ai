@@ -1,11 +1,10 @@
 import { Component, inject, signal, computed, ChangeDetectionStrategy } from '@angular/core';
-import { MatDialogModule, MAT_DIALOG_DATA } from '@angular/material/dialog';
 import { MatButtonModule } from '@angular/material/button';
 import { MatIconModule } from '@angular/material/icon';
 import { MatTooltipModule } from '@angular/material/tooltip';
-import { FactCheckFinding, FactCheckResult, FactCheckVerdict } from '@shared/models/fact-check.model';
-
-export type FactCheckDialogData = FactCheckResult;
+import { MatProgressBarModule } from '@angular/material/progress-bar';
+import { FactCheckFinding, FactCheckVerdict } from '@shared/models/fact-check.model';
+import { FactCheckService } from '../fact-check.service';
 
 interface VerdictGroup {
   verdict: FactCheckVerdict;
@@ -25,7 +24,7 @@ const VERDICT_META: Record<FactCheckVerdict, { label: string; icon: string; blur
   unverifiable: {
     label: 'Needs checking',
     icon: 'help',
-    blurb: "Real-world claims that couldn't be settled here — worth your own look.",
+    blurb: "Real-world claims that couldn't be settled — worth your own look.",
   },
   verified: {
     label: 'Verified',
@@ -45,47 +44,118 @@ function confidenceLabel(confidence: number): string {
 }
 
 /**
- * Read-only report for a chapter fact-check run: every real-world claim the
- * check found, grouped by verdict, with a confidence level on each and a remedy
- * for anything the author needs to act on.
+ * Live report for a chapter fact-check run, shown in the editor's slide-out
+ * panel rather than a dialog: the author needs the chapter itself to act on the
+ * findings, so nothing here blocks the editor. It shows what stage the run is
+ * at, fills in each finding as its web lookup settles, and can stop the run
+ * mid-flight — findings already in hand stay on screen.
  */
 @Component({
-  selector: 'app-fact-check-dialog',
+  selector: 'app-fact-check-panel',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [MatDialogModule, MatButtonModule, MatIconModule, MatTooltipModule],
+  imports: [MatButtonModule, MatIconModule, MatTooltipModule, MatProgressBarModule],
   template: `
-    <h2 mat-dialog-title>Fact Check</h2>
-    <mat-dialog-content>
-      @if (data.findings.length === 0) {
-        <p class="intro">
-          No real-world claims were found in this chapter — nothing here to fact-check.
-        </p>
-      } @else {
-        <p class="intro">
-          {{ data.findings.length }} checkable
-          {{ data.findings.length === 1 ? 'claim' : 'claims' }} found.
-          @if (data.groundedCount > 0) {
-            {{ data.groundedCount }} of them
-            {{ data.groundedCount === 1 ? 'was' : 'were' }} checked against live web sources,
-            linked below.
-            @if (data.groundedCount < data.findings.length) {
-              The rest come from the model's own knowledge.
-            }
-          } @else if (data.searchAvailable) {
-            Web search wasn't reachable for this run, so these come from the model's own
-            knowledge.
-          } @else {
-            These come from the model's own knowledge — web search isn't configured on the
-            server.
-          }
-          Treat the confidence level on each finding as part of the finding.
-        </p>
+    <div class="panel-header">
+      <mat-icon aria-hidden="true">fact_check</mat-icon>
+      <h2>Fact Check</h2>
+      @if (!factCheck.running() && findings().length > 0) {
+        <button mat-button type="button" class="copy-btn" (click)="copyReport()">
+          <mat-icon>{{ copied() ? 'check' : 'content_copy' }}</mat-icon>
+          {{ copied() ? 'Copied' : 'Copy report' }}
+        </button>
+      }
+    </div>
+    <div class="panel-body">
 
-        @if (data.truncated) {
-          <p class="notice" role="note">
-            <mat-icon aria-hidden="true">content_cut</mat-icon>
-            This chapter is long, so only its opening portion was checked.
+      @if (factCheck.running()) {
+        <!-- ── Working state: what's happening, how far along, and a way out ── -->
+        <div class="progress-panel" role="status" aria-live="polite">
+          <div class="progress-head">
+            <mat-icon class="progress-icon">
+              {{ factCheck.stage() === 'extracting' ? 'auto_stories' : 'travel_explore' }}
+            </mat-icon>
+            <div class="progress-text">
+              @if (factCheck.stage() === 'extracting') {
+                <span class="progress-title">Reading the chapter for checkable claims…</span>
+                <span class="progress-sub">This part takes a few seconds.</span>
+              } @else {
+                <span class="progress-title">
+                  Checking claim {{ nextClaimNumber() }} of {{ factCheck.total() }}
+                  @if (factCheck.searchAvailable()) { against the web }
+                </span>
+                <span class="progress-sub">
+                  {{ factCheck.completed() }} of {{ factCheck.total() }} settled — results appear
+                  below as they land.
+                </span>
+              }
+            </div>
+            <button mat-stroked-button type="button" class="stop-btn" (click)="stop()">
+              <mat-icon>stop_circle</mat-icon>
+              Stop
+            </button>
+          </div>
+          @if (factCheck.stage() === 'checking' && factCheck.total() > 0) {
+            <mat-progress-bar mode="determinate" [value]="factCheck.percentComplete()"
+              [attr.aria-label]="'Claims checked: ' + factCheck.completed() + ' of ' + factCheck.total()" />
+          } @else {
+            <mat-progress-bar mode="indeterminate" aria-label="Reading the chapter" />
+          }
+        </div>
+      }
+
+      @if (factCheck.error()) {
+        <p class="notice notice--error" role="alert">
+          <mat-icon aria-hidden="true">error</mat-icon>
+          {{ factCheck.error() }}
+        </p>
+      }
+
+      @if (factCheck.stopped() && findings().length > 0) {
+        <p class="notice" role="note">
+          <mat-icon aria-hidden="true">stop_circle</mat-icon>
+          Stopped after {{ findings().length }} of {{ factCheck.total() }}
+          {{ factCheck.total() === 1 ? 'claim' : 'claims' }}. What was checked is below.
+        </p>
+      }
+
+      @if (isFinished() && findings().length === 0 && !factCheck.error()) {
+        <p class="intro">
+          @if (factCheck.stopped()) {
+            Stopped before any claim was checked.
+          } @else {
+            No real-world claims were found in this chapter — nothing here to fact-check.
+          }
+        </p>
+      }
+
+      @if (findings().length > 0) {
+        @if (isFinished()) {
+          <p class="intro">
+            {{ findings().length }} checkable
+            {{ findings().length === 1 ? 'claim' : 'claims' }} reported.
+            @if (factCheck.groundedCount() > 0) {
+              {{ factCheck.groundedCount() }} of them
+              {{ factCheck.groundedCount() === 1 ? 'was' : 'were' }} checked against live web
+              sources, linked below.
+              @if (factCheck.groundedCount() < findings().length) {
+                The rest come from the model's own knowledge.
+              }
+            } @else if (factCheck.searchAvailable()) {
+              Web search wasn't reachable for this run, so these come from the model's own
+              knowledge.
+            } @else {
+              These come from the model's own knowledge — web search isn't configured on the
+              server.
+            }
+            Treat the confidence level on each finding as part of the finding.
           </p>
+
+          @if (factCheck.truncated()) {
+            <p class="notice" role="note">
+              <mat-icon aria-hidden="true">content_cut</mat-icon>
+              This chapter is long, so only its opening portion was checked.
+            </p>
+          }
         }
 
         <!-- Verdict filters: counts double as show/hide toggles. -->
@@ -168,26 +238,70 @@ function confidenceLabel(confidence: number): string {
           <p class="intro">All verdicts are hidden — turn one back on above to see findings.</p>
         }
       }
-    </mat-dialog-content>
-    <mat-dialog-actions align="end">
-      @if (data.findings.length > 0) {
-        <button mat-button type="button" (click)="copyReport()">
-          <mat-icon>{{ copied() ? 'check' : 'content_copy' }}</mat-icon>
-          {{ copied() ? 'Copied' : 'Copy report' }}
-        </button>
-      }
-      <button mat-flat-button mat-dialog-close>Done</button>
-    </mat-dialog-actions>
+    </div>
   `,
   styles: [`
-    mat-dialog-content { width: min(560px, 90vw); box-sizing: border-box; }
+    :host { display: block; box-sizing: border-box; }
+    /* The slide-out container owns the scrolling, so the header sticks to the
+       scrollport rather than the panel growing its own scroll area. That
+       scrollport carries 56px of top padding to clear its close button, so the
+       header rises into the gap — otherwise findings scroll through it. */
+    .panel-header {
+      position: sticky; top: -56px; margin-top: -56px; z-index: 2;
+      display: flex; align-items: center; gap: 8px;
+      /* Right padding clears the container's close button, which sits top-right. */
+      padding: 68px 52px 12px 20px;
+      background: var(--mat-sys-surface, #fffbfe);
+      border-bottom: 1px solid var(--mat-sys-outline-variant, #cac4d0);
+      h2 { margin: 0; font-size: 1.1rem; font-weight: 600; flex: 1; min-width: 0; }
+      mat-icon { color: var(--mat-sys-primary, #6750a4); flex-shrink: 0; }
+    }
+    .copy-btn { flex-shrink: 0; font-size: 0.8rem;
+      mat-icon { font-size: 16px; width: 16px; height: 16px; margin-right: 4px; color: inherit; }
+    }
+    .panel-body { padding: 16px 20px 24px; }
     .intro { margin: 0 0 12px; color: var(--mat-sys-on-surface-variant, #49454f); font-size: 0.9rem; }
     .notice {
       display: flex; align-items: center; gap: 8px; margin: 0 0 12px;
       padding: 8px 10px; border-radius: 8px; font-size: 0.85rem;
       background: var(--mat-sys-surface-variant, #f3edf7);
-      mat-icon { font-size: 18px; width: 18px; height: 18px; }
+      mat-icon { font-size: 18px; width: 18px; height: 18px; flex-shrink: 0; }
     }
+    .notice--error { background: #f7d9d7; color: #6b1712; }
+
+    /* ── Working state ── */
+    .progress-panel {
+      margin-bottom: 16px; padding: 12px; border-radius: 8px;
+      background: var(--mat-sys-surface-variant, #f3edf7);
+    }
+    .progress-head { display: flex; align-items: flex-start; gap: 10px; margin-bottom: 10px; flex-wrap: wrap; }
+    /* Taller than the 4px default so the run reads as working at a glance. */
+    .progress-panel mat-progress-bar {
+      --mat-progress-bar-track-height: 8px;
+      --mat-progress-bar-active-indicator-height: 8px;
+      --mat-progress-bar-track-shape: 4px;
+      border-radius: 4px; overflow: hidden;
+    }
+    .progress-icon {
+      flex-shrink: 0; color: var(--mat-sys-primary, #6750a4);
+      animation: fc-pulse 1.6s ease-in-out infinite;
+    }
+    .progress-text { display: flex; flex-direction: column; gap: 2px; min-width: 0; flex: 1; }
+    .progress-title { font-size: 0.9rem; font-weight: 600; }
+    .progress-sub { font-size: 0.8rem; color: var(--mat-sys-on-surface-variant, #49454f); }
+    .stop-btn { flex-shrink: 0; color: #b3261e; height: 32px; line-height: 32px; padding: 0 12px;
+      mat-icon { font-size: 18px; width: 18px; height: 18px; margin-right: 2px; }
+    }
+
+    @keyframes fc-pulse {
+      0%, 100% { opacity: 1; transform: scale(1); }
+      50% { opacity: 0.45; transform: scale(0.9); }
+    }
+    @keyframes fc-land {
+      from { opacity: 0; transform: translateY(6px); }
+      to { opacity: 1; transform: none; }
+    }
+
     .filters { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 16px; }
     .filter-chip {
       display: inline-flex; align-items: center; gap: 6px;
@@ -220,6 +334,8 @@ function confidenceLabel(confidence: number): string {
       padding: 10px 12px; border-radius: 8px; margin-bottom: 8px;
       border-left: 3px solid transparent;
       background: var(--mat-sys-surface-variant, #f3edf7);
+      /* Each finding is inserted the moment its lookup lands. */
+      animation: fc-land 220ms ease-out;
     }
     .finding--disputed { border-left-color: #b3261e; }
     .finding--unverifiable { border-left-color: #8a5200; }
@@ -283,28 +399,47 @@ function confidenceLabel(confidence: number): string {
       text-transform: uppercase; color: var(--mat-sys-on-surface-variant, #49454f);
     }
     .remedy-text { margin: 2px 0 0; font-size: 0.85rem; }
+
+    @media (prefers-reduced-motion: reduce) {
+      .progress-icon, .finding { animation: none; }
+    }
   `],
 })
-export class FactCheckDialogComponent {
-  readonly data = inject<FactCheckDialogData>(MAT_DIALOG_DATA);
+export class FactCheckPanelComponent {
+  /** Public so the template can read the live run state. */
+  readonly factCheck = inject(FactCheckService);
 
   /** Which verdict groups are currently expanded. All start visible. */
   private shownVerdicts = signal<ReadonlySet<FactCheckVerdict>>(new Set(VERDICT_ORDER));
   readonly shown = this.shownVerdicts.asReadonly();
   copied = signal(false);
 
+  readonly findings = this.factCheck.sortedFindings;
+  readonly isFinished = computed(() => this.factCheck.stage() === 'done');
+
+  /** 1-based number of the claim currently being worked on. */
+  readonly nextClaimNumber = computed(() =>
+    Math.min(this.factCheck.completed() + 1, this.factCheck.total()),
+  );
+
   /** Every non-empty verdict group, in report order. */
-  groups = computed<VerdictGroup[]>(() =>
-    VERDICT_ORDER
+  groups = computed<VerdictGroup[]>(() => {
+    const findings = this.findings();
+    return VERDICT_ORDER
       .map(verdict => ({
         verdict,
         ...VERDICT_META[verdict],
-        findings: this.data.findings.filter(f => f.verdict === verdict),
+        findings: findings.filter(f => f.verdict === verdict),
       }))
-      .filter(g => g.findings.length > 0),
-  );
+      .filter(g => g.findings.length > 0);
+  });
 
   visibleGroups = computed(() => this.groups().filter(g => this.shownVerdicts().has(g.verdict)));
+
+  /** Stops the run but leaves the report open with what it found. */
+  stop(): void {
+    this.factCheck.stop();
+  }
 
   toggle(verdict: FactCheckVerdict): void {
     this.shownVerdicts.update(current => {
@@ -325,7 +460,8 @@ export class FactCheckDialogComponent {
   /** Copies the whole report as markdown, so it can be pasted into notes. */
   copyReport(): void {
     const lines: string[] = ['# Fact check'];
-    if (this.data.truncated) lines.push('_Only the opening portion of this chapter was checked._');
+    if (this.factCheck.truncated()) lines.push('_Only the opening portion of this chapter was checked._');
+    if (this.factCheck.stopped()) lines.push('_The check was stopped early; this is a partial report._');
     for (const group of this.groups()) {
       lines.push('', `## ${group.label} (${group.findings.length})`);
       for (const f of group.findings) {

@@ -5,10 +5,10 @@ import config from '../config';
 import {
   FactCheckCategory,
   FactCheckFinding,
-  FactCheckResult,
+  FactCheckStreamEvent,
   FactCheckVerdict,
 } from '../../shared/models/fact-check.model';
-import { groundClaims, isSearchGroundingEnabled } from '../services/google-search-grounding';
+import { GroundedVerdict, groundClaims, isSearchGroundingEnabled } from '../services/google-search-grounding';
 
 const router = Router();
 
@@ -140,42 +140,36 @@ function dedupe(findings: FactCheckFinding[]): FactCheckFinding[] {
   });
 }
 
-/**
- * Re-checks the leading `MAX_GROUNDED_CLAIMS` findings against live Google Search
- * results, replacing the knowledge-based verdict wherever the web comes back with
- * an answer. Grounding is best-effort: a claim that can't be grounded (rate limit,
- * timeout, unusable reply) keeps its stage-1 verdict with `grounded: false`.
- *
- * Only the restated claim and its short quote leave for Google — never the chapter.
- */
-async function applySearchGrounding(findings: FactCheckFinding[]): Promise<FactCheckFinding[]> {
-  const toGround = findings.slice(0, MAX_GROUNDED_CLAIMS);
-  const verdicts = await groundClaims(toGround.map(f => ({ claim: f.claim, quote: f.quote })));
-
-  return findings.map((finding, i) => {
-    const grounded = verdicts[i];
-    if (!grounded) return finding;
-    return {
-      ...finding,
-      verdict: grounded.verdict,
-      confidence: grounded.confidence,
-      explanation: grounded.explanation,
-      ...(grounded.remedy ? { remedy: grounded.remedy } : { remedy: undefined }),
-      grounded: true,
-      ...(grounded.sources.length > 0 ? { sources: grounded.sources } : {}),
-    };
-  });
+/** Folds a grounded verdict into the knowledge-based finding it re-checked. */
+function withGroundedVerdict(finding: FactCheckFinding, grounded: GroundedVerdict): FactCheckFinding {
+  return {
+    ...finding,
+    verdict: grounded.verdict,
+    confidence: grounded.confidence,
+    explanation: grounded.explanation,
+    // A remedy from the first pass is stale once the web has spoken.
+    ...(grounded.remedy ? { remedy: grounded.remedy } : { remedy: undefined }),
+    grounded: true,
+    ...(grounded.sources.length > 0 ? { sources: grounded.sources } : {}),
+  };
 }
 
 /**
  * POST /api/fact-check
  * Fact-checks the real-world claims in a chapter's prose. Body:
  *   { text: string, knownEntityNames?: string[] }
- * Azure OpenAI extracts the claims, then each is re-adjudicated against live
- * Google Search results via Gemini when that's configured. Returns
- * { findings, truncated, searchAvailable, groundedCount } — disputed findings
- * first, then unverifiable, then verified, each group by descending confidence.
- * Nothing is persisted.
+ *
+ * Streams progress as SSE, because a run makes one Azure call plus a web lookup
+ * per claim and can take a minute:
+ *   data: {"stage":"extracting"}                         — reading the chapter
+ *   data: {"stage":"checking","total":N,...}             — claims found, lookups starting
+ *   data: {"finding":FactCheckFinding}                   — one per claim, as it settles
+ *   data: {"error":"..."}                                — run failed
+ *   data: [DONE]
+ * Findings stream in completion order, so the client sorts them for display.
+ *
+ * Closing the connection cancels the run: remaining web lookups are abandoned
+ * rather than billed for. Nothing is persisted.
  */
 router.post('/', async (req: Request, res: Response) => {
   const { text, knownEntityNames } = req.body as { text?: string; knownEntityNames?: string[] };
@@ -183,6 +177,27 @@ router.post('/', async (req: Request, res: Response) => {
     res.status(400).json({ error: 'text required' });
     return;
   }
+
+  res.setHeader('Content-Type', 'text/event-stream');
+  res.setHeader('Cache-Control', 'no-cache');
+  res.setHeader('Connection', 'keep-alive');
+  res.flushHeaders();
+
+  // The client aborts the fetch when the author hits Stop or closes the report.
+  // Watch the response, not the request: `req`'s own 'close' fires as soon as the
+  // request body has been read, which is every request, not just a cancelled one.
+  let cancelled = false;
+  res.on('close', () => {
+    // A close before we finished writing is the client hanging up on us.
+    if (!res.writableEnded) cancelled = true;
+  });
+
+  const send = (payload: FactCheckStreamEvent): void => {
+    if (cancelled) return;
+    res.write(`data: ${JSON.stringify(payload)}\n\n`);
+  };
+
+  send({ stage: 'extracting' });
 
   const truncated = text.length > MAX_TEXT_CHARS;
   const trimmedText = text.slice(0, MAX_TEXT_CHARS);
@@ -206,46 +221,57 @@ router.post('/', async (req: Request, res: Response) => {
       response_format: { type: 'json_object' },
     });
 
-    let findings: FactCheckFinding[] = [];
+    let claims: FactCheckFinding[] = [];
     try {
       const parsed = JSON.parse(completion.choices[0]?.message?.content ?? '{}') as { findings?: unknown };
       if (Array.isArray(parsed.findings)) {
-        findings = parsed.findings
+        claims = parsed.findings
           .map(f => toFinding(f, trimmedText))
           .filter((f): f is FactCheckFinding => f !== null);
       }
     } catch {
-      res.status(502).json({ error: "The fact check came back unreadable — please try again." });
+      send({ error: 'The fact check came back unreadable — please try again.' });
       return;
     }
 
-    const byPriority = (a: FactCheckFinding, b: FactCheckFinding): number =>
-      VERDICT_RANK[a.verdict] - VERDICT_RANK[b.verdict] || b.confidence - a.confidence;
-
     // Sort before grounding so the claims most worth a web lookup — the disputes —
     // are the ones inside the grounding budget.
-    findings = dedupe(findings).sort(byPriority);
+    claims = dedupe(claims).sort(
+      (a, b) => VERDICT_RANK[a.verdict] - VERDICT_RANK[b.verdict] || b.confidence - a.confidence,
+    );
 
     const searchAvailable = isSearchGroundingEnabled();
-    if (searchAvailable && findings.length > 0) {
-      // A grounded verdict can flip a claim between groups, so re-sort after.
-      findings = (await applySearchGrounding(findings)).sort(byPriority);
-    }
+    send({ stage: 'checking', total: claims.length, truncated, searchAvailable });
 
-    res.json({
-      findings,
-      truncated,
-      searchAvailable,
-      groundedCount: findings.filter(f => f.grounded).length,
-    } satisfies FactCheckResult);
+    if (searchAvailable && claims.length > 0) {
+      const budget = claims.slice(0, MAX_GROUNDED_CLAIMS);
+      // Each claim is emitted the moment its lookup lands, so the report fills in
+      // as the run proceeds instead of appearing all at once at the end.
+      await groundClaims(
+        budget.map(f => ({ claim: f.claim, quote: f.quote })),
+        {
+          isCancelled: () => cancelled,
+          onResult: (index, grounded) => send({
+            finding: grounded ? withGroundedVerdict(budget[index], grounded) : budget[index],
+          }),
+        },
+      );
+      // Claims past the grounding budget keep their knowledge-based verdict.
+      for (const finding of claims.slice(MAX_GROUNDED_CLAIMS)) send({ finding });
+    } else {
+      for (const finding of claims) send({ finding });
+    }
   } catch (err) {
     console.error('Fact check error:', err);
     const isContentFilter = (err as { code?: string })?.code === 'content_filter';
-    res.status(500).json({
+    send({
       error: isContentFilter
         ? 'Your chapter was blocked by the content filter. Try fact-checking a shorter section.'
         : 'The fact check failed. Please try again.',
     });
+  } finally {
+    if (!cancelled) res.write('data: [DONE]\n\n');
+    res.end();
   }
 });
 

@@ -159,8 +159,44 @@ describe('groundClaims', () => {
       .mockResolvedValueOnce({ ok: false, status: 429, json: async () => ({ error: { message: 'quota' } }) })
       .mockResolvedValueOnce(geminiReply(JSON.stringify({ verdict: 'verified', confidence: 80, explanation: 'Fine.' })));
 
-    const results = await groundClaims([{ claim: 'A.' }, { claim: 'B.' }, { claim: 'C.' }], 1);
+    const results = await groundClaims(
+      [{ claim: 'A.' }, { claim: 'B.' }, { claim: 'C.' }],
+      { concurrency: 1 },
+    );
     expect(results.map(r => r?.verdict ?? null)).toEqual(['disputed', null, 'verified']);
+  });
+
+  it('reports each claim through onResult as it settles', async () => {
+    jest.spyOn(console, 'warn').mockImplementation(() => {});
+    fetchMock
+      .mockResolvedValueOnce(geminiReply(GOOD_JSON))
+      .mockResolvedValueOnce({ ok: false, status: 429, json: async () => ({ error: { message: 'quota' } }) });
+
+    const seen: [number, string | null][] = [];
+    await groundClaims([{ claim: 'A.' }, { claim: 'B.' }], {
+      concurrency: 1,
+      onResult: (index, verdict) => seen.push([index, verdict?.verdict ?? null]),
+    });
+
+    expect(seen).toEqual([[0, 'disputed'], [1, null]]);
+  });
+
+  it('stops taking new claims once isCancelled returns true', async () => {
+    fetchMock.mockResolvedValue(geminiReply(GOOD_JSON));
+    let cancelled = false;
+
+    const results = await groundClaims(
+      Array.from({ length: 5 }, (_, i) => ({ claim: `Claim ${i}.` })),
+      {
+        concurrency: 1,
+        // Cancel as soon as the first lookup has been reported.
+        onResult: () => { cancelled = true; },
+        isCancelled: () => cancelled,
+      },
+    );
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(results.map(r => r?.verdict ?? null)).toEqual(['disputed', null, null, null, null]);
   });
 
   it('never runs more than `concurrency` lookups at once', async () => {
@@ -174,7 +210,7 @@ describe('groundClaims', () => {
     });
 
     const claims = Array.from({ length: 9 }, (_, i) => ({ claim: `Claim ${i}.` }));
-    const results = await groundClaims(claims, 3);
+    const results = await groundClaims(claims, { concurrency: 3 });
 
     expect(results.every(r => r !== null)).toBe(true);
     expect(fetchMock).toHaveBeenCalledTimes(9);

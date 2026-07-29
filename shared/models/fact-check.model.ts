@@ -75,16 +75,24 @@ export interface FactCheckRequest {
   knownEntityNames?: string[];
 }
 
-/** Response body for POST /api/fact-check. */
-export interface FactCheckResult {
-  /** Findings ordered most-actionable first: disputed, unverifiable, verified. */
-  findings: FactCheckFinding[];
-  /** True when the chapter was longer than the check's input limit and only the
-   * opening portion was examined. */
-  truncated: boolean;
-  /** True when web search grounding is configured on the server, so the report
-   * can distinguish "not searched" from "search found nothing". */
-  searchAvailable: boolean;
-  /** How many findings were settled with live web sources. */
-  groundedCount: number;
-}
+/**
+ * One SSE payload from POST /api/fact-check. A run emits `stage: 'extracting'`
+ * while the chapter is read, then `stage: 'checking'` with the claim count, then
+ * one `finding` per claim as its lookup settles — so the client can show real
+ * progress instead of an indefinite wait.
+ */
+export type FactCheckStreamEvent =
+  | { stage: 'extracting' }
+  | {
+      stage: 'checking';
+      /** How many claims will be reported, so progress can be determinate. */
+      total: number;
+      /** True when the chapter was longer than the check's input limit and only
+       * the opening portion was examined. */
+      truncated: boolean;
+      /** True when web search grounding is configured on the server, so the
+       * report can distinguish "not searched" from "search found nothing". */
+      searchAvailable: boolean;
+    }
+  | { finding: FactCheckFinding }
+  | { error: string };

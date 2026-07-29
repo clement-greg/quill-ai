@@ -197,22 +197,37 @@ export async function groundClaim(claim: ClaimToGround): Promise<GroundedVerdict
   }
 }
 
+export interface GroundClaimsOptions {
+  /** Maximum lookups in flight at once. */
+  concurrency?: number;
+  /** Called as each claim resolves, so callers can report progress live. */
+  onResult?: (index: number, verdict: GroundedVerdict | null) => void;
+  /** Polled before each lookup starts; return true to stop taking new claims.
+   * Lets a caller abandon the run when the user cancels, instead of paying for
+   * searches nobody will read. */
+  isCancelled?: () => boolean;
+}
+
 /**
  * Grounds many claims, running at most `concurrency` lookups at a time so a long
  * chapter doesn't fire dozens of simultaneous requests at the rate limiter.
  * The returned array is index-aligned with `claims`; entries are null where
- * grounding didn't come through.
+ * grounding didn't come through or the run was cancelled first.
  */
 export async function groundClaims<T extends ClaimToGround>(
   claims: T[],
-  concurrency = 4,
+  options: GroundClaimsOptions = {},
 ): Promise<(GroundedVerdict | null)[]> {
+  const { concurrency = 4, onResult, isCancelled } = options;
   const results: (GroundedVerdict | null)[] = new Array(claims.length).fill(null);
   let next = 0;
   const worker = async (): Promise<void> => {
     while (next < claims.length) {
+      if (isCancelled?.()) return;
       const index = next++;
-      results[index] = await groundClaim(claims[index]);
+      const verdict = await groundClaim(claims[index]);
+      results[index] = verdict;
+      onResult?.(index, verdict);
     }
   };
   await Promise.all(

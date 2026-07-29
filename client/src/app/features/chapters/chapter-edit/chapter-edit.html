@@ -1,5 +1,6 @@
-<app-slide-out-panel-container [showRightPanel]="!!editingEntity() || showAiStats()"
-  (showRightPanelChange)="onRightPanelChange($event)" [rightPanelWidth]="showAiStats() ? 520 : 450">
+<app-slide-out-panel-container [showRightPanel]="!!editingEntity() || showAiStats() || showFactCheck()"
+  (showRightPanelChange)="onRightPanelChange($event)"
+  [rightPanelWidth]="showAiStats() || showFactCheck() ? 520 : 450">
 
   <div main-content>
     <div class="page">
@@ -539,6 +540,9 @@
     }
     @if (showAiStats() && chapter()) {
       <app-ai-stats [chapters]="[chapter()!]" [loading]="false" [entities]="entities()" />
+    }
+    @if (showFactCheck()) {
+      <app-fact-check-panel />
     }
   </div>
 

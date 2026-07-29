@@ -14,7 +14,7 @@ import { MatTabsModule } from '@angular/material/tabs';
 import { MatExpansionModule } from '@angular/material/expansion';
 import { MatMenuModule } from '@angular/material/menu';
 import { MatTooltipModule } from '@angular/material/tooltip';
-import { MatSnackBar } from '@angular/material/snack-bar';
+import { MatSnackBar, MatSnackBarRef } from '@angular/material/snack-bar';
 import { MatDialog, MatDialogModule, MAT_DIALOG_DATA } from '@angular/material/dialog';
 import { ChapterService } from '../chapter.service';
 import { ContentFilterWarning } from '@shared/models/chapter-chunk.model';
@@ -29,7 +29,8 @@ import { EntityService } from '@app/features/entities/entity.service';
 import { EntityQuoteService } from '@app/features/entities/entity-quote.service';
 import { TimelineEventService } from '@app/features/entities/timeline-event.service';
 import { ChapterAnalysisDialogComponent, ChapterAnalysisDialogData, ChapterAnalysisDialogResult } from './chapter-analysis-dialog';
-import { FactCheckDialogComponent, FactCheckDialogData } from './fact-check-dialog';
+import { FactCheckPanelComponent } from './fact-check-panel';
+import { FactCheckToastComponent, FactCheckToastData } from './fact-check-toast';
 import { DraftDiffDialogComponent, DraftDiffDialogData } from './draft-diff-dialog';
 import { EntityRelationshipService } from '@app/features/entities/entity-relationship.service';
 import { SeriesService } from '@app/features/series/series.service';
@@ -65,6 +66,7 @@ import { v4 as uuidv4 } from 'uuid';
     MatProgressSpinnerModule, MatTabsModule, MatExpansionModule, MatDialogModule, MatMenuModule, MatSelectModule, MatTooltipModule,
     SlideOutPanelContainer, EntityEditComponent, RichTextEditorComponent, AiStatsComponent, ChapterOutlineComponent,
     QuillReviewPanelComponent, VersionHistoryPanelComponent, MentionedEntitiesPanelComponent,
+    FactCheckPanelComponent,
   ],
   templateUrl: './chapter-edit.html',
   styleUrl: './chapter-edit.scss',
@@ -104,6 +106,8 @@ export class ChapterEditComponent implements OnInit, OnDestroy {
   private routeSub?: Subscription;
   private chapterSyncSub?: Subscription;
   private draftAcceptedSub?: Subscription;
+  /** Guards async callbacks that outlive a navigation away from the editor. */
+  private destroyed = false;
 
   // ── Chapter state ────────────────────────────────────────────────────────
   chapter = signal<Chapter | null>(null);
@@ -129,7 +133,11 @@ export class ChapterEditComponent implements OnInit, OnDestroy {
   analyzingChapter = signal(false);
 
   // ── Fact check ───────────────────────────────────────────────────────────
-  factChecking = signal(false);
+  /** True while a fact-check run is streaming; the service owns the run state. */
+  factChecking = computed(() => this.factCheckService.running());
+  /** Whether the report panel is showing in the right slide-out. */
+  showFactCheck = signal(false);
+  private factCheckToast?: MatSnackBarRef<FactCheckToastComponent>;
 
   // ── Outline ──────────────────────────────────────────────────────────────
   outline = signal<OutlineItem[]>([]);
@@ -393,6 +401,10 @@ export class ChapterEditComponent implements OnInit, OnDestroy {
   }
 
   ngOnDestroy(): void {
+    this.destroyed = true;
+    // A run has nowhere to report to once the editor is gone, so abandon it.
+    this.factCheckToast?.dismiss();
+    this.factCheckService.reset();
     document.removeEventListener('keydown', this.onDocumentKeyDown);
     this.editorBridge.unregister();
     this.routeSub?.unsubscribe();
@@ -472,6 +484,9 @@ export class ChapterEditComponent implements OnInit, OnDestroy {
   }
 
   onEntityEditRequest(entity: Entity): void {
+    // One panel at a time in the right slide-out; the report stays in the service.
+    this.showFactCheck.set(false);
+    this.showAiStats.set(false);
     this.editingEntity.set(entity);
   }
 
@@ -1154,8 +1169,10 @@ export class ChapterEditComponent implements OnInit, OnDestroy {
 
   // ── Fact check ───────────────────────────────────────────────────────────
 
-  /** Fact-checks the real-world claims in this chapter and shows the report.
-   *  Read-only: nothing is saved and the prose is never modified. */
+  /** Fact-checks the real-world claims in this chapter, streaming findings into
+   *  the report panel as they settle. Progress rides in a snack bar so the
+   *  editor stays usable throughout. Read-only: nothing is saved and the prose
+   *  is never modified. */
   factCheckChapter(): void {
     const chapter = this.chapter();
     if (!chapter || this.factChecking()) return;
@@ -1164,32 +1181,71 @@ export class ChapterEditComponent implements OnInit, OnDestroy {
       this.snackBar.open('Chapter is empty — nothing to fact-check', undefined, { duration: 3000 });
       return;
     }
-    this.factChecking.set(true);
-    // Slower than the other passes: each claim gets its own web lookup.
-    this.snackBar.open('Fact-checking chapter — searching the web…');
+
+    this.factCheckToast = this.snackBar.openFromComponent(FactCheckToastComponent, {
+      data: {
+        onView: () => this.showFactCheck.set(true),
+        onStop: () => this.factCheckService.stop(),
+      } satisfies FactCheckToastData,
+      // Stays until the run ends — it is the run's only status indicator when
+      // the report panel is closed.
+      politeness: 'polite',
+      horizontalPosition: 'right',
+    });
+
     // Entity names tell the check which people and places are invented, so it
     // doesn't report the story's own world as factually wrong.
     const entityNames = this.entities().map(e => e.name).filter(Boolean);
-    this.factCheckService.check(text, entityNames).subscribe({
-      next: result => {
-        this.factChecking.set(false);
-        this.snackBar.dismiss();
-        this.dialog.open(FactCheckDialogComponent, {
-          data: result satisfies FactCheckDialogData,
-          autoFocus: false,
-          maxHeight: '85vh',
-        });
-      },
-      error: (err: { error?: { error?: string } }) => {
-        this.factChecking.set(false);
-        this.snackBar.dismiss();
-        this.snackBar.open(
-          err?.error?.error || 'Fact check failed',
-          undefined,
-          { duration: 5000 },
-        );
-      },
-    });
+    void this.factCheckService.run(text, entityNames).then(() => this.onFactCheckFinished());
+  }
+
+  /** Swaps the progress toast for the finished report once a run settles. */
+  private onFactCheckFinished(): void {
+    this.factCheckToast?.dismiss();
+    this.factCheckToast = undefined;
+    if (this.destroyed) return;
+
+    const error = this.factCheckService.error();
+    if (error) {
+      this.snackBar.open(error, undefined, { duration: 6000 });
+      return;
+    }
+    const count = this.factCheckService.findings().length;
+    if (count === 0) {
+      this.snackBar.open(
+        this.factCheckService.stopped()
+          ? 'Fact check stopped — nothing was checked'
+          : 'No real-world claims found in this chapter',
+        undefined,
+        { duration: 4000 },
+      );
+      return;
+    }
+    // A stopped run is the author's decision to look away, so don't shove the
+    // panel in front of them — just say where the partial report is.
+    if (this.factCheckService.stopped() && !this.showFactCheck()) {
+      const ref = this.snackBar.open(
+        `Fact check stopped — ${count} ${count === 1 ? 'claim' : 'claims'} checked`,
+        'View report',
+        { duration: 8000 },
+      );
+      ref.onAction().subscribe(() => this.showFactCheck.set(true));
+      return;
+    }
+    this.openFactCheckPanel();
+  }
+
+  /** Shows the report in the right slide-out, which one panel owns at a time. */
+  private openFactCheckPanel(): void {
+    this.editingEntity.set(null);
+    this.showAiStats.set(false);
+    this.showFactCheck.set(true);
+  }
+
+  /** Closes the report panel and discards the run it was showing. */
+  closeFactCheck(): void {
+    this.showFactCheck.set(false);
+    this.factCheckService.reset();
   }
 
   // ── Entity suggestions ───────────────────────────────────────────────────
@@ -1272,6 +1328,9 @@ export class ChapterEditComponent implements OnInit, OnDestroy {
 
   openAiStats(): void {
     this.editingEntity.set(null);
+    // The right slide-out shows one panel at a time; the report survives in the
+    // service, so hiding it here doesn't throw the findings away.
+    this.showFactCheck.set(false);
     const current = this.chapter();
     if (current && this.editorRef) {
       this.chapter.set({ ...current, content: this.editorRef.getContent() });
@@ -1309,7 +1368,11 @@ export class ChapterEditComponent implements OnInit, OnDestroy {
   }
 
   onRightPanelChange(open: boolean): void {
-    if (!open) { this.editingEntity.set(null); this.showAiStats.set(false); }
+    if (!open) {
+      this.editingEntity.set(null);
+      this.showAiStats.set(false);
+      if (this.showFactCheck()) this.closeFactCheck();
+    }
   }
 
   private stripHtml(html: string): string {
