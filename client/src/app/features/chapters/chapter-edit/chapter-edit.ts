@@ -29,6 +29,7 @@ import { EntityService } from '@app/features/entities/entity.service';
 import { EntityQuoteService } from '@app/features/entities/entity-quote.service';
 import { TimelineEventService } from '@app/features/entities/timeline-event.service';
 import { ChapterAnalysisDialogComponent, ChapterAnalysisDialogData, ChapterAnalysisDialogResult } from './chapter-analysis-dialog';
+import { FactCheckDialogComponent, FactCheckDialogData } from './fact-check-dialog';
 import { DraftDiffDialogComponent, DraftDiffDialogData } from './draft-diff-dialog';
 import { EntityRelationshipService } from '@app/features/entities/entity-relationship.service';
 import { SeriesService } from '@app/features/series/series.service';
@@ -46,6 +47,7 @@ import { QuickChatService } from '@app/features/ai/quick-chat.service';
 import { ChapterSyncService } from '../chapter-sync.service';
 import { RecentChaptersService } from '../recent-chapters.service';
 import { EditorReviewService } from '../editor-review.service';
+import { FactCheckService } from '../fact-check.service';
 import { QuillReviewPanelComponent } from './quill-review-panel/quill-review-panel';
 import { MentionedEntitiesPanelComponent } from './mentioned-entities-panel';
 import { VersionHistoryPanelComponent } from './version-history-panel/version-history-panel';
@@ -96,6 +98,7 @@ export class ChapterEditComponent implements OnInit, OnDestroy {
   private quickChat = inject(QuickChatService);
   private chapterSync = inject(ChapterSyncService);
   private recentChapters = inject(RecentChaptersService);
+  private factCheckService = inject(FactCheckService);
   /** Public so the template can read the streamed review suggestions. */
   readonly editorReview = inject(EditorReviewService);
   private routeSub?: Subscription;
@@ -124,6 +127,9 @@ export class ChapterEditComponent implements OnInit, OnDestroy {
 
   // ── Chapter analysis (timeline + relationships) ──────────────────────────
   analyzingChapter = signal(false);
+
+  // ── Fact check ───────────────────────────────────────────────────────────
+  factChecking = signal(false);
 
   // ── Outline ──────────────────────────────────────────────────────────────
   outline = signal<OutlineItem[]>([]);
@@ -1142,6 +1148,46 @@ export class ChapterEditComponent implements OnInit, OnDestroy {
         this.analyzingChapter.set(false);
         this.snackBar.dismiss();
         this.snackBar.open('Chapter analysis failed', undefined, { duration: 4000 });
+      },
+    });
+  }
+
+  // ── Fact check ───────────────────────────────────────────────────────────
+
+  /** Fact-checks the real-world claims in this chapter and shows the report.
+   *  Read-only: nothing is saved and the prose is never modified. */
+  factCheckChapter(): void {
+    const chapter = this.chapter();
+    if (!chapter || this.factChecking()) return;
+    const text = this.stripHtml(this.editorRef?.getContent() ?? chapter.content ?? '');
+    if (!text.trim()) {
+      this.snackBar.open('Chapter is empty — nothing to fact-check', undefined, { duration: 3000 });
+      return;
+    }
+    this.factChecking.set(true);
+    // Slower than the other passes: each claim gets its own web lookup.
+    this.snackBar.open('Fact-checking chapter — searching the web…');
+    // Entity names tell the check which people and places are invented, so it
+    // doesn't report the story's own world as factually wrong.
+    const entityNames = this.entities().map(e => e.name).filter(Boolean);
+    this.factCheckService.check(text, entityNames).subscribe({
+      next: result => {
+        this.factChecking.set(false);
+        this.snackBar.dismiss();
+        this.dialog.open(FactCheckDialogComponent, {
+          data: result satisfies FactCheckDialogData,
+          autoFocus: false,
+          maxHeight: '85vh',
+        });
+      },
+      error: (err: { error?: { error?: string } }) => {
+        this.factChecking.set(false);
+        this.snackBar.dismiss();
+        this.snackBar.open(
+          err?.error?.error || 'Fact check failed',
+          undefined,
+          { duration: 5000 },
+        );
       },
     });
   }

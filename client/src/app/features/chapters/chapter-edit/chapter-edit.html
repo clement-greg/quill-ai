@@ -72,6 +72,10 @@
               <mat-icon>insights</mat-icon>
               {{ analyzingChapter() ? 'Analyzing…' : 'Analyze chapter' }}
             </button>
+            <button mat-menu-item (click)="factCheckChapter()" [disabled]="factChecking()">
+              <mat-icon>fact_check</mat-icon>
+              {{ factChecking() ? 'Fact-checking…' : 'Fact check chapter' }}
+            </button>
             <button mat-menu-item (click)="archiveChapter()">
               <mat-icon>archive</mat-icon> Archive chapter
             </button>

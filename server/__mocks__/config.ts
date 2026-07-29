@@ -20,6 +20,13 @@ const config = {
     imageGenerationKey: '',
     imageGenerationModel: '',
   },
+  // Left unset so search-grounded features are off by default in tests; a spec
+  // that needs them sets an apiKey on this object.
+  googleAIStudio: {
+    apiKey: '',
+    model: '',
+    searchModel: '',
+  },
 };
 
 export default config;

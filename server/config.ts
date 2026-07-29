@@ -23,6 +23,15 @@ interface AppConfig {
     imageGenerationKey: string;
     imageGenerationModel: string;
   };
+  /** Google AI Studio (Gemini). Optional — features that use it degrade
+   * gracefully when it isn't configured. */
+  googleAIStudio?: {
+    apiKey?: string;
+    model?: string;
+    /** Text model used for Google Search-grounded lookups. Must be a model that
+     * supports the `google_search` tool; see GEMINI_SEARCH_MODEL_DEFAULT. */
+    searchModel?: string;
+  };
 }
 
 function loadConfig(): AppConfig {
@@ -52,6 +61,11 @@ function loadConfig(): AppConfig {
       imageGenerationEndpoint: process.env['FOUNDRY_IMAGE_GENERATION_ENDPOINT']!,
       imageGenerationKey: process.env['FOUNDRY_IMAGE_GENERATION_KEY']!,
       imageGenerationModel: process.env['FOUNDRY_IMAGE_GENERATION_MODEL']!,
+    },
+    googleAIStudio: {
+      apiKey: process.env['GOOGLE_AI_STUDIO_API_KEY'],
+      model: process.env['GOOGLE_AI_STUDIO_MODEL'],
+      searchModel: process.env['GOOGLE_AI_STUDIO_SEARCH_MODEL'],
     },
   };
 }
