@@ -34,11 +34,14 @@ export interface FactCheckToastData {
         <span class="toast-text">
           @if (factCheck.stage() === 'extracting') {
             Fact check: reading the chapter…
-          } @else if (factCheck.stage() === 'checking') {
-            Fact check: claim {{ nextClaimNumber() }} of {{ factCheck.total() }}
+          } @else if (factCheck.stage() === 'checking' && factCheck.webCheckTotal() > 0) {
+            Fact check: web double-check {{ nextWebCheckNumber() }} of
+            {{ factCheck.webCheckTotal() }}
             @if (disputedCount() > 0) {
               · {{ disputedCount() }} disputed so far
             }
+          } @else if (factCheck.stage() === 'checking') {
+            Fact check: settling {{ factCheck.total() }} claims…
           } @else {
             Fact check finished.
           }
@@ -50,9 +53,9 @@ export interface FactCheckToastData {
           }
         </div>
       </div>
-      @if (factCheck.stage() === 'checking' && factCheck.total() > 0) {
+      @if (factCheck.stage() === 'checking' && factCheck.webCheckTotal() > 0) {
         <mat-progress-bar mode="determinate" [value]="factCheck.percentComplete()"
-          [attr.aria-label]="'Claims checked: ' + factCheck.completed() + ' of ' + factCheck.total()" />
+          [attr.aria-label]="'Web double-checks done: ' + factCheck.webChecked() + ' of ' + factCheck.webCheckTotal()" />
       } @else {
         <mat-progress-bar mode="indeterminate" aria-label="Reading the chapter" />
       }
@@ -88,9 +91,9 @@ export class FactCheckToastComponent {
   readonly data = inject<FactCheckToastData>(MAT_SNACK_BAR_DATA);
   readonly factCheck = inject(FactCheckService);
 
-  /** 1-based number of the claim currently being worked on. */
-  nextClaimNumber(): number {
-    return Math.min(this.factCheck.completed() + 1, this.factCheck.total());
+  /** 1-based number of the web double-check currently in flight. */
+  nextWebCheckNumber(): number {
+    return Math.min(this.factCheck.webChecked() + 1, this.factCheck.webCheckTotal());
   }
 
   disputedCount(): number {

@@ -78,15 +78,19 @@ function confidenceLabel(confidence: number): string {
               @if (factCheck.stage() === 'extracting') {
                 <span class="progress-title">Reading the chapter for checkable claims…</span>
                 <span class="progress-sub">This part takes a few seconds.</span>
-              } @else {
+              } @else if (factCheck.webCheckTotal() > 0) {
                 <span class="progress-title">
-                  Checking claim {{ nextClaimNumber() }} of {{ factCheck.total() }}
-                  @if (factCheck.searchAvailable()) { against the web }
+                  Double-checking claim {{ nextWebCheckNumber() }} of
+                  {{ factCheck.webCheckTotal() }} on the web
                 </span>
                 <span class="progress-sub">
-                  {{ factCheck.completed() }} of {{ factCheck.total() }} settled — results appear
-                  below as they land.
+                  {{ factCheck.total() - factCheck.webCheckTotal() }} of
+                  {{ factCheck.total() }} claims were settled confidently — only the rest are
+                  being searched.
                 </span>
+              } @else {
+                <span class="progress-title">Settling {{ factCheck.total() }} claims…</span>
+                <span class="progress-sub">No claim needed a web double-check.</span>
               }
             </div>
             <button mat-stroked-button type="button" class="stop-btn" (click)="stop()">
@@ -94,9 +98,9 @@ function confidenceLabel(confidence: number): string {
               Stop
             </button>
           </div>
-          @if (factCheck.stage() === 'checking' && factCheck.total() > 0) {
+          @if (factCheck.stage() === 'checking' && factCheck.webCheckTotal() > 0) {
             <mat-progress-bar mode="determinate" [value]="factCheck.percentComplete()"
-              [attr.aria-label]="'Claims checked: ' + factCheck.completed() + ' of ' + factCheck.total()" />
+              [attr.aria-label]="'Web double-checks done: ' + factCheck.webChecked() + ' of ' + factCheck.webCheckTotal()" />
           } @else {
             <mat-progress-bar mode="indeterminate" aria-label="Reading the chapter" />
           }
@@ -134,15 +138,18 @@ function confidenceLabel(confidence: number): string {
             {{ findings().length }} checkable
             {{ findings().length === 1 ? 'claim' : 'claims' }} reported.
             @if (factCheck.groundedCount() > 0) {
-              {{ factCheck.groundedCount() }} of them
-              {{ factCheck.groundedCount() === 1 ? 'was' : 'were' }} checked against live web
-              sources, linked below.
+              The model was unsure of {{ factCheck.groundedCount() }} of them, so
+              {{ factCheck.groundedCount() === 1 ? 'it was' : 'those were' }} double-checked
+              against live web sources, linked below.
               @if (factCheck.groundedCount() < findings().length) {
-                The rest come from the model's own knowledge.
+                The rest it answered confidently on its own.
               }
-            } @else if (factCheck.searchAvailable()) {
+            } @else if (factCheck.webCheckTotal() > 0) {
               Web search wasn't reachable for this run, so these come from the model's own
               knowledge.
+            } @else if (factCheck.searchAvailable()) {
+              The model answered every one of them confidently, so none needed a web
+              double-check.
             } @else {
               These come from the model's own knowledge — web search isn't configured on the
               server.
@@ -417,9 +424,9 @@ export class FactCheckPanelComponent {
   readonly findings = this.factCheck.sortedFindings;
   readonly isFinished = computed(() => this.factCheck.stage() === 'done');
 
-  /** 1-based number of the claim currently being worked on. */
-  readonly nextClaimNumber = computed(() =>
-    Math.min(this.factCheck.completed() + 1, this.factCheck.total()),
+  /** 1-based number of the web double-check currently in flight. */
+  readonly nextWebCheckNumber = computed(() =>
+    Math.min(this.factCheck.webChecked() + 1, this.factCheck.webCheckTotal()),
   );
 
   /** Every non-empty verdict group, in report order. */

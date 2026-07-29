@@ -51,7 +51,7 @@ describe('FactCheckService', () => {
     it('tracks the run totals and collects streamed findings', async () => {
       fetchStub.mockResolvedValueOnce(sseResponse([
         { stage: 'extracting' },
-        { stage: 'checking', total: 2, truncated: true, searchAvailable: true },
+        { stage: 'checking', total: 2, webCheckCount: 1, truncated: true, searchAvailable: true },
         { finding: makeFinding({ id: 'a', grounded: true }) },
         { finding: makeFinding({ id: 'b' }) },
       ]));
@@ -59,6 +59,7 @@ describe('FactCheckService', () => {
       await service.run('Some prose.');
 
       expect(service.total()).toBe(2);
+      expect(service.webCheckTotal()).toBe(1);
       expect(service.truncated()).toBe(true);
       expect(service.searchAvailable()).toBe(true);
       expect(service.completed()).toBe(2);
@@ -69,7 +70,7 @@ describe('FactCheckService', () => {
 
     it('sorts findings for display: disputed, then unverifiable, then verified', async () => {
       fetchStub.mockResolvedValueOnce(sseResponse([
-        { stage: 'checking', total: 4, truncated: false, searchAvailable: true },
+        { stage: 'checking', total: 4, webCheckCount: 4, truncated: false, searchAvailable: true },
         { finding: makeFinding({ id: 'verified-high', verdict: 'verified', confidence: 99 }) },
         { finding: makeFinding({ id: 'unverifiable', verdict: 'unverifiable', confidence: 30 }) },
         { finding: makeFinding({ id: 'disputed-low', verdict: 'disputed', confidence: 55 }) },
@@ -84,14 +85,35 @@ describe('FactCheckService', () => {
       expect(service.findings()[0].id).toBe('verified-high');
     });
 
-    it('reports partial progress while the run is still streaming', async () => {
+    it('measures progress over the web double-checks, not every claim', async () => {
+      // 5 claims, 2 of which need a web check: the 3 confident ones arrive at once
+      // and must not count as progress, or the bar would start at 60%.
       fetchStub.mockResolvedValueOnce(sseResponse([
-        { stage: 'checking', total: 4, truncated: false, searchAvailable: true },
-        { finding: makeFinding({ id: 'a' }) },
+        { stage: 'checking', total: 5, webCheckCount: 2, truncated: false, searchAvailable: true },
+        { finding: makeFinding({ id: 'settled-1' }) },
+        { finding: makeFinding({ id: 'settled-2' }) },
+        { finding: makeFinding({ id: 'settled-3' }) },
+        { finding: makeFinding({ id: 'checked-1', grounded: true }) },
       ]));
 
       await service.run('Some prose.');
-      expect(service.percentComplete()).toBe(25);
+
+      expect(service.completed()).toBe(4);
+      expect(service.webChecked()).toBe(1);
+      expect(service.percentComplete()).toBe(50);
+    });
+
+    it('shows full progress when no claim needed a web double-check', async () => {
+      fetchStub.mockResolvedValueOnce(sseResponse([
+        { stage: 'checking', total: 2, webCheckCount: 0, truncated: false, searchAvailable: true },
+        { finding: makeFinding({ id: 'a' }) },
+        { finding: makeFinding({ id: 'b' }) },
+      ]));
+
+      await service.run('Some prose.');
+
+      expect(service.webChecked()).toBe(0);
+      expect(service.percentComplete()).toBe(100);
     });
 
     it('surfaces a streamed error', async () => {
@@ -127,7 +149,7 @@ describe('FactCheckService', () => {
 
     it('clears the previous report when a new run starts', async () => {
       fetchStub.mockResolvedValueOnce(sseResponse([
-        { stage: 'checking', total: 1, truncated: true, searchAvailable: true },
+        { stage: 'checking', total: 1, webCheckCount: 1, truncated: true, searchAvailable: true },
         { finding: makeFinding({ id: 'old' }) },
       ]));
       await service.run('Some prose.');
@@ -137,6 +159,7 @@ describe('FactCheckService', () => {
 
       expect(service.findings()).toEqual([]);
       expect(service.total()).toBe(0);
+      expect(service.webCheckTotal()).toBe(0);
       expect(service.truncated()).toBe(false);
       expect(service.stopped()).toBe(false);
     });
@@ -174,7 +197,7 @@ describe('FactCheckService', () => {
   describe('reset', () => {
     it('clears the report and returns to idle', async () => {
       fetchStub.mockResolvedValueOnce(sseResponse([
-        { stage: 'checking', total: 1, truncated: false, searchAvailable: true },
+        { stage: 'checking', total: 1, webCheckCount: 1, truncated: false, searchAvailable: true },
         { finding: makeFinding() },
       ]));
       await service.run('Some prose.');

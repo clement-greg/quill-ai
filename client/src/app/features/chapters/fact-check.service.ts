@@ -29,6 +29,9 @@ export class FactCheckService {
   readonly error = signal<string | null>(null);
   /** Claims the run expects to report; 0 until extraction finishes. */
   readonly total = signal(0);
+  /** How many claims are going out for a web double-check: the ones the model
+   * wasn't confident about. The rest are settled the moment they arrive. */
+  readonly webCheckTotal = signal(0);
   readonly truncated = signal(false);
   readonly searchAvailable = signal(false);
   /** True when the author stopped the run before it finished. */
@@ -46,10 +49,21 @@ export class FactCheckService {
     ),
   );
 
-  /** Progress through the lookups, 0-100. Zero while the chapter is being read. */
+  /** Web double-checks settled so far. The confident findings all arrive in one
+   * batch up front, so anything after that batch is a completed lookup. */
+  readonly webChecked = computed(() =>
+    Math.max(0, this.completed() - (this.total() - this.webCheckTotal())),
+  );
+
+  /**
+   * Progress 0-100 over the web double-checks, which are the only slow part of a
+   * run — tracking it over all claims would jump most of the way instantly and
+   * then crawl. Zero while the chapter is still being read.
+   */
   readonly percentComplete = computed(() => {
-    const total = this.total();
-    return total > 0 ? Math.round((this.completed() / total) * 100) : 0;
+    const webTotal = this.webCheckTotal();
+    if (webTotal > 0) return Math.round((this.webChecked() / webTotal) * 100);
+    return this.total() > 0 ? 100 : 0;
   });
 
   private abortController: AbortController | null = null;
@@ -132,6 +146,7 @@ export class FactCheckService {
     this.findings.set([]);
     this.error.set(null);
     this.total.set(0);
+    this.webCheckTotal.set(0);
     this.truncated.set(false);
     this.searchAvailable.set(false);
     this.stopped.set(false);
@@ -148,6 +163,7 @@ export class FactCheckService {
     }
     if (event.stage === 'checking') {
       this.total.set(event.total);
+      this.webCheckTotal.set(event.webCheckCount);
       this.truncated.set(event.truncated);
       this.searchAvailable.set(event.searchAvailable);
     }

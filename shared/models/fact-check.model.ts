@@ -6,10 +6,11 @@
  * Findings are EPHEMERAL — generated fresh per run and never persisted.
  *
  * A check runs in two stages: the chapter is read once to pull out its checkable
- * claims, then each claim is re-adjudicated against live Google Search results.
- * Grounding is best-effort (rate limits, timeouts), so a finding carries
- * `grounded` to say whether the web actually backed it, and `confidence` to say
- * how much weight the author should put on it either way.
+ * claims, then the claims the model was NOT confident about are re-adjudicated
+ * against live Google Search results. Grounding is best-effort (rate limits,
+ * timeouts), so a finding carries `grounded` to say whether the web actually
+ * backed it, and `confidence` to say how much weight the author should put on it
+ * either way.
  */
 
 /** How a checkable claim held up against real-world knowledge. */
@@ -87,6 +88,9 @@ export type FactCheckStreamEvent =
       stage: 'checking';
       /** How many claims will be reported, so progress can be determinate. */
       total: number;
+      /** How many of those claims are going out for a web double-check — the
+       * only slow part of the run. The rest are already settled. */
+      webCheckCount: number;
       /** True when the chapter was longer than the check's input limit and only
        * the opening portion was examined. */
       truncated: boolean;

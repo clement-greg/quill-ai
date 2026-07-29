@@ -70,7 +70,7 @@ Provides the primary LLM (text chat and streaming), text embeddings for semantic
 | `foundry.imageGenerationModel` | `FOUNDRY_IMAGE_GENERATION_MODEL` |
 
 ### Google AI Studio (Gemini) — optional
-Powers Google Search-grounded lookups, used by the chapter fact check to verify claims against live web sources and cite them. Optional: without an API key the fact check still runs, falling back to the Azure model's own knowledge, and every finding is labelled with which basis it used.
+Powers Google Search-grounded lookups, used by the chapter fact check to verify claims against live web sources and cite them. Only claims the Azure model was *not* confident about are sent for a web double-check, so a typical run makes a handful of lookups rather than one per claim. Optional: without an API key the fact check still runs on the Azure model's knowledge alone, and every finding is labelled with which basis it used.
 
 `searchModel` must support Gemini's built-in `google_search` tool; it defaults to `gemini-2.5-flash` when unset. Note that `model` is unrelated to the fact check.
 

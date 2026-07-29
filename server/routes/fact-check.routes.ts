@@ -25,6 +25,26 @@ const MAX_TEXT_CHARS = 20000;
  * Claims are grounded in report order, so disputes are always covered first. */
 const MAX_GROUNDED_CLAIMS = 20;
 
+/**
+ * A first-pass verdict at or above this confidence is taken as settled and is
+ * not sent out for a web double-check. Matches the threshold the report labels
+ * "High confidence", so what the author sees as high confidence is exactly what
+ * the run trusted without searching.
+ */
+const CONFIDENT_ENOUGH = 80;
+
+/**
+ * Whether a first-pass finding is worth the cost of a live web lookup.
+ *
+ * Low confidence is the signal: the model is telling us it isn't sure, which is
+ * what search is for. `unverifiable` always qualifies regardless of its score —
+ * that verdict means "my knowledge can't settle this", so a model can be highly
+ * confident it doesn't know, and those are the best search candidates of all.
+ */
+function needsWebCheck(finding: FactCheckFinding): boolean {
+  return finding.verdict === 'unverifiable' || finding.confidence < CONFIDENT_ENOUGH;
+}
+
 const VALID_VERDICTS: ReadonlySet<string> = new Set<FactCheckVerdict>([
   'verified', 'disputed', 'unverifiable',
 ]);
@@ -159,8 +179,12 @@ function withGroundedVerdict(finding: FactCheckFinding, grounded: GroundedVerdic
  * Fact-checks the real-world claims in a chapter's prose. Body:
  *   { text: string, knownEntityNames?: string[] }
  *
+ * Azure OpenAI extracts the claims and judges them from its own knowledge; only
+ * the ones it wasn't confident about are then double-checked against live Google
+ * Search results (see `needsWebCheck`).
+ *
  * Streams progress as SSE, because a run makes one Azure call plus a web lookup
- * per claim and can take a minute:
+ * per unsure claim and can take a minute:
  *   data: {"stage":"extracting"}                         — reading the chapter
  *   data: {"stage":"checking","total":N,...}             — claims found, lookups starting
  *   data: {"finding":FactCheckFinding}                   — one per claim, as it settles
@@ -240,26 +264,39 @@ router.post('/', async (req: Request, res: Response) => {
       (a, b) => VERDICT_RANK[a.verdict] - VERDICT_RANK[b.verdict] || b.confidence - a.confidence,
     );
 
+    // Only the claims the first pass was unsure of go out to the web; the rest
+    // are already settled, so searching them would buy nothing.
     const searchAvailable = isSearchGroundingEnabled();
-    send({ stage: 'checking', total: claims.length, truncated, searchAvailable });
+    const toGround = searchAvailable
+      ? claims.filter(needsWebCheck).slice(0, MAX_GROUNDED_CLAIMS)
+      : [];
+    const groundingIds = new Set(toGround.map(f => f.id));
 
-    if (searchAvailable && claims.length > 0) {
-      const budget = claims.slice(0, MAX_GROUNDED_CLAIMS);
+    send({
+      stage: 'checking',
+      total: claims.length,
+      webCheckCount: toGround.length,
+      truncated,
+      searchAvailable,
+    });
+
+    // Report the confident findings straight away — they need no further work.
+    for (const finding of claims) {
+      if (!groundingIds.has(finding.id)) send({ finding });
+    }
+
+    if (toGround.length > 0) {
       // Each claim is emitted the moment its lookup lands, so the report fills in
       // as the run proceeds instead of appearing all at once at the end.
       await groundClaims(
-        budget.map(f => ({ claim: f.claim, quote: f.quote })),
+        toGround.map(f => ({ claim: f.claim, quote: f.quote })),
         {
           isCancelled: () => cancelled,
           onResult: (index, grounded) => send({
-            finding: grounded ? withGroundedVerdict(budget[index], grounded) : budget[index],
+            finding: grounded ? withGroundedVerdict(toGround[index], grounded) : toGround[index],
           }),
         },
       );
-      // Claims past the grounding budget keep their knowledge-based verdict.
-      for (const finding of claims.slice(MAX_GROUNDED_CLAIMS)) send({ finding });
-    } else {
-      for (const finding of claims) send({ finding });
     }
   } catch (err) {
     console.error('Fact check error:', err);

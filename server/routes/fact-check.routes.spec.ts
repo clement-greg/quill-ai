@@ -65,8 +65,14 @@ function findingsOf(body: string): FactCheckFinding[] {
 /** The `stage: 'checking'` event, which carries the run's totals. */
 function checkingEvent(body: string) {
   return eventsOf(body).find(e => 'stage' in e && e.stage === 'checking') as
-    | { stage: 'checking'; total: number; truncated: boolean; searchAvailable: boolean }
+    | { stage: 'checking'; total: number; webCheckCount: number; truncated: boolean; searchAvailable: boolean }
     | undefined;
+}
+
+/** The claims actually sent out for a web double-check. */
+function groundedClaims(): string[] {
+  const sent = grounding.groundClaims.mock.calls[0]?.[0] as { claim: string }[] | undefined;
+  return (sent ?? []).map(c => c.claim);
 }
 
 const CHAPTER = 'The Titanic sank in 1913. Rome lies on the Tiber. Elowen drew her starblade.';
@@ -99,7 +105,9 @@ describe('fact-check routes', () => {
 
     const events = eventsOf(res.text);
     expect(events[0]).toEqual({ stage: 'extracting' });
-    expect(events[1]).toEqual({ stage: 'checking', total: 2, truncated: false, searchAvailable: false });
+    expect(events[1]).toEqual({
+      stage: 'checking', total: 2, webCheckCount: 0, truncated: false, searchAvailable: false,
+    });
     // Claims are emitted in grounding priority order: disputes first.
     expect(findingsOf(res.text).map(f => f.verdict)).toEqual(['disputed', 'verified']);
     expect(findingsOf(res.text)[0].remedy).toBe("Change '1913' to '1912'.");
@@ -221,13 +229,61 @@ describe('fact-check routes', () => {
 
     it('keeps the knowledge-based verdict when a claim cannot be grounded', async () => {
       modelReplies({
-        findings: [{ claim: 'Rome is on the Tiber.', verdict: 'verified', confidence: 88, explanation: 'It is.' }],
+        findings: [{ claim: 'Rome is on the Tiber.', verdict: 'verified', confidence: 55, explanation: 'It is.' }],
       });
       groundsWith([null]);
 
       const res = await post({ text: CHAPTER });
-      expect(findingsOf(res.text)[0]).toMatchObject({ verdict: 'verified', confidence: 88, grounded: false });
+      expect(findingsOf(res.text)[0]).toMatchObject({ verdict: 'verified', confidence: 55, grounded: false });
       expect(findingsOf(res.text)[0].sources).toBeUndefined();
+    });
+
+    describe('the low-confidence gate', () => {
+      it('only double-checks claims below high confidence, reporting the rest at once', async () => {
+        modelReplies({
+          findings: [
+            { claim: 'Confident dispute.', verdict: 'disputed', confidence: 95, explanation: 'Sure.' },
+            { claim: 'Borderline claim.', verdict: 'verified', confidence: 79, explanation: 'Fairly sure.' },
+            { claim: 'Exactly at the line.', verdict: 'verified', confidence: 80, explanation: 'Sure.' },
+            { claim: 'Shaky claim.', verdict: 'verified', confidence: 40, explanation: 'Not sure.' },
+          ],
+        });
+        groundsWith([null, null]);
+
+        const res = await post({ text: CHAPTER });
+        expect(groundedClaims().sort()).toEqual(['Borderline claim.', 'Shaky claim.']);
+        expect(checkingEvent(res.text)).toMatchObject({ total: 4, webCheckCount: 2 });
+        // Every claim is still reported, checked or not.
+        expect(findingsOf(res.text)).toHaveLength(4);
+      });
+
+      it('always double-checks an unverifiable claim, however confident the model was', async () => {
+        modelReplies({
+          findings: [{
+            claim: "Can't settle this one.", verdict: 'unverifiable', confidence: 99,
+            explanation: 'Beyond general knowledge.', remedy: 'Look it up.',
+          }],
+        });
+        groundsWith([grounded({ verdict: 'verified', explanation: 'Sources settle it.', remedy: '' })]);
+
+        const res = await post({ text: CHAPTER });
+        expect(groundedClaims()).toEqual(["Can't settle this one."]);
+        expect(findingsOf(res.text)[0]).toMatchObject({ verdict: 'verified', grounded: true });
+      });
+
+      it('skips search entirely when every claim came back confident', async () => {
+        modelReplies({
+          findings: [
+            { claim: 'Confident A.', verdict: 'verified', confidence: 100, explanation: 'Sure.' },
+            { claim: 'Confident B.', verdict: 'disputed', confidence: 88, explanation: 'Sure.' },
+          ],
+        });
+
+        const res = await post({ text: CHAPTER });
+        expect(grounding.groundClaims).not.toHaveBeenCalled();
+        expect(checkingEvent(res.text)).toMatchObject({ searchAvailable: true, webCheckCount: 0 });
+        expect(findingsOf(res.text).map(f => f.grounded)).toEqual([false, false]);
+      });
     });
 
     it('drops a stale remedy when grounding clears the claim', async () => {
@@ -244,11 +300,12 @@ describe('fact-check routes', () => {
       expect(findingsOf(res.text)[0].remedy).toBeUndefined();
     });
 
-    it('emits each finding as its own lookup settles, in completion order', async () => {
+    it('emits confident findings first, then each lookup as it settles', async () => {
       modelReplies({
         findings: [
-          { claim: 'Claim A.', verdict: 'verified', confidence: 99, explanation: 'Fine.' },
-          { claim: 'Claim B.', verdict: 'verified', confidence: 60, explanation: 'Fine.' },
+          { claim: 'Confident claim.', verdict: 'verified', confidence: 99, explanation: 'Fine.' },
+          { claim: 'Unsure A.', verdict: 'verified', confidence: 60, explanation: 'Hmm.' },
+          { claim: 'Unsure B.', verdict: 'verified', confidence: 50, explanation: 'Hmm.' },
         ],
       });
       // B's lookup lands before A's.
@@ -261,15 +318,19 @@ describe('fact-check routes', () => {
       );
 
       const res = await post({ text: CHAPTER });
-      // The stream preserves completion order; the client sorts for display.
-      expect(findingsOf(res.text).map(f => [f.claim, f.verdict, f.grounded]))
-        .toEqual([['Claim B.', 'disputed', true], ['Claim A.', 'verified', false]]);
+      // Settled claims lead; checked ones follow in completion order. The client sorts.
+      expect(findingsOf(res.text).map(f => [f.claim, f.verdict, f.grounded])).toEqual([
+        ['Confident claim.', 'verified', false],
+        ['Unsure B.', 'disputed', true],
+        ['Unsure A.', 'verified', false],
+      ]);
     });
 
-    it('grounds at most 20 claims but still reports the rest, ungrounded', async () => {
+    it('double-checks at most 20 claims but still reports the rest, unchecked', async () => {
       modelReplies({
         findings: Array.from({ length: 25 }, (_, i) => ({
-          claim: `Claim ${i}.`, verdict: 'verified', confidence: 100 - i, explanation: 'Fine.',
+          // All below the confidence gate, so all 25 qualify for a web check.
+          claim: `Claim ${i}.`, verdict: 'verified', confidence: 79 - i, explanation: 'Hmm.',
         })),
       });
       groundsWith(Array.from({ length: 20 }, () => null));
@@ -277,17 +338,20 @@ describe('fact-check routes', () => {
       const res = await post({ text: CHAPTER });
       const findings = findingsOf(res.text);
       expect(findings).toHaveLength(25);
-      expect(checkingEvent(res.text)).toMatchObject({ total: 25 });
-      const sent = grounding.groundClaims.mock.calls[0][0] as { claim: string }[];
+      expect(checkingEvent(res.text)).toMatchObject({ total: 25, webCheckCount: 20 });
+      const sent = groundedClaims();
       expect(sent).toHaveLength(20);
-      expect(sent[0].claim).toBe('Claim 0.');
-      expect(sent[19].claim).toBe('Claim 19.');
-      expect(findings[24].claim).toBe('Claim 24.');
+      // Taken in report order, so the highest-priority claims get the budget.
+      expect(sent[0]).toBe('Claim 0.');
+      expect(sent[19]).toBe('Claim 19.');
+      // The 5 that missed the budget are reported up front, unchecked.
+      expect(findings.slice(0, 5).map(f => f.claim))
+        .toEqual(['Claim 20.', 'Claim 21.', 'Claim 22.', 'Claim 23.', 'Claim 24.']);
     });
 
     it('gives grounding a cancellation check so a closed connection stops the run', async () => {
       modelReplies({
-        findings: [{ claim: 'Claim A.', verdict: 'verified', confidence: 90, explanation: 'Fine.' }],
+        findings: [{ claim: 'Claim A.', verdict: 'verified', confidence: 30, explanation: 'Hmm.' }],
       });
       groundsWith([null]);
 
