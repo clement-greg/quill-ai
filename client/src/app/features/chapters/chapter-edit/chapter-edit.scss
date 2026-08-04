@@ -164,6 +164,8 @@
   height: 52px;
   border-radius: 6px;
   border: 1px dashed var(--mat-sys-outline-variant, #dadce0);
+  background: transparent;
+  padding: 0;
   cursor: pointer;
   color: var(--mat-sys-on-surface-variant, #5f6368);
   flex-shrink: 0;

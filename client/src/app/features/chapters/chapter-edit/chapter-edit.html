@@ -22,14 +22,28 @@
               </button>
             </div>
           } @else {
-            <label class="chapter-thumb-upload" [class.uploading]="imageUploading()" title="Add chapter image">
+            <button type="button" class="chapter-thumb-upload" [class.uploading]="imageUploading()"
+                    [matMenuTriggerFor]="chapterImageMenu" [disabled]="imageUploading()"
+                    [attr.aria-label]="imageUploading() ? 'Adding chapter image' : 'Add chapter image'"
+                    matTooltip="Add chapter image">
               @if (imageUploading()) {
                 <mat-progress-spinner diameter="18" mode="indeterminate"></mat-progress-spinner>
               } @else {
                 <mat-icon>add_photo_alternate</mat-icon>
               }
-              <input type="file" accept="image/*" (change)="onImageFileSelected($event)" [disabled]="imageUploading()" style="display:none" />
-            </label>
+            </button>
+            <mat-menu #chapterImageMenu>
+              <button mat-menu-item type="button" (click)="chapterImageFileInput.click()">
+                <mat-icon>upload</mat-icon>
+                <span>Upload an image…</span>
+              </button>
+              <button mat-menu-item type="button" (click)="openGenerateImageDialog()">
+                <mat-icon>auto_awesome</mat-icon>
+                <span>Generate with AI…</span>
+              </button>
+            </mat-menu>
+            <input #chapterImageFileInput type="file" accept="image/*"
+                   (change)="onImageFileSelected($event)" hidden />
           }
         } @else {
           <h1 class="title-placeholder desktop-only">Edit Chapter</h1>

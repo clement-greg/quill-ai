@@ -36,6 +36,7 @@ import { EntityRelationshipService } from '@app/features/entities/entity-relatio
 import { SeriesService } from '@app/features/series/series.service';
 import { SlideOutPanelContainer } from '@app/shared/slide-out-panel-container/slide-out-panel-container';
 import { EntityEditComponent } from '@app/features/entities/entity-edit/entity-edit';
+import { ImageGenDialogComponent, ImageGenDialogData, ImageGenResult } from '@app/features/entities/entity-edit/image-gen-dialog';
 import { RichTextEditorComponent, SuggestedEntityCard } from '@app/shared/rich-text-editor/rich-text-editor';
 import { AiStatsComponent } from '@app/features/books/book-detail/ai-stats/ai-stats';
 import { ChapterOutlineComponent } from './chapter-outline/chapter-outline';
@@ -55,7 +56,7 @@ import { VersionHistoryPanelComponent } from './version-history-panel/version-hi
 import { ConfirmDialogComponent } from '@app/shared/confirm-dialog/confirm-dialog';
 import { MoveTextDialogComponent, MoveTextDialogData, MoveTextDialogResult } from './move-text-dialog';
 import { insertHtmlAtAnchor } from './chapter-content-blocks';
-import { forkJoin, Subscription } from 'rxjs';
+import { forkJoin, Subscription, map } from 'rxjs';
 import { v4 as uuidv4 } from 'uuid';
 
 @Component({
@@ -633,28 +634,59 @@ export class ChapterEditComponent implements OnInit, OnDestroy {
     input.value = '';
     this.imageUploading.set(true);
     this.chapterService.uploadImage(file).subscribe({
-      next: ({ url, thumbnailUrl }) => {
-        this.imageUrl.set(url);
-        this.imageThumbnailUrl.set(thumbnailUrl);
-        const current = this.chapter();
-        if (!current) { this.imageUploading.set(false); return; }
-        const updated = { ...current, imageUrl: url, imageThumbnailUrl: thumbnailUrl };
-        this.chapter.set(updated);
-        this.chapterService.update(updated).subscribe({
-          next: () => {
-            this.imageUploading.set(false);
-            this.recordRecentChapter();
-            this.snackBar.open('Chapter image saved', undefined, { duration: 2500 });
-          },
-          error: () => {
-            this.imageUploading.set(false);
-            this.snackBar.open('Image uploaded but chapter save failed — click Save to retry', undefined, { duration: 4000 });
-          },
-        });
-      },
+      next: ({ url, thumbnailUrl }) => this.applyChapterImage(url, thumbnailUrl),
       error: () => {
         this.snackBar.open('Image upload failed', undefined, { duration: 3000 });
         this.imageUploading.set(false);
+      },
+    });
+  }
+
+  /** Opens the prompt dialog, then generates and saves the chapter image. */
+  openGenerateImageDialog(): void {
+    const chapterId = this.chapter()?.id;
+    if (!chapterId) return;
+    const dialogRef = this.dialog.open(ImageGenDialogComponent, {
+      width: '500px',
+      data: {
+        title: 'Generate Chapter Image',
+        suggestLabel: 'Suggest from chapter',
+        suggestPrompt: () =>
+          this.chapterService
+            .suggestImagePrompt(this.editorRef?.getContent() ?? this.chapter()?.content ?? '', this.chapter()?.title)
+            .pipe(map(r => r.prompt)),
+      } satisfies ImageGenDialogData,
+    });
+    dialogRef.afterClosed().subscribe((result: ImageGenResult | undefined) => {
+      if (!result || this.destroyed) return;
+      this.imageUploading.set(true);
+      this.chapterService.generateImage(result.prompt).subscribe({
+        next: ({ url, thumbnailUrl }) => this.applyChapterImage(url, thumbnailUrl),
+        error: () => {
+          this.snackBar.open('Image generation failed', undefined, { duration: 3000 });
+          this.imageUploading.set(false);
+        },
+      });
+    });
+  }
+
+  /** Stores a newly uploaded/generated image on the chapter and persists it. */
+  private applyChapterImage(url: string, thumbnailUrl: string): void {
+    this.imageUrl.set(url);
+    this.imageThumbnailUrl.set(thumbnailUrl);
+    const current = this.chapter();
+    if (!current) { this.imageUploading.set(false); return; }
+    const updated = { ...current, imageUrl: url, imageThumbnailUrl: thumbnailUrl };
+    this.chapter.set(updated);
+    this.chapterService.update(updated).subscribe({
+      next: () => {
+        this.imageUploading.set(false);
+        this.recordRecentChapter();
+        this.snackBar.open('Chapter image saved', undefined, { duration: 2500 });
+      },
+      error: () => {
+        this.imageUploading.set(false);
+        this.snackBar.open('Image saved to storage but chapter save failed — click Save to retry', undefined, { duration: 4000 });
       },
     });
   }

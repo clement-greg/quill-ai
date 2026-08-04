@@ -62,4 +62,14 @@ export class ChapterService {
     formData.append('file', file);
     return this.http.post<{ url: string; thumbnailUrl: string }>('/api/upload', formData);
   }
+
+  /** Generates a chapter image from a text prompt. */
+  generateImage(prompt: string): Observable<{ url: string; thumbnailUrl: string }> {
+    return this.http.post<{ url: string; thumbnailUrl: string }>('/api/image/generate', { prompt });
+  }
+
+  /** Asks the model for an image prompt describing a scene from the chapter text. */
+  suggestImagePrompt(text: string, title?: string): Observable<{ prompt: string }> {
+    return this.http.post<{ prompt: string }>('/api/image/suggest-prompt', { text, title });
+  }
 }

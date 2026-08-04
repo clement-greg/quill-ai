@@ -6,7 +6,9 @@ import { MatInputModule } from '@angular/material/input';
 import { MatFormFieldModule } from '@angular/material/form-field';
 import { MatSelectModule } from '@angular/material/select';
 import { MatIconModule } from '@angular/material/icon';
+import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
 import { TextFieldModule } from '@angular/cdk/text-field';
+import { Observable } from 'rxjs';
 
 /** A photo that can be used as the reference (source) image for generation. */
 export interface ImageGenSource {
@@ -28,6 +30,10 @@ export interface ImageGenDialogData {
   defaultSourceUrl?: string;
   /** Existing categories to choose from. Omit/empty to hide the category picker. */
   categories?: string[];
+  /** Supplies a suggested prompt. Omit to hide the suggest button. */
+  suggestPrompt?: () => Observable<string>;
+  /** Label for the suggest button. Defaults to 'Suggest a prompt'. */
+  suggestLabel?: string;
 }
 
 export interface ImageGenResult {
@@ -48,6 +54,7 @@ export interface ImageGenResult {
     MatFormFieldModule,
     MatSelectModule,
     MatIconModule,
+    MatProgressSpinnerModule,
     TextFieldModule,
   ],
   template: `
@@ -62,6 +69,24 @@ export interface ImageGenResult {
                   [(ngModel)]="prompt"
                   placeholder="Describe the image you want to generate…"></textarea>
       </mat-form-field>
+
+      @if (canSuggest) {
+        <div class="suggest-row">
+          <button mat-stroked-button type="button"
+                  [disabled]="suggesting()"
+                  (click)="suggest()">
+            @if (suggesting()) {
+              <mat-progress-spinner diameter="16" mode="indeterminate"></mat-progress-spinner>
+            } @else {
+              <mat-icon>auto_awesome</mat-icon>
+            }
+            {{ suggestLabel }}
+          </button>
+          @if (suggestError()) {
+            <span class="suggest-error" role="alert">{{ suggestError() }}</span>
+          }
+        </div>
+      }
 
       @if (sources.length) {
         <div class="source-section">
@@ -109,6 +134,9 @@ export interface ImageGenResult {
   `,
   styles: [`
     .prompt-field { width: 100%; margin-top: 8px; }
+    .suggest-row { display: flex; align-items: center; gap: 8px; margin: 0 0 12px; flex-wrap: wrap; }
+    .suggest-row mat-progress-spinner { margin-right: 4px; }
+    .suggest-error { font-size: 0.78rem; color: var(--mat-sys-error, #b3261e); }
     .category-field { width: 100%; margin-top: 8px; }
     mat-dialog-content { width: min(460px, 90vw); box-sizing: border-box; }
     .source-section { margin: 4px 0 12px; }
@@ -140,8 +168,30 @@ export class ImageGenDialogComponent {
   readonly sourceHint = this.data?.sourceHint ?? 'The generated image will reuse this face and body.';
   readonly sources: ImageGenSource[] = this.data?.sources ?? [];
   readonly categories: string[] = this.data?.categories ?? [];
+  readonly suggestLabel = this.data?.suggestLabel ?? 'Suggest a prompt';
+  readonly canSuggest = !!this.data?.suggestPrompt;
   category = '';
   selectedSourceUrl = signal<string | null>(this.data?.defaultSourceUrl ?? null);
+  suggesting = signal(false);
+  suggestError = signal<string | null>(null);
+
+  /** Fills the prompt field with a suggestion, replacing whatever is there. */
+  suggest(): void {
+    const source = this.data?.suggestPrompt;
+    if (!source || this.suggesting()) return;
+    this.suggesting.set(true);
+    this.suggestError.set(null);
+    source().subscribe({
+      next: text => {
+        if (text?.trim()) this.prompt = text.trim();
+        this.suggesting.set(false);
+      },
+      error: () => {
+        this.suggestError.set('Could not suggest a prompt.');
+        this.suggesting.set(false);
+      },
+    });
+  }
 
   proxyUrl(url: string): string {
     const filename = url.split('/').pop();
