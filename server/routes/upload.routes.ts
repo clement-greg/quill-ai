@@ -4,13 +4,14 @@ import path from 'path';
 import sharp from 'sharp';
 import { v4 as uuidv4 } from 'uuid';
 import { uploadFileToBlob } from '../services/storage';
+import { VIDEO_EXTENSIONS } from '../../shared/models/entity.model';
 
 const router = Router();
 const DEFAULT_THUMBNAIL_SIZE = 400; // max width or height in px for palette stamps
 
 const RASTER_EXTS = ['.jpg', '.jpeg', '.png', '.gif', '.webp'];
 const SVG_EXTS = ['.svg'];
-const VIDEO_EXTS = ['.mp4', '.webm', '.mov', '.m4v', '.ogv'];
+const VIDEO_EXTS = VIDEO_EXTENSIONS;
 
 const VIDEO_MIME_BY_EXT: Record<string, string> = {
   '.mp4': 'video/mp4',

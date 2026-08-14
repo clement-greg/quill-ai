@@ -8,7 +8,7 @@ import { MatButtonModule } from '@angular/material/button';
 import { MatIconModule } from '@angular/material/icon';
 import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
 import { MatTooltipModule } from '@angular/material/tooltip';
-import { Entity, EntityReference } from '@shared/models/entity.model';
+import { Entity, EntityReference, isVideoUrl } from '@shared/models/entity.model';
 import { ChapterEditProposal, EntityLinkGroup } from '@shared/models/chat-session.model';
 import { EntityService } from '@app/features/entities/entity.service';
 import { GrammarCheckService, GrammarError, SuggestedEntity } from './grammar-check.service';
@@ -207,7 +207,8 @@ export class RichTextEditorComponent implements OnInit, AfterViewInit, OnDestroy
   photoPickerGalleryPhotos = computed(() => {
     const entity = this.photoPickerSelectedEntity();
     if (!entity) return [] as NonNullable<Entity['photos']>;
-    return (entity.photos ?? []).filter(p => !p.hidden);
+    // Videos share the photos array, but photo references render as <img>.
+    return (entity.photos ?? []).filter(p => !p.hidden && !isVideoUrl(p.url));
   });
   photoPickerUploading = signal(false);
   private photoPickerSavedRange: Range | null = null;

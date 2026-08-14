@@ -23,7 +23,7 @@ import { MatDialog } from '@angular/material/dialog';
 import { MatSnackBar } from '@angular/material/snack-bar';
 import { MatTabsModule } from '@angular/material/tabs';
 import { CdkDropList, CdkDrag, CdkDragHandle, CdkDragDrop, CdkDragPlaceholder, moveItemInArray } from '@angular/cdk/drag-drop';
-import { Entity, EntityPhoto } from '@shared/models/entity.model';
+import { Entity, EntityPhoto, isVideoUrl } from '@shared/models/entity.model';
 import { TimelineEvent, TimelineEventPhoto } from '@shared/models/timeline-event.model';
 import { SeriesMap } from '@shared/models/map.model';
 import { FictionalLocationMapComponent, FictionalMapPin } from './fictional-location-map';
@@ -426,7 +426,16 @@ export class EntityDetailComponent implements OnDestroy {
     this.lightboxKey.update(k => k + 1);
   }
 
+  /**
+   * True when the gesture started on the video player, where arrow keys seek
+   * and drags scrub — navigating the lightbox would fight the native controls.
+   */
+  private isFromVideoPlayer(event: Event): boolean {
+    return (event.target as HTMLElement | null)?.closest('video') != null;
+  }
+
   onLightboxKey(event: KeyboardEvent): void {
+    if (event.key !== 'Escape' && this.isFromVideoPlayer(event)) return;
     if (event.key === 'ArrowRight') this.nextPhoto();
     else if (event.key === 'ArrowLeft') this.prevPhoto();
     else if (event.key === 'Escape') this.closeLightbox();
@@ -434,15 +443,18 @@ export class EntityDetailComponent implements OnDestroy {
 
   private _swipeStartX = 0;
   private _swipeStartY = 0;
+  private _swipeFromVideo = false;
 
   onLightboxTouchStart(event: TouchEvent): void {
     const t = event.touches[0];
     if (!t) return;
+    this._swipeFromVideo = this.isFromVideoPlayer(event);
     this._swipeStartX = t.clientX;
     this._swipeStartY = t.clientY;
   }
 
   onLightboxTouchEnd(event: TouchEvent): void {
+    if (this._swipeFromVideo) return;
     if (this.visiblePhotos().length < 2) return;
     const t = event.changedTouches[0];
     if (!t) return;
@@ -472,9 +484,14 @@ export class EntityDetailComponent implements OnDestroy {
     }
   }
 
+  /** The gallery accepts both stills and video; the server rejects other types. */
+  private isGalleryMedia(file: File): boolean {
+    return file.type.startsWith('image/') || file.type.startsWith('video/');
+  }
+
   onPhotoFileSelected(event: Event): void {
     const input = event.target as HTMLInputElement;
-    const files = Array.from(input.files ?? []).filter(f => f.type.startsWith('image/'));
+    const files = Array.from(input.files ?? []).filter(f => this.isGalleryMedia(f));
     input.value = '';
     if (files.length) this.uploadPhotoFiles(files);
   }
@@ -496,12 +513,15 @@ export class EntityDetailComponent implements OnDestroy {
   onPhotosDrop(event: DragEvent): void {
     event.preventDefault();
     this.photoDragOver.set(false);
-    const files = Array.from(event.dataTransfer?.files ?? []).filter(f => f.type.startsWith('image/'));
+    const files = Array.from(event.dataTransfer?.files ?? []).filter(f => this.isGalleryMedia(f));
     if (files.length) this.uploadPhotoFiles(files);
   }
 
   onPhotoDragStart(event: DragEvent, photo: { url: string; thumbnailUrl?: string }): void {
     if (!event.dataTransfer) return;
+    // Timeline event cards render their photo as an <img>, so videos aren't
+    // draggable onto them — publishing no payload leaves the drop a no-op.
+    if (this.isVideo(photo.url)) return;
     event.dataTransfer.effectAllowed = 'copy';
     event.dataTransfer.setData('application/quill-photo', JSON.stringify({ url: photo.url, thumbnailUrl: photo.thumbnailUrl }));
   }
@@ -577,6 +597,7 @@ export class EntityDetailComponent implements OnDestroy {
     }
     this.visiblePhotos().forEach((p, i) => {
       if (sources.some(s => s.url === p.url)) return;
+      if (this.isVideo(p.url)) return; // videos can't be used as a reference image
       sources.push({ url: p.url, thumbnailUrl: p.thumbnailUrl, label: `Photo ${i + 1}` });
     });
 
@@ -789,6 +810,20 @@ export class EntityDetailComponent implements OnDestroy {
     if (!url) return null;
     const filename = url.split('/').pop();
     return filename ? `/api/image/${filename}` : null;
+  }
+
+  isVideo(url: string | undefined): boolean {
+    return isVideoUrl(url);
+  }
+
+  /**
+   * Grid poster for a video. The `#t=0.1` media fragment makes the browser seek
+   * to the first frame with `preload="metadata"` instead of showing a blank box
+   * (this is why the image proxy serves byte ranges).
+   */
+  videoPosterUrl(url: string | undefined): string | null {
+    const proxied = this.proxyUrl(url);
+    return proxied ? `${proxied}#t=0.1` : null;
   }
 
   onMapTabChange(index: number): void {

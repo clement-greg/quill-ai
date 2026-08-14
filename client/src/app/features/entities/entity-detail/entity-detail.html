@@ -67,14 +67,14 @@
             <mat-menu #addPhotoMenu="matMenu">
               <button mat-menu-item (click)="photoFileInput.click()">
                 <mat-icon>upload</mat-icon>
-                <span>Upload photo</span>
+                <span>Upload photo or video</span>
               </button>
               <button mat-menu-item (click)="openGenerateImageDialog()">
                 <mat-icon>auto_awesome</mat-icon>
                 <span>Generate with AI</span>
               </button>
             </mat-menu>
-            <input #photoFileInput type="file" accept="image/*" multiple hidden (change)="onPhotoFileSelected($event)" />
+            <input #photoFileInput type="file" accept="image/*,video/*" multiple hidden (change)="onPhotoFileSelected($event)" />
           </div>
         } @else {
           <span class="photos-sort-label">Drag to reorder</span>
@@ -113,7 +113,14 @@
                  (pointercancel)="cancelSortCardPress()"
                  (pointerleave)="cancelSortCardPress()"
                  (contextmenu)="onSortCardContextMenu($event, $index)">
-              <img [src]="proxyUrl(photo.thumbnailUrl) || proxyUrl(photo.url)" [alt]="photo.caption || ''" />
+              @if (isVideo(photo.url)) {
+                <video [src]="videoPosterUrl(photo.url)" preload="metadata" muted playsinline></video>
+                <span class="photo-video-badge" aria-hidden="true">
+                  <mat-icon>play_arrow</mat-icon>
+                </span>
+              } @else {
+                <img [src]="proxyUrl(photo.thumbnailUrl) || proxyUrl(photo.url)" [alt]="photo.caption || ''" />
+              }
               <div class="sort-drag-overlay" aria-hidden="true">
                 <mat-icon>drag_indicator</mat-icon>
               </div>
@@ -146,15 +153,22 @@
              (dragleave)="onPhotoDragLeave($event)"
              (drop)="onPhotosDrop($event)">
           @if (visiblePhotos().length === 0 && !photoGenerating()) {
-            <p class="empty-hint">No photos added yet. Add photos or drag &amp; drop here.</p>
+            <p class="empty-hint">No photos added yet. Add photos or videos, or drag &amp; drop here.</p>
           } @else {
             <div class="photo-grid">
               @if (photoGenerating()) {
                 <div class="photo-card photo-card--skeleton" aria-label="Generating image…" aria-busy="true"></div>
               }
               @for (photo of displayedPhotos(); track $index) {
-                <button class="photo-card" draggable="true" (dragstart)="onPhotoDragStart($event, photo)" (click)="openLightbox($index)" [attr.aria-label]="photo.caption || 'Photo ' + ($index + 1)">
-                  <img [src]="proxyUrl(photo.thumbnailUrl) || proxyUrl(photo.url)" [alt]="photo.caption || ''" />
+                <button class="photo-card" draggable="true" (dragstart)="onPhotoDragStart($event, photo)" (click)="openLightbox($index)" [attr.aria-label]="photo.caption || (isVideo(photo.url) ? 'Video ' : 'Photo ') + ($index + 1)">
+                  @if (isVideo(photo.url)) {
+                    <video [src]="videoPosterUrl(photo.url)" preload="metadata" muted playsinline></video>
+                    <span class="photo-video-badge" aria-hidden="true">
+                      <mat-icon>play_arrow</mat-icon>
+                    </span>
+                  } @else {
+                    <img [src]="proxyUrl(photo.thumbnailUrl) || proxyUrl(photo.url)" [alt]="photo.caption || ''" />
+                  }
                   @if (photo.caption) {
                     <span class="photo-caption">{{ photo.caption }}</span>
                   }
@@ -469,7 +483,12 @@
 
       @for (_ of [lightboxKey()]; track _) {
         <div class="lightbox-image-wrap" [class]="'lightbox-image-wrap slide-' + slideDir()">
-          <img [src]="proxyUrl(photo.url)" [alt]="photo.caption || 'Photo'" class="lightbox-image" />
+          @if (isVideo(photo.url)) {
+            <video [src]="proxyUrl(photo.url)" class="lightbox-image" controls autoplay playsinline
+                   [attr.aria-label]="photo.caption || 'Video'"></video>
+          } @else {
+            <img [src]="proxyUrl(photo.url)" [alt]="photo.caption || 'Photo'" class="lightbox-image" />
+          }
         </div>
       }
 

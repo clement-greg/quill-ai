@@ -241,7 +241,8 @@
     outline-offset: 2px;
   }
 
-  img {
+  img,
+  video {
     width: 100%;
     height: 100%;
     object-fit: cover;
@@ -249,8 +250,31 @@
     transition: transform 0.2s ease;
   }
 
-  &:hover img {
+  &:hover img,
+  &:hover video {
     transform: scale(1.04);
+  }
+}
+
+// Play affordance over a video tile — without it a poster frame is
+// indistinguishable from a still photo.
+.photo-video-badge {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+
+  mat-icon {
+    width: 36px;
+    height: 36px;
+    font-size: 36px;
+    line-height: 36px;
+    color: #fff;
+    border-radius: 50%;
+    background: rgba(0, 0, 0, 0.45);
+    filter: drop-shadow(0 1px 3px rgba(0, 0, 0, 0.5));
   }
 }
 
@@ -320,7 +344,8 @@
     cursor: grabbing;
   }
 
-  img {
+  img,
+  video {
     width: 100%;
     height: 100%;
     object-fit: cover;
@@ -908,6 +933,13 @@
   border-radius: 4px;
 }
 
+video.lightbox-image {
+  // Videos need an intrinsic width to lay out before metadata loads, and the
+  // native control bar must not be clipped by the wrap's contain sizing.
+  width: min(80vw, 1200px);
+  background: #000;
+}
+
 @media (max-width: 599px) {
   // Image fills the full viewport width; nav buttons float on top of it.
   .lightbox-image-wrap {
@@ -918,6 +950,10 @@
   .lightbox-image {
     max-width: 100vw;
     border-radius: 0;
+  }
+
+  video.lightbox-image {
+    width: 100vw;
   }
 
   // Buttons stay close to the edges but with a semi-transparent backdrop so

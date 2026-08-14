@@ -7,7 +7,7 @@ import { MatFormFieldModule } from '@angular/material/form-field';
 import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
 import { MatTooltipModule } from '@angular/material/tooltip';
 import { forkJoin, Subscription } from 'rxjs';
-import { Entity, EntityPhoto } from '@shared/models/entity.model';
+import { Entity, EntityPhoto, isVideoUrl } from '@shared/models/entity.model';
 import { Series } from '@shared/models/series.model';
 import { EntityService } from '@app/features/entities/entity.service';
 import { SeriesService } from '@app/features/series/series.service';
@@ -55,6 +55,7 @@ export class PhotoGalleryComponent implements OnInit, OnDestroy {
   private slideshowInterval: ReturnType<typeof setInterval> | null = null;
   private routeSub?: Subscription;
   private touchStartX = 0;
+  private touchFromVideo = false;
 
   /** Entities that have at least one visible photo */
   entitiesWithPhotos = computed(() => {
@@ -150,9 +151,16 @@ export class PhotoGalleryComponent implements OnInit, OnDestroy {
   @HostListener('document:keydown', ['$event'])
   onDocumentKey(event: KeyboardEvent): void {
     if (!this.lightboxOpen()) return;
+    // Arrow keys seek inside a focused video player — don't also navigate.
+    if (event.key !== 'Escape' && this.isFromVideoPlayer(event)) return;
     if (event.key === 'ArrowLeft')  { this.prevPhoto(); event.preventDefault(); }
     if (event.key === 'ArrowRight') { this.nextPhoto(); event.preventDefault(); }
     if (event.key === 'Escape')     { this.closeLightbox(); event.preventDefault(); }
+  }
+
+  /** True when the gesture started on the video player, where drags scrub. */
+  private isFromVideoPlayer(event: Event): boolean {
+    return (event.target as HTMLElement | null)?.closest('video') != null;
   }
 
   onLightboxKey(event: KeyboardEvent): void {
@@ -160,10 +168,12 @@ export class PhotoGalleryComponent implements OnInit, OnDestroy {
   }
 
   onTouchStart(event: TouchEvent): void {
+    this.touchFromVideo = this.isFromVideoPlayer(event);
     this.touchStartX = event.changedTouches[0].clientX;
   }
 
   onTouchEnd(event: TouchEvent): void {
+    if (this.touchFromVideo) return;
     const delta = event.changedTouches[0].clientX - this.touchStartX;
     if (Math.abs(delta) < 40) return; // ignore taps
     if (delta < 0) this.nextPhoto();
@@ -212,8 +222,16 @@ export class PhotoGalleryComponent implements OnInit, OnDestroy {
     }
     this.slideshowActive.set(true);
     this.slideshowInterval = setInterval(() => {
+      // Let a video play to its end rather than cutting it off after 3s;
+      // onVideoEnded() advances the slideshow instead.
+      if (this.isVideo(this.currentLightboxPhoto()?.photo.url)) return;
       this.nextPhoto();
     }, 3000);
+  }
+
+  /** Advances the slideshow once a video finishes playing. */
+  onVideoEnded(): void {
+    if (this.slideshowActive()) this.nextPhoto();
   }
 
   private stopSlideshow(): void {
@@ -228,5 +246,19 @@ export class PhotoGalleryComponent implements OnInit, OnDestroy {
     if (!url) return null;
     const filename = url.split('/').pop();
     return filename ? `/api/image/${filename}` : null;
+  }
+
+  isVideo(url: string | undefined | null): boolean {
+    return isVideoUrl(url);
+  }
+
+  /**
+   * Grid poster for a video. The `#t=0.1` media fragment makes the browser seek
+   * to the first frame with `preload="metadata"` instead of showing a blank box
+   * (this is why the image proxy serves byte ranges).
+   */
+  videoPosterUrl(url: string | undefined | null): string | null {
+    const proxied = this.proxyUrl(url);
+    return proxied ? `${proxied}#t=0.1` : null;
   }
 }

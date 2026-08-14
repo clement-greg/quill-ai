@@ -7,7 +7,7 @@ import {
 import { MatDialogRef, MAT_DIALOG_DATA } from '@angular/material/dialog';
 import { MatButtonModule } from '@angular/material/button';
 import { MatIconModule } from '@angular/material/icon';
-import { EntityPhoto } from '@shared/models/entity.model';
+import { EntityPhoto, isVideoUrl } from '@shared/models/entity.model';
 
 export interface PhotoPickerResult {
   url: string;
@@ -27,7 +27,8 @@ export interface PhotoPickerResult {
 export class PhotoPickerDialogComponent {
   private dialogRef = inject(MatDialogRef<PhotoPickerDialogComponent>);
   private data = inject<EntityPhoto[]>(MAT_DIALOG_DATA);
-  photos = computed(() => this.data.filter(p => !p.hidden));
+  // Videos share the photos array but can't stand in for a profile picture.
+  photos = computed(() => this.data.filter(p => !p.hidden && !isVideoUrl(p.url)));
 
   proxyUrl(url: string): string {
     const filename = url.split('/').pop();

@@ -4,6 +4,7 @@ import config from '../config';
 import { downloadBlob } from '../services/storage';
 import { generateImage } from '../services/image-generation';
 import { sanitizeForModeration } from '../services/content-sanitize';
+import { parseRange } from '../services/http-range';
 
 const aiClient = new AzureOpenAI({
   endpoint: config.foundry.endpoint,
@@ -183,7 +184,7 @@ router.post('/suggest-prompt', async (req: Request, res: Response) => {
   }
 });
 
-// GET /api/image/:filename
+// GET /api/image/:filename — also serves videos; both are decrypted here.
 router.get('/:filename', async (req: Request, res: Response) => {
   const filename = Array.isArray(req.params['filename'])
     ? req.params['filename'][0]
@@ -200,6 +201,25 @@ router.get('/:filename', async (req: Request, res: Response) => {
     // Cache in the browser for 1 year (blobs are UUID-named and immutable)
     res.setHeader('Content-Type', contentType);
     res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+    // Videos need byte-range serving to seek — and Safari refuses to play a
+    // <video> src at all unless the server advertises range support.
+    res.setHeader('Accept-Ranges', 'bytes');
+
+    const range = parseRange(req.headers.range, data.length);
+    if (range === 'unsatisfiable') {
+      res.setHeader('Content-Range', `bytes */${data.length}`);
+      res.status(416).end();
+      return;
+    }
+
+    if (range) {
+      const slice = data.subarray(range.start, range.end + 1);
+      res.setHeader('Content-Range', `bytes ${range.start}-${range.end}/${data.length}`);
+      res.setHeader('Content-Length', slice.length);
+      res.status(206).send(slice);
+      return;
+    }
+
     res.setHeader('Content-Length', data.length);
     res.send(data);
   } catch (err: any) {

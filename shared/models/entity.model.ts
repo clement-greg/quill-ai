@@ -20,8 +20,23 @@ export interface EntityLocation {
   fictional?: EntityFictionalLocation;
 }
 
+/** Video containers accepted by the gallery uploader. */
+export const VIDEO_EXTENSIONS = ['.mp4', '.webm', '.mov', '.m4v', '.ogv'];
+
+/**
+ * Videos live in the same `photos` array as images — the blob extension is the
+ * discriminator, so existing records need no migration. Blob names are
+ * `<uuid><ext>`, so the extension always survives into the stored URL.
+ */
+export function isVideoUrl(url: string | undefined | null): boolean {
+    if (!url) return false;
+    const path = url.split('?')[0].split('#')[0].toLowerCase();
+    return VIDEO_EXTENSIONS.some(ext => path.endsWith(ext));
+}
+
 export interface EntityPhoto {
     url: string;
+    /** For videos this is the same blob as `url` — sharp can't produce a poster frame. */
     thumbnailUrl: string;
     caption?: string;
     hidden?: boolean;

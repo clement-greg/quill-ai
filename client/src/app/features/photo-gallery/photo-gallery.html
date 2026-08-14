@@ -59,7 +59,15 @@
       @for (item of galleryPhotos(); track $index) {
         <div class="photo-card" (click)="openLightbox($index)">
           <div class="photo-thumb">
-            <img [src]="proxyUrl(item.photo.thumbnailUrl) || proxyUrl(item.photo.url)" [alt]="item.photo.caption || item.entity.name" />
+            @if (isVideo(item.photo.url)) {
+              <video [src]="videoPosterUrl(item.photo.url)" preload="metadata" muted playsinline
+                     [attr.aria-label]="item.photo.caption || item.entity.name"></video>
+              <span class="photo-video-badge" aria-hidden="true">
+                <mat-icon>play_arrow</mat-icon>
+              </span>
+            } @else {
+              <img [src]="proxyUrl(item.photo.thumbnailUrl) || proxyUrl(item.photo.url)" [alt]="item.photo.caption || item.entity.name" />
+            }
           </div>
           <div class="photo-caption">
             <span class="entity-name">{{ item.entity.name }}</span>
@@ -95,7 +103,13 @@
 
       @for (_ of [lightboxKey()]; track _) {
         <div class="lightbox-image-wrap" [class]="'lightbox-image-wrap slide-' + slideDir()">
-          <img [src]="proxyUrl(item.photo.url)" [alt]="item.photo.caption || item.entity.name" class="lightbox-image" />
+          @if (isVideo(item.photo.url)) {
+            <video [src]="proxyUrl(item.photo.url)" class="lightbox-image" controls autoplay playsinline
+                   (ended)="onVideoEnded()"
+                   [attr.aria-label]="item.photo.caption || item.entity.name"></video>
+          } @else {
+            <img [src]="proxyUrl(item.photo.url)" [alt]="item.photo.caption || item.entity.name" class="lightbox-image" />
+          }
         </div>
       }
 

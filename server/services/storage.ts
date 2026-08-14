@@ -43,7 +43,27 @@ interface CachedBlob {
   contentType: string;
 }
 
+// Decrypted bytes are held in-process so repeated reads (and, for videos, the
+// many byte-range requests a player issues while scrubbing) don't re-download
+// and re-decrypt. Bounded because a single video can be 50 MB.
+const MAX_CACHE_BYTES = 256 * 1024 * 1024;
+
 const blobCache = new Map<string, CachedBlob>();
+let cacheBytes = 0;
+
+/** Map iterates in insertion order; re-inserting on hit makes that order LRU. */
+function touchCacheEntry(filename: string, entry: CachedBlob): void {
+  blobCache.delete(filename);
+  blobCache.set(filename, entry);
+}
+
+function evictUntilUnderBudget(): void {
+  for (const [name, entry] of blobCache) {
+    if (cacheBytes <= MAX_CACHE_BYTES) break;
+    blobCache.delete(name);
+    cacheBytes -= entry.data.length;
+  }
+}
 
 async function downloadBlobBytes(filename: string): Promise<{ raw: Buffer; contentType: string }> {
   const blockBlobClient = containerClient.getBlockBlobClient(filename);
@@ -58,13 +78,18 @@ async function downloadBlobBytes(filename: string): Promise<{ raw: Buffer; conte
 
 export async function downloadBlob(filename: string): Promise<CachedBlob> {
   const cached = blobCache.get(filename);
-  if (cached) return cached;
+  if (cached) {
+    touchCacheEntry(filename, cached);
+    return cached;
+  }
 
   const { raw, contentType } = await downloadBlobBytes(filename);
   const data = decrypt(raw);
 
   const entry: CachedBlob = { data, contentType };
   blobCache.set(filename, entry);
+  cacheBytes += data.length;
+  evictUntilUnderBudget();
   return entry;
 }
 
@@ -73,13 +98,16 @@ export async function downloadBlobRaw(filename: string): Promise<{ raw: Buffer; 
 }
 
 export function evictBlobCache(filename: string): void {
+  const entry = blobCache.get(filename);
+  if (!entry) return;
   blobCache.delete(filename);
+  cacheBytes -= entry.data.length;
 }
 
 export async function deleteBlob(filename: string): Promise<void> {
   const blockBlobClient = containerClient.getBlockBlobClient(filename);
   await blockBlobClient.deleteIfExists();
-  blobCache.delete(filename);
+  evictBlobCache(filename);
 }
 
 export async function getBlobUrl(filename: string): Promise<string> {
