@@ -29,6 +29,7 @@ import { EntityPanelService } from '../entity-panel.service';
 import { EntityService } from '../entity.service';
 import { SeriesContextService } from '@app/core/services/series-context.service';
 import { HeaderService } from '@app/core/services/header.service';
+import { galleryMediaFrom } from '@app/core/utils/gallery-media';
 import { EntityDetailComponent } from '../entity-detail/entity-detail';
 import { EntityEditComponent } from '../entity-edit/entity-edit';
 import { EntityCollageComponent } from './entity-collage';
@@ -284,7 +285,7 @@ export class EntityPageComponent implements OnInit, OnDestroy {
     const entityId = this.dragOverEntityId();
     this.dragOverEntityId.set(null);
     if (!entityId) return;
-    const files = Array.from(event.dataTransfer?.files ?? []).filter(f => f.type.startsWith('image/'));
+    const files = galleryMediaFrom(event.dataTransfer);
     if (files.length === 0) return;
     this.uploadFilesToEntity(entityId, files);
   }

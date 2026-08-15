@@ -24,6 +24,7 @@ import { MatSnackBar } from '@angular/material/snack-bar';
 import { MatTabsModule } from '@angular/material/tabs';
 import { CdkDropList, CdkDrag, CdkDragHandle, CdkDragDrop, CdkDragPlaceholder, moveItemInArray } from '@angular/cdk/drag-drop';
 import { Entity, EntityPhoto, isVideoUrl } from '@shared/models/entity.model';
+import { galleryMediaFrom, isGalleryMediaFile } from '@app/core/utils/gallery-media';
 import { TimelineEvent, TimelineEventPhoto } from '@shared/models/timeline-event.model';
 import { SeriesMap } from '@shared/models/map.model';
 import { FictionalLocationMapComponent, FictionalMapPin } from './fictional-location-map';
@@ -484,14 +485,9 @@ export class EntityDetailComponent implements OnDestroy {
     }
   }
 
-  /** The gallery accepts both stills and video; the server rejects other types. */
-  private isGalleryMedia(file: File): boolean {
-    return file.type.startsWith('image/') || file.type.startsWith('video/');
-  }
-
   onPhotoFileSelected(event: Event): void {
     const input = event.target as HTMLInputElement;
-    const files = Array.from(input.files ?? []).filter(f => this.isGalleryMedia(f));
+    const files = Array.from(input.files ?? []).filter(isGalleryMediaFile);
     input.value = '';
     if (files.length) this.uploadPhotoFiles(files);
   }
@@ -513,7 +509,7 @@ export class EntityDetailComponent implements OnDestroy {
   onPhotosDrop(event: DragEvent): void {
     event.preventDefault();
     this.photoDragOver.set(false);
-    const files = Array.from(event.dataTransfer?.files ?? []).filter(f => this.isGalleryMedia(f));
+    const files = galleryMediaFrom(event.dataTransfer);
     if (files.length) this.uploadPhotoFiles(files);
   }
 

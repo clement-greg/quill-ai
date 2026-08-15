@@ -1,6 +1,7 @@
 import { Component, ChangeDetectionStrategy, computed, input, output, signal } from '@angular/core';
 import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
 import { Entity } from '@shared/models/entity.model';
+import { galleryMediaFrom } from '@app/core/utils/gallery-media';
 
 interface CollageTile {
   id: string;
@@ -211,7 +212,7 @@ export class EntityCollageComponent {
     event.preventDefault();
     event.stopPropagation();
     this.dragOverId.set(null);
-    const files = Array.from(event.dataTransfer?.files ?? []).filter(f => f.type.startsWith('image/'));
+    const files = galleryMediaFrom(event.dataTransfer);
     if (files.length === 0) return;
     this.fileDrop.emit({ entityId, files });
   }
