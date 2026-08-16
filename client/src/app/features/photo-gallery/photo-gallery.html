@@ -105,7 +105,7 @@
         <div class="lightbox-image-wrap" [class]="'lightbox-image-wrap slide-' + slideDir()">
           @if (isVideo(item.photo.url)) {
             <video [src]="proxyUrl(item.photo.url)" class="lightbox-image" controls autoplay playsinline
-                   (ended)="onVideoEnded()"
+                   [loop]="!slideshowActive()" (ended)="onVideoEnded()"
                    [attr.aria-label]="item.photo.caption || item.entity.name"></video>
           } @else {
             <img [src]="proxyUrl(item.photo.url)" [alt]="item.photo.caption || item.entity.name" class="lightbox-image" />
