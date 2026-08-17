@@ -28,7 +28,8 @@ interface WebkitVideoElement extends HTMLVideoElement {
       autoplay
       playsinline
       [attr.aria-label]="ariaLabel()"
-      (click)="onVideoClick()"
+      (pointerdown)="onFramePointerDown($event)"
+      (pointerup)="onFramePointerUp($event)"
       (loadedmetadata)="onLoadedMetadata()"
       (timeupdate)="onTimeUpdate()"
       (durationchange)="onLoadedMetadata()"
@@ -38,7 +39,12 @@ interface WebkitVideoElement extends HTMLVideoElement {
       (ended)="onEnded()"
     ></video>
 
-    <div class="vp-controls" [class.vp-hidden]="!controlsVisible()" (click)="$event.stopPropagation()">
+    <!--
+      data-vp-controls marks the region that owns its own gestures: hosts use it
+      to tell a scrub or button press apart from a swipe across the video frame.
+    -->
+    <div class="vp-controls" data-vp-controls [class.vp-hidden]="!controlsVisible()"
+         (click)="$event.stopPropagation()">
       <button type="button" class="vp-btn" (click)="togglePlay()"
               [attr.aria-label]="playing() ? 'Pause' : 'Play'">
         <mat-icon>{{ playing() ? 'pause' : 'play_arrow' }}</mat-icon>
@@ -97,6 +103,7 @@ export class VideoPlayer implements OnDestroy {
 
   private hideTimer: ReturnType<typeof setTimeout> | null = null;
   private scrubbing = false;
+  private tapStart: { x: number; y: number } | null = null;
 
   ngOnDestroy(): void {
     this.clearHideTimer();
@@ -125,8 +132,21 @@ export class VideoPlayer implements OnDestroy {
     }
   }
 
-  /** Tapping the frame reveals the controls; tapping again toggles playback. */
-  protected onVideoClick(): void {
+  protected onFramePointerDown(event: PointerEvent): void {
+    this.tapStart = { x: event.clientX, y: event.clientY };
+  }
+
+  /**
+   * Tapping the frame reveals the controls; tapping again toggles playback.
+   * Anything that travelled is a swipe belonging to the host (lightbox paging),
+   * so it must not be mistaken for a tap.
+   */
+  protected onFramePointerUp(event: PointerEvent): void {
+    const start = this.tapStart;
+    this.tapStart = null;
+    if (!start) return;
+    if (Math.hypot(event.clientX - start.x, event.clientY - start.y) > 10) return;
+
     if (!this.controlsVisible()) this.showControls();
     else this.togglePlay();
   }

@@ -160,9 +160,12 @@ export class PhotoGalleryComponent implements OnInit, OnDestroy {
     if (event.key === 'Escape')     { this.closeLightbox(); event.preventDefault(); }
   }
 
-  /** True when the gesture started on the video player, where drags scrub. */
+  /**
+   * True when the gesture started on the video control bar, where drags scrub.
+   * The video frame itself swipes like a photo.
+   */
   private isFromVideoPlayer(event: Event): boolean {
-    return (event.target as HTMLElement | null)?.closest('app-video-player') != null;
+    return (event.target as HTMLElement | null)?.closest('[data-vp-controls]') != null;
   }
 
   onLightboxKey(event: KeyboardEvent): void {
