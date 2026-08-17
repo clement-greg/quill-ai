@@ -484,7 +484,7 @@
       @for (_ of [lightboxKey()]; track _) {
         <div class="lightbox-image-wrap" [class]="'lightbox-image-wrap slide-' + slideDir()">
           @if (isVideo(photo.url)) {
-            <video [src]="proxyUrl(photo.url)" class="lightbox-image" controls autoplay playsinline
+            <video [src]="proxyUrl(photo.url)" class="lightbox-image" controls autoplay loop playsinline
                    [attr.aria-label]="photo.caption || 'Video'"></video>
           } @else {
             <img [src]="proxyUrl(photo.url)" [alt]="photo.caption || 'Photo'" class="lightbox-image" />
