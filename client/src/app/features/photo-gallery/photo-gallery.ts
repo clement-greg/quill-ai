@@ -161,11 +161,13 @@ export class PhotoGalleryComponent implements OnInit, OnDestroy {
   }
 
   /**
-   * True when the gesture started on the video control bar, where drags scrub.
-   * The video frame itself swipes like a photo.
+   * True when the gesture belongs to the video player: the control bar always,
+   * plus the whole frame while paused (the player sets data-vp-scrub then).
+   * A swipe across a playing video still pages the gallery, like a photo.
    */
   private isFromVideoPlayer(event: Event): boolean {
-    return (event.target as HTMLElement | null)?.closest('[data-vp-controls]') != null;
+    return (event.target as HTMLElement | null)
+      ?.closest('[data-vp-controls], [data-vp-scrub]') != null;
   }
 
   onLightboxKey(event: KeyboardEvent): void {

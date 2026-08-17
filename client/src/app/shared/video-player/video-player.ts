@@ -6,6 +6,12 @@ interface WebkitVideoElement extends HTMLVideoElement {
   webkitEnterFullscreen?: () => void;
 }
 
+/** Distance in px a pointer may travel before a tap counts as a drag. */
+const DRAG_SLOP = 10;
+
+/** How long the centre play/pause flash stays up. Must match the CSS animation. */
+const FLASH_MS = 700;
+
 /**
  * Video player with our own control bar.
  *
@@ -13,15 +19,24 @@ interface WebkitVideoElement extends HTMLVideoElement {
  * control bar as a full-frame translucent scrim that washes out the whole video
  * for the first seconds of playback. These controls only tint the bottom strip,
  * fade out while playing, and come back on tap.
+ *
+ * While paused, the whole frame becomes a scrub surface — dragging across it
+ * seeks, mapping the full width to the full duration. `data-vp-scrub` reflects
+ * that state onto the host so an enclosing gallery knows to leave the gesture
+ * alone; while playing the attribute is absent and swipes page the gallery.
  */
 @Component({
   selector: 'app-video-player',
   imports: [MatIconModule],
   changeDetection: ChangeDetectionStrategy.OnPush,
+  host: {
+    '[attr.data-vp-scrub]': 'playing() ? null : ""',
+  },
   template: `
     <video
       #video
       class="vp-video"
+      [class.vp-scrubbable]="!playing()"
       [src]="src()"
       [loop]="loop()"
       [muted]="muted()"
@@ -29,7 +44,9 @@ interface WebkitVideoElement extends HTMLVideoElement {
       playsinline
       [attr.aria-label]="ariaLabel()"
       (pointerdown)="onFramePointerDown($event)"
+      (pointermove)="onFramePointerMove($event)"
       (pointerup)="onFramePointerUp($event)"
+      (pointercancel)="onFramePointerCancel()"
       (loadedmetadata)="onLoadedMetadata()"
       (timeupdate)="onTimeUpdate()"
       (durationchange)="onLoadedMetadata()"
@@ -38,6 +55,15 @@ interface WebkitVideoElement extends HTMLVideoElement {
       (volumechange)="muted.set(videoEl().nativeElement.muted)"
       (ended)="onEnded()"
     ></video>
+
+    <!-- Re-keyed on every toggle so the CSS animation restarts. -->
+    @if (flash(); as f) {
+      @for (_ of [f.id]; track _) {
+        <div class="vp-flash" aria-hidden="true">
+          <mat-icon>{{ f.icon }}</mat-icon>
+        </div>
+      }
+    }
 
     <!--
       data-vp-controls marks the region that owns its own gestures: hosts use it
@@ -95,6 +121,7 @@ export class VideoPlayer implements OnDestroy {
   protected currentTime = signal(0);
   protected duration = signal(0);
   protected controlsVisible = signal(true);
+  protected flash = signal<{ icon: 'play_arrow' | 'pause'; id: number } | null>(null);
 
   protected progressPercent = computed(() => {
     const d = this.duration();
@@ -102,11 +129,15 @@ export class VideoPlayer implements OnDestroy {
   });
 
   private hideTimer: ReturnType<typeof setTimeout> | null = null;
+  private flashTimer: ReturnType<typeof setTimeout> | null = null;
+  private flashId = 0;
   private scrubbing = false;
-  private tapStart: { x: number; y: number } | null = null;
+  /** Pointer origin plus the playhead it started from, while a frame gesture is live. */
+  private frameGesture: { x: number; y: number; time: number; dragging: boolean } | null = null;
 
   ngOnDestroy(): void {
     this.clearHideTimer();
+    if (this.flashTimer !== null) clearTimeout(this.flashTimer);
   }
 
   // ── Controls visibility ────────────────────────────────────────────────────
@@ -132,32 +163,86 @@ export class VideoPlayer implements OnDestroy {
     }
   }
 
+  // ── Frame gestures ─────────────────────────────────────────────────────────
+
   protected onFramePointerDown(event: PointerEvent): void {
-    this.tapStart = { x: event.clientX, y: event.clientY };
+    this.frameGesture = {
+      x: event.clientX,
+      y: event.clientY,
+      time: this.videoEl().nativeElement.currentTime,
+      dragging: false,
+    };
   }
 
   /**
-   * Tapping the frame reveals the controls; tapping again toggles playback.
-   * Anything that travelled is a swipe belonging to the host (lightbox paging),
-   * so it must not be mistaken for a tap.
+   * While paused, a horizontal drag anywhere on the frame scrubs: the frame's
+   * full width maps to the full duration. While playing the drag is left for
+   * the enclosing gallery to read as a swipe.
    */
+  protected onFramePointerMove(event: PointerEvent): void {
+    const gesture = this.frameGesture;
+    if (!gesture || this.playing()) return;
+
+    const dx = event.clientX - gesture.x;
+    if (!gesture.dragging) {
+      if (Math.abs(dx) <= DRAG_SLOP) return;
+      gesture.dragging = true;
+      this.beginScrub();
+      this.videoEl().nativeElement.setPointerCapture?.(event.pointerId);
+    }
+
+    const video = this.videoEl().nativeElement;
+    const width = video.getBoundingClientRect().width;
+    const total = this.duration();
+    if (width <= 0 || total <= 0) return;
+
+    const next = Math.min(total, Math.max(0, gesture.time + (dx / width) * total));
+    video.currentTime = next;
+    this.currentTime.set(next);
+  }
+
+  /** A gesture that never became a drag is a tap: reveal controls, else toggle. */
   protected onFramePointerUp(event: PointerEvent): void {
-    const start = this.tapStart;
-    this.tapStart = null;
-    if (!start) return;
-    if (Math.hypot(event.clientX - start.x, event.clientY - start.y) > 10) return;
+    const gesture = this.frameGesture;
+    this.frameGesture = null;
+    if (!gesture) return;
+
+    if (gesture.dragging) {
+      this.videoEl().nativeElement.releasePointerCapture?.(event.pointerId);
+      this.endScrub();
+      return;
+    }
+    // A tap that travelled is the gallery's swipe, not ours.
+    if (Math.hypot(event.clientX - gesture.x, event.clientY - gesture.y) > DRAG_SLOP) return;
 
     if (!this.controlsVisible()) this.showControls();
     else this.togglePlay();
+  }
+
+  protected onFramePointerCancel(): void {
+    if (this.frameGesture?.dragging) this.endScrub();
+    this.frameGesture = null;
   }
 
   // ── Playback ───────────────────────────────────────────────────────────────
 
   protected togglePlay(): void {
     const video = this.videoEl().nativeElement;
-    if (video.paused) void video.play().catch(() => undefined);
+    const resuming = video.paused;
+    if (resuming) void video.play().catch(() => undefined);
     else video.pause();
+    this.showFlash(resuming ? 'play_arrow' : 'pause');
     this.showControls();
+  }
+
+  /** Briefly pulses the action's icon over the centre of the frame. */
+  private showFlash(icon: 'play_arrow' | 'pause'): void {
+    if (this.flashTimer !== null) clearTimeout(this.flashTimer);
+    this.flash.set({ icon, id: ++this.flashId });
+    this.flashTimer = setTimeout(() => {
+      this.flash.set(null);
+      this.flashTimer = null;
+    }, FLASH_MS);
   }
 
   protected toggleMute(): void {

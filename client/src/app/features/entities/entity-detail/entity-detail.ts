@@ -430,12 +430,14 @@ export class EntityDetailComponent implements OnDestroy {
   }
 
   /**
-   * True when the gesture started on the video control bar, where arrow keys
-   * seek and drags scrub. The video frame itself is not excluded — swiping
-   * across it should page through the lightbox just like a photo.
+   * True when the gesture belongs to the video player rather than the lightbox:
+   * the control bar always, plus the whole frame while paused (the player sets
+   * data-vp-scrub then, turning the frame into a scrub surface). A swipe across
+   * a *playing* video still pages the lightbox, just like a photo.
    */
   private isFromVideoPlayer(event: Event): boolean {
-    return (event.target as HTMLElement | null)?.closest('[data-vp-controls]') != null;
+    return (event.target as HTMLElement | null)
+      ?.closest('[data-vp-controls], [data-vp-scrub]') != null;
   }
 
   onLightboxKey(event: KeyboardEvent): void {

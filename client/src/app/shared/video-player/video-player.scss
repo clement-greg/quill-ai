@@ -24,6 +24,55 @@
   appearance: none;
 }
 
+// While paused the frame is a scrub surface, so the browser must not claim the
+// drag for panning — otherwise pointermove stops firing mid-gesture.
+.vp-video.vp-scrubbable {
+  touch-action: none;
+}
+
+// Centre flash confirming a play/pause tap: a quick swell that fades out,
+// mirroring the iOS transport feedback.
+.vp-flash {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 76px;
+  height: 76px;
+  margin: -38px 0 0 -38px;
+  border-radius: 50%;
+  background: rgba(0, 0, 0, 0.45);
+  color: rgba(255, 255, 255, 0.85);
+  pointer-events: none;
+  animation: vp-flash 0.7s cubic-bezier(0.2, 0.7, 0.35, 1) forwards;
+
+  mat-icon {
+    width: 42px;
+    height: 42px;
+    font-size: 42px;
+    line-height: 42px;
+  }
+}
+
+@keyframes vp-flash {
+  0%   { opacity: 0;    transform: scale(0.72); }
+  22%  { opacity: 0.75; transform: scale(1); }
+  100% { opacity: 0;    transform: scale(1.45); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .vp-flash {
+    animation: vp-flash-fade 0.7s linear forwards;
+  }
+
+  @keyframes vp-flash-fade {
+    0%, 60% { opacity: 0.75; }
+    100%    { opacity: 0; }
+  }
+}
+
 .vp-controls {
   position: absolute;
   left: 0;
