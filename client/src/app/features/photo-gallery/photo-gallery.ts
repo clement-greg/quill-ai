@@ -14,6 +14,7 @@ import { SeriesService } from '@app/features/series/series.service';
 import { HeaderService } from '@app/core/services/header.service';
 import { SeriesContextService } from '@app/core/services/series-context.service';
 import { UserSettingsService } from '@app/core/services/user-settings.service';
+import { VideoPlayer } from '@app/shared/video-player/video-player';
 
 interface GalleryPhoto {
   entity: Entity;
@@ -30,6 +31,7 @@ interface GalleryPhoto {
     MatFormFieldModule,
     MatProgressSpinnerModule,
     MatTooltipModule,
+    VideoPlayer,
   ],
   templateUrl: './photo-gallery.html',
   styleUrl: './photo-gallery.scss',
@@ -160,7 +162,7 @@ export class PhotoGalleryComponent implements OnInit, OnDestroy {
 
   /** True when the gesture started on the video player, where drags scrub. */
   private isFromVideoPlayer(event: Event): boolean {
-    return (event.target as HTMLElement | null)?.closest('video') != null;
+    return (event.target as HTMLElement | null)?.closest('app-video-player') != null;
   }
 
   onLightboxKey(event: KeyboardEvent): void {

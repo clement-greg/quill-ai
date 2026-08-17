@@ -933,9 +933,9 @@
   border-radius: 4px;
 }
 
-video.lightbox-image {
+app-video-player.lightbox-image {
   // Videos need an intrinsic width to lay out before metadata loads, and the
-  // native control bar must not be clipped by the wrap's contain sizing.
+  // control bar must not be clipped by the wrap's contain sizing.
   width: min(80vw, 1200px);
   background: #000;
 }
@@ -952,7 +952,7 @@ video.lightbox-image {
     border-radius: 0;
   }
 
-  video.lightbox-image {
+  app-video-player.lightbox-image {
     width: 100vw;
   }
 

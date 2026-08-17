@@ -104,9 +104,9 @@
       @for (_ of [lightboxKey()]; track _) {
         <div class="lightbox-image-wrap" [class]="'lightbox-image-wrap slide-' + slideDir()">
           @if (isVideo(item.photo.url)) {
-            <video [src]="proxyUrl(item.photo.url)" class="lightbox-image" controls autoplay playsinline
-                   [loop]="!slideshowActive()" (ended)="onVideoEnded()"
-                   [attr.aria-label]="item.photo.caption || item.entity.name"></video>
+            <app-video-player class="lightbox-image" [src]="proxyUrl(item.photo.url)"
+                              [loop]="!slideshowActive()" (ended)="onVideoEnded()"
+                              [ariaLabel]="item.photo.caption || item.entity.name"></app-video-player>
           } @else {
             <img [src]="proxyUrl(item.photo.url)" [alt]="item.photo.caption || item.entity.name" class="lightbox-image" />
           }

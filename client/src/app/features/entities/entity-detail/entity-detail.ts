@@ -34,6 +34,7 @@ import { EntityService, ChapterAppearance } from '../entity.service';
 import { TimelineEventService } from '../timeline-event.service';
 import { EntityRelationshipService } from '../entity-relationship.service';
 import { UserSettingsService } from '@app/core/services/user-settings.service';
+import { VideoPlayer } from '@app/shared/video-player/video-player';
 import {
   TimelineEventDialogComponent,
   TimelineEventDialogData,
@@ -69,6 +70,7 @@ interface BookGroup {
     MatTabsModule,
     TimelineMapComponent,
     FictionalLocationMapComponent,
+    VideoPlayer,
   ],
   templateUrl: './entity-detail.html',
   styleUrl: './entity-detail.scss',
@@ -432,7 +434,7 @@ export class EntityDetailComponent implements OnDestroy {
    * and drags scrub — navigating the lightbox would fight the native controls.
    */
   private isFromVideoPlayer(event: Event): boolean {
-    return (event.target as HTMLElement | null)?.closest('video') != null;
+    return (event.target as HTMLElement | null)?.closest('app-video-player') != null;
   }
 
   onLightboxKey(event: KeyboardEvent): void {
