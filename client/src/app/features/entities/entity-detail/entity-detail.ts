@@ -12,6 +12,7 @@ import {
   untracked,
 } from '@angular/core';
 import { Router } from '@angular/router';
+import { HttpErrorResponse } from '@angular/common/http';
 import { forkJoin, from, of } from 'rxjs';
 import { concatMap, map, catchError } from 'rxjs/operators';
 import { MatButtonModule } from '@angular/material/button';
@@ -492,9 +493,13 @@ export class EntityDetailComponent implements OnDestroy {
 
   onPhotoFileSelected(event: Event): void {
     const input = event.target as HTMLInputElement;
-    const files = Array.from(input.files ?? []).filter(isGalleryMediaFile);
+    const picked = Array.from(input.files ?? []);
+    const files = picked.filter(isGalleryMediaFile);
     input.value = '';
     if (files.length) this.uploadPhotoFiles(files);
+    else if (picked.length) {
+      this.snackBar.open('That file type is not supported', undefined, { duration: 3000 });
+    }
   }
 
   onPhotoDragOver(event: DragEvent): void {
@@ -639,7 +644,11 @@ export class EntityDetailComponent implements OnDestroy {
       concatMap(({ url, thumbnailUrl }) => this.entityService.addPhoto(entityId, url, thumbnailUrl))
     ).subscribe({
       next: (updated) => this.entity.set(updated),
-      error: () => this.photoUploading.set(false),
+      error: (err: HttpErrorResponse) => {
+        this.photoUploading.set(false);
+        const reason = typeof err?.error?.error === 'string' ? err.error.error : 'Upload failed';
+        this.snackBar.open(reason, undefined, { duration: 4000 });
+      },
       complete: () => this.photoUploading.set(false),
     });
   }

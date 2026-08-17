@@ -74,7 +74,10 @@
                 <span>Generate with AI</span>
               </button>
             </mat-menu>
-            <input #photoFileInput type="file" accept="image/*,video/*" multiple hidden (change)="onPhotoFileSelected($event)" />
+            <!-- .heic/.heif are spelled out: iOS reports them with an empty MIME
+                 type in some pickers, which image/* alone then filters out. -->
+            <input #photoFileInput type="file" accept="image/*,video/*,.heic,.heif" multiple hidden
+                   (change)="onPhotoFileSelected($event)" />
           </div>
         } @else {
           <span class="photos-sort-label">Drag to reorder</span>

@@ -1,4 +1,4 @@
-import { Router, Request, Response } from 'express';
+import { Router, Request, Response, NextFunction } from 'express';
 import multer from 'multer';
 import path from 'path';
 import sharp from 'sharp';
@@ -9,7 +9,15 @@ import { VIDEO_EXTENSIONS } from '../../shared/models/entity.model';
 const router = Router();
 const DEFAULT_THUMBNAIL_SIZE = 400; // max width or height in px for palette stamps
 
-const RASTER_EXTS = ['.jpg', '.jpeg', '.png', '.gif', '.webp'];
+/** Raster formats every browser can display — stored byte-for-byte as uploaded. */
+const WEB_SAFE_RASTER_EXTS = ['.jpg', '.jpeg', '.png', '.gif', '.webp', '.avif'];
+/**
+ * Raster formats we accept but re-encode to JPEG on the way in. HEIC is what an
+ * iPhone hands over for a library photo, and only Safari can render it — storing
+ * it as-is would upload fine and then show a broken image everywhere else.
+ */
+const TRANSCODE_RASTER_EXTS = ['.heic', '.heif', '.jfif', '.bmp', '.tif', '.tiff'];
+const RASTER_EXTS = [...WEB_SAFE_RASTER_EXTS, ...TRANSCODE_RASTER_EXTS];
 const SVG_EXTS = ['.svg'];
 const VIDEO_EXTS = VIDEO_EXTENSIONS;
 
@@ -21,12 +29,49 @@ const VIDEO_MIME_BY_EXT: Record<string, string> = {
   '.ogv': 'video/ogg',
 };
 
+/**
+ * Fallback extension when the upload arrives without a usable one — iOS share
+ * sheets sometimes send a bare `image` or `file` as the name. The extension is
+ * not cosmetic: blobs are stored as `<uuid><ext>` and isVideoUrl() reads the
+ * stored URL's extension to tell a video from a photo.
+ */
+const EXT_BY_MIME: Record<string, string> = {
+  'image/jpeg': '.jpg',
+  'image/png': '.png',
+  'image/gif': '.gif',
+  'image/webp': '.webp',
+  'image/avif': '.avif',
+  'image/heic': '.heic',
+  'image/heif': '.heif',
+  'image/heic-sequence': '.heic',
+  'image/tiff': '.tif',
+  'image/bmp': '.bmp',
+  'image/svg+xml': '.svg',
+  'video/mp4': '.mp4',
+  'video/quicktime': '.mov',
+  'video/webm': '.webm',
+  'video/ogg': '.ogv',
+  'video/x-m4v': '.m4v',
+};
+
+const KNOWN_EXTS = [...RASTER_EXTS, ...SVG_EXTS, ...VIDEO_EXTS];
+
+/** The extension to store this upload under, falling back to its MIME type. */
+function resolveExt(originalname: string, mimetype: string): string {
+  const ext = path.extname(originalname).toLowerCase();
+  if (KNOWN_EXTS.includes(ext)) return ext;
+  return EXT_BY_MIME[mimetype.toLowerCase()] ?? ext;
+}
+
 const upload = multer({
   storage: multer.memoryStorage(),
   limits: { fileSize: 50 * 1024 * 1024 }, // 50 MB (videos are larger than images)
   fileFilter: (_req, file, cb) => {
+    // Judge on the MIME type as well as the extension: a photo picked on iOS can
+    // arrive with an unhelpful filename, and an extension-only test drops it.
+    const mime = file.mimetype.toLowerCase();
     const ext = path.extname(file.originalname).toLowerCase();
-    if ([...RASTER_EXTS, ...SVG_EXTS, ...VIDEO_EXTS].includes(ext)) {
+    if (KNOWN_EXTS.includes(ext) || mime.startsWith('image/') || mime.startsWith('video/')) {
       cb(null, true);
     } else {
       cb(new Error('Only image and video files are allowed'));
@@ -36,7 +81,27 @@ const upload = multer({
 
 // POST /api/upload  — multipart/form-data with field name "file"
 // Optional query param: ?thumbSize=N overrides the default 400px max dimension (e.g. 1600 for map previews)
-router.post('/', upload.single('file'), async (req: Request, res: Response) => {
+/**
+ * Multer rejects (wrong type, over the size limit) surface as thrown errors. Without
+ * this they reach Express's default handler, which answers with an HTML 500 that the
+ * client can only report as a generic failure — so the upload appears to do nothing.
+ */
+function handleUploadErrors(req: Request, res: Response, next: NextFunction): void {
+  upload.single('file')(req, res, (err: unknown) => {
+    if (!err) {
+      next();
+      return;
+    }
+    if (err instanceof multer.MulterError && err.code === 'LIMIT_FILE_SIZE') {
+      res.status(413).json({ error: 'That file is larger than the 50 MB limit' });
+      return;
+    }
+    console.error('Upload rejected:', err);
+    res.status(400).json({ error: err instanceof Error ? err.message : 'Upload rejected' });
+  });
+}
+
+router.post('/', handleUploadErrors, async (req: Request, res: Response) => {
   try {
     if (!req.file) {
       res.status(400).json({ error: 'No file provided' });
@@ -48,31 +113,41 @@ router.post('/', upload.single('file'), async (req: Request, res: Response) => {
       4096
     );
 
-    const ext = path.extname(req.file.originalname).toLowerCase();
+    const ext = resolveExt(req.file.originalname, req.file.mimetype);
     const id = uuidv4();
-    const originalFilename = `${id}${ext}`;
     const mimeType = ext === '.svg' ? 'image/svg+xml' : req.file.mimetype;
 
     let originalUrl: string;
     let thumbnailUrl: string;
 
-    if (VIDEO_EXTS.includes(ext)) {
+    if (VIDEO_EXTS.includes(ext) || req.file.mimetype.toLowerCase().startsWith('video/')) {
       // Videos can't be thumbnailed with sharp — upload once and reuse the URL for both.
       const videoMime = VIDEO_MIME_BY_EXT[ext] ?? req.file.mimetype;
-      originalUrl = await uploadFileToBlob(req.file.buffer, originalFilename, videoMime);
+      originalUrl = await uploadFileToBlob(req.file.buffer, `${id}${ext}`, videoMime);
       thumbnailUrl = originalUrl;
     } else if (SVG_EXTS.includes(ext)) {
       // SVGs are already scalable — upload once and use for both url and thumbnailUrl.
-      originalUrl = await uploadFileToBlob(req.file.buffer, originalFilename, mimeType);
+      originalUrl = await uploadFileToBlob(req.file.buffer, `${id}${ext}`, mimeType);
       thumbnailUrl = originalUrl;
     } else {
+      // `.rotate()` bakes in the EXIF orientation phone cameras rely on; without
+      // it, portrait shots come back on their side once the metadata is dropped.
+      const transcode = TRANSCODE_RASTER_EXTS.includes(ext);
       const thumbnailFilename = `${id}_thumb.webp`;
       const thumbnailBuffer = await sharp(req.file.buffer)
+        .rotate()
         .resize(thumbSize, thumbSize, { fit: 'inside', withoutEnlargement: true })
         .webp({ quality: 85 })
         .toBuffer();
+
+      const originalBuffer = transcode
+        ? await sharp(req.file.buffer).rotate().jpeg({ quality: 90 }).toBuffer()
+        : req.file.buffer;
+      const originalFilename = transcode ? `${id}.jpg` : `${id}${ext}`;
+      const originalMime = transcode ? 'image/jpeg' : mimeType;
+
       [originalUrl, thumbnailUrl] = await Promise.all([
-        uploadFileToBlob(req.file.buffer, originalFilename, mimeType),
+        uploadFileToBlob(originalBuffer, originalFilename, originalMime),
         uploadFileToBlob(thumbnailBuffer, thumbnailFilename, 'image/webp'),
       ]);
     }
