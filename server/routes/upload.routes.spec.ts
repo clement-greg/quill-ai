@@ -16,9 +16,11 @@ jest.mock('../services/storage', () => ({
     uploaded.push({ filename, contentType, bytes: buffer.length });
     return `https://blob.test/${filename}`;
   }),
-  downloadBlob: jest.fn(async (filename: string) => {
+  // Raw = the stored ciphertext. The video relay must send this untouched, so the
+  // mock deliberately offers no decrypting counterpart to reach for.
+  downloadBlobRaw: jest.fn(async (filename: string) => {
     if (filename === 'missing.jpg') throw Object.assign(new Error('nope'), { statusCode: 404 });
-    return { data: Buffer.from('decrypted-bytes'), contentType: 'image/jpeg' };
+    return { raw: Buffer.from('stored-ciphertext'), contentType: 'image/jpeg' };
   }),
 }));
 
@@ -132,7 +134,7 @@ describe('video generation', () => {
     global.fetch = realFetch;
   });
 
-  it('sends the decrypted bytes and the prompt, and returns the queued job', async () => {
+  it('sends the stored bytes and the prompt, and returns the queued job', async () => {
     const res = await post({ url: 'https://blob.test/abc-123.jpg', prompt: '  he turns and smiles  ' });
 
     expect(res.status).toBe(200);
@@ -145,7 +147,8 @@ describe('video generation', () => {
     expect(target.searchParams.get('prompt')).toBe('he turns and smiles');
     expect(target.searchParams.get('name')).toBe('abc-123.jpg');
     expect(calls[0].init.headers['Content-Type']).toBe('image/jpeg');
-    expect(Buffer.from(calls[0].init.body).toString()).toBe('decrypted-bytes');
+    // Sent exactly as stored — decrypting is the receiver's job.
+    expect(Buffer.from(calls[0].init.body).toString()).toBe('stored-ciphertext');
   });
 
   it.each([
@@ -331,7 +334,7 @@ describe('video generation', () => {
 
     it('blames storage, not the receiver, when the photo cannot be read', async () => {
       const storage = require('../services/storage');
-      storage.downloadBlob.mockImplementationOnce(async () => {
+      storage.downloadBlobRaw.mockImplementationOnce(async () => {
         throw new Error('container offline');
       });
 

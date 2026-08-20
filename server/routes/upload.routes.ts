@@ -4,7 +4,7 @@ import path from 'path';
 import sharp from 'sharp';
 import { v4 as uuidv4 } from 'uuid';
 import config from '../config';
-import { uploadFileToBlob, downloadBlob } from '../services/storage';
+import { uploadFileToBlob, downloadBlobRaw } from '../services/storage';
 import { VIDEO_EXTENSIONS, isVideoUrl } from '../../shared/models/entity.model';
 
 const router = Router();
@@ -282,10 +282,12 @@ async function receiverError(response: globalThis.Response): Promise<string> {
  *   →  { promptId, seed, queueNumber, frames }
  *
  * Queues an image-to-video job on the external receiver, using one stored photo
- * as the start frame. This goes through the server rather than the browser
- * because stored blobs are encrypted at rest: downloadBlob() is what decrypts
- * them, and the receiver sends no CORS headers, so a fetch straight from the
- * page could neither read the bytes nor the reply.
+ * as the start frame.
+ *
+ * The photo is sent exactly as stored — still encrypted at rest, no decryption
+ * on the way out — so decrypting it is the receiver's job. The relay runs on the
+ * server rather than in the browser because the receiver sends no CORS headers,
+ * so a fetch straight from the page could read neither the blob nor the reply.
  */
 router.post('/generate-video', async (req: Request, res: Response) => {
   const url = typeof req.body?.url === 'string' ? req.body.url : '';
@@ -333,7 +335,8 @@ router.post('/generate-video', async (req: Request, res: Response) => {
   let data: Buffer;
   let contentType: string;
   try {
-    ({ data, contentType } = await downloadBlob(filename));
+    // Raw, not downloadBlob(): the stored ciphertext is what goes over the wire.
+    ({ raw: data, contentType } = await downloadBlobRaw(filename));
   } catch (err: any) {
     // A storage failure is not a receiver failure — say which one broke.
     if (err?.statusCode === 404) {

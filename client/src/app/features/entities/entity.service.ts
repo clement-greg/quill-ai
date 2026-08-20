@@ -106,8 +106,8 @@ export class EntityService {
 
   /**
    * Queues an image-to-video job on the external receiver, using one stored
-   * photo, decrypted, as the start frame. The server does the relay — see
-   * POST /api/upload/generate-video.
+   * photo as the start frame. The photo is relayed exactly as stored — still
+   * encrypted — so the receiver decrypts it. See POST /api/upload/generate-video.
    */
   generateVideo(url: string, prompt: string, durationSeconds: number): Observable<VideoGenJob> {
     return this.http
