@@ -1,7 +1,13 @@
 import { Injectable, inject } from '@angular/core';
 import { HttpClient, HttpErrorResponse } from '@angular/common/http';
-import { Observable, defer, retry, throwError, timer } from 'rxjs';
+import { Observable, defer, retry, throwError, timeout, timer } from 'rxjs';
 import { Entity } from '@shared/models/entity.model';
+
+/**
+ * Backstop for the video request. The server waits up to 60s on the receiver
+ * before answering, so this only fires when the request itself is stuck.
+ */
+const VIDEO_REQUEST_TIMEOUT_MS = 75_000;
 
 /** The queued ComfyUI job the receiver reports back for an image-to-video request. */
 export interface VideoGenJob {
@@ -104,7 +110,14 @@ export class EntityService {
    * POST /api/upload/generate-video.
    */
   generateVideo(url: string, prompt: string, durationSeconds: number): Observable<VideoGenJob> {
-    return this.http.post<VideoGenJob>('/api/upload/generate-video', { url, prompt, durationSeconds });
+    return this.http
+      .post<VideoGenJob>('/api/upload/generate-video', { url, prompt, durationSeconds })
+      .pipe(
+        // The server gives the receiver 60s and then answers, so anything past
+        // this is the request itself hanging. Without it a stalled connection
+        // leaves the UI waiting with no toast either way.
+        timeout(VIDEO_REQUEST_TIMEOUT_MS)
+      );
   }
 
   generatePersonality(entityId: string, basicDescription: string): Observable<{ personality: string }> {

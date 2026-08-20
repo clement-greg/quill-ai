@@ -13,7 +13,7 @@ import {
 } from '@angular/core';
 import { Router } from '@angular/router';
 import { HttpErrorResponse } from '@angular/common/http';
-import { forkJoin, from, of } from 'rxjs';
+import { forkJoin, from, of, TimeoutError } from 'rxjs';
 import { concatMap, map, catchError } from 'rxjs/operators';
 import { MatButtonModule } from '@angular/material/button';
 import { MatIconModule } from '@angular/material/icon';
@@ -884,6 +884,9 @@ export class EntityDetailComponent implements OnDestroy {
   }
 
   private queueVideo(url: string, prompt: string, durationSeconds: number): void {
+    // The generator runs on a machine that comes and goes, so a failure here is
+    // ordinary rather than exceptional: the toast stays until dismissed and
+    // offers to send the same job again.
     this.snackBar.open('Queueing video…', undefined, { duration: 2000 });
     this.entityService.generateVideo(url, prompt, durationSeconds).subscribe({
       next: job =>
@@ -892,20 +895,49 @@ export class EntityDetailComponent implements OnDestroy {
           'Dismiss',
           { duration: 5000 }
         ),
-      error: (err: HttpErrorResponse) =>
-        this.snackBar.open(`Video failed: ${this.videoFailureReason(err)}`, 'Dismiss', { duration: 10000 }),
+      error: (err: unknown) => {
+        const { reason, retryable } = this.videoFailure(err);
+        const toast = this.snackBar.open(
+          `Video failed: ${reason}`,
+          retryable ? 'Retry' : 'Dismiss'
+        );
+        if (!retryable) return;
+        // Retrying is offered rather than done automatically: the job is queued
+        // on the far side before the reply comes back, so an automatic retry
+        // after a timeout could queue the same clip twice.
+        toast.onAction().subscribe(() => this.queueVideo(url, prompt, durationSeconds));
+      },
     });
   }
 
   /**
-   * The server sends a reason in `{ error }` for every failure it recognises —
-   * including the receiver's own message, so a stopped ComfyUI says so here.
-   * A status of 0 never reached the server at all, so there is no body to read.
+   * What to tell the user, and whether sending the same job again is worth
+   * offering. The server names the cause in `{ error }` for everything it
+   * recognises — including the receiver's own message, so a stopped ComfyUI or
+   * an offline tunnel says so here rather than reading as a generic failure.
    */
-  private videoFailureReason(err: HttpErrorResponse): string {
-    if (err.status === 0) return 'no connection to the server';
-    const reason = typeof err.error?.error === 'string' ? err.error.error : '';
-    return reason || `server returned ${err.status}`;
+  private videoFailure(err: unknown): { reason: string; retryable: boolean } {
+    if (err instanceof TimeoutError) {
+      return { reason: 'the request took too long and was given up on', retryable: true };
+    }
+    if (!(err instanceof HttpErrorResponse)) {
+      return { reason: 'something went wrong sending the request', retryable: true };
+    }
+    // Status 0 never reached our own server — the phone lost its connection, or
+    // the dev server is down. There is no body to read a reason from.
+    if (err.status === 0) {
+      return { reason: 'no connection to Quill — check your network', retryable: true };
+    }
+
+    const reason = typeof err.error?.error === 'string' && err.error.error.trim()
+      ? err.error.error.trim()
+      : `server returned ${err.status}`;
+
+    // 4xx is this request being wrong (bad prompt, bad photo) — sending the
+    // identical job again would fail the same way. 5xx is the far side or the
+    // link between, which is exactly what is expected to be flaky.
+    const retryable = err.status >= 500 || err.status === 429;
+    return { reason, retryable };
   }
 
   private advanceLightboxAfterRemoval(removedIndex: number): void {

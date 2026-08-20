@@ -250,6 +250,99 @@ describe('video generation', () => {
     expect(res.body.error).toMatch(/sign-in/i);
   });
 
+  describe('when the remote machine misbehaves', () => {
+    /** Node wraps socket failures in a TypeError carrying the real code in `cause`. */
+    function socketError(code: string) {
+      const err = new TypeError('fetch failed');
+      (err as any).cause = Object.assign(new Error(code), { code });
+      return err;
+    }
+
+    it.each([
+      ['ECONNREFUSED', 502, /refused the connection/i],
+      ['ENOTFOUND', 502, /cannot find the receiver/i],
+      ['EAI_AGAIN', 502, /cannot find the receiver/i],
+      ['ETIMEDOUT', 504, /timed out connecting/i],
+      ['ECONNRESET', 502, /dropped mid-request/i],
+      ['EPIPE', 502, /dropped mid-request/i],
+    ])('names %s as its own problem', async (code, status, message) => {
+      global.fetch = jest.fn(async () => {
+        throw socketError(code);
+      }) as any;
+
+      const res = await post({ url: 'https://blob.test/abc-123.jpg', prompt: 'pan left' });
+
+      expect(res.status).toBe(status);
+      expect(res.body.error).toMatch(message);
+    });
+
+    it('warns that a timed-out job may still have been queued', async () => {
+      global.fetch = jest.fn(async () => {
+        throw Object.assign(new Error('aborted'), { name: 'TimeoutError' });
+      }) as any;
+
+      const res = await post({ url: 'https://blob.test/abc-123.jpg', prompt: 'pan left' });
+
+      expect(res.status).toBe(504);
+      // Aborting our request does not cancel the far side, so the message must
+      // not claim the job failed outright.
+      expect(res.body.error).toMatch(/may still have been queued/i);
+    });
+
+    it('gives up on the receiver rather than hanging forever', async () => {
+      let signal: AbortSignal | undefined;
+      global.fetch = jest.fn(async (_url: any, init: any) => {
+        signal = init.signal;
+        return new Response(JOB, { status: 200 });
+      }) as any;
+
+      await post({ url: 'https://blob.test/abc-123.jpg', prompt: 'pan left' });
+
+      expect(signal).toBeInstanceOf(AbortSignal);
+    });
+
+    it('reports a genuinely dead receiver, through real fetch', async () => {
+      // No mock here: this proves the mapping matches what undici actually
+      // throws, not just what the other tests pretend it throws.
+      global.fetch = realFetch;
+      const cfg = require('../config').default;
+      const original = cfg.photoExportUrl;
+      cfg.photoExportUrl = 'http://127.0.0.1:59321';
+      try {
+        const res = await post({ url: 'https://blob.test/abc-123.jpg', prompt: 'pan left' });
+
+        expect(res.status).toBe(502);
+        expect(res.body.error).toMatch(/refused the connection/i);
+      } finally {
+        cfg.photoExportUrl = original;
+      }
+    });
+
+    it('still reports an unrecognised failure with whatever detail it has', async () => {
+      global.fetch = jest.fn(async () => {
+        throw socketError('UND_ERR_WEIRD');
+      }) as any;
+
+      const res = await post({ url: 'https://blob.test/abc-123.jpg', prompt: 'pan left' });
+
+      expect(res.status).toBe(502);
+      expect(res.body.error).toMatch(/UND_ERR_WEIRD/);
+    });
+
+    it('blames storage, not the receiver, when the photo cannot be read', async () => {
+      const storage = require('../services/storage');
+      storage.downloadBlob.mockImplementationOnce(async () => {
+        throw new Error('container offline');
+      });
+
+      const res = await post({ url: 'https://blob.test/abc-123.jpg', prompt: 'pan left' });
+
+      expect(res.status).toBe(502);
+      expect(res.body.error).toMatch(/from storage/i);
+      expect(calls).toHaveLength(0);
+    });
+  });
+
   it('says so when no receiver is configured', async () => {
     const cfg = require('../config').default;
     const original = cfg.photoExportUrl;

@@ -210,6 +210,59 @@ function videoGenTarget(filename: string, prompt: string, frames: number | null)
 }
 
 /**
+ * How long to wait for the receiver to accept a job. It has to take the image
+ * bytes and hand them to ComfyUI before it answers, so this is generous — but
+ * without it a receiver that accepts the connection and then stalls would hang
+ * the request until the OS gives up, leaving the UI with no answer at all.
+ */
+const RECEIVER_TIMEOUT_MS = 60_000;
+
+/**
+ * Turns a failed fetch into something worth showing a user. Node wraps socket
+ * failures in a TypeError whose `cause` carries the real code, so the specific
+ * problem — host not found, nothing listening, connection dropped — is only
+ * visible one level down.
+ */
+function transportFailure(err: unknown): { status: number; error: string } {
+  const e = err as { name?: string; code?: string; cause?: { code?: string; message?: string } };
+  const code = e?.cause?.code ?? e?.code ?? '';
+
+  // fetch() rejects with an AbortError when the AbortSignal.timeout fires.
+  if (e?.name === 'TimeoutError' || e?.name === 'AbortError') {
+    return {
+      status: 504,
+      error: `The receiver did not answer within ${RECEIVER_TIMEOUT_MS / 1000}s. The job may still have been queued — check ComfyUI before retrying.`,
+    };
+  }
+
+  switch (code) {
+    case 'ENOTFOUND':
+    case 'EAI_AGAIN':
+      return { status: 502, error: 'Cannot find the receiver — check the tunnel address is still valid.' };
+    case 'ECONNREFUSED':
+      return { status: 502, error: 'The receiver refused the connection — is it running?' };
+    case 'ETIMEDOUT':
+      return { status: 504, error: 'Timed out connecting to the receiver — the machine may be asleep or offline.' };
+    case 'ECONNRESET':
+    case 'EPIPE':
+    case 'UND_ERR_SOCKET':
+      return { status: 502, error: 'The connection to the receiver dropped mid-request. Try again.' };
+    default:
+      break;
+  }
+
+  if (/certificate|self.signed|CERT_/i.test(code)) {
+    return { status: 502, error: 'The receiver rejected the TLS handshake (certificate problem).' };
+  }
+
+  const detail = code || e?.cause?.message || (err instanceof Error ? err.message : '');
+  return {
+    status: 502,
+    error: detail ? `Could not reach the receiver (${detail})` : 'Could not reach the receiver.',
+  };
+}
+
+/**
  * The reason the receiver gave, when it sent one, for showing in the UI.
  * `Response` here is fetch's, not Express's — hence the explicit global.
  */
@@ -277,8 +330,22 @@ router.post('/generate-video', async (req: Request, res: Response) => {
     return;
   }
 
+  let data: Buffer;
+  let contentType: string;
   try {
-    const { data, contentType } = await downloadBlob(filename);
+    ({ data, contentType } = await downloadBlob(filename));
+  } catch (err: any) {
+    // A storage failure is not a receiver failure — say which one broke.
+    if (err?.statusCode === 404) {
+      res.status(404).json({ error: 'Photo not found' });
+      return;
+    }
+    console.error('Video generation could not read the photo:', err);
+    res.status(502).json({ error: 'Could not read the photo from storage' });
+    return;
+  }
+
+  try {
     const response = await fetch(target, {
       method: 'POST',
       headers: {
@@ -293,6 +360,7 @@ router.post('/generate-video', async (req: Request, res: Response) => {
       // to a sign-in page. Following it would return a cheerful 200 of HTML and
       // look like a queued job, so treat any redirect as a failure.
       redirect: 'manual',
+      signal: AbortSignal.timeout(RECEIVER_TIMEOUT_MS),
     });
 
     if (response.status >= 300 && response.status < 400) {
@@ -320,13 +388,10 @@ router.post('/generate-video', async (req: Request, res: Response) => {
       queueNumber: job?.queue_number ?? null,
       frames,
     });
-  } catch (err: any) {
-    if (err?.statusCode === 404) {
-      res.status(404).json({ error: 'Photo not found' });
-      return;
-    }
-    console.error('Video generation error:', err);
-    res.status(502).json({ error: 'Could not reach the video receiver' });
+  } catch (err) {
+    const failure = transportFailure(err);
+    console.error('Video generation transport error:', failure.error, err);
+    res.status(failure.status).json({ error: failure.error });
   }
 });
 
