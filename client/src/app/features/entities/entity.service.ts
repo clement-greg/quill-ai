@@ -8,6 +8,8 @@ export interface VideoGenJob {
   promptId: string | null;
   seed: number | null;
   queueNumber: number | null;
+  /** Frame count the duration was snapped to, or null when none was requested. */
+  frames: number | null;
 }
 
 export interface ChapterAppearance {
@@ -101,8 +103,8 @@ export class EntityService {
    * photo, decrypted, as the start frame. The server does the relay — see
    * POST /api/upload/generate-video.
    */
-  generateVideo(url: string, prompt: string): Observable<VideoGenJob> {
-    return this.http.post<VideoGenJob>('/api/upload/generate-video', { url, prompt });
+  generateVideo(url: string, prompt: string, durationSeconds: number): Observable<VideoGenJob> {
+    return this.http.post<VideoGenJob>('/api/upload/generate-video', { url, prompt, durationSeconds });
   }
 
   generatePersonality(entityId: string, basicDescription: string): Observable<{ personality: string }> {

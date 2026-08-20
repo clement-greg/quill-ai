@@ -176,14 +176,36 @@ router.post('/', handleUploadErrors, async (req: Request, res: Response) => {
 const MAX_VIDEO_PROMPT_LENGTH = 2000;
 
 /**
+ * Frame rate of the receiver's workflow (the CreateVideo node in
+ * workflow_i2v.json). Duration is chosen in the UI in seconds; frames are what
+ * the generator actually takes, so the conversion happens here.
+ */
+const VIDEO_FPS = 16;
+const MIN_VIDEO_SECONDS = 0.5;
+const MAX_VIDEO_SECONDS = 8;
+
+/**
+ * Frames for a requested duration. Wan's temporal compression only accepts
+ * 4n+1 frame counts (81, 121, 161, ...), so the raw count is snapped to the
+ * nearest one — at 16 fps every half-second step lands on one exactly.
+ */
+function framesForSeconds(seconds: number): number {
+  const raw = Math.round(seconds * VIDEO_FPS);
+  return Math.max(5, Math.round((raw - 1) / 4) * 4 + 1);
+}
+
+/**
  * The receiver's image-to-video endpoint — `photoExportUrl` in config. It takes
  * the raw image bytes as the POST body with the prompt and start-frame name in
  * the query string, and answers with the queued ComfyUI job.
  */
-function videoGenTarget(filename: string, prompt: string): string | null {
+function videoGenTarget(filename: string, prompt: string, frames: number | null): string | null {
   const base = config.photoExportUrl?.trim().replace(/\/+$/, '');
   if (!base) return null;
   const query = new URLSearchParams({ prompt, name: filename });
+  // Omitted entirely when no duration was asked for, so the workflow's own
+  // default length stands rather than this route inventing one.
+  if (frames !== null) query.set('length', String(frames));
   return `${base}/generate?${query.toString()}`;
 }
 
@@ -203,7 +225,8 @@ async function receiverError(response: globalThis.Response): Promise<string> {
 }
 
 /**
- * POST /api/upload/generate-video  { url, prompt }  →  { promptId, seed, queueNumber }
+ * POST /api/upload/generate-video  { url, prompt, durationSeconds? }
+ *   →  { promptId, seed, queueNumber, frames }
  *
  * Queues an image-to-video job on the external receiver, using one stored photo
  * as the start frame. This goes through the server rather than the browser
@@ -235,7 +258,20 @@ router.post('/generate-video', async (req: Request, res: Response) => {
     return;
   }
 
-  const target = videoGenTarget(filename, prompt);
+  const rawSeconds = req.body?.durationSeconds;
+  let frames: number | null = null;
+  if (rawSeconds !== undefined && rawSeconds !== null && rawSeconds !== '') {
+    const seconds = Number(rawSeconds);
+    if (!Number.isFinite(seconds) || seconds < MIN_VIDEO_SECONDS || seconds > MAX_VIDEO_SECONDS) {
+      res.status(400).json({
+        error: `Duration must be between ${MIN_VIDEO_SECONDS} and ${MAX_VIDEO_SECONDS} seconds`,
+      });
+      return;
+    }
+    frames = framesForSeconds(seconds);
+  }
+
+  const target = videoGenTarget(filename, prompt, frames);
   if (!target) {
     res.status(503).json({ error: 'No video receiver configured (photoExportUrl)' });
     return;
@@ -282,6 +318,7 @@ router.post('/generate-video', async (req: Request, res: Response) => {
       promptId: job?.prompt_id ?? null,
       seed: job?.seed ?? null,
       queueNumber: job?.queue_number ?? null,
+      frames,
     });
   } catch (err: any) {
     if (err?.statusCode === 404) {

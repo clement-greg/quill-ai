@@ -879,16 +879,16 @@ export class EntityDetailComponent implements OnDestroy {
       .afterClosed()
       .subscribe(result => {
         if (!result?.prompt) return;
-        this.queueVideo(photo.url, result.prompt);
+        this.queueVideo(photo.url, result.prompt, result.durationSeconds);
       });
   }
 
-  private queueVideo(url: string, prompt: string): void {
+  private queueVideo(url: string, prompt: string, durationSeconds: number): void {
     this.snackBar.open('Queueing video…', undefined, { duration: 2000 });
-    this.entityService.generateVideo(url, prompt).subscribe({
+    this.entityService.generateVideo(url, prompt, durationSeconds).subscribe({
       next: job =>
         this.snackBar.open(
-          job.promptId ? `Video queued (job ${job.promptId})` : 'Video queued',
+          `${durationSeconds.toFixed(1)}s video queued${job.promptId ? ` (job ${job.promptId})` : ''}`,
           'Dismiss',
           { duration: 5000 }
         ),

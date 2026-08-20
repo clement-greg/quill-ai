@@ -136,7 +136,7 @@ describe('video generation', () => {
     const res = await post({ url: 'https://blob.test/abc-123.jpg', prompt: '  he turns and smiles  ' });
 
     expect(res.status).toBe(200);
-    expect(res.body).toEqual({ promptId: 'job-1', seed: 42, queueNumber: 3 });
+    expect(res.body).toEqual({ promptId: 'job-1', seed: 42, queueNumber: 3, frames: null });
     expect(calls).toHaveLength(1);
 
     const target = new URL(calls[0].url);
@@ -146,6 +146,37 @@ describe('video generation', () => {
     expect(target.searchParams.get('name')).toBe('abc-123.jpg');
     expect(calls[0].init.headers['Content-Type']).toBe('image/jpeg');
     expect(Buffer.from(calls[0].init.body).toString()).toBe('decrypted-bytes');
+  });
+
+  it.each([
+    [0.5, 9],
+    [1, 17],
+    [2.5, 41],
+    [5, 81],
+    [8, 129],
+  ])('turns %ss into %s frames — always a 4n+1 count Wan accepts', async (seconds, frames) => {
+    const res = await post({ url: 'https://blob.test/abc-123.jpg', prompt: 'pan left', durationSeconds: seconds });
+
+    expect(res.status).toBe(200);
+    expect(res.body.frames).toBe(frames);
+    expect((frames - 1) % 4).toBe(0);
+    expect(new URL(calls[0].url).searchParams.get('length')).toBe(String(frames));
+  });
+
+  it('omits length entirely when no duration is asked for, leaving the workflow default', async () => {
+    const res = await post({ url: 'https://blob.test/abc-123.jpg', prompt: 'pan left' });
+
+    expect(res.status).toBe(200);
+    expect(res.body.frames).toBeNull();
+    expect(new URL(calls[0].url).searchParams.has('length')).toBe(false);
+  });
+
+  it.each([0, 0.2, 8.5, 100, 'soon'])('refuses an out-of-range duration (%s)', async (seconds) => {
+    const res = await post({ url: 'https://blob.test/abc-123.jpg', prompt: 'pan left', durationSeconds: seconds });
+
+    expect(res.status).toBe(400);
+    expect(res.body.error).toMatch(/Duration must be/);
+    expect(calls).toHaveLength(0);
   });
 
   it('escapes a prompt that would otherwise break the query string', async () => {
