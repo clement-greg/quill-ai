@@ -163,7 +163,15 @@
                 <div class="photo-card photo-card--skeleton" aria-label="Generating image…" aria-busy="true"></div>
               }
               @for (photo of displayedPhotos(); track $index) {
-                <button class="photo-card" draggable="true" (dragstart)="onPhotoDragStart($event, photo)" (click)="openLightbox($index)" [attr.aria-label]="photo.caption || (isVideo(photo.url) ? 'Video ' : 'Photo ') + ($index + 1)">
+                <button class="photo-card" draggable="true" (dragstart)="onPhotoDragStart($event, photo)"
+                        (click)="onPhotoCardClick($index)"
+                        (pointerdown)="onPhotoCardPointerDown($event, photo)"
+                        (pointermove)="onPhotoCardPointerMove($event)"
+                        (pointerup)="cancelPhotoCardPress()"
+                        (pointercancel)="cancelPhotoCardPress()"
+                        (pointerleave)="cancelPhotoCardPress()"
+                        (contextmenu)="onPhotoCardContextMenu($event, photo)"
+                        [attr.aria-label]="photo.caption || (isVideo(photo.url) ? 'Video ' : 'Photo ') + ($index + 1)">
                   @if (isVideo(photo.url)) {
                     <video [src]="videoPosterUrl(photo.url)" preload="metadata" muted playsinline></video>
                     <span class="photo-video-badge" aria-hidden="true">
@@ -178,6 +186,17 @@
                 </button>
               }
             </div>
+            <div class="sort-menu-anchor" aria-hidden="true"
+                 [style.left.px]="photoMenuPos().x"
+                 [style.top.px]="photoMenuPos().y"
+                 #photoMenuTrigger="matMenuTrigger"
+                 [matMenuTriggerFor]="photoActionMenu"></div>
+            <mat-menu #photoActionMenu="matMenu">
+              <button mat-menu-item (click)="uploadMenuPhoto()">
+                <mat-icon>cloud_upload</mat-icon>
+                <span>Upload</span>
+              </button>
+            </mat-menu>
             @if (visiblePhotos().length > PHOTO_PREVIEW_LIMIT) {
               @if (showAllPhotos()) {
                 <button mat-button class="photos-toggle" (click)="showAllPhotos.set(false)">
@@ -490,7 +509,13 @@
             <app-video-player class="lightbox-image" [src]="proxyUrl(photo.url)" [loop]="true"
                               [ariaLabel]="photo.caption || 'Video'"></app-video-player>
           } @else {
-            <img [src]="proxyUrl(photo.url)" [alt]="photo.caption || 'Photo'" class="lightbox-image" />
+            <img [src]="proxyUrl(photo.url)" [alt]="photo.caption || 'Photo'" class="lightbox-image"
+                 (pointerdown)="onPhotoCardPointerDown($event, photo)"
+                 (pointermove)="onPhotoCardPointerMove($event)"
+                 (pointerup)="cancelPhotoCardPress()"
+                 (pointercancel)="cancelPhotoCardPress()"
+                 (pointerleave)="cancelPhotoCardPress()"
+                 (contextmenu)="onPhotoCardContextMenu($event, photo)" />
           }
         </div>
       }

@@ -11,6 +11,10 @@ jest.mock('../services/storage', () => ({
     uploaded.push({ filename, contentType, bytes: buffer.length });
     return `https://blob.test/${filename}`;
   }),
+  downloadBlob: jest.fn(async (filename: string) => {
+    if (filename === 'missing.jpg') throw Object.assign(new Error('nope'), { statusCode: 404 });
+    return { data: Buffer.from('decrypted-bytes'), contentType: 'image/jpeg' };
+  }),
 }));
 
 import uploadRoutes from './upload.routes';
@@ -95,5 +99,80 @@ describe('upload routes', () => {
 
     expect(res.status).toBe(400);
     expect(res.body.error).toMatch(/image and video/i);
+  });
+});
+
+describe('photo export', () => {
+  const realFetch = global.fetch;
+  let calls: { url: string; init: any }[];
+
+  beforeEach(() => {
+    calls = [];
+    global.fetch = jest.fn(async (url: any, init: any) => {
+      calls.push({ url: String(url), init });
+      return new Response('{"saved":"ok"}', { status: 200 });
+    }) as any;
+  });
+
+  afterAll(() => {
+    global.fetch = realFetch;
+  });
+
+  it('relays the decrypted bytes to the receiver under the blob filename', async () => {
+    const res = await request(app)
+      .post('/api/upload/photo-export')
+      .set('x-test-user', USER_A)
+      .send({ url: 'https://blob.test/abc-123.jpg' });
+
+    expect(res.status).toBe(200);
+    expect(res.body.name).toBe('abc-123.jpg');
+    expect(calls).toHaveLength(1);
+    expect(calls[0].url).toMatch(/\/upload\?name=abc-123\.jpg$/);
+    expect(calls[0].init.headers['Content-Type']).toBe('image/jpeg');
+    expect(Buffer.from(calls[0].init.body).toString()).toBe('decrypted-bytes');
+  });
+
+  it('refuses a video', async () => {
+    const res = await request(app)
+      .post('/api/upload/photo-export')
+      .set('x-test-user', USER_A)
+      .send({ url: 'https://blob.test/clip.mov' });
+
+    expect(res.status).toBe(400);
+    expect(calls).toHaveLength(0);
+  });
+
+  it('refuses a url that tries to walk out of the container', async () => {
+    const res = await request(app)
+      .post('/api/upload/photo-export')
+      .set('x-test-user', USER_A)
+      .send({ url: '..%2F..%2Fetc%2Fpasswd' });
+
+    expect(res.status).toBe(400);
+    expect(calls).toHaveLength(0);
+  });
+
+  it('reports a sign-in redirect from the tunnel as a failure', async () => {
+    global.fetch = jest.fn(async () => new Response(null, {
+      status: 302,
+      headers: { location: 'https://tunnels.example/auth' },
+    })) as any;
+
+    const res = await request(app)
+      .post('/api/upload/photo-export')
+      .set('x-test-user', USER_A)
+      .send({ url: 'https://blob.test/abc-123.jpg' });
+
+    expect(res.status).toBe(502);
+    expect(res.body.error).toMatch(/sign-in/i);
+  });
+
+  it('reports a missing blob as a 404', async () => {
+    const res = await request(app)
+      .post('/api/upload/photo-export')
+      .set('x-test-user', USER_A)
+      .send({ url: 'https://blob.test/missing.jpg' });
+
+    expect(res.status).toBe(404);
   });
 });

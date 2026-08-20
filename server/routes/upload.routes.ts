@@ -3,8 +3,8 @@ import multer from 'multer';
 import path from 'path';
 import sharp from 'sharp';
 import { v4 as uuidv4 } from 'uuid';
-import { uploadFileToBlob } from '../services/storage';
-import { VIDEO_EXTENSIONS } from '../../shared/models/entity.model';
+import { uploadFileToBlob, downloadBlob } from '../services/storage';
+import { VIDEO_EXTENSIONS, isVideoUrl } from '../../shared/models/entity.model';
 
 const router = Router();
 const DEFAULT_THUMBNAIL_SIZE = 400; // max width or height in px for palette stamps
@@ -96,6 +96,18 @@ function handleUploadErrors(req: Request, res: Response, next: NextFunction): vo
       res.status(413).json({ error: 'That file is larger than the 50 MB limit' });
       return;
     }
+    // Busboy's "Unexpected end of form" means the multipart body stopped arriving
+    // before its closing boundary — the request died in flight rather than the
+    // file being wrong. iOS does this when Safari cannot finish reading a photo
+    // that is still in iCloud. It is worth retrying, so say so and flag it.
+    if (err instanceof Error && /unexpected end of form/i.test(err.message)) {
+      console.error('Upload truncated in transit:', err.message);
+      res.status(400).json({
+        code: 'TRUNCATED_UPLOAD',
+        error: 'The photo did not finish uploading. If it is stored in iCloud, open it in Photos first, then try again.',
+      });
+      return;
+    }
     console.error('Upload rejected:', err);
     res.status(400).json({ error: err instanceof Error ? err.message : 'Upload rejected' });
   });
@@ -156,6 +168,80 @@ router.post('/', handleUploadErrors, async (req: Request, res: Response) => {
   } catch (err) {
     console.error('Upload error:', err);
     res.status(500).json({ error: 'Upload failed' });
+  }
+});
+
+/**
+ * Where "Upload" on a gallery photo sends it. The receiver takes the raw image
+ * bytes as the POST body and names the file from `?name=`.
+ */
+const PHOTO_EXPORT_URL = (
+  process.env['PHOTO_EXPORT_URL'] || 'https://gzm6dftk-8787.usw3.devtunnels.ms/'
+).replace(/\/+$/, '');
+
+/**
+ * POST /api/upload/photo-export  { url }  →  { name }
+ *
+ * Relays one stored photo to the external receiver. This goes through the
+ * server rather than the browser because stored blobs are encrypted at rest:
+ * downloadBlob() is what decrypts them, and the receiver sends no CORS headers,
+ * so a fetch straight from the page could neither read the bytes nor the reply.
+ */
+router.post('/photo-export', async (req: Request, res: Response) => {
+  const url = typeof req.body?.url === 'string' ? req.body.url : '';
+  const filename = url.split('/').pop() ?? '';
+
+  // Stored blobs are named `<uuid><ext>`, so anything with a path separator in
+  // it did not come from us.
+  if (!/^[A-Za-z0-9._-]+$/.test(filename)) {
+    res.status(400).json({ error: 'Invalid photo url' });
+    return;
+  }
+  if (isVideoUrl(filename)) {
+    res.status(400).json({ error: 'Only photos can be uploaded' });
+    return;
+  }
+
+  try {
+    const { data, contentType } = await downloadBlob(filename);
+    const target = `${PHOTO_EXPORT_URL}/upload?name=${encodeURIComponent(filename)}`;
+    const response = await fetch(target, {
+      method: 'POST',
+      headers: {
+        'Content-Type': contentType,
+        'Content-Length': String(data.length),
+        // Dev tunnels answer an unrecognised client with an interstitial page
+        // instead of forwarding the request; this opts out of it.
+        'X-Tunnel-Skip-AntiPhishing-Page': 'true',
+      },
+      body: new Uint8Array(data),
+      // A dev tunnel that is not anonymously accessible answers with a redirect
+      // to a sign-in page. Following it would return a cheerful 200 of HTML and
+      // look like a successful upload, so treat any redirect as a failure.
+      redirect: 'manual',
+    });
+
+    if (response.status >= 300 && response.status < 400) {
+      console.error('Photo export redirected to', response.headers.get('location'));
+      res.status(502).json({ error: 'Receiver requires sign-in — make the tunnel public' });
+      return;
+    }
+
+    if (!response.ok) {
+      const detail = (await response.text().catch(() => '')).slice(0, 200);
+      console.error('Photo export failed:', response.status, detail);
+      res.status(502).json({ error: `Receiver returned ${response.status}` });
+      return;
+    }
+
+    res.json({ name: filename });
+  } catch (err: any) {
+    if (err?.statusCode === 404) {
+      res.status(404).json({ error: 'Photo not found' });
+      return;
+    }
+    console.error('Photo export error:', err);
+    res.status(502).json({ error: 'Could not reach the upload receiver' });
   }
 });
 

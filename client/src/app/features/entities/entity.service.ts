@@ -1,6 +1,6 @@
 import { Injectable, inject } from '@angular/core';
-import { HttpClient } from '@angular/common/http';
-import { Observable } from 'rxjs';
+import { HttpClient, HttpErrorResponse } from '@angular/common/http';
+import { Observable, defer, retry, throwError, timer } from 'rxjs';
 import { Entity } from '@shared/models/entity.model';
 
 export interface ChapterAppearance {
@@ -66,10 +66,35 @@ export class EntityService {
     return this.http.get<Entity[]>(`${this.apiUrl}/archived`);
   }
 
+  /**
+   * Uploads one file, retrying once if the request dies in transit. A body that
+   * arrives truncated (server code TRUNCATED_UPLOAD) or a request that never
+   * reached the server at all usually succeeds on a second attempt — on iOS the
+   * first try is often what forces an iCloud-backed photo to materialise.
+   */
   uploadThumbnail(file: File): Observable<{ url: string; thumbnailUrl: string }> {
-    const formData = new FormData();
-    formData.append('file', file);
-    return this.http.post<{ url: string; thumbnailUrl: string }>('/api/upload', formData);
+    return defer(() => {
+      const formData = new FormData();
+      formData.append('file', file);
+      return this.http.post<{ url: string; thumbnailUrl: string }>('/api/upload', formData);
+    }).pipe(
+      retry({
+        count: 1,
+        delay: (err: HttpErrorResponse) => {
+          const retryable = err.status === 0 || err.error?.code === 'TRUNCATED_UPLOAD';
+          if (!retryable) return throwError(() => err);
+          return timer(600);
+        },
+      })
+    );
+  }
+
+  /**
+   * Sends one stored photo, decrypted, to the external upload receiver. The
+   * server does the relay — see POST /api/upload/photo-export.
+   */
+  exportPhoto(url: string): Observable<{ name: string }> {
+    return this.http.post<{ name: string }>('/api/upload/photo-export', { url });
   }
 
   generatePersonality(entityId: string, basicDescription: string): Observable<{ personality: string }> {

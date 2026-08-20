@@ -26,6 +26,7 @@ import { MatTabsModule } from '@angular/material/tabs';
 import { CdkDropList, CdkDrag, CdkDragHandle, CdkDragDrop, CdkDragPlaceholder, moveItemInArray } from '@angular/cdk/drag-drop';
 import { Entity, EntityPhoto, isVideoUrl } from '@shared/models/entity.model';
 import { galleryMediaFrom, isGalleryMediaFile } from '@app/core/utils/gallery-media';
+import { prepareImageForUpload } from '@app/core/utils/prepare-upload';
 import { TimelineEvent, TimelineEventPhoto } from '@shared/models/timeline-event.model';
 import { SeriesMap } from '@shared/models/map.model';
 import { FictionalLocationMapComponent, FictionalMapPin } from './fictional-location-map';
@@ -124,6 +125,9 @@ export class EntityDetailComponent implements OnDestroy {
   sortMenuPos = signal({ x: 0, y: 0 });
   private sortMenuTrigger = viewChild<MatMenuTrigger>('sortMenuTrigger');
   private sortMenuPhotoIndex = -1;
+  photoMenuPos = signal({ x: 0, y: 0 });
+  private photoMenuTrigger = viewChild<MatMenuTrigger>('photoMenuTrigger');
+  private photoMenuPhoto: EntityPhoto | null = null;
   timelineDragOverId = signal<string | null>(null);
   hoveredMapEventId = signal<string | null>(null);
   locationEntities = signal<Map<string, Entity>>(new Map());
@@ -639,7 +643,9 @@ export class EntityDetailComponent implements OnDestroy {
     const entityId = this.entity()?.id;
     if (!entityId) return;
     this.photoUploading.set(true);
-    forkJoin(files.map(f => this.entityService.uploadThumbnail(f))).pipe(
+    // Photos are shrunk in the browser first — see prepareImageForUpload().
+    from(Promise.all(files.map(f => prepareImageForUpload(f)))).pipe(
+      concatMap(prepared => forkJoin(prepared.map(f => this.entityService.uploadThumbnail(f)))),
       concatMap(results => from(results)),
       concatMap(({ url, thumbnailUrl }) => this.entityService.addPhoto(entityId, url, thumbnailUrl))
     ).subscribe({
@@ -781,6 +787,96 @@ export class EntityDetailComponent implements OnDestroy {
     this.sortMenuPhotoIndex = -1;
   }
 
+  // --- "Upload" menu on a gallery photo ------------------------------------
+  // Long-press on touch, right-click on a desktop; both land in openPhotoMenu().
+  // Videos are left alone: the receiver only takes images.
+
+  private _photoPressTimer: ReturnType<typeof setTimeout> | null = null;
+  private _photoPressX = 0;
+  private _photoPressY = 0;
+  /** Set when a long-press opened the menu, so the pointerup's click is dropped. */
+  private _photoPressHandled = false;
+
+  onPhotoCardPointerDown(event: PointerEvent, photo: EntityPhoto): void {
+    this.cancelPhotoCardPress();
+    this._photoPressHandled = false;
+    // A right-click has its own path via (contextmenu) — without this, holding
+    // the right button would also trip the long-press timer and both would fire.
+    if (event.button !== 0) return;
+    if (this.isVideo(photo.url)) return;
+    this._photoPressX = event.clientX;
+    this._photoPressY = event.clientY;
+    this._photoPressTimer = setTimeout(
+      () => this.openPhotoMenu(event.clientX, event.clientY, photo),
+      500
+    );
+  }
+
+  onPhotoCardPointerMove(event: PointerEvent): void {
+    if (this._photoPressTimer === null) return;
+    // Scrolling the gallery past a photo must not count as a long-press.
+    if (
+      Math.abs(event.clientX - this._photoPressX) > 10 ||
+      Math.abs(event.clientY - this._photoPressY) > 10
+    ) {
+      this.cancelPhotoCardPress();
+    }
+  }
+
+  cancelPhotoCardPress(): void {
+    if (this._photoPressTimer !== null) {
+      clearTimeout(this._photoPressTimer);
+      this._photoPressTimer = null;
+    }
+  }
+
+  onPhotoCardContextMenu(event: MouseEvent, photo: EntityPhoto): void {
+    if (this.isVideo(photo.url)) return;
+    event.preventDefault();
+    this.cancelPhotoCardPress();
+    this.openPhotoMenu(event.clientX, event.clientY, photo);
+  }
+
+  /** Opens the lightbox unless a long-press already claimed this press. */
+  onPhotoCardClick(index: number): void {
+    this.cancelPhotoCardPress();
+    // The flag is cleared on the next pointerdown, not here — a long-press that
+    // never produces a click must not leave the following tap swallowed.
+    if (this._photoPressHandled) return;
+    this.openLightbox(index);
+  }
+
+  private openPhotoMenu(x: number, y: number, photo: EntityPhoto): void {
+    this._photoPressTimer = null;
+    this._photoPressHandled = true;
+    this.photoMenuPhoto = photo;
+    this.photoMenuPos.set({ x, y });
+    this.photoMenuTrigger()?.openMenu();
+  }
+
+  uploadMenuPhoto(): void {
+    const photo = this.photoMenuPhoto;
+    this.photoMenuPhoto = null;
+    if (!photo) return;
+
+    this.snackBar.open('Uploading photo…', undefined, { duration: 2000 });
+    this.entityService.exportPhoto(photo.url).subscribe({
+      next: res => this.snackBar.open(`Uploaded ${res.name}`, 'Dismiss', { duration: 3000 }),
+      error: (err: HttpErrorResponse) =>
+        this.snackBar.open(`Upload failed: ${this.uploadFailureReason(err)}`, 'Dismiss', { duration: 8000 }),
+    });
+  }
+
+  /**
+   * The server sends a reason in `{ error }` for every failure it recognises.
+   * A status of 0 never reached it at all, so there is no body to read.
+   */
+  private uploadFailureReason(err: HttpErrorResponse): string {
+    if (err.status === 0) return 'no connection to the server';
+    const reason = typeof err.error?.error === 'string' ? err.error.error : '';
+    return reason || `server returned ${err.status}`;
+  }
+
   private advanceLightboxAfterRemoval(removedIndex: number): void {
     const newCount = this.visiblePhotos().length;
     if (newCount === 0) {
@@ -844,5 +940,6 @@ export class EntityDetailComponent implements OnDestroy {
 
   ngOnDestroy(): void {
     this.cancelSortCardPress();
+    this.cancelPhotoCardPress();
   }
 }
