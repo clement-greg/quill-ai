@@ -192,9 +192,9 @@
                  #photoMenuTrigger="matMenuTrigger"
                  [matMenuTriggerFor]="photoActionMenu"></div>
             <mat-menu #photoActionMenu="matMenu">
-              <button mat-menu-item (click)="uploadMenuPhoto()">
-                <mat-icon>cloud_upload</mat-icon>
-                <span>Upload</span>
+              <button mat-menu-item (click)="generateVideoFromMenuPhoto()">
+                <mat-icon>movie</mat-icon>
+                <span>Generate video</span>
               </button>
             </mat-menu>
             @if (visiblePhotos().length > PHOTO_PREVIEW_LIMIT) {

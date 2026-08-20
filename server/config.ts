@@ -12,6 +12,12 @@ interface AppConfig {
   storageAccountName: string;
   storageAccountKey: string;
   googleMapsApiKey: string;
+  /**
+   * Base URL of the external receiver that "Upload" on a gallery photo posts to
+   * (see POST /api/upload/photo-export). Optional — the action reports itself as
+   * unconfigured rather than failing at the network when this is unset.
+   */
+  photoExportUrl?: string;
   foundry: {
     projectId: string;
     endpoint: string;
@@ -51,6 +57,7 @@ function loadConfig(): AppConfig {
     storageAccountName: process.env['STORAGE_ACCOUNT_NAME']!,
     storageAccountKey: process.env['STORAGE_ACCOUNT_KEY']!,
     googleMapsApiKey: process.env['GOOGLE_MAPS_API_KEY']!,
+    photoExportUrl: process.env['PHOTO_EXPORT_URL'],
     foundry: {
       projectId: process.env['FOUNDRY_PROJECT_ID']!,
       endpoint: process.env['FOUNDRY_ENDPOINT']!,

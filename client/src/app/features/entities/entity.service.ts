@@ -3,6 +3,13 @@ import { HttpClient, HttpErrorResponse } from '@angular/common/http';
 import { Observable, defer, retry, throwError, timer } from 'rxjs';
 import { Entity } from '@shared/models/entity.model';
 
+/** The queued ComfyUI job the receiver reports back for an image-to-video request. */
+export interface VideoGenJob {
+  promptId: string | null;
+  seed: number | null;
+  queueNumber: number | null;
+}
+
 export interface ChapterAppearance {
   id: string;
   title: string;
@@ -90,11 +97,12 @@ export class EntityService {
   }
 
   /**
-   * Sends one stored photo, decrypted, to the external upload receiver. The
-   * server does the relay — see POST /api/upload/photo-export.
+   * Queues an image-to-video job on the external receiver, using one stored
+   * photo, decrypted, as the start frame. The server does the relay — see
+   * POST /api/upload/generate-video.
    */
-  exportPhoto(url: string): Observable<{ name: string }> {
-    return this.http.post<{ name: string }>('/api/upload/photo-export', { url });
+  generateVideo(url: string, prompt: string): Observable<VideoGenJob> {
+    return this.http.post<VideoGenJob>('/api/upload/generate-video', { url, prompt });
   }
 
   generatePersonality(entityId: string, basicDescription: string): Observable<{ personality: string }> {

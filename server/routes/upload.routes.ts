@@ -3,6 +3,7 @@ import multer from 'multer';
 import path from 'path';
 import sharp from 'sharp';
 import { v4 as uuidv4 } from 'uuid';
+import config from '../config';
 import { uploadFileToBlob, downloadBlob } from '../services/storage';
 import { VIDEO_EXTENSIONS, isVideoUrl } from '../../shared/models/entity.model';
 
@@ -171,25 +172,49 @@ router.post('/', handleUploadErrors, async (req: Request, res: Response) => {
   }
 });
 
-/**
- * Where "Upload" on a gallery photo sends it. The receiver takes the raw image
- * bytes as the POST body and names the file from `?name=`.
- */
-const PHOTO_EXPORT_URL = (
-  process.env['PHOTO_EXPORT_URL'] || 'https://gzm6dftk-8787.usw3.devtunnels.ms/'
-).replace(/\/+$/, '');
+/** The longest motion prompt accepted; it travels to the receiver in a query string. */
+const MAX_VIDEO_PROMPT_LENGTH = 2000;
 
 /**
- * POST /api/upload/photo-export  { url }  →  { name }
- *
- * Relays one stored photo to the external receiver. This goes through the
- * server rather than the browser because stored blobs are encrypted at rest:
- * downloadBlob() is what decrypts them, and the receiver sends no CORS headers,
- * so a fetch straight from the page could neither read the bytes nor the reply.
+ * The receiver's image-to-video endpoint — `photoExportUrl` in config. It takes
+ * the raw image bytes as the POST body with the prompt and start-frame name in
+ * the query string, and answers with the queued ComfyUI job.
  */
-router.post('/photo-export', async (req: Request, res: Response) => {
+function videoGenTarget(filename: string, prompt: string): string | null {
+  const base = config.photoExportUrl?.trim().replace(/\/+$/, '');
+  if (!base) return null;
+  const query = new URLSearchParams({ prompt, name: filename });
+  return `${base}/generate?${query.toString()}`;
+}
+
+/**
+ * The reason the receiver gave, when it sent one, for showing in the UI.
+ * `Response` here is fetch's, not Express's — hence the explicit global.
+ */
+async function receiverError(response: globalThis.Response): Promise<string> {
+  const body = (await response.text().catch(() => '')).slice(0, 2000);
+  try {
+    const parsed = JSON.parse(body);
+    if (typeof parsed?.error === 'string' && parsed.error.trim()) return parsed.error.trim();
+  } catch {
+    // Not JSON — an HTML error page or a proxy's own message.
+  }
+  return `Receiver returned ${response.status}`;
+}
+
+/**
+ * POST /api/upload/generate-video  { url, prompt }  →  { promptId, seed, queueNumber }
+ *
+ * Queues an image-to-video job on the external receiver, using one stored photo
+ * as the start frame. This goes through the server rather than the browser
+ * because stored blobs are encrypted at rest: downloadBlob() is what decrypts
+ * them, and the receiver sends no CORS headers, so a fetch straight from the
+ * page could neither read the bytes nor the reply.
+ */
+router.post('/generate-video', async (req: Request, res: Response) => {
   const url = typeof req.body?.url === 'string' ? req.body.url : '';
   const filename = url.split('/').pop() ?? '';
+  const prompt = typeof req.body?.prompt === 'string' ? req.body.prompt.trim() : '';
 
   // Stored blobs are named `<uuid><ext>`, so anything with a path separator in
   // it did not come from us.
@@ -198,13 +223,26 @@ router.post('/photo-export', async (req: Request, res: Response) => {
     return;
   }
   if (isVideoUrl(filename)) {
-    res.status(400).json({ error: 'Only photos can be uploaded' });
+    res.status(400).json({ error: 'Only photos can be used as a start frame' });
+    return;
+  }
+  if (!prompt) {
+    res.status(400).json({ error: 'A prompt is required' });
+    return;
+  }
+  if (prompt.length > MAX_VIDEO_PROMPT_LENGTH) {
+    res.status(400).json({ error: `Prompt must be ${MAX_VIDEO_PROMPT_LENGTH} characters or fewer` });
+    return;
+  }
+
+  const target = videoGenTarget(filename, prompt);
+  if (!target) {
+    res.status(503).json({ error: 'No video receiver configured (photoExportUrl)' });
     return;
   }
 
   try {
     const { data, contentType } = await downloadBlob(filename);
-    const target = `${PHOTO_EXPORT_URL}/upload?name=${encodeURIComponent(filename)}`;
     const response = await fetch(target, {
       method: 'POST',
       headers: {
@@ -217,31 +255,41 @@ router.post('/photo-export', async (req: Request, res: Response) => {
       body: new Uint8Array(data),
       // A dev tunnel that is not anonymously accessible answers with a redirect
       // to a sign-in page. Following it would return a cheerful 200 of HTML and
-      // look like a successful upload, so treat any redirect as a failure.
+      // look like a queued job, so treat any redirect as a failure.
       redirect: 'manual',
     });
 
     if (response.status >= 300 && response.status < 400) {
-      console.error('Photo export redirected to', response.headers.get('location'));
+      console.error('Video generation redirected to', response.headers.get('location'));
       res.status(502).json({ error: 'Receiver requires sign-in — make the tunnel public' });
       return;
     }
 
     if (!response.ok) {
-      const detail = (await response.text().catch(() => '')).slice(0, 200);
-      console.error('Photo export failed:', response.status, detail);
-      res.status(502).json({ error: `Receiver returned ${response.status}` });
+      const reason = await receiverError(response);
+      console.error('Video generation failed:', response.status, reason);
+      res.status(502).json({ error: reason });
       return;
     }
 
-    res.json({ name: filename });
+    // The receiver answers with the queued ComfyUI job; pass the identifiers on
+    // so the job can be found in ComfyUI without re-deriving them here.
+    const job = (await response.json().catch(() => null)) as
+      | { prompt_id?: string; seed?: number; queue_number?: number }
+      | null;
+
+    res.json({
+      promptId: job?.prompt_id ?? null,
+      seed: job?.seed ?? null,
+      queueNumber: job?.queue_number ?? null,
+    });
   } catch (err: any) {
     if (err?.statusCode === 404) {
       res.status(404).json({ error: 'Photo not found' });
       return;
     }
-    console.error('Photo export error:', err);
-    res.status(502).json({ error: 'Could not reach the upload receiver' });
+    console.error('Video generation error:', err);
+    res.status(502).json({ error: 'Could not reach the video receiver' });
   }
 });
 

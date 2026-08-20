@@ -6,6 +6,11 @@ jest.mock('uuid', () => ({ v4: () => 'fixed-id' }));
 
 const uploaded: { filename: string; contentType: string; bytes: number }[] = [];
 
+jest.mock('../config', () => ({
+  __esModule: true,
+  default: { photoExportUrl: 'https://receiver.test/' },
+}));
+
 jest.mock('../services/storage', () => ({
   uploadFileToBlob: jest.fn(async (buffer: Buffer, filename: string, contentType: string) => {
     uploaded.push({ filename, contentType, bytes: buffer.length });
@@ -102,15 +107,24 @@ describe('upload routes', () => {
   });
 });
 
-describe('photo export', () => {
+describe('video generation', () => {
   const realFetch = global.fetch;
   let calls: { url: string; init: any }[];
+
+  const JOB = '{"prompt_id":"job-1","seed":42,"queue_number":3}';
+
+  function post(body: any) {
+    return request(app)
+      .post('/api/upload/generate-video')
+      .set('x-test-user', USER_A)
+      .send(body);
+  }
 
   beforeEach(() => {
     calls = [];
     global.fetch = jest.fn(async (url: any, init: any) => {
       calls.push({ url: String(url), init });
-      return new Response('{"saved":"ok"}', { status: 200 });
+      return new Response(JOB, { status: 200 });
     }) as any;
   });
 
@@ -118,38 +132,79 @@ describe('photo export', () => {
     global.fetch = realFetch;
   });
 
-  it('relays the decrypted bytes to the receiver under the blob filename', async () => {
-    const res = await request(app)
-      .post('/api/upload/photo-export')
-      .set('x-test-user', USER_A)
-      .send({ url: 'https://blob.test/abc-123.jpg' });
+  it('sends the decrypted bytes and the prompt, and returns the queued job', async () => {
+    const res = await post({ url: 'https://blob.test/abc-123.jpg', prompt: '  he turns and smiles  ' });
 
     expect(res.status).toBe(200);
-    expect(res.body.name).toBe('abc-123.jpg');
+    expect(res.body).toEqual({ promptId: 'job-1', seed: 42, queueNumber: 3 });
     expect(calls).toHaveLength(1);
-    expect(calls[0].url).toMatch(/\/upload\?name=abc-123\.jpg$/);
+
+    const target = new URL(calls[0].url);
+    expect(target.origin + target.pathname).toBe('https://receiver.test/generate');
+    // The prompt is trimmed before it goes out.
+    expect(target.searchParams.get('prompt')).toBe('he turns and smiles');
+    expect(target.searchParams.get('name')).toBe('abc-123.jpg');
     expect(calls[0].init.headers['Content-Type']).toBe('image/jpeg');
     expect(Buffer.from(calls[0].init.body).toString()).toBe('decrypted-bytes');
   });
 
-  it('refuses a video', async () => {
-    const res = await request(app)
-      .post('/api/upload/photo-export')
-      .set('x-test-user', USER_A)
-      .send({ url: 'https://blob.test/clip.mov' });
+  it('escapes a prompt that would otherwise break the query string', async () => {
+    await post({ url: 'https://blob.test/abc-123.jpg', prompt: 'zoom & pan?name=evil.jpg' });
+
+    const target = new URL(calls[0].url);
+    expect(target.searchParams.get('prompt')).toBe('zoom & pan?name=evil.jpg');
+    expect(target.searchParams.get('name')).toBe('abc-123.jpg');
+  });
+
+  it('requires a prompt', async () => {
+    const res = await post({ url: 'https://blob.test/abc-123.jpg', prompt: '   ' });
+
+    expect(res.status).toBe(400);
+    expect(res.body.error).toMatch(/prompt is required/i);
+    expect(calls).toHaveLength(0);
+  });
+
+  it('refuses a prompt beyond the length limit', async () => {
+    const res = await post({ url: 'https://blob.test/abc-123.jpg', prompt: 'x'.repeat(2001) });
+
+    expect(res.status).toBe(400);
+    expect(res.body.error).toMatch(/2000 characters/);
+    expect(calls).toHaveLength(0);
+  });
+
+  it('refuses a video as the start frame', async () => {
+    const res = await post({ url: 'https://blob.test/clip.mov', prompt: 'pan left' });
 
     expect(res.status).toBe(400);
     expect(calls).toHaveLength(0);
   });
 
   it('refuses a url that tries to walk out of the container', async () => {
-    const res = await request(app)
-      .post('/api/upload/photo-export')
-      .set('x-test-user', USER_A)
-      .send({ url: '..%2F..%2Fetc%2Fpasswd' });
+    const res = await post({ url: '..%2F..%2Fetc%2Fpasswd', prompt: 'pan left' });
 
     expect(res.status).toBe(400);
     expect(calls).toHaveLength(0);
+  });
+
+  it("passes the receiver's own reason through so the UI can show it", async () => {
+    global.fetch = jest.fn(async () => new Response(
+      '{"error":"cannot reach ComfyUI at http://127.0.0.1:8188 (refused)"}',
+      { status: 400 }
+    )) as any;
+
+    const res = await post({ url: 'https://blob.test/abc-123.jpg', prompt: 'pan left' });
+
+    expect(res.status).toBe(502);
+    expect(res.body.error).toMatch(/cannot reach ComfyUI/);
+  });
+
+  it('falls back to the status when the receiver sends no readable reason', async () => {
+    global.fetch = jest.fn(async () => new Response('<html>gateway</html>', { status: 500 })) as any;
+
+    const res = await post({ url: 'https://blob.test/abc-123.jpg', prompt: 'pan left' });
+
+    expect(res.status).toBe(502);
+    expect(res.body.error).toMatch(/Receiver returned 500/);
   });
 
   it('reports a sign-in redirect from the tunnel as a failure', async () => {
@@ -158,20 +213,29 @@ describe('photo export', () => {
       headers: { location: 'https://tunnels.example/auth' },
     })) as any;
 
-    const res = await request(app)
-      .post('/api/upload/photo-export')
-      .set('x-test-user', USER_A)
-      .send({ url: 'https://blob.test/abc-123.jpg' });
+    const res = await post({ url: 'https://blob.test/abc-123.jpg', prompt: 'pan left' });
 
     expect(res.status).toBe(502);
     expect(res.body.error).toMatch(/sign-in/i);
   });
 
+  it('says so when no receiver is configured', async () => {
+    const cfg = require('../config').default;
+    const original = cfg.photoExportUrl;
+    cfg.photoExportUrl = '';
+    try {
+      const res = await post({ url: 'https://blob.test/abc-123.jpg', prompt: 'pan left' });
+
+      expect(res.status).toBe(503);
+      expect(res.body.error).toMatch(/photoExportUrl/);
+      expect(calls).toHaveLength(0);
+    } finally {
+      cfg.photoExportUrl = original;
+    }
+  });
+
   it('reports a missing blob as a 404', async () => {
-    const res = await request(app)
-      .post('/api/upload/photo-export')
-      .set('x-test-user', USER_A)
-      .send({ url: 'https://blob.test/missing.jpg' });
+    const res = await post({ url: 'https://blob.test/missing.jpg', prompt: 'pan left' });
 
     expect(res.status).toBe(404);
   });

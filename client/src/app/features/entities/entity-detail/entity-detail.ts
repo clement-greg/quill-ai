@@ -44,6 +44,11 @@ import {
 } from './timeline-event-dialog';
 import { TimelineMapComponent } from './timeline-map';
 import {
+  VideoGenDialogComponent,
+  VideoGenDialogData,
+  VideoGenResult,
+} from './video-gen-dialog';
+import {
   ImageGenDialogComponent,
   ImageGenDialogData,
   ImageGenResult,
@@ -854,24 +859,50 @@ export class EntityDetailComponent implements OnDestroy {
     this.photoMenuTrigger()?.openMenu();
   }
 
-  uploadMenuPhoto(): void {
+  /**
+   * Asks for a motion prompt, then queues an image-to-video job with this photo
+   * as the start frame. Generation runs on the receiver, so this only reports
+   * that the job was accepted — the finished clip is collected there.
+   */
+  generateVideoFromMenuPhoto(): void {
     const photo = this.photoMenuPhoto;
     this.photoMenuPhoto = null;
     if (!photo) return;
 
-    this.snackBar.open('Uploading photo…', undefined, { duration: 2000 });
-    this.entityService.exportPhoto(photo.url).subscribe({
-      next: res => this.snackBar.open(`Uploaded ${res.name}`, 'Dismiss', { duration: 3000 }),
+    const data: VideoGenDialogData = {
+      thumbnailUrl: this.proxyUrl(photo.thumbnailUrl) || this.proxyUrl(photo.url) || '',
+      caption: photo.caption,
+    };
+
+    this.dialog
+      .open<VideoGenDialogComponent, VideoGenDialogData, VideoGenResult>(VideoGenDialogComponent, { data })
+      .afterClosed()
+      .subscribe(result => {
+        if (!result?.prompt) return;
+        this.queueVideo(photo.url, result.prompt);
+      });
+  }
+
+  private queueVideo(url: string, prompt: string): void {
+    this.snackBar.open('Queueing video…', undefined, { duration: 2000 });
+    this.entityService.generateVideo(url, prompt).subscribe({
+      next: job =>
+        this.snackBar.open(
+          job.promptId ? `Video queued (job ${job.promptId})` : 'Video queued',
+          'Dismiss',
+          { duration: 5000 }
+        ),
       error: (err: HttpErrorResponse) =>
-        this.snackBar.open(`Upload failed: ${this.uploadFailureReason(err)}`, 'Dismiss', { duration: 8000 }),
+        this.snackBar.open(`Video failed: ${this.videoFailureReason(err)}`, 'Dismiss', { duration: 10000 }),
     });
   }
 
   /**
-   * The server sends a reason in `{ error }` for every failure it recognises.
-   * A status of 0 never reached it at all, so there is no body to read.
+   * The server sends a reason in `{ error }` for every failure it recognises —
+   * including the receiver's own message, so a stopped ComfyUI says so here.
+   * A status of 0 never reached the server at all, so there is no body to read.
    */
-  private uploadFailureReason(err: HttpErrorResponse): string {
+  private videoFailureReason(err: HttpErrorResponse): string {
     if (err.status === 0) return 'no connection to the server';
     const reason = typeof err.error?.error === 'string' ? err.error.error : '';
     return reason || `server returned ${err.status}`;
