@@ -65,6 +65,7 @@ export class AppExplorerComponent {
       { icon: 'map', label: 'Maps', run: () => this.navigateTo(['/maps']) },
       { icon: 'photo_library', label: 'Photo Gallery', run: () => this.navigateTo(['/gallery']) },
       { icon: 'archive', label: 'Archived Items', run: () => this.navigateTo(['/archived']) },
+      { icon: 'queue', label: 'Generation Queue', run: () => this.navigateTo(['/generation-queue']) },
     ]),
   );
 

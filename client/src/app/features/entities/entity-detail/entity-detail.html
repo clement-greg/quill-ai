@@ -196,6 +196,10 @@
                 <mat-icon>movie</mat-icon>
                 <span>Generate video</span>
               </button>
+              <button mat-menu-item (click)="generateImagesFromMenuPhoto()">
+                <mat-icon>auto_awesome</mat-icon>
+                <span>Generate images</span>
+              </button>
             </mat-menu>
             @if (visiblePhotos().length > PHOTO_PREVIEW_LIMIT) {
               @if (showAllPhotos()) {

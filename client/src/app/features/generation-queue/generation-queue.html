@@ -1,0 +1,131 @@
+<div class="container">
+
+  <div class="page-header">
+    <h1 class="page-title">Generation Queue</h1>
+  </div>
+
+  @if (loading()) {
+    <div class="loading">
+      <mat-spinner diameter="32"></mat-spinner>
+      <p>Reading the queue…</p>
+    </div>
+  } @else if (error()) {
+    <div class="empty-state">
+      <mat-icon class="empty-icon">cloud_off</mat-icon>
+      <p class="empty-text">{{ error() }}</p>
+      <button mat-stroked-button (click)="load()">Try again</button>
+    </div>
+  } @else if (isIdle()) {
+    <div class="empty-state">
+      <mat-icon class="empty-icon">done_all</mat-icon>
+      <p class="empty-text">Nothing is generating. Queued jobs show up here while they run.</p>
+    </div>
+  } @else {
+    <div class="summary">
+      <div class="summary-counts">
+        <span class="summary-stat"><strong>{{ counts().running }}</strong> running</span>
+        <span class="summary-stat"><strong>{{ counts().pending }}</strong> waiting</span>
+        <span class="summary-stat summary-eta">
+          <mat-icon class="inline-icon">schedule</mat-icon>
+          {{ formatDuration(status()!.queue.estimatedSecondsRemaining) }} left
+        </span>
+      </div>
+      <mat-progress-bar mode="determinate" [value]="status()!.queue.percentComplete"></mat-progress-bar>
+      <p class="summary-note" [matTooltip]="status()!.estimateBasis.note">
+        {{ status()!.queue.percentComplete }}% of the queue done — estimated
+        @if (!status()!.estimateBasis.measured) { (no finished job to measure yet) }
+      </p>
+      <!-- Without the feed there are no step counts, so every percentage above is
+           elapsed time against an expected run time. Worth saying once. -->
+      @if (!status()!.progressFeed.connected) {
+        <p class="summary-note" [matTooltip]="status()!.progressFeed.error ?? ''">
+          Live progress feed offline — progress is estimated from elapsed time.
+        </p>
+      }
+    </div>
+
+    <div class="job-list">
+      @for (job of jobs(); track job.promptId) {
+        <div class="job-card" [class.job-running]="job.state === 'running'">
+
+          <div class="job-head">
+            <span class="job-state" [class.state-running]="job.state === 'running'">
+              <mat-icon class="inline-icon">
+                {{ job.state === 'running' ? 'play_circle' : 'hourglass_empty' }}
+              </mat-icon>
+              {{ job.state === 'running' ? 'Running' : 'Queued #' + job.position }}
+            </span>
+            <button
+              mat-icon-button
+              class="cancel-btn"
+              [disabled]="isCancelling(job)"
+              (click)="confirmCancel(job)"
+              [matTooltip]="job.state === 'running' ? 'Cancel the running job' : 'Remove from the queue'"
+              [attr.aria-label]="'Cancel job ' + jobLabel(job)">
+              @if (isCancelling(job)) {
+                <mat-spinner diameter="18"></mat-spinner>
+              } @else {
+                <mat-icon>cancel</mat-icon>
+              }
+            </button>
+          </div>
+
+          <!-- Only jobs this receiver queued carry prompt text; the rest show none. -->
+          @if (job.prompt) {
+            <p class="job-prompt">{{ job.prompt }}</p>
+          }
+
+          @if (job.state === 'running') {
+            <!-- Always determinate: an indeterminate bar animates as though work
+                 were being reported, when a job with no progress data has none. -->
+            <mat-progress-bar
+              class="job-bar"
+              mode="determinate"
+              [value]="progressOf(job)"></mat-progress-bar>
+            <!-- Timings are absent for a job that started before it was tracked; the
+                 indeterminate bar above is all there is to say about it. -->
+            @if (job.percentComplete !== null) {
+              <div class="job-meta">
+                <span>{{ job.percentComplete }}%{{ isLive(job) ? '' : ' (estimated)' }}</span>
+                @if (stepText(job)) {
+                  <span>{{ stepText(job) }}</span>
+                }
+                <span>{{ formatDuration(job.elapsedSeconds) }} elapsed</span>
+                <span>~{{ formatDuration(job.etaSeconds) }} left</span>
+              </div>
+            }
+            @if (nodeText(job)) {
+              <p class="job-node" matTooltip="The node ComfyUI is executing now">
+                <mat-icon class="inline-icon">memory</mat-icon>{{ nodeText(job) }}
+              </p>
+            } @else if (noProgressReason(job)) {
+              <!-- Says why the bar has no numbers under it, rather than leaving the
+                   card looking broken. -->
+              <p class="job-node">
+                <mat-icon class="inline-icon">help_outline</mat-icon>{{ noProgressReason(job) }}
+              </p>
+            }
+          } @else {
+            <div class="job-meta">
+              <span>Starts in ~{{ formatDuration(job.startsInSeconds) }}</span>
+              <span>Takes ~{{ formatDuration(job.estimatedTotalSeconds) }}</span>
+            </div>
+          }
+
+          @if (shapeOf(job) || job.queuedAt) {
+            <div class="job-details">
+              @if (shapeOf(job)) {
+                <span class="job-chip">{{ shapeOf(job) }}</span>
+              }
+              @if (job.queuedAt) {
+                <span class="job-chip">queued {{ formatTime(job.queuedAt) }}</span>
+              }
+            </div>
+          }
+
+        </div>
+      }
+    </div>
+  }
+
+</div>

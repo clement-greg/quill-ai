@@ -49,6 +49,11 @@ import {
   VideoGenResult,
 } from './video-gen-dialog';
 import {
+  PhotoGenDialogComponent,
+  PhotoGenDialogData,
+  PhotoGenResult,
+} from './photo-gen-dialog';
+import {
   ImageGenDialogComponent,
   ImageGenDialogData,
   ImageGenResult,
@@ -883,6 +888,51 @@ export class EntityDetailComponent implements OnDestroy {
       });
   }
 
+  /**
+   * Asks for a prompt and a count, then queues a batch of stills that keep this
+   * photo's face. Like video generation, this only reports that the job was
+   * accepted — the finished images are collected on the receiver.
+   */
+  generateImagesFromMenuPhoto(): void {
+    const photo = this.photoMenuPhoto;
+    this.photoMenuPhoto = null;
+    if (!photo) return;
+
+    const data: PhotoGenDialogData = {
+      thumbnailUrl: this.proxyUrl(photo.thumbnailUrl) || this.proxyUrl(photo.url) || '',
+      caption: photo.caption,
+    };
+
+    this.dialog
+      .open<PhotoGenDialogComponent, PhotoGenDialogData, PhotoGenResult>(PhotoGenDialogComponent, { data })
+      .afterClosed()
+      .subscribe(result => {
+        if (!result?.prompt) return;
+        this.queueImages(photo.url, result);
+      });
+  }
+
+  /** Same failure handling as queueVideo() — the receiver comes and goes. */
+  private queueImages(url: string, request: PhotoGenResult): void {
+    this.snackBar.open('Queueing images…', undefined, { duration: 2000 });
+    this.entityService.generateImagesFromPhoto(url, request).subscribe({
+      next: job =>
+        this.snackBar.open(
+          `${request.count} image${request.count === 1 ? '' : 's'} queued${job.promptId ? ` (job ${job.promptId})` : ''}`,
+          'Dismiss',
+          { duration: 5000 }
+        ),
+      error: (err: unknown) => {
+        const { reason, retryable } = this.generationFailure(err);
+        const toast = this.snackBar.open(`Images failed: ${reason}`, retryable ? 'Retry' : 'Dismiss');
+        if (!retryable) return;
+        // Offered rather than automatic: the job is queued on the far side before
+        // the reply comes back, so retrying a timeout could queue the batch twice.
+        toast.onAction().subscribe(() => this.queueImages(url, request));
+      },
+    });
+  }
+
   private queueVideo(url: string, prompt: string, durationSeconds: number): void {
     // The generator runs on a machine that comes and goes, so a failure here is
     // ordinary rather than exceptional: the toast stays until dismissed and
@@ -896,7 +946,7 @@ export class EntityDetailComponent implements OnDestroy {
           { duration: 5000 }
         ),
       error: (err: unknown) => {
-        const { reason, retryable } = this.videoFailure(err);
+        const { reason, retryable } = this.generationFailure(err);
         const toast = this.snackBar.open(
           `Video failed: ${reason}`,
           retryable ? 'Retry' : 'Dismiss'
@@ -916,7 +966,7 @@ export class EntityDetailComponent implements OnDestroy {
    * recognises — including the receiver's own message, so a stopped ComfyUI or
    * an offline tunnel says so here rather than reading as a generic failure.
    */
-  private videoFailure(err: unknown): { reason: string; retryable: boolean } {
+  private generationFailure(err: unknown): { reason: string; retryable: boolean } {
     if (err instanceof TimeoutError) {
       return { reason: 'the request took too long and was given up on', retryable: true };
     }

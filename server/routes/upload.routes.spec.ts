@@ -367,3 +367,398 @@ describe('video generation', () => {
     expect(res.status).toBe(404);
   });
 });
+
+
+describe('image generation', () => {
+  const realFetch = global.fetch;
+  let calls: { url: string; init: any }[];
+
+  const JOB = '{"prompt_id":"job-9","seed":7,"queue_number":1}';
+
+  function post(body: any) {
+    return request(app)
+      .post('/api/upload/generate-images')
+      .set('x-test-user', USER_A)
+      .send(body);
+  }
+
+  beforeEach(() => {
+    calls = [];
+    global.fetch = jest.fn(async (url: any, init: any) => {
+      calls.push({ url: String(url), init });
+      return new Response(JOB, { status: 200 });
+    }) as any;
+  });
+
+  afterAll(() => {
+    global.fetch = realFetch;
+  });
+
+  it('sends the stored bytes to /faceid and defaults to three images', async () => {
+    const res = await post({ url: 'https://blob.test/abc-123.jpg', prompt: '  in dress uniform  ' });
+
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual({ promptId: 'job-9', seed: 7, queueNumber: 1, count: 3 });
+
+    const target = new URL(calls[0].url);
+    expect(target.origin + target.pathname).toBe('https://receiver.test/faceid');
+    expect(target.searchParams.get('prompt')).toBe('in dress uniform');
+    expect(target.searchParams.get('name')).toBe('abc-123.jpg');
+    expect(target.searchParams.get('batch_size')).toBe('3');
+    // Sent exactly as stored — decrypting is the receiver's job.
+    expect(Buffer.from(calls[0].init.body).toString()).toBe('stored-ciphertext');
+  });
+
+  it(`passes the advanced settings through under the receiver's own names`, async () => {
+    const res = await post({
+      url: 'https://blob.test/abc-123.jpg',
+      prompt: 'on a parade ground',
+      count: 6,
+      negativePrompt: 'blurry, watermark',
+      width: 768,
+      height: 1024,
+      steps: 30,
+      cfg: 4.5,
+      seed: 12345,
+    });
+
+    expect(res.status).toBe(200);
+    expect(res.body.count).toBe(6);
+
+    const q = new URL(calls[0].url).searchParams;
+    expect(q.get('batch_size')).toBe('6');
+    expect(q.get('negative_prompt')).toBe('blurry, watermark');
+    expect(q.get('width')).toBe('768');
+    expect(q.get('height')).toBe('1024');
+    expect(q.get('steps')).toBe('30');
+    expect(q.get('cfg')).toBe('4.5');
+    expect(q.get('seed')).toBe('12345');
+  });
+
+  it('leaves out every setting that was not asked for', async () => {
+    await post({ url: 'https://blob.test/abc-123.jpg', prompt: 'portrait', negativePrompt: '   ' });
+
+    const q = new URL(calls[0].url).searchParams;
+    for (const param of ['negative_prompt', 'width', 'height', 'steps', 'cfg', 'seed']) {
+      expect(q.has(param)).toBe(false);
+    }
+  });
+
+  it.each([0, 13, 2.5, 'lots'])('refuses an out-of-range image count (%s)', async (count) => {
+    const res = await post({ url: 'https://blob.test/abc-123.jpg', prompt: 'portrait', count });
+
+    expect(res.status).toBe(400);
+    expect(res.body.error).toMatch(/between 1 and 12/);
+    expect(calls).toHaveLength(0);
+  });
+
+  it.each([
+    ['width', 32],
+    ['height', 4000],
+    ['steps', 0],
+    ['cfg', 99],
+    ['seed', -1],
+  ])('refuses an out-of-range %s', async (field, value) => {
+    const res = await post({ url: 'https://blob.test/abc-123.jpg', prompt: 'portrait', [field]: value });
+
+    expect(res.status).toBe(400);
+    expect(res.body.error).toMatch(new RegExp(`${field} must be between`));
+    expect(calls).toHaveLength(0);
+  });
+
+  it('requires a prompt', async () => {
+    const res = await post({ url: 'https://blob.test/abc-123.jpg', prompt: '   ' });
+
+    expect(res.status).toBe(400);
+    expect(res.body.error).toMatch(/prompt is required/i);
+    expect(calls).toHaveLength(0);
+  });
+
+  it('refuses a video as the reference photo', async () => {
+    const res = await post({ url: 'https://blob.test/clip.mov', prompt: 'portrait' });
+
+    expect(res.status).toBe(400);
+    expect(calls).toHaveLength(0);
+  });
+
+  it('says so when the photo is gone from storage', async () => {
+    const res = await post({ url: 'https://blob.test/missing.jpg', prompt: 'portrait' });
+
+    expect(res.status).toBe(404);
+    expect(calls).toHaveLength(0);
+  });
+
+  it("passes the receiver's own reason through so the UI can show it", async () => {
+    global.fetch = jest.fn(async () => new Response('{"error":"FaceID model missing"}', { status: 400 })) as any;
+
+    const res = await post({ url: 'https://blob.test/abc-123.jpg', prompt: 'portrait' });
+
+    expect(res.status).toBe(502);
+    expect(res.body.error).toMatch(/FaceID model missing/);
+  });
+});
+
+
+describe('generation queue', () => {
+  const realFetch = global.fetch;
+  let calls: { url: string; init: any }[];
+
+  /** A queue as the receiver reports it: one job running, one waiting. */
+  const QUEUE = JSON.stringify({
+    counts: { running: 1, pending: 1, total: 2 },
+    running: [
+      {
+        prompt_id: 'job-1',
+        queue_number: 7,
+        start_image: 'start-abc.jpg',
+        prompt: 'he turns and smiles',
+        mine: true,
+        queued_at: '2026-08-21T10:00:00Z',
+        started_at: '2026-08-21T10:00:05Z',
+        elapsed_seconds: 30.5,
+        percent_complete: 25.0,
+        estimated_total_seconds: 120,
+        eta_seconds: 90,
+        settings: { width: 832, height: 480, length: 81, fps: 16, steps: 6, seed: 42 },
+        progress_source: 'websocket',
+        progress: {
+          source: 'websocket',
+          percent_complete: 25.0,
+          steps_done: 5,
+          steps_total: 20,
+          updated_seconds_ago: 1.2,
+          current_node: { id: '57', class_type: 'KSamplerAdvanced', value: 5, max: 10 },
+        },
+      },
+    ],
+    pending: [
+      {
+        prompt_id: 'job-2',
+        queue_number: 8,
+        mine: false,
+        position: 1,
+        estimated_total_seconds: 100,
+        starts_in_seconds: 90,
+        eta_seconds: 190,
+        settings: { batch_size: 4, cfg: 7.5 },
+      },
+    ],
+    queue: { percent_complete: 13.6, estimated_seconds_remaining: 190, idle: false },
+    estimate_basis: { seconds_per_frame: 1.48, measured: true, note: 'measured' },
+    progress_feed: { connected: true, client_id: 'abc', messages: 42, error: null, note: 'live' },
+  });
+
+  function getQueue() {
+    return request(app).get('/api/upload/generation-queue').set('x-test-user', USER_A);
+  }
+
+  function cancel(promptId: string) {
+    return request(app)
+      .delete(`/api/upload/generation-queue/${promptId}`)
+      .set('x-test-user', USER_A);
+  }
+
+  beforeEach(() => {
+    calls = [];
+    global.fetch = jest.fn(async (url: any, init: any) => {
+      calls.push({ url: String(url), init });
+      return new Response(QUEUE, { status: 200 });
+    }) as any;
+  });
+
+  afterAll(() => {
+    global.fetch = realFetch;
+  });
+
+  it("reads the receiver's queue and flattens it, running job first", async () => {
+    const res = await getQueue();
+
+    expect(res.status).toBe(200);
+    expect(calls[0].url).toBe('https://receiver.test/queue');
+    expect(res.body.counts).toEqual({ running: 1, pending: 1, total: 2 });
+    expect(res.body.jobs.map((j: any) => [j.promptId, j.state])).toEqual([
+      ['job-1', 'running'],
+      ['job-2', 'pending'],
+    ]);
+    expect(res.body.queue).toEqual({
+      percentComplete: 13.6,
+      estimatedSecondsRemaining: 190,
+      idle: false,
+    });
+  });
+
+  it('hands the UI camelCase progress and settings', async () => {
+    const res = await getQueue();
+
+    const [running, pending] = res.body.jobs;
+    expect(running).toMatchObject({
+      queueNumber: 7,
+      startImage: 'start-abc.jpg',
+      prompt: 'he turns and smiles',
+      mine: true,
+      startedAt: '2026-08-21T10:00:05Z',
+      elapsedSeconds: 30.5,
+      percentComplete: 25,
+      etaSeconds: 90,
+      position: null,
+    });
+    expect(running.settings).toEqual({
+      width: 832, height: 480, length: 81, fps: 16, steps: 6, seed: 42,
+    });
+    expect(pending).toMatchObject({ position: 1, startsInSeconds: 90, mine: false, prompt: null });
+    expect(pending.settings).toEqual({ batchSize: 4, cfg: 7.5 });
+  });
+
+  it('carries the step-level progress of the running job through', async () => {
+    const res = await getQueue();
+
+    const [running, pending] = res.body.jobs;
+    expect(running.progressSource).toBe('websocket');
+    expect(running.progress).toEqual({
+      source: 'websocket',
+      percentComplete: 25,
+      stepsDone: 5,
+      stepsTotal: 20,
+      updatedSecondsAgo: 1.2,
+      currentNode: { id: '57', classType: 'KSamplerAdvanced', value: 5, max: 10 },
+    });
+    // A pending job has nothing executing, so it has neither.
+    expect(pending.progress).toBeNull();
+    expect(pending.progressSource).toBeNull();
+    expect(res.body.progressFeed).toEqual({
+      connected: true,
+      messages: 42,
+      error: null,
+      note: 'live',
+    });
+  });
+
+  it('reports no progress for a job the websocket feed knows nothing about', async () => {
+    // What a job queued by another client looks like: ComfyUI addresses its
+    // progress messages elsewhere, so the receiver has no step counts for it.
+    global.fetch = jest.fn(async () => new Response(JSON.stringify({
+      counts: { running: 1, pending: 0, total: 1 },
+      running: [{ prompt_id: 'other-1', progress_source: 'unknown', settings: { steps: 20 } }],
+      pending: [],
+      queue: { percent_complete: 0, estimated_seconds_remaining: 600, idle: false },
+      progress_feed: { connected: false, messages: 0, error: 'connection refused', note: 'offline' },
+    }), { status: 200 })) as any;
+
+    const res = await getQueue();
+
+    const [job] = res.body.jobs;
+    expect(job.progress).toBeNull();
+    expect(job.progressSource).toBe('unknown');
+    expect(job.percentComplete).toBeNull();
+    expect(res.body.progressFeed).toMatchObject({ connected: false, error: 'connection refused' });
+  });
+
+  it('ignores a progress block with no step total to divide by', async () => {
+    global.fetch = jest.fn(async () => new Response(JSON.stringify({
+      counts: { running: 1, pending: 0, total: 1 },
+      running: [{
+        prompt_id: 'job-1',
+        progress_source: 'websocket',
+        progress: { source: 'websocket', percent_complete: 0, steps_done: 0, steps_total: 0 },
+      }],
+      pending: [],
+      queue: { percent_complete: 0, estimated_seconds_remaining: 0, idle: false },
+    }), { status: 200 })) as any;
+
+    const res = await getQueue();
+
+    expect(res.body.jobs[0].progress).toBeNull();
+  });
+
+  it('reports an empty queue as idle', async () => {
+    global.fetch = jest.fn(async () => new Response(
+      '{"counts":{"running":0,"pending":0,"total":0},"running":[],"pending":[],'
+      + '"queue":{"percent_complete":100.0,"estimated_seconds_remaining":0,"idle":true}}',
+      { status: 200 },
+    )) as any;
+
+    const res = await getQueue();
+
+    expect(res.status).toBe(200);
+    expect(res.body.jobs).toEqual([]);
+    expect(res.body.queue.idle).toBe(true);
+  });
+
+  it('cancels one job by prompt id', async () => {
+    global.fetch = jest.fn(async (url: any, init: any) => {
+      calls.push({ url: String(url), init });
+      return new Response(
+        '{"prompt_id":"job-1","cancelled":true,"action":"interrupted mid-run"}',
+        { status: 200 },
+      );
+    }) as any;
+
+    const res = await cancel('job-1');
+
+    expect(res.status).toBe(200);
+    expect(calls[0].url).toBe('https://receiver.test/cancel?prompt_id=job-1');
+    expect(calls[0].init.method).toBe('POST');
+    expect(res.body).toEqual({
+      promptId: 'job-1',
+      cancelled: true,
+      action: 'interrupted mid-run',
+    });
+  });
+
+  it("passes through the receiver's verdict that a job already finished", async () => {
+    global.fetch = jest.fn(async () => new Response(
+      '{"cancelled":false,"error":"job already finished -- nothing to cancel"}',
+      { status: 409 },
+    )) as any;
+
+    const res = await cancel('job-1');
+
+    expect(res.status).toBe(409);
+    expect(res.body.error).toMatch(/already finished/);
+  });
+
+  it('passes through an unknown job as a 404', async () => {
+    global.fetch = jest.fn(async () => new Response(
+      '{"error":"no such job in the queue or history"}',
+      { status: 404 },
+    )) as any;
+
+    const res = await cancel('job-9');
+
+    expect(res.status).toBe(404);
+    expect(res.body.error).toMatch(/no such job/);
+  });
+
+  it('refuses a prompt id that never came from a queue listing', async () => {
+    const res = await cancel('..%2F..%2Fqueue');
+
+    expect(res.status).toBe(400);
+    expect(calls).toHaveLength(0);
+  });
+
+  it('reports an unreachable receiver rather than an empty queue', async () => {
+    global.fetch = jest.fn(async () => {
+      const err = new TypeError('fetch failed');
+      (err as any).cause = Object.assign(new Error('ECONNREFUSED'), { code: 'ECONNREFUSED' });
+      throw err;
+    }) as any;
+
+    const res = await getQueue();
+
+    expect(res.status).toBe(502);
+    expect(res.body.error).toMatch(/refused the connection/i);
+  });
+
+  it('says so when no receiver is configured', async () => {
+    const cfg = require('../config').default;
+    const original = cfg.photoExportUrl;
+    cfg.photoExportUrl = '';
+    try {
+      expect((await getQueue()).status).toBe(503);
+      expect((await cancel('job-1')).status).toBe(503);
+      expect(calls).toHaveLength(0);
+    } finally {
+      cfg.photoExportUrl = original;
+    }
+  });
+});

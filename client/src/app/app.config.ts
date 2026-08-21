@@ -16,6 +16,7 @@ import { Home } from '@app/features/home/home';
 import { UserSettingsComponent } from '@app/features/user-settings/user-settings';
 import { PhotoGalleryComponent } from '@app/features/photo-gallery/photo-gallery';
 import { WritingStatsComponent } from '@app/features/writing-stats/writing-stats';
+import { GenerationQueueComponent } from '@app/features/generation-queue/generation-queue';
 import { EntityPageComponent } from '@app/features/entities/entity-page/entity-page';
 import { MapListComponent } from '@app/features/maps/map-list/map-list';
 import { MapEditorComponent } from '@app/features/maps/map-editor/map-editor';
@@ -37,6 +38,7 @@ const routes: Routes = [
   { path: 'settings', component: UserSettingsComponent, canActivate: [authGuard] },
   { path: 'gallery', component: PhotoGalleryComponent, canActivate: [authGuard] },
   { path: 'writing-stats', component: WritingStatsComponent, canActivate: [authGuard] },
+  { path: 'generation-queue', component: GenerationQueueComponent, canActivate: [authGuard] },
   { path: 'entities', component: EntityPageComponent, canActivate: [authGuard] },
   { path: 'entities/:id', component: EntityPageComponent, canActivate: [authGuard] },
   { path: 'series/:seriesId/maps', component: MapListComponent, canActivate: [authGuard] },

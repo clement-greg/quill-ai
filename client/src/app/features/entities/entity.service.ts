@@ -4,10 +4,11 @@ import { Observable, defer, retry, throwError, timeout, timer } from 'rxjs';
 import { Entity } from '@shared/models/entity.model';
 
 /**
- * Backstop for the video request. The server waits up to 60s on the receiver
- * before answering, so this only fires when the request itself is stuck.
+ * Backstop for a receiver request (video or images). The server waits up to 60s
+ * on the receiver before answering, so this only fires when the request itself
+ * is stuck.
  */
-const VIDEO_REQUEST_TIMEOUT_MS = 75_000;
+const GENERATION_REQUEST_TIMEOUT_MS = 75_000;
 
 /** The queued ComfyUI job the receiver reports back for an image-to-video request. */
 export interface VideoGenJob {
@@ -16,6 +17,27 @@ export interface VideoGenJob {
   queueNumber: number | null;
   /** Frame count the duration was snapped to, or null when none was requested. */
   frames: number | null;
+}
+
+/** What a batch of receiver-generated stills is asked for; see PhotoGenResult. */
+export interface PhotoGenRequest {
+  prompt: string;
+  count: number;
+  negativePrompt?: string;
+  width?: number;
+  height?: number;
+  steps?: number;
+  cfg?: number;
+  seed?: number;
+}
+
+/** The queued ComfyUI job the receiver reports back for an image batch. */
+export interface PhotoGenJob {
+  promptId: string | null;
+  seed: number | null;
+  queueNumber: number | null;
+  /** Images the run was queued for. */
+  count: number;
 }
 
 export interface ChapterAppearance {
@@ -116,8 +138,20 @@ export class EntityService {
         // The server gives the receiver 60s and then answers, so anything past
         // this is the request itself hanging. Without it a stalled connection
         // leaves the UI waiting with no toast either way.
-        timeout(VIDEO_REQUEST_TIMEOUT_MS)
+        timeout(GENERATION_REQUEST_TIMEOUT_MS)
       );
+  }
+
+  /**
+   * Queues a batch of stills on the external receiver, keeping the face from one
+   * stored photo. Relayed for the same reasons as generateVideo() — the photo
+   * goes over still encrypted and the receiver sends no CORS headers.
+   * See POST /api/upload/generate-images.
+   */
+  generateImagesFromPhoto(url: string, request: PhotoGenRequest): Observable<PhotoGenJob> {
+    return this.http
+      .post<PhotoGenJob>('/api/upload/generate-images', { url, ...request })
+      .pipe(timeout(GENERATION_REQUEST_TIMEOUT_MS));
   }
 
   generatePersonality(entityId: string, basicDescription: string): Observable<{ personality: string }> {

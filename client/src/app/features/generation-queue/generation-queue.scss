@@ -1,0 +1,182 @@
+:host {
+  display: block;
+  height: 100%;
+  overflow-y: auto;
+}
+
+.container {
+  max-width: 800px;
+  margin: 0 auto;
+  padding: 24px 16px;
+}
+
+.page-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 24px;
+}
+
+.page-title {
+  margin: 0;
+  font-size: 1.75rem;
+  font-weight: 600;
+}
+
+.loading {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  margin-top: 64px;
+  color: var(--mat-sys-on-surface-variant);
+}
+
+.empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  margin-top: 80px;
+  text-align: center;
+}
+
+.empty-icon {
+  font-size: 48px;
+  width: 48px;
+  height: 48px;
+  color: var(--mat-sys-on-surface-variant);
+  opacity: 0.5;
+}
+
+.empty-text {
+  color: var(--mat-sys-on-surface-variant);
+  max-width: 360px;
+}
+
+.summary {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 24px;
+}
+
+.summary-counts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+  align-items: center;
+  color: var(--mat-sys-on-surface-variant);
+}
+
+.summary-stat strong {
+  color: var(--mat-sys-on-surface);
+  font-size: 1.1rem;
+}
+
+.summary-eta {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.summary-note {
+  margin: 0;
+  font-size: 0.8rem;
+  color: var(--mat-sys-on-surface-variant);
+}
+
+.inline-icon {
+  font-size: 18px;
+  width: 18px;
+  height: 18px;
+  vertical-align: text-bottom;
+}
+
+.job-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.job-card {
+  border: 1px solid var(--mat-sys-outline-variant);
+  border-radius: 12px;
+  padding: 12px 16px;
+  background: var(--mat-sys-surface-container-low);
+}
+
+.job-running {
+  border-color: var(--mat-sys-primary);
+}
+
+.job-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.job-state {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--mat-sys-on-surface-variant);
+}
+
+.state-running {
+  color: var(--mat-sys-primary);
+}
+
+.job-prompt {
+  margin: 4px 0 10px;
+  line-height: 1.4;
+}
+
+.job-bar {
+  /* Spaces the bar off the head as well as the prompt, since a job queued by
+     another client shows no prompt line between them. */
+  margin: 10px 0 6px;
+}
+
+.job-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-top: 8px;
+  font-size: 0.8rem;
+  color: var(--mat-sys-on-surface-variant);
+}
+
+.job-node {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin: 6px 0 0;
+  font-size: 0.8rem;
+  color: var(--mat-sys-on-surface-variant);
+}
+
+.job-details {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 10px;
+}
+
+.job-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: var(--mat-sys-surface-container-high);
+  font-size: 0.75rem;
+  color: var(--mat-sys-on-surface-variant);
+}
+
+.cancel-btn mat-spinner {
+  margin: auto;
+}
