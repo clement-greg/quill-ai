@@ -586,7 +586,6 @@ interface ReceiverJob {
   prompt_id?: string;
   queue_number?: number | null;
   start_image?: string | null;
-  prompt?: string;
   mine?: boolean;
   queued_at?: string | null;
   started_at?: string | null;
@@ -656,7 +655,8 @@ function toJob(raw: ReceiverJob, state: 'running' | 'pending'): GenerationJob {
     queueNumber: num(raw.queue_number),
     state,
     startImage: raw.start_image ?? null,
-    prompt: typeof raw.prompt === 'string' ? raw.prompt : null,
+    // The receiver echoes a prompt back for its own jobs; it is dropped here so
+    // it never reaches the queue screen.
     mine: raw.mine === true,
     queuedAt: raw.queued_at ?? null,
     startedAt: raw.started_at ?? null,

@@ -160,12 +160,11 @@ export class GenerationQueueComponent implements OnInit, OnDestroy {
     });
   }
 
-  /** Something short to identify a job by in a dialog or a heading. */
+  /**
+   * Something short to identify a job by in a dialog or a heading. The prompt is
+   * not used — the queue does not show what was asked for.
+   */
   jobLabel(job: GenerationJob): string {
-    if (job.prompt) {
-      const text = job.prompt.trim();
-      return text.length > 60 ? `${text.slice(0, 60)}…` : text;
-    }
     if (job.startImage) return job.startImage;
     return `Job ${job.promptId.slice(0, 8)}`;
   }

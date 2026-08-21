@@ -51,9 +51,11 @@ export interface GenerationJob {
   state: 'running' | 'pending';
   /** Filename of the start frame, when the workflow has one. */
   startImage: string | null;
-  /** Prompt text, echoed back only for jobs this receiver queued itself. */
-  prompt: string | null;
-  /** False for a job queued by some other client — its prompt is withheld. */
+  /**
+   * False for a job queued by some other client. The prompt itself is
+   * deliberately not carried through — the queue says what is running, not what
+   * was asked for.
+   */
   mine: boolean;
   queuedAt: string | null;
   startedAt: string | null;

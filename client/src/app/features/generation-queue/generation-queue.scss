@@ -130,14 +130,7 @@
   color: var(--mat-sys-primary);
 }
 
-.job-prompt {
-  margin: 4px 0 10px;
-  line-height: 1.4;
-}
-
 .job-bar {
-  /* Spaces the bar off the head as well as the prompt, since a job queued by
-     another client shows no prompt line between them. */
   margin: 10px 0 6px;
 }
 

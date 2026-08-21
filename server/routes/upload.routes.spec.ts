@@ -594,7 +594,6 @@ describe('generation queue', () => {
     expect(running).toMatchObject({
       queueNumber: 7,
       startImage: 'start-abc.jpg',
-      prompt: 'he turns and smiles',
       mine: true,
       startedAt: '2026-08-21T10:00:05Z',
       elapsedSeconds: 30.5,
@@ -605,7 +604,10 @@ describe('generation queue', () => {
     expect(running.settings).toEqual({
       width: 832, height: 480, length: 81, fps: 16, steps: 6, seed: 42,
     });
-    expect(pending).toMatchObject({ position: 1, startsInSeconds: 90, mine: false, prompt: null });
+    expect(pending).toMatchObject({ position: 1, startsInSeconds: 90, mine: false });
+    // The prompt the receiver echoes back is deliberately not relayed to the UI.
+    expect(running).not.toHaveProperty('prompt');
+    expect(pending).not.toHaveProperty('prompt');
     expect(pending.settings).toEqual({ batchSize: 4, cfg: 7.5 });
   });
 

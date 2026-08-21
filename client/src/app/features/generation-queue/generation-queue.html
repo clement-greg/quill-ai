@@ -70,11 +70,6 @@
             </button>
           </div>
 
-          <!-- Only jobs this receiver queued carry prompt text; the rest show none. -->
-          @if (job.prompt) {
-            <p class="job-prompt">{{ job.prompt }}</p>
-          }
-
           @if (job.state === 'running') {
             <!-- Always determinate: an indeterminate bar animates as though work
                  were being reported, when a job with no progress data has none. -->
