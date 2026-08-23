@@ -192,13 +192,19 @@
                  #photoMenuTrigger="matMenuTrigger"
                  [matMenuTriggerFor]="photoActionMenu"></div>
             <mat-menu #photoActionMenu="matMenu">
-              <button mat-menu-item (click)="generateVideoFromMenuPhoto()">
-                <mat-icon>movie</mat-icon>
-                <span>Generate video</span>
-              </button>
-              <button mat-menu-item (click)="generateImagesFromMenuPhoto()">
-                <mat-icon>auto_awesome</mat-icon>
-                <span>Generate images</span>
+              @if (!photoMenuIsVideo()) {
+                <button mat-menu-item (click)="generateVideoFromMenuPhoto()">
+                  <mat-icon>movie</mat-icon>
+                  <span>Generate video</span>
+                </button>
+                <button mat-menu-item (click)="generateImagesFromMenuPhoto()">
+                  <mat-icon>auto_awesome</mat-icon>
+                  <span>Generate images</span>
+                </button>
+              }
+              <button mat-menu-item (click)="moveMenuPhotoToEntity()">
+                <mat-icon>drive_file_move</mat-icon>
+                <span>Move to another entity…</span>
               </button>
             </mat-menu>
             @if (visiblePhotos().length > PHOTO_PREVIEW_LIMIT) {
@@ -511,6 +517,7 @@
         <div class="lightbox-image-wrap" [class]="'lightbox-image-wrap slide-' + slideDir()">
           @if (isVideo(photo.url)) {
             <app-video-player class="lightbox-image" [src]="proxyUrl(photo.url)" [loop]="true"
+                              (contextmenu)="onPhotoCardContextMenu($event, photo)"
                               [ariaLabel]="photo.caption || 'Video'"></app-video-player>
           } @else {
             <img [src]="proxyUrl(photo.url)" [alt]="photo.caption || 'Photo'" class="lightbox-image"

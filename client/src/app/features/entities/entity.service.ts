@@ -192,6 +192,17 @@ export class EntityService {
     return this.http.patch<Entity>(`${this.apiUrl}/${entityId}/photos/visibility`, { indices, hidden });
   }
 
+  /**
+   * Moves one photo to another entity. The blob is untouched — only the two
+   * `photos` arrays change — so both updated entities come back.
+   */
+  movePhoto(entityId: string, index: number, targetEntityId: string): Observable<{ source: Entity; target: Entity }> {
+    return this.http.post<{ source: Entity; target: Entity }>(
+      `${this.apiUrl}/${entityId}/photos/${index}/move`,
+      { targetEntityId }
+    );
+  }
+
   reorderPhotos(entityId: string, order: number[]): Observable<Entity> {
     return this.http.patch<Entity>(`${this.apiUrl}/${entityId}/photos/reorder`, { order });
   }

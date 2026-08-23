@@ -593,6 +593,57 @@ router.patch('/:id/photos/reorder', async (req: Request, res: Response) => {
   }
 });
 
+// POST move one photo to another entity
+// The blob is left where it is — only the two `photos` arrays change, so the
+// move costs nothing and nothing has to be re-uploaded. The target is written
+// first: if the second write fails the photo is briefly on both entities,
+// which is recoverable, whereas the other order could lose it entirely.
+router.post('/:id/photos/:index/move', async (req: Request, res: Response) => {
+  try {
+    const id = req.params['id'] as string;
+    const index = parseInt(req.params['index'] as string, 10);
+    const { targetEntityId } = req.body as { targetEntityId?: string };
+    if (!targetEntityId) {
+      res.status(400).json({ error: 'targetEntityId is required' });
+      return;
+    }
+    if (targetEntityId === id) {
+      res.status(400).json({ error: 'Photo is already on that entity' });
+      return;
+    }
+    const source = await readOwnedItem<Entity>(container, id, id, req);
+    if (!source) {
+      res.status(404).json({ error: 'Entity not found' });
+      return;
+    }
+    const target = await readOwnedItem<Entity>(container, targetEntityId, targetEntityId, req);
+    if (!target) {
+      res.status(404).json({ error: 'Target entity not found' });
+      return;
+    }
+    const sourcePhotos = source.photos ?? [];
+    const photo = sourcePhotos[index];
+    if (!photo) {
+      res.status(404).json({ error: 'Photo not found' });
+      return;
+    }
+
+    const stamp = { modifiedBy: req.user!.email, modifiedAt: new Date().toISOString() };
+    const updatedTarget: Entity = { ...target, photos: [...(target.photos ?? []), photo], ...stamp };
+    const { resource: savedTarget } = await container
+      .item(targetEntityId, targetEntityId)
+      .replace<Entity>(updatedTarget);
+
+    const updatedSource: Entity = { ...source, photos: sourcePhotos.filter((_, i) => i !== index), ...stamp };
+    const { resource: savedSource } = await container.item(id, id).replace<Entity>(updatedSource);
+
+    res.json({ source: savedSource, target: savedTarget });
+  } catch (err) {
+    console.error('Error moving photo:', err);
+    res.status(500).json({ error: 'Failed to move photo' });
+  }
+});
+
 // POST generate a personality prompt from basic entity info
 router.post('/:id/generate-personality', async (req: Request, res: Response) => {
   try {

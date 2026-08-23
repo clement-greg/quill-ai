@@ -54,6 +54,11 @@ import {
   PhotoGenResult,
 } from './photo-gen-dialog';
 import {
+  MovePhotoDialogComponent,
+  MovePhotoDialogData,
+  MovePhotoDialogResult,
+} from './move-photo-dialog';
+import {
   ImageGenDialogComponent,
   ImageGenDialogData,
   ImageGenResult,
@@ -138,6 +143,8 @@ export class EntityDetailComponent implements OnDestroy {
   photoMenuPos = signal({ x: 0, y: 0 });
   private photoMenuTrigger = viewChild<MatMenuTrigger>('photoMenuTrigger');
   private photoMenuPhoto: EntityPhoto | null = null;
+  /** Drives which items the long-press menu shows — generation is image-only. */
+  photoMenuIsVideo = signal(false);
   timelineDragOverId = signal<string | null>(null);
   hoveredMapEventId = signal<string | null>(null);
   locationEntities = signal<Map<string, Entity>>(new Map());
@@ -813,7 +820,6 @@ export class EntityDetailComponent implements OnDestroy {
     // A right-click has its own path via (contextmenu) — without this, holding
     // the right button would also trip the long-press timer and both would fire.
     if (event.button !== 0) return;
-    if (this.isVideo(photo.url)) return;
     this._photoPressX = event.clientX;
     this._photoPressY = event.clientY;
     this._photoPressTimer = setTimeout(
@@ -841,7 +847,6 @@ export class EntityDetailComponent implements OnDestroy {
   }
 
   onPhotoCardContextMenu(event: MouseEvent, photo: EntityPhoto): void {
-    if (this.isVideo(photo.url)) return;
     event.preventDefault();
     this.cancelPhotoCardPress();
     this.openPhotoMenu(event.clientX, event.clientY, photo);
@@ -860,8 +865,62 @@ export class EntityDetailComponent implements OnDestroy {
     this._photoPressTimer = null;
     this._photoPressHandled = true;
     this.photoMenuPhoto = photo;
+    this.photoMenuIsVideo.set(this.isVideo(photo.url));
     this.photoMenuPos.set({ x, y });
     this.photoMenuTrigger()?.openMenu();
+  }
+
+  /**
+   * Moves the long-pressed photo or video onto another entity. Only the two
+   * `photos` arrays change server-side — the blob stays put — so this is cheap
+   * and reversible by moving it back.
+   */
+  moveMenuPhotoToEntity(): void {
+    const photo = this.photoMenuPhoto;
+    this.photoMenuPhoto = null;
+    const entity = this.entity();
+    if (!photo || !entity) return;
+
+    // The index has to be into the full photos array, not the visible subset —
+    // that is what the server addresses.
+    const index = (entity.photos ?? []).indexOf(photo);
+    if (index < 0) return;
+
+    const data: MovePhotoDialogData = {
+      thumbnailUrl: this.proxyUrl(photo.thumbnailUrl) || this.proxyUrl(photo.url) || '',
+      url: photo.url,
+      caption: photo.caption,
+      currentEntityId: entity.id,
+      currentSeriesId: entity.seriesId,
+    };
+
+    this.dialog
+      .open<MovePhotoDialogComponent, MovePhotoDialogData, MovePhotoDialogResult>(
+        MovePhotoDialogComponent,
+        { data }
+      )
+      .afterClosed()
+      .subscribe(result => {
+        if (!result) return;
+        this.movePhoto(entity.id, index, result);
+      });
+  }
+
+  private movePhoto(entityId: string, index: number, result: MovePhotoDialogResult): void {
+    this.entityService.movePhoto(entityId, index, result.targetEntityId).subscribe({
+      next: ({ source }) => {
+        this.entity.set(source);
+        // The lightbox was showing the photo that just left; step it onto what
+        // took its place — advanceLightboxAfterRemoval() closes it if that was
+        // the last one.
+        if (this.lightboxOpen()) this.advanceLightboxAfterRemoval(this.lightboxIndex());
+        this.snackBar.open(`Moved to ${result.targetEntityName}`, undefined, { duration: 3000 });
+      },
+      error: (err: HttpErrorResponse) => {
+        const reason = typeof err?.error?.error === 'string' ? err.error.error : 'Move failed';
+        this.snackBar.open(reason, undefined, { duration: 4000 });
+      },
+    });
   }
 
   /**

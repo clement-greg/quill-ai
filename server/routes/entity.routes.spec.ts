@@ -126,3 +126,56 @@ describe('entity routes — owner guard', () => {
     expect([403, 404]).toContain(res.status);
   });
 });
+
+describe('POST /:id/photos/:index/move', () => {
+  it('moves the photo onto the target and off the source', async () => {
+    const res = await request(app)
+      .post('/api/entities/e-a/photos/0/move')
+      .set('x-test-user', USER_A)
+      .send({ targetEntityId: 'e-narrator' });
+
+    expect(res.status).toBe(200);
+    expect(res.body.source.photos).toEqual([]);
+    expect(res.body.target.photos).toEqual([
+      { url: 'https://blob/x.png', thumbnailUrl: 'https://blob/x-thumb.png' },
+    ]);
+    expect(fake.container('entities').get('e-a')!.photos).toEqual([]);
+    expect(fake.container('entities').get('e-narrator')!.photos).toHaveLength(1);
+  });
+
+  it('leaves the blob alone — a move is not a delete', async () => {
+    const { deleteBlob } = jest.requireMock('../services/storage');
+    await request(app)
+      .post('/api/entities/e-a/photos/0/move')
+      .set('x-test-user', USER_A)
+      .send({ targetEntityId: 'e-narrator' });
+    expect(deleteBlob).not.toHaveBeenCalled();
+  });
+
+  it('rejects a move to another user’s entity with a 404', async () => {
+    const res = await request(app)
+      .post('/api/entities/e-a/photos/0/move')
+      .set('x-test-user', USER_A)
+      .send({ targetEntityId: 'e-b' });
+    expect(res.status).toBe(404);
+    expect(fake.container('entities').get('e-a')!.photos).toHaveLength(1);
+  });
+
+  it('rejects a missing target, the same entity, and an out-of-range index', async () => {
+    const noTarget = await request(app)
+      .post('/api/entities/e-a/photos/0/move').set('x-test-user', USER_A).send({});
+    expect(noTarget.status).toBe(400);
+
+    const sameEntity = await request(app)
+      .post('/api/entities/e-a/photos/0/move').set('x-test-user', USER_A)
+      .send({ targetEntityId: 'e-a' });
+    expect(sameEntity.status).toBe(400);
+
+    const badIndex = await request(app)
+      .post('/api/entities/e-a/photos/7/move').set('x-test-user', USER_A)
+      .send({ targetEntityId: 'e-narrator' });
+    expect(badIndex.status).toBe(404);
+
+    expect(fake.container('entities').get('e-a')!.photos).toHaveLength(1);
+  });
+});
