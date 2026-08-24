@@ -1016,3 +1016,17 @@ app-video-player.lightbox-image {
   from { opacity: 0; transform: translateX(-32px); }
   to   { opacity: 1; transform: translateX(0); }
 }
+
+// Shown while the server is waiting on a generation job for this entity; the
+// finished assets are attached automatically, so this only sets expectations.
+.generating-banner {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 0 0 12px;
+  padding: 8px 12px;
+  border-radius: 8px;
+  background: rgba(128, 128, 128, 0.12);
+  font-size: 0.85rem;
+  opacity: 0.9;
+}

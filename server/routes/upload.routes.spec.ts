@@ -24,14 +24,35 @@ jest.mock('../services/storage', () => ({
   }),
 }));
 
-import uploadRoutes from './upload.routes';
-import { makeTestApp, USER_A } from '../testing/test-app';
+// The generate routes look the target entity up, and track the job they queue.
+// A fake Cosmos stands in for both, so the relay can be tested without a
+// database — the collector itself is exercised in generation-collector.spec.ts.
+jest.mock('../services/cosmos', () => {
+  const { createFakeCosmos } = jest.requireActual('../testing/fake-cosmos');
+  const fake = createFakeCosmos();
+  return { getContainer: fake.getContainer, __fake: fake };
+});
 
+import uploadRoutes from './upload.routes';
+import { makeTestApp, USER_A, USER_B } from '../testing/test-app';
+import { FakeCosmos } from '../testing/fake-cosmos';
+
+const fake = jest.requireMock('../services/cosmos').__fake as FakeCosmos;
 const app = makeTestApp('/api/upload', uploadRoutes);
 
 beforeEach(() => {
   uploaded.length = 0;
+  fake.reset();
+  fake.container('entities').seed(
+    { id: 'e-a', name: 'Arthur', type: 'PERSON', seriesId: 's-a', owner: USER_A },
+    { id: 'e-b', name: 'Bobette', type: 'PERSON', seriesId: 's-b', owner: USER_B },
+  );
 });
+
+/** The tracked-job records the routes wrote, for asserting on what was queued. */
+function trackedJobs(): any[] {
+  return fake.container('generation-jobs').all();
+}
 
 async function jpeg(): Promise<Buffer> {
   return sharp({ create: { width: 60, height: 40, channels: 3, background: '#c05028' } })
@@ -138,7 +159,7 @@ describe('video generation', () => {
     const res = await post({ url: 'https://blob.test/abc-123.jpg', prompt: '  he turns and smiles  ' });
 
     expect(res.status).toBe(200);
-    expect(res.body).toEqual({ promptId: 'job-1', seed: 42, queueNumber: 3, frames: null });
+    expect(res.body).toEqual({ promptId: 'job-1', seed: 42, queueNumber: 3, frames: null, tracked: false });
     expect(calls).toHaveLength(1);
 
     const target = new URL(calls[0].url);
@@ -398,7 +419,7 @@ describe('image generation', () => {
     const res = await post({ url: 'https://blob.test/abc-123.jpg', prompt: '  in dress uniform  ' });
 
     expect(res.status).toBe(200);
-    expect(res.body).toEqual({ promptId: 'job-9', seed: 7, queueNumber: 1, count: 3 });
+    expect(res.body).toEqual({ promptId: 'job-9', seed: 7, queueNumber: 1, count: 3, tracked: false });
 
     const target = new URL(calls[0].url);
     expect(target.origin + target.pathname).toBe('https://receiver.test/faceid');
@@ -762,5 +783,124 @@ describe('generation queue', () => {
     } finally {
       cfg.photoExportUrl = original;
     }
+  });
+});
+
+describe('job tracking', () => {
+  const realFetch = global.fetch;
+  const JOB = '{"prompt_id":"job-track","seed":5,"queue_number":2}';
+
+  beforeAll(() => {
+    global.fetch = jest.fn(async () => new Response(JOB, { status: 200 })) as any;
+  });
+
+  beforeEach(() => {
+    (global.fetch as jest.Mock).mockClear();
+  });
+
+  afterAll(() => {
+    global.fetch = realFetch;
+  });
+
+  it('records a video job against the entity it was started from', async () => {
+    const res = await request(app)
+      .post('/api/upload/generate-video')
+      .set('x-test-user', USER_A)
+      .send({ url: 'https://blob.test/abc-123.jpg', prompt: 'he turns', durationSeconds: 5, entityId: 'e-a' });
+
+    expect(res.status).toBe(200);
+    expect(res.body.tracked).toBe(true);
+
+    expect(trackedJobs()).toEqual([
+      expect.objectContaining({
+        id: 'job-track',
+        kind: 'video',
+        entityId: 'e-a',
+        entityName: 'Arthur',
+        seriesId: 's-a',
+        state: 'pending',
+        startImage: 'abc-123.jpg',
+        // 5s at 16fps is 80 frames, snapped up to the nearest 4n+1.
+        frames: 81,
+        attempts: 0,
+        owner: USER_A,
+      }),
+    ]);
+  });
+
+  it('records an image job with the number of stills asked for', async () => {
+    const res = await request(app)
+      .post('/api/upload/generate-images')
+      .set('x-test-user', USER_A)
+      .send({ url: 'https://blob.test/abc-123.jpg', prompt: 'on a beach', count: 4, entityId: 'e-a' });
+
+    expect(res.status).toBe(200);
+    expect(res.body.tracked).toBe(true);
+    expect(trackedJobs()[0]).toEqual(
+      expect.objectContaining({ kind: 'images', requestedCount: 4, entityId: 'e-a' })
+    );
+  });
+
+  it('refuses to attach a job to someone else’s entity, and queues nothing', async () => {
+    const res = await request(app)
+      .post('/api/upload/generate-video')
+      .set('x-test-user', USER_A)
+      .send({ url: 'https://blob.test/abc-123.jpg', prompt: 'he turns', entityId: 'e-b' });
+
+    expect(res.status).toBe(404);
+    expect(trackedJobs()).toEqual([]);
+    // Rejected before the receiver was troubled with it.
+    expect(global.fetch).not.toHaveBeenCalled();
+  });
+
+  it('still queues a job with no entityId, but does not track it', async () => {
+    const res = await request(app)
+      .post('/api/upload/generate-video')
+      .set('x-test-user', USER_A)
+      .send({ url: 'https://blob.test/abc-123.jpg', prompt: 'he turns' });
+
+    expect(res.status).toBe(200);
+    expect(res.body.tracked).toBe(false);
+    expect(trackedJobs()).toEqual([]);
+  });
+
+  describe('GET /generation-jobs', () => {
+    beforeEach(() => {
+      fake.container('generation-jobs').seed(
+        { id: 'j-1', kind: 'images', entityId: 'e-a', state: 'collected', owner: USER_A,
+          queuedAt: '2026-01-01T00:00:00.000Z', attempts: 1 },
+        { id: 'j-2', kind: 'video', entityId: 'e-a', state: 'pending', owner: USER_A,
+          queuedAt: '2026-01-02T00:00:00.000Z', attempts: 0 },
+        { id: 'j-3', kind: 'video', entityId: 'e-b', state: 'pending', owner: USER_B,
+          queuedAt: '2026-01-03T00:00:00.000Z', attempts: 0 },
+      );
+    });
+
+    it('lists the caller’s own jobs, newest first, and nobody else’s', async () => {
+      const res = await request(app).get('/api/upload/generation-jobs').set('x-test-user', USER_A);
+      expect(res.status).toBe(200);
+      expect(res.body.jobs.map((j: any) => j.id)).toEqual(['j-2', 'j-1']);
+    });
+
+    it('scoped to an entity, returns only what is still outstanding', async () => {
+      const res = await request(app)
+        .get('/api/upload/generation-jobs?entityId=e-a')
+        .set('x-test-user', USER_A);
+      expect(res.status).toBe(200);
+      // j-1 is collected, so it is no longer something to wait on.
+      expect(res.body.jobs.map((j: any) => j.id)).toEqual(['j-2']);
+    });
+
+    it('dismisses one of the caller’s jobs and refuses another user’s', async () => {
+      expect(
+        (await request(app).delete('/api/upload/generation-jobs/j-3').set('x-test-user', USER_A)).status
+      ).toBe(404);
+      expect(fake.container('generation-jobs').get('j-3')).toBeDefined();
+
+      expect(
+        (await request(app).delete('/api/upload/generation-jobs/j-2').set('x-test-user', USER_A)).status
+      ).toBe(204);
+      expect(fake.container('generation-jobs').get('j-2')).toBeUndefined();
+    });
   });
 });

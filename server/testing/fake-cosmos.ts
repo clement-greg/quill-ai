@@ -7,7 +7,10 @@
  *   - `c.field = @param` / `c.field = true|false`
  *   - `(NOT IS_DEFINED(c.field) OR c.field = false)`
  *   - `(c.owner = @owner OR ARRAY_CONTAINS(c.collaborators, @email))`
+ *   - `c.field IN ('a', 'b')`
+ *   - `c.field < @param` / `>` / `<=` / `>=`
  * All clauses combine conjunctively, which matches every query the routes issue.
+ * `SELECT TOP n|@param` and a single `ORDER BY c.field ASC|DESC` are honoured too.
  */
 
 export type FakeDoc = { id: string } & Record<string, unknown>;
@@ -33,6 +36,11 @@ export class FakeContainer {
   get(id: string): FakeDoc | undefined {
     const doc = this.docs.get(id);
     return doc ? clone(doc) : undefined;
+  }
+
+  /** Everything in the container, for asserting on what a route wrote. */
+  all(): FakeDoc[] {
+    return [...this.docs.values()].map(clone);
   }
 
   clear(): void {
@@ -107,7 +115,55 @@ export class FakeContainer {
       return 'TRUE';
     });
 
-    return [...this.docs.values()].filter(doc => predicates.every(p => p(doc))).map(clone);
+    // c.field IN ('a', 'b')
+    rest = rest.replace(/c\.(\w+)\s+IN\s*\(([^)]*)\)/gi, (_m, field: string, list: string) => {
+      const values = list
+        .split(',')
+        .map(v => v.trim().replace(/^'(.*)'$/, '$1'))
+        .map(v => (params.has(v) ? params.get(v) : v));
+      predicates.push(doc => values.includes(doc[field] as never));
+      return 'TRUE';
+    });
+
+    // c.field < @param (and the other three comparisons). Strings compare
+    // lexicographically, which is what the ISO timestamps in these queries want.
+    rest = rest.replace(/c\.(\w+)\s*(<=|>=|<|>)\s*(@\w+)/g, (_m, field: string, op: string, param: string) => {
+      const bound = params.get(param) as string | number;
+      predicates.push(doc => {
+        const value = doc[field] as string | number | undefined;
+        if (value === undefined || value === null) return false;
+        switch (op) {
+          case '<': return value < bound;
+          case '>': return value > bound;
+          case '<=': return value <= bound;
+          default: return value >= bound;
+        }
+      });
+      return 'TRUE';
+    });
+
+    let results = [...this.docs.values()].filter(doc => predicates.every(p => p(doc))).map(clone);
+
+    const order = /ORDER\s+BY\s+c\.(\w+)(\s+(ASC|DESC))?/i.exec(text);
+    if (order) {
+      const field = order[1];
+      const descending = (order[3] ?? 'ASC').toUpperCase() === 'DESC';
+      results.sort((a, b) => {
+        const left = a[field] as string | number;
+        const right = b[field] as string | number;
+        if (left === right) return 0;
+        return (left < right ? -1 : 1) * (descending ? -1 : 1);
+      });
+    }
+
+    const top = /SELECT\s+TOP\s+(@?\w+)/i.exec(text);
+    if (top) {
+      const raw = top[1];
+      const limit = Number(raw.startsWith('@') ? params.get(raw) : raw);
+      if (Number.isFinite(limit)) results = results.slice(0, limit);
+    }
+
+    return results;
   }
 }
 

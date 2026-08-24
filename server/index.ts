@@ -2,6 +2,7 @@ import express, { Request, Response } from 'express';
 import path from 'path';
 import { HelloResponse } from '../shared/models';
 import { initDatabase } from './services/cosmos';
+import { startGenerationCollector } from './services/generation-collector';
 import config from './config';
 import { requireAuth } from './middleware/auth.middleware';
 import authRoutes from './routes/auth.routes';
@@ -115,6 +116,9 @@ initDatabase()
     app.listen(PORT, () => {
       console.log(`Server running on http://localhost:${PORT}`);
     });
+    // Pulls finished generation jobs back onto their entities. Started after the
+    // containers exist, since its work list is one of them.
+    startGenerationCollector();
   })
   .catch((err) => {
     console.error('Failed to initialize database:', err);

@@ -7,6 +7,7 @@ import {
   OnDestroy,
   ChangeDetectionStrategy,
 } from '@angular/core';
+import { Router } from '@angular/router';
 import { MatButtonModule } from '@angular/material/button';
 import { MatIconModule } from '@angular/material/icon';
 import { MatProgressBarModule } from '@angular/material/progress-bar';
@@ -18,6 +19,7 @@ import { HeaderService } from '@app/core/services/header.service';
 import { ConfirmDialogComponent } from '@app/shared/confirm-dialog/confirm-dialog';
 import { GenerationQueueService } from './generation-queue.service';
 import { GenerationJob, GenerationQueueStatus } from '@shared/models/generation-queue.model';
+import { TrackedGenerationJob } from '@shared/models/generation-job.model';
 
 /** How often the queue is re-read while the screen is open and visible. */
 const POLL_INTERVAL_MS = 10_000;
@@ -43,6 +45,9 @@ export class GenerationQueueComponent implements OnInit, OnDestroy {
   private dialog = inject(MatDialog);
 
   status = signal<GenerationQueueStatus | null>(null);
+  /** Quill's own record of the jobs it queued, and where each one ended up. */
+  trackedJobs = signal<TrackedGenerationJob[]>([]);
+  router = inject(Router);
   /** Only true for the very first read — a poll refresh must not blank the list. */
   loading = signal(true);
   error = signal<string | null>(null);
@@ -54,6 +59,16 @@ export class GenerationQueueComponent implements OnInit, OnDestroy {
   readonly jobs = computed(() => this.status()?.jobs ?? []);
   readonly counts = computed(() => this.status()?.counts ?? { running: 0, pending: 0, total: 0 });
   readonly isIdle = computed(() => !!this.status() && this.jobs().length === 0);
+
+  /** Jobs whose assets have not landed yet — what the collector is working on. */
+  readonly awaitingCollection = computed(() =>
+    this.trackedJobs().filter(j => j.state === 'pending' || j.state === 'stored')
+  );
+
+  /** Jobs that have finished, one way or another. */
+  readonly finishedJobs = computed(() =>
+    this.trackedJobs().filter(j => j.state !== 'pending' && j.state !== 'stored')
+  );
 
   ngOnInit(): void {
     this.headerService.setPage('Generation Queue');
@@ -88,6 +103,13 @@ export class GenerationQueueComponent implements OnInit, OnDestroy {
   }
 
   load(): void {
+    // Read on its own so a receiver that is offline still leaves the tracked
+    // list — which is Quill's own data — on screen.
+    this.queueService.getTrackedJobs().subscribe({
+      next: ({ jobs }) => this.trackedJobs.set(jobs),
+      error: () => undefined,
+    });
+
     this.queueService.getStatus().subscribe({
       next: (status) => {
         this.status.set(status);
@@ -98,6 +120,52 @@ export class GenerationQueueComponent implements OnInit, OnDestroy {
         this.error.set(err?.error?.error ?? 'Could not read the generation queue.');
         this.loading.set(false);
       },
+    });
+  }
+
+  /** Where a tracked job got to, in words. */
+  trackedStateLabel(job: TrackedGenerationJob): string {
+    switch (job.state) {
+      case 'pending':
+        return 'Generating';
+      case 'stored':
+        return 'Attaching';
+      case 'collected':
+        return 'Added to ' + (job.entityName ?? 'the entity');
+      case 'failed':
+        return 'Failed';
+      case 'gone':
+        return 'Lost';
+    }
+  }
+
+  trackedStateIcon(job: TrackedGenerationJob): string {
+    switch (job.state) {
+      case 'pending':
+      case 'stored':
+        return 'hourglass_empty';
+      case 'collected':
+        return 'check_circle';
+      default:
+        return 'error_outline';
+    }
+  }
+
+  /** What the job asked for, e.g. "4 images" or "1 video". */
+  trackedKindLabel(job: TrackedGenerationJob): string {
+    if (job.kind === 'video') return '1 video';
+    const n = job.requestedCount ?? 1;
+    return `${n} image${n === 1 ? '' : 's'}`;
+  }
+
+  openEntity(job: TrackedGenerationJob): void {
+    this.router.navigate(['/entities', job.entityId]);
+  }
+
+  dismissTracked(job: TrackedGenerationJob): void {
+    this.queueService.dismissTrackedJob(job.id).subscribe({
+      next: () => this.trackedJobs.update(jobs => jobs.filter(j => j.id !== job.id)),
+      error: () => this.snackBar.open('Could not dismiss that job.', undefined, { duration: 3000 }),
     });
   }
 

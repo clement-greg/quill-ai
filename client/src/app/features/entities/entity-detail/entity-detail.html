@@ -150,6 +150,22 @@
           </button>
         </mat-menu>
       } @else {
+        @if (outstandingJobs().length > 0) {
+          <div class="generating-banner" role="status">
+            <mat-spinner diameter="18"></mat-spinner>
+            <span>
+              @if (pendingImageCount() > 0) {
+                {{ pendingImageCount() }} image{{ pendingImageCount() === 1 ? '' : 's' }}
+              }
+              @if (pendingImageCount() > 0 && pendingVideoCount() > 0) { and }
+              @if (pendingVideoCount() > 0) {
+                {{ pendingVideoCount() }} video{{ pendingVideoCount() === 1 ? '' : 's' }}
+              }
+              generating — they'll be added here, hidden, when ready.
+            </span>
+          </div>
+        }
+
         <div class="photos-drop-zone"
              [class.photos-drop-zone--active]="photoDragOver()"
              (dragover)="onPhotoDragOver($event)"

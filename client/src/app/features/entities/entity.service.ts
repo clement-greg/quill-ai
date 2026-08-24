@@ -2,6 +2,7 @@ import { Injectable, inject } from '@angular/core';
 import { HttpClient, HttpErrorResponse } from '@angular/common/http';
 import { Observable, defer, retry, throwError, timeout, timer } from 'rxjs';
 import { Entity } from '@shared/models/entity.model';
+import { TrackedGenerationJob } from '@shared/models/generation-job.model';
 
 /**
  * Backstop for a receiver request (video or images). The server waits up to 60s
@@ -17,6 +18,11 @@ export interface VideoGenJob {
   queueNumber: number | null;
   /** Frame count the duration was snapped to, or null when none was requested. */
   frames: number | null;
+  /**
+   * True when the server is now watching this job and will attach the finished
+   * clip to the entity by itself. False means it ran but nobody is waiting.
+   */
+  tracked: boolean;
 }
 
 /** What a batch of receiver-generated stills is asked for; see PhotoGenResult. */
@@ -38,6 +44,8 @@ export interface PhotoGenJob {
   queueNumber: number | null;
   /** Images the run was queued for. */
   count: number;
+  /** See VideoGenJob.tracked. */
+  tracked: boolean;
 }
 
 export interface ChapterAppearance {
@@ -131,9 +139,14 @@ export class EntityService {
    * photo as the start frame. The photo is relayed exactly as stored — still
    * encrypted — so the receiver decrypts it. See POST /api/upload/generate-video.
    */
-  generateVideo(url: string, prompt: string, durationSeconds: number): Observable<VideoGenJob> {
+  generateVideo(
+    url: string,
+    prompt: string,
+    durationSeconds: number,
+    entityId?: string
+  ): Observable<VideoGenJob> {
     return this.http
-      .post<VideoGenJob>('/api/upload/generate-video', { url, prompt, durationSeconds })
+      .post<VideoGenJob>('/api/upload/generate-video', { url, prompt, durationSeconds, entityId })
       .pipe(
         // The server gives the receiver 60s and then answers, so anything past
         // this is the request itself hanging. Without it a stalled connection
@@ -148,10 +161,25 @@ export class EntityService {
    * goes over still encrypted and the receiver sends no CORS headers.
    * See POST /api/upload/generate-images.
    */
-  generateImagesFromPhoto(url: string, request: PhotoGenRequest): Observable<PhotoGenJob> {
+  generateImagesFromPhoto(
+    url: string,
+    request: PhotoGenRequest,
+    entityId?: string
+  ): Observable<PhotoGenJob> {
     return this.http
-      .post<PhotoGenJob>('/api/upload/generate-images', { url, ...request })
+      .post<PhotoGenJob>('/api/upload/generate-images', { url, ...request, entityId })
       .pipe(timeout(GENERATION_REQUEST_TIMEOUT_MS));
+  }
+
+  /**
+   * The generation jobs still outstanding for one entity. Asking also prompts the
+   * server to check them, so a job that has just finished is collected and its
+   * assets are on the entity by the time the next reload runs.
+   */
+  getOutstandingJobs(entityId: string): Observable<{ jobs: TrackedGenerationJob[] }> {
+    return this.http.get<{ jobs: TrackedGenerationJob[] }>('/api/upload/generation-jobs', {
+      params: { entityId },
+    });
   }
 
   generatePersonality(entityId: string, basicDescription: string): Observable<{ personality: string }> {

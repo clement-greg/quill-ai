@@ -27,6 +27,7 @@ import { CdkDropList, CdkDrag, CdkDragHandle, CdkDragDrop, CdkDragPlaceholder, m
 import { Entity, EntityPhoto, isVideoUrl } from '@shared/models/entity.model';
 import { galleryMediaFrom, isGalleryMediaFile } from '@app/core/utils/gallery-media';
 import { prepareImageForUpload } from '@app/core/utils/prepare-upload';
+import { TrackedGenerationJob } from '@shared/models/generation-job.model';
 import { TimelineEvent, TimelineEventPhoto } from '@shared/models/timeline-event.model';
 import { SeriesMap } from '@shared/models/map.model';
 import { FictionalLocationMapComponent, FictionalMapPin } from './fictional-location-map';
@@ -64,6 +65,9 @@ import {
   ImageGenResult,
   ImageGenSource,
 } from '../entity-edit/image-gen-dialog';
+
+/** How often an entity re-checks the jobs it is waiting on. */
+const GENERATION_POLL_MS = 15_000;
 
 interface BookGroup {
   bookTitle: string;
@@ -222,6 +226,24 @@ export class EntityDetailComponent implements OnDestroy {
     this.visiblePhotos()[this.lightboxIndex()] ?? null
   );
 
+  /**
+   * Generation jobs for this entity that have not landed yet. The server attaches
+   * finished assets on its own; this is only so the screen can say something is
+   * coming and reload when it arrives.
+   */
+  outstandingJobs = signal<TrackedGenerationJob[]>([]);
+
+  readonly pendingImageCount = computed(() =>
+    this.outstandingJobs()
+      .filter(j => j.kind === 'images')
+      .reduce((n, j) => n + (j.requestedCount ?? 1), 0)
+  );
+  readonly pendingVideoCount = computed(
+    () => this.outstandingJobs().filter(j => j.kind === 'video').length
+  );
+
+  private jobPollTimer: ReturnType<typeof setInterval> | null = null;
+
   private _chapters = signal<ChapterAppearance[]>([]);
   private _photosTapTimes: number[] = [];
 
@@ -240,6 +262,7 @@ export class EntityDetailComponent implements OnDestroy {
       this.loadChapters(id);
       this.loadTimeline(id);
       this.loadRelationships(id);
+      this.pollGenerationJobs(id);
     });
 
     // Load SeriesMap objects for any fictional PLACE entities referenced by timeline events.
@@ -871,6 +894,51 @@ export class EntityDetailComponent implements OnDestroy {
   }
 
   /**
+   * Checks what this entity is still waiting on. The request doubles as a nudge:
+   * the server collects any job that has finished while answering it, so a job
+   * dropping off this list means its assets are on the entity now — hence the
+   * reload. Generated media arrives hidden, so the reload only shows it when
+   * hidden photos are being shown.
+   */
+  private pollGenerationJobs(entityId: string): void {
+    this.entityService.getOutstandingJobs(entityId).subscribe({
+      next: ({ jobs }) => {
+        // Guard against a reply for an entity the user has already navigated away from.
+        if (this.entityId() !== entityId) return;
+
+        const landed = this.outstandingJobs().some(
+          before => !jobs.some(after => after.id === before.id)
+        );
+        this.outstandingJobs.set(jobs);
+        if (landed) this.loadEntity(entityId);
+        if (jobs.length > 0) this.startJobPolling(entityId);
+        else this.stopJobPolling();
+      },
+      // A generation job is a side errand; failing to read its state must not
+      // put an error on the entity screen.
+      error: () => this.stopJobPolling(),
+    });
+  }
+
+  private startJobPolling(entityId: string): void {
+    if (this.jobPollTimer !== null) return;
+    this.jobPollTimer = setInterval(() => {
+      if (this.entityId() !== entityId) {
+        this.stopJobPolling();
+        return;
+      }
+      this.pollGenerationJobs(entityId);
+    }, GENERATION_POLL_MS);
+  }
+
+  private stopJobPolling(): void {
+    if (this.jobPollTimer !== null) {
+      clearInterval(this.jobPollTimer);
+      this.jobPollTimer = null;
+    }
+  }
+
+  /**
    * Moves the long-pressed photo or video onto another entity. Only the two
    * `photos` arrays change server-side — the blob stays put — so this is cheap
    * and reversible by moving it back.
@@ -973,14 +1041,19 @@ export class EntityDetailComponent implements OnDestroy {
 
   /** Same failure handling as queueVideo() — the receiver comes and goes. */
   private queueImages(url: string, request: PhotoGenResult): void {
+    const entityId = this.entity()?.id;
     this.snackBar.open('Queueing images…', undefined, { duration: 2000 });
-    this.entityService.generateImagesFromPhoto(url, request).subscribe({
-      next: job =>
+    this.entityService.generateImagesFromPhoto(url, request, entityId).subscribe({
+      next: job => {
         this.snackBar.open(
-          `${request.count} image${request.count === 1 ? '' : 's'} queued${job.promptId ? ` (job ${job.promptId})` : ''}`,
+          `${request.count} image${request.count === 1 ? '' : 's'} queued${
+            job.tracked ? ' — they will be added here when they finish' : ''
+          }`,
           'Dismiss',
           { duration: 5000 }
-        ),
+        );
+        if (job.tracked && entityId) this.pollGenerationJobs(entityId);
+      },
       error: (err: unknown) => {
         const { reason, retryable } = this.generationFailure(err);
         const toast = this.snackBar.open(`Images failed: ${reason}`, retryable ? 'Retry' : 'Dismiss');
@@ -996,14 +1069,19 @@ export class EntityDetailComponent implements OnDestroy {
     // The generator runs on a machine that comes and goes, so a failure here is
     // ordinary rather than exceptional: the toast stays until dismissed and
     // offers to send the same job again.
+    const entityId = this.entity()?.id;
     this.snackBar.open('Queueing video…', undefined, { duration: 2000 });
-    this.entityService.generateVideo(url, prompt, durationSeconds).subscribe({
-      next: job =>
+    this.entityService.generateVideo(url, prompt, durationSeconds, entityId).subscribe({
+      next: job => {
         this.snackBar.open(
-          `${durationSeconds.toFixed(1)}s video queued${job.promptId ? ` (job ${job.promptId})` : ''}`,
+          `${durationSeconds.toFixed(1)}s video queued${
+            job.tracked ? ' — it will be added here when it finishes' : ''
+          }`,
           'Dismiss',
           { duration: 5000 }
-        ),
+        );
+        if (job.tracked && entityId) this.pollGenerationJobs(entityId);
+      },
       error: (err: unknown) => {
         const { reason, retryable } = this.generationFailure(err);
         const toast = this.snackBar.open(
@@ -1113,5 +1191,6 @@ export class EntityDetailComponent implements OnDestroy {
   ngOnDestroy(): void {
     this.cancelSortCardPress();
     this.cancelPhotoCardPress();
+    this.stopJobPolling();
   }
 }

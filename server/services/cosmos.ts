@@ -34,6 +34,10 @@ const standardContainerDefs = [
   { id: 'mention-counts', partitionKey: { paths: ['/id'] } },
   { id: 'maps', partitionKey: { paths: ['/id'] } },
   { id: 'map-assets', partitionKey: { paths: ['/id'] } },
+  // Generation jobs queued on the external receiver, keyed by the ComfyUI prompt
+  // id. The collector reads its work list from here rather than from memory, so
+  // a restart mid-generation resumes instead of losing the job.
+  { id: 'generation-jobs', partitionKey: { paths: ['/id'] } },
 ];
 
 // text-embedding-3-small produces 1536-dimensional vectors.

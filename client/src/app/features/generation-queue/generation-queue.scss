@@ -173,3 +173,71 @@
 .cancel-btn mat-spinner {
   margin: auto;
 }
+
+// Quill's own record of what it queued and where each result landed. Rendered
+// above the live queue, and independently of it: the receiver being unreachable
+// says nothing about jobs that already finished.
+.tracked {
+  margin-bottom: 24px;
+}
+
+.section-title {
+  font-size: 1rem;
+  font-weight: 500;
+  margin: 0 0 4px;
+}
+
+.section-note {
+  margin: 0 0 12px;
+  font-size: 0.8rem;
+  opacity: 0.7;
+}
+
+.tracked-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.tracked-card {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 8px 8px 12px;
+  border-radius: 8px;
+  background: rgba(128, 128, 128, 0.1);
+}
+
+.tracked-icon {
+  flex: 0 0 auto;
+  opacity: 0.7;
+}
+
+.tracked-icon--error {
+  color: #c0392b;
+  opacity: 1;
+}
+
+.tracked-card--done .tracked-icon {
+  color: #2e7d32;
+  opacity: 1;
+}
+
+.tracked-body {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.tracked-title {
+  font-size: 0.9rem;
+}
+
+.tracked-state {
+  font-size: 0.78rem;
+  opacity: 0.75;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}

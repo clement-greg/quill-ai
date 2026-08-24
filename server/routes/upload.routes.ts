@@ -1,74 +1,35 @@
 import { Router, Request, Response, NextFunction } from 'express';
 import multer from 'multer';
 import path from 'path';
-import sharp from 'sharp';
-import { v4 as uuidv4 } from 'uuid';
-import config from '../config';
-import { uploadFileToBlob, downloadBlobRaw } from '../services/storage';
-import { VIDEO_EXTENSIONS, isVideoUrl } from '../../shared/models/entity.model';
+import { downloadBlobRaw } from '../services/storage';
+import { getContainer } from '../services/cosmos';
+import { readOwnedItem } from '../middleware/owner-guard';
+import { Entity, isVideoUrl } from '../../shared/models/entity.model';
+import {
+  DEFAULT_THUMBNAIL_SIZE,
+  KNOWN_EXTS,
+  resolveExt,
+  storeMedia,
+} from '../services/media-store';
+import { RECEIVER_HEADERS, receiverError, receiverUrl } from '../services/receiver';
+import {
+  forgetJob,
+  listJobsForOwner,
+  listOutstandingJobsForEntity,
+  readJob,
+  trackJob,
+} from '../services/generation-jobs';
+import { collectJobNow } from '../services/generation-collector';
 import {
   GenerationCancelResult,
   GenerationJob,
   GenerationJobProgress,
   GenerationQueueStatus,
 } from '../../shared/models/generation-queue.model';
+import { TrackedGenerationJob } from '../../shared/models/generation-job.model';
 
 const router = Router();
-const DEFAULT_THUMBNAIL_SIZE = 400; // max width or height in px for palette stamps
-
-/** Raster formats every browser can display — stored byte-for-byte as uploaded. */
-const WEB_SAFE_RASTER_EXTS = ['.jpg', '.jpeg', '.png', '.gif', '.webp', '.avif'];
-/**
- * Raster formats we accept but re-encode to JPEG on the way in. HEIC is what an
- * iPhone hands over for a library photo, and only Safari can render it — storing
- * it as-is would upload fine and then show a broken image everywhere else.
- */
-const TRANSCODE_RASTER_EXTS = ['.heic', '.heif', '.jfif', '.bmp', '.tif', '.tiff'];
-const RASTER_EXTS = [...WEB_SAFE_RASTER_EXTS, ...TRANSCODE_RASTER_EXTS];
-const SVG_EXTS = ['.svg'];
-const VIDEO_EXTS = VIDEO_EXTENSIONS;
-
-const VIDEO_MIME_BY_EXT: Record<string, string> = {
-  '.mp4': 'video/mp4',
-  '.m4v': 'video/mp4',
-  '.webm': 'video/webm',
-  '.mov': 'video/quicktime',
-  '.ogv': 'video/ogg',
-};
-
-/**
- * Fallback extension when the upload arrives without a usable one — iOS share
- * sheets sometimes send a bare `image` or `file` as the name. The extension is
- * not cosmetic: blobs are stored as `<uuid><ext>` and isVideoUrl() reads the
- * stored URL's extension to tell a video from a photo.
- */
-const EXT_BY_MIME: Record<string, string> = {
-  'image/jpeg': '.jpg',
-  'image/png': '.png',
-  'image/gif': '.gif',
-  'image/webp': '.webp',
-  'image/avif': '.avif',
-  'image/heic': '.heic',
-  'image/heif': '.heif',
-  'image/heic-sequence': '.heic',
-  'image/tiff': '.tif',
-  'image/bmp': '.bmp',
-  'image/svg+xml': '.svg',
-  'video/mp4': '.mp4',
-  'video/quicktime': '.mov',
-  'video/webm': '.webm',
-  'video/ogg': '.ogv',
-  'video/x-m4v': '.m4v',
-};
-
-const KNOWN_EXTS = [...RASTER_EXTS, ...SVG_EXTS, ...VIDEO_EXTS];
-
-/** The extension to store this upload under, falling back to its MIME type. */
-function resolveExt(originalname: string, mimetype: string): string {
-  const ext = path.extname(originalname).toLowerCase();
-  if (KNOWN_EXTS.includes(ext)) return ext;
-  return EXT_BY_MIME[mimetype.toLowerCase()] ?? ext;
-}
+const entitiesContainer = getContainer('entities');
 
 const upload = multer({
   storage: multer.memoryStorage(),
@@ -132,46 +93,13 @@ router.post('/', handleUploadErrors, async (req: Request, res: Response) => {
       4096
     );
 
-    const ext = resolveExt(req.file.originalname, req.file.mimetype);
-    const id = uuidv4();
-    const mimeType = ext === '.svg' ? 'image/svg+xml' : req.file.mimetype;
+    const { url, thumbnailUrl } = await storeMedia(req.file.buffer, {
+      ext: resolveExt(req.file.originalname, req.file.mimetype),
+      mimeType: req.file.mimetype,
+      thumbSize,
+    });
 
-    let originalUrl: string;
-    let thumbnailUrl: string;
-
-    if (VIDEO_EXTS.includes(ext) || req.file.mimetype.toLowerCase().startsWith('video/')) {
-      // Videos can't be thumbnailed with sharp — upload once and reuse the URL for both.
-      const videoMime = VIDEO_MIME_BY_EXT[ext] ?? req.file.mimetype;
-      originalUrl = await uploadFileToBlob(req.file.buffer, `${id}${ext}`, videoMime);
-      thumbnailUrl = originalUrl;
-    } else if (SVG_EXTS.includes(ext)) {
-      // SVGs are already scalable — upload once and use for both url and thumbnailUrl.
-      originalUrl = await uploadFileToBlob(req.file.buffer, `${id}${ext}`, mimeType);
-      thumbnailUrl = originalUrl;
-    } else {
-      // `.rotate()` bakes in the EXIF orientation phone cameras rely on; without
-      // it, portrait shots come back on their side once the metadata is dropped.
-      const transcode = TRANSCODE_RASTER_EXTS.includes(ext);
-      const thumbnailFilename = `${id}_thumb.webp`;
-      const thumbnailBuffer = await sharp(req.file.buffer)
-        .rotate()
-        .resize(thumbSize, thumbSize, { fit: 'inside', withoutEnlargement: true })
-        .webp({ quality: 85 })
-        .toBuffer();
-
-      const originalBuffer = transcode
-        ? await sharp(req.file.buffer).rotate().jpeg({ quality: 90 }).toBuffer()
-        : req.file.buffer;
-      const originalFilename = transcode ? `${id}.jpg` : `${id}${ext}`;
-      const originalMime = transcode ? 'image/jpeg' : mimeType;
-
-      [originalUrl, thumbnailUrl] = await Promise.all([
-        uploadFileToBlob(originalBuffer, originalFilename, originalMime),
-        uploadFileToBlob(thumbnailBuffer, thumbnailFilename, 'image/webp'),
-      ]);
-    }
-
-    res.json({ url: originalUrl, thumbnailUrl });
+    res.json({ url, thumbnailUrl });
   } catch (err) {
     console.error('Upload error:', err);
     res.status(500).json({ error: 'Upload failed' });
@@ -206,13 +134,11 @@ function framesForSeconds(seconds: number): number {
  * the query string, and answers with the queued ComfyUI job.
  */
 function videoGenTarget(filename: string, prompt: string, frames: number | null): string | null {
-  const base = config.photoExportUrl?.trim().replace(/\/+$/, '');
-  if (!base) return null;
-  const query = new URLSearchParams({ prompt, name: filename });
+  const query: Record<string, string> = { prompt, name: filename };
   // Omitted entirely when no duration was asked for, so the workflow's own
   // default length stands rather than this route inventing one.
-  if (frames !== null) query.set('length', String(frames));
-  return `${base}/generate?${query.toString()}`;
+  if (frames !== null) query['length'] = String(frames);
+  return receiverUrl('/generate', query);
 }
 
 /**
@@ -266,21 +192,6 @@ function transportFailure(err: unknown): { status: number; error: string } {
     status: 502,
     error: detail ? `Could not reach the receiver (${detail})` : 'Could not reach the receiver.',
   };
-}
-
-/**
- * The reason the receiver gave, when it sent one, for showing in the UI.
- * `Response` here is fetch's, not Express's — hence the explicit global.
- */
-async function receiverError(response: globalThis.Response): Promise<string> {
-  const body = (await response.text().catch(() => '')).slice(0, 2000);
-  try {
-    const parsed = JSON.parse(body);
-    if (typeof parsed?.error === 'string' && parsed.error.trim()) return parsed.error.trim();
-  } catch {
-    // Not JSON — an HTML error page or a proxy's own message.
-  }
-  return `Receiver returned ${response.status}`;
 }
 
 /** What the receiver answers with when it has queued a job. */
@@ -372,6 +283,51 @@ async function queueOnReceiver(target: string, data: Buffer, contentType: string
 }
 
 /**
+ * The entity a job's finished assets will be attached to. Optional: a job queued
+ * without one still runs, it just isn't collected automatically — so a missing
+ * entityId is not an error, but one that isn't the caller's is.
+ */
+async function resolveTargetEntity(
+  req: Request
+): Promise<{ ok: true; entity: Entity | null } | { ok: false; error: string }> {
+  const entityId = typeof req.body?.entityId === 'string' ? req.body.entityId.trim() : '';
+  if (!entityId) return { ok: true, entity: null };
+  const entity = await readOwnedItem<Entity>(entitiesContainer, entityId, entityId, req);
+  if (!entity) return { ok: false, error: 'Entity not found' };
+  return { ok: true, entity };
+}
+
+/**
+ * Records a queued job so the collector can pull its output back onto the
+ * entity. A failure here leaves the generation running but uncollected, which is
+ * worth saying in the log and not worth failing the request over.
+ */
+async function trackQueuedJob(
+  promptId: string | null,
+  kind: 'video' | 'images',
+  entity: Entity | null,
+  req: Request,
+  extra: { startImage: string; requestedCount?: number; frames?: number | null }
+): Promise<boolean> {
+  if (!promptId || !entity) return false;
+  try {
+    await trackJob({
+      promptId,
+      kind,
+      entityId: entity.id,
+      entityName: entity.name,
+      seriesId: entity.seriesId,
+      owner: req.user!.email,
+      ...extra,
+    });
+    return true;
+  } catch (err) {
+    console.error('Could not track generation job', promptId, err);
+    return false;
+  }
+}
+
+/**
  * The stored photo this job starts from, or the reason it cannot be used. Both
  * generators take one gallery photo by its stored url; blobs are named
  * `<uuid><ext>`, so anything with a path separator in it did not come from us.
@@ -397,6 +353,12 @@ router.post('/generate-video', async (req: Request, res: Response) => {
     return;
   }
   const filename = source.filename;
+
+  const destination = await resolveTargetEntity(req);
+  if (!destination.ok) {
+    res.status(404).json({ error: destination.error });
+    return;
+  }
   const prompt = typeof req.body?.prompt === 'string' ? req.body.prompt.trim() : '';
 
   if (!prompt) {
@@ -439,7 +401,12 @@ router.post('/generate-video', async (req: Request, res: Response) => {
     return;
   }
 
-  res.json({ ...result.job, frames });
+  const tracked = await trackQueuedJob(result.job.promptId, 'video', destination.entity, req, {
+    startImage: filename,
+    frames,
+  });
+
+  res.json({ ...result.job, frames, tracked });
 });
 
 
@@ -475,9 +442,7 @@ function omitted(value: unknown): boolean {
  * every setting in the query string, and answers with the queued ComfyUI job.
  */
 function imageGenTarget(query: URLSearchParams): string | null {
-  const base = config.photoExportUrl?.trim().replace(/\/+$/, '');
-  if (!base) return null;
-  return `${base}/faceid?${query.toString()}`;
+  return receiverUrl('/faceid', Object.fromEntries(query));
 }
 
 /**
@@ -496,6 +461,12 @@ router.post('/generate-images', async (req: Request, res: Response) => {
     return;
   }
   const filename = source.filename;
+
+  const destination = await resolveTargetEntity(req);
+  if (!destination.ok) {
+    res.status(404).json({ error: destination.error });
+    return;
+  }
   const prompt = typeof req.body?.prompt === 'string' ? req.body.prompt.trim() : '';
 
   if (!prompt) {
@@ -560,26 +531,17 @@ router.post('/generate-images', async (req: Request, res: Response) => {
     return;
   }
 
-  res.json({ ...result.job, count });
+  const tracked = await trackQueuedJob(result.job.promptId, 'images', destination.entity, req, {
+    startImage: filename,
+    requestedCount: count,
+  });
+
+  res.json({ ...result.job, count, tracked });
 });
 
 
-/**
- * The receiver's queue endpoints. Both live on `photoExportUrl` alongside
- * /generate; null when no receiver is configured.
- */
-function receiverUrl(path: string, query?: Record<string, string>): string | null {
-  const base = config.photoExportUrl?.trim().replace(/\/+$/, '');
-  if (!base) return null;
-  const search = query ? `?${new URLSearchParams(query).toString()}` : '';
-  return `${base}${path}${search}`;
-}
-
 /** Reading or cancelling a queue entry is a small call — no image bytes move. */
 const QUEUE_TIMEOUT_MS = 30_000;
-
-/** The header every receiver call needs; see the notes on /generate-video. */
-const RECEIVER_HEADERS = { 'X-Tunnel-Skip-AntiPhishing-Page': 'true' };
 
 /** One queue entry as the receiver reports it (receiver/server.py). */
 interface ReceiverJob {
@@ -680,6 +642,69 @@ function toJob(raw: ReceiverJob, state: 'running' | 'pending'): GenerationJob {
     startsInSeconds: num(raw.starts_in_seconds),
   };
 }
+
+/**
+ * GET /api/upload/generation-jobs           ->  { jobs: TrackedGenerationJob[] }
+ * GET /api/upload/generation-jobs?entityId= ->  the outstanding ones for one entity
+ *
+ * The jobs this server queued for the caller and is waiting on, with what
+ * became of each. Unlike /generation-queue this is our own record rather than
+ * the receiver's: it survives the receiver restarting, and it says whether the
+ * finished assets made it onto an entity.
+ *
+ * Passing `entityId` also nudges the collector to check those jobs immediately,
+ * so an entity screen that polls this sees its new photos as soon as they exist
+ * rather than at the next poll interval.
+ */
+router.get('/generation-jobs', async (req: Request, res: Response) => {
+  try {
+    const owner = req.user!.email;
+    const entityId = typeof req.query['entityId'] === 'string' ? req.query['entityId'].trim() : '';
+
+    if (!entityId) {
+      res.json({ jobs: await listJobsForOwner(owner) });
+      return;
+    }
+
+    const outstanding = await listOutstandingJobsForEntity(owner, entityId);
+    const jobs: TrackedGenerationJob[] = [];
+    for (const job of outstanding) {
+      // Collected in the request so the answer reflects what is on the entity
+      // now, not what was true one poll interval ago.
+      jobs.push(await collectJobNow(job).catch(() => job));
+    }
+    res.json({ jobs });
+  } catch (err) {
+    console.error('Error reading generation jobs:', err);
+    res.status(500).json({ error: 'Failed to read generation jobs' });
+  }
+});
+
+/**
+ * DELETE /api/upload/generation-jobs/:promptId
+ *
+ * Stops waiting on a job. This only forgets our own record — anything already
+ * running on the receiver keeps running (cancel that with /generation-queue).
+ */
+router.delete('/generation-jobs/:promptId', async (req: Request, res: Response) => {
+  const promptId = String(req.params['promptId'] ?? '').trim();
+  if (!/^[A-Za-z0-9._-]{1,128}$/.test(promptId)) {
+    res.status(400).json({ error: 'Invalid prompt id' });
+    return;
+  }
+  try {
+    const job = await readJob(promptId);
+    if (!job || job.owner !== req.user!.email) {
+      res.status(404).json({ error: 'No such job' });
+      return;
+    }
+    await forgetJob(promptId);
+    res.status(204).send();
+  } catch (err) {
+    console.error('Error dismissing generation job:', err);
+    res.status(500).json({ error: 'Failed to dismiss the job' });
+  }
+});
 
 /**
  * GET /api/upload/generation-queue  ->  GenerationQueueStatus

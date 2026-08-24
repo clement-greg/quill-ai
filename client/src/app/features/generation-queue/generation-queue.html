@@ -4,6 +4,48 @@
     <h1 class="page-title">Generation Queue</h1>
   </div>
 
+  @if (trackedJobs().length > 0) {
+    <section class="tracked">
+      <h2 class="section-title">Your generations</h2>
+      <p class="section-note">
+        Finished assets are added to the entity they were started from, hidden.
+      </p>
+      <div class="tracked-list">
+        @for (job of awaitingCollection().concat(finishedJobs()); track job.id) {
+          <div class="tracked-card" [class.tracked-card--done]="job.state === 'collected'">
+            <mat-icon class="tracked-icon" [class.tracked-icon--error]="job.state === 'failed' || job.state === 'gone'">
+              {{ trackedStateIcon(job) }}
+            </mat-icon>
+            <div class="tracked-body">
+              <span class="tracked-title">
+                {{ trackedKindLabel(job) }}
+                @if (job.entityName) { for {{ job.entityName }} }
+              </span>
+              <span class="tracked-state">
+                {{ trackedStateLabel(job) }}
+                @if (job.state === 'failed' || job.state === 'gone') {
+                  @if (job.lastError) { — {{ job.lastError }} }
+                }
+              </span>
+            </div>
+            @if (job.state === 'collected') {
+              <button mat-icon-button (click)="openEntity(job)"
+                      matTooltip="Open the entity" [attr.aria-label]="'Open ' + (job.entityName ?? 'entity')">
+                <mat-icon>open_in_new</mat-icon>
+              </button>
+            }
+            @if (job.state !== 'pending' && job.state !== 'stored') {
+              <button mat-icon-button (click)="dismissTracked(job)"
+                      matTooltip="Dismiss" aria-label="Dismiss this job">
+                <mat-icon>close</mat-icon>
+              </button>
+            }
+          </div>
+        }
+      </div>
+    </section>
+  }
+
   @if (loading()) {
     <div class="loading">
       <mat-spinner diameter="32"></mat-spinner>
