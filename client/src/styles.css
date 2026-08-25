@@ -58,8 +58,10 @@ body.resizing-col, body.resizing-col * {
 }
 
 /* Portrait lock for iOS PWA — iOS ignores the manifest orientation field,
-   so show a fullscreen overlay whenever a touch device goes landscape. */
-@media (orientation: landscape) and (hover: none) and (pointer: coarse) {
+   so show a fullscreen overlay whenever a touch device goes landscape.
+   Phones only: max-height 500px excludes tablets (iPad mini is 744px tall in
+   landscape, while the largest iPhone is 440px). */
+@media (orientation: landscape) and (hover: none) and (pointer: coarse) and (max-height: 500px) {
   body::before {
     content: '↺  Please rotate to portrait';
     display: block;
