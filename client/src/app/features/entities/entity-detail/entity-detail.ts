@@ -66,6 +66,15 @@ import {
   ImageGenSource,
 } from '../entity-edit/image-gen-dialog';
 
+/** A frame grabbed off a video and stored, ready to be generated from. */
+interface CapturedFrame {
+  /** Where the frame is stored — what a generation job is pointed at. */
+  url: string;
+  /** Object url of the captured bytes, for the dialog's own preview. */
+  previewUrl: string;
+  caption: string;
+}
+
 /** How often an entity re-checks the jobs it is waiting on. */
 const GENERATION_POLL_MS = 15_000;
 
@@ -183,6 +192,19 @@ export class EntityDetailComponent implements OnDestroy {
   });
 
   private timelineMapRef = viewChild(TimelineMapComponent);
+
+  /** The lightbox's player, present only while a video is the photo on show. */
+  private lightboxVideoRef = viewChild(VideoPlayer);
+
+  /** Set while a frame is being captured and uploaded, to keep the buttons quiet. */
+  capturingFrame = signal(false);
+
+  /**
+   * Whether the lightbox is offering to generate from the frame on screen. Only
+   * while the video is stopped: the offer is to use *this* frame, which means
+   * nothing when the frame is changing 16 times a second.
+   */
+  readonly canGenerateFromFrame = computed(() => this.lightboxVideoRef()?.playing() === false);
 
   readonly PHOTO_PREVIEW_LIMIT = 5;
 
@@ -1039,6 +1061,125 @@ export class EntityDetailComponent implements OnDestroy {
       });
   }
 
+  // --- Generating from a frame of the video on show ------------------------
+  // The gallery's own generation starts from a stored photo. A video has no one
+  // photo to start from, so the user scrubs to the moment they want and that
+  // frame is captured, stored, and used exactly as a gallery photo would be.
+
+  /**
+   * Asks for a motion prompt, then queues an image-to-video job whose start
+   * frame is the one currently on screen in the lightbox's player.
+   */
+  generateVideoFromCurrentFrame(): void {
+    this.withCurrentFrame(frame => {
+      const data: VideoGenDialogData = {
+        thumbnailUrl: frame.previewUrl,
+        caption: frame.caption,
+        hint: 'This frame is the first frame. Describe the motion you want.',
+      };
+
+      this.dialog
+        .open<VideoGenDialogComponent, VideoGenDialogData, VideoGenResult>(VideoGenDialogComponent, { data })
+        .afterClosed()
+        .subscribe(result => {
+          if (!this.finishWithFrame(frame, !!result?.prompt)) return;
+          this.queueVideo(frame.url, result!.prompt, result!.durationSeconds);
+        });
+    });
+  }
+
+  /**
+   * Asks for a prompt and a count, then queues a batch of stills that keep the
+   * face from the frame currently on screen.
+   */
+  generateImagesFromCurrentFrame(): void {
+    this.withCurrentFrame(frame => {
+      const data: PhotoGenDialogData = {
+        thumbnailUrl: frame.previewUrl,
+        caption: frame.caption,
+        hint: "This frame's face is kept. Describe the images you want.",
+      };
+
+      this.dialog
+        .open<PhotoGenDialogComponent, PhotoGenDialogData, PhotoGenResult>(PhotoGenDialogComponent, { data })
+        .afterClosed()
+        .subscribe(result => {
+          if (!this.finishWithFrame(frame, !!result?.prompt)) return;
+          this.queueImages(frame.url, result!);
+        });
+    });
+  }
+
+  /**
+   * Grabs the frame on show, stores it, and hands it to `run` to ask for a
+   * prompt with. Storing before the dialog opens rather than on Generate is
+   * what lets an abandoned dialog clean up after itself — and it means the
+   * upload happens while the user is still typing.
+   *
+   * Capturing first also pauses the video on the chosen moment, so the preview
+   * in the dialog is exactly the frame that will be sent.
+   */
+  private withCurrentFrame(run: (frame: CapturedFrame) => void): void {
+    if (this.capturingFrame()) return;
+    const player = this.lightboxVideoRef();
+    if (!player) return;
+
+    const photo = this.currentLightboxPhoto();
+    const at = formatFrameTime(player.frameTime());
+    const caption = photo?.caption ? `${photo.caption} — frame at ${at}` : `Frame at ${at}`;
+
+    this.capturingFrame.set(true);
+    void player.captureFrame().then(
+      blob => {
+        if (!blob) {
+          this.capturingFrame.set(false);
+          this.snackBar.open('Could not read that frame from the video', undefined, { duration: 4000 });
+          return;
+        }
+        // Named for what it is; the stored blob gets a uuid of its own anyway.
+        const file = new File([blob], 'frame.jpg', { type: 'image/jpeg' });
+        this.entityService.uploadFrame(file).subscribe({
+          next: ({ url }) => {
+            this.capturingFrame.set(false);
+            run({ url, previewUrl: URL.createObjectURL(blob), caption });
+          },
+          error: (err: unknown) => {
+            this.capturingFrame.set(false);
+            this.reportFrameUploadFailure(err);
+          },
+        });
+      },
+      () => {
+        this.capturingFrame.set(false);
+        this.snackBar.open('Could not read that frame from the video', undefined, { duration: 4000 });
+      }
+    );
+  }
+
+  /**
+   * Lets go of a captured frame once its dialog has closed, and says whether
+   * the job it was captured for should go ahead.
+   *
+   * A dialog closed without a prompt leaves a stored frame nothing will ever
+   * use, so it is thrown away here. A job that goes ahead leaves its frame
+   * alone: the server clears it as soon as the receiver accepts the job, and
+   * until then it is what a Retry would send again.
+   */
+  private finishWithFrame(frame: CapturedFrame, queueing: boolean): boolean {
+    URL.revokeObjectURL(frame.previewUrl);
+    // Nothing to tell the user either way — a failed cleanup costs one blob.
+    if (!queueing) this.entityService.discardFrame().subscribe({ error: () => undefined });
+    return queueing;
+  }
+
+  private reportFrameUploadFailure(err: unknown): void {
+    const reason =
+      err instanceof HttpErrorResponse && typeof err.error?.error === 'string'
+        ? err.error.error
+        : 'the frame could not be saved';
+    this.snackBar.open(`Could not use that frame: ${reason}`, 'Dismiss', { duration: 6000 });
+  }
+
   /** Same failure handling as queueVideo() — the receiver comes and goes. */
   private queueImages(url: string, request: PhotoGenResult): void {
     const entityId = this.entity()?.id;
@@ -1193,4 +1334,12 @@ export class EntityDetailComponent implements OnDestroy {
     this.cancelPhotoCardPress();
     this.stopJobPolling();
   }
+}
+
+/** A playhead position as m:ss.t, for naming the frame a job started from. */
+function formatFrameTime(seconds: number): string {
+  if (!Number.isFinite(seconds) || seconds < 0) return '0:00.0';
+  const minutes = Math.floor(seconds / 60);
+  const rest = seconds - minutes * 60;
+  return `${minutes}:${rest.toFixed(1).padStart(4, '0')}`;
 }

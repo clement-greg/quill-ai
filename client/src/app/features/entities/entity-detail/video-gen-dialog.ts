@@ -12,6 +12,8 @@ export interface VideoGenDialogData {
   /** Thumbnail of the still the video starts from, shown for confirmation. */
   thumbnailUrl: string;
   caption?: string;
+  /** Overrides the line under the thumbnail — a captured video frame says so. */
+  hint?: string;
 }
 
 export interface VideoGenResult {
@@ -51,7 +53,7 @@ export const DEFAULT_VIDEO_SECONDS = 5;
     <mat-dialog-content>
       <div class="still">
         <img [src]="data.thumbnailUrl" [alt]="data.caption || 'Starting frame'" />
-        <p class="still-hint">This photo is the first frame. Describe the motion you want.</p>
+        <p class="still-hint">{{ data.hint || 'This photo is the first frame. Describe the motion you want.' }}</p>
       </div>
       <mat-form-field appearance="outline" class="prompt-field">
         <mat-label>Motion prompt</mat-label>

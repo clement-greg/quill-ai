@@ -1,7 +1,8 @@
 import { Router, Request, Response, NextFunction } from 'express';
 import multer from 'multer';
 import path from 'path';
-import { downloadBlobRaw } from '../services/storage';
+import { v4 as uuidv4 } from 'uuid';
+import { deleteBlob, downloadBlobRaw, uploadFileToBlob } from '../services/storage';
 import { getContainer } from '../services/cosmos';
 import { readOwnedItem } from '../middleware/owner-guard';
 import { Entity, isVideoUrl } from '../../shared/models/entity.model';
@@ -104,6 +105,95 @@ router.post('/', handleUploadErrors, async (req: Request, res: Response) => {
     console.error('Upload error:', err);
     res.status(500).json({ error: 'Upload failed' });
   }
+});
+
+// --- Captured video frames -------------------------------------------------
+// A frame grabbed off a video in the gallery is scratch, not gallery media: it
+// exists only long enough to be handed to a generator as a start image. One
+// user has at most one at a time — capturing another discards the last, and
+// both abandoning the dialog and queueing the job clear it.
+
+/**
+ * Each owner's outstanding captured frame, by blob name.
+ *
+ * Kept in memory on purpose. The blob is disposable and short-lived, so the
+ * worst a restart can do is strand one image — which the storage backfill
+ * sweeps up as an unreferenced blob — and that is not worth a Cosmos write on
+ * every capture.
+ */
+const capturedFrames = new Map<string, string>();
+
+/**
+ * Drops an owner's captured frame if they still have one. Deleting is
+ * best-effort: a frame that cannot be removed is a stray blob, which must not
+ * fail the request that was trying to tidy it up.
+ */
+async function discardCapturedFrame(owner: string): Promise<void> {
+  const filename = capturedFrames.get(owner);
+  if (!filename) return;
+  // Forgotten before the delete is attempted, so a failure cannot leave a name
+  // behind that a later capture would try — and fail — to delete again.
+  capturedFrames.delete(owner);
+  try {
+    await deleteBlob(filename);
+  } catch (err) {
+    console.error('Could not delete captured frame', filename, err);
+  }
+}
+
+/**
+ * Clears the captured frame a job was just queued from. The bytes have already
+ * been relayed to the receiver by then, and nothing downstream reads the blob
+ * again — the collector only keeps its name as a label — so once the job is
+ * accepted the frame has done its job.
+ */
+async function releaseFrameToJob(owner: string, filename: string): Promise<void> {
+  if (capturedFrames.get(owner) !== filename) return;
+  await discardCapturedFrame(owner);
+}
+
+/**
+ * POST /api/upload/frame  — multipart/form-data with field name "file"
+ *   →  { url }
+ *
+ * Stores one frame captured from a video being viewed, replacing whatever the
+ * caller captured before it. No thumbnail is made: nothing browses these, and
+ * the page previews the frame from the copy it still holds in memory.
+ */
+router.post('/frame', handleUploadErrors, async (req: Request, res: Response) => {
+  if (!req.file) {
+    res.status(400).json({ error: 'No frame provided' });
+    return;
+  }
+  if (!req.file.mimetype.toLowerCase().startsWith('image/')) {
+    res.status(400).json({ error: 'A frame must be an image' });
+    return;
+  }
+
+  const owner = req.user!.email;
+  await discardCapturedFrame(owner);
+
+  try {
+    const ext = resolveExt(req.file.originalname, req.file.mimetype);
+    const filename = `${uuidv4()}${ext}`;
+    const url = await uploadFileToBlob(req.file.buffer, filename, req.file.mimetype);
+    capturedFrames.set(owner, filename);
+    res.json({ url });
+  } catch (err) {
+    console.error('Could not store captured frame:', err);
+    res.status(500).json({ error: 'Could not save that frame' });
+  }
+});
+
+/**
+ * DELETE /api/upload/frame  →  204
+ *
+ * Throws away the caller's captured frame — what the page asks for when the
+ * user closes the generate dialog without queueing anything.
+ */
+router.delete('/frame', async (req: Request, res: Response) => {
+  await discardCapturedFrame(req.user!.email);
+  res.status(204).end();
 });
 
 /** The longest motion prompt accepted; it travels to the receiver in a query string. */
@@ -401,6 +491,9 @@ router.post('/generate-video', async (req: Request, res: Response) => {
     return;
   }
 
+  // The frame has been relayed; if it was a scratch capture it is done with.
+  await releaseFrameToJob(req.user!.email, filename);
+
   const tracked = await trackQueuedJob(result.job.promptId, 'video', destination.entity, req, {
     startImage: filename,
     frames,
@@ -530,6 +623,8 @@ router.post('/generate-images', async (req: Request, res: Response) => {
     res.status(result.status).json({ error: result.error });
     return;
   }
+
+  await releaseFrameToJob(req.user!.email, filename);
 
   const tracked = await trackQueuedJob(result.job.promptId, 'images', destination.entity, req, {
     startImage: filename,

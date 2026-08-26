@@ -135,6 +135,27 @@ export class EntityService {
   }
 
   /**
+   * Stores one frame captured from a video so a generator can be pointed at it,
+   * and answers with its url. Scratch storage, not gallery media: the server
+   * keeps only the caller's newest frame, so this also discards the last one.
+   * See POST /api/upload/frame.
+   */
+  uploadFrame(file: File): Observable<{ url: string }> {
+    const formData = new FormData();
+    formData.append('file', file);
+    return this.http.post<{ url: string }>('/api/upload/frame', formData);
+  }
+
+  /**
+   * Throws away the captured frame, for when the user closes the generate
+   * dialog without queueing anything. A queued job clears its own frame
+   * server-side, so this is only the abandoned path.
+   */
+  discardFrame(): Observable<void> {
+    return this.http.delete<void>('/api/upload/frame');
+  }
+
+  /**
    * Queues an image-to-video job on the external receiver, using one stored
    * photo as the start frame. The photo is relayed exactly as stored — still
    * encrypted — so the receiver decrypts it. See POST /api/upload/generate-video.

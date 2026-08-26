@@ -12,6 +12,9 @@ const DRAG_SLOP = 10;
 /** How long the centre play/pause flash stays up. Must match the CSS animation. */
 const FLASH_MS = 700;
 
+/** JPEG quality a captured frame is encoded at — high enough to feed a generator. */
+const FRAME_QUALITY = 0.92;
+
 /**
  * Video player with our own control bar.
  *
@@ -116,7 +119,11 @@ export class VideoPlayer implements OnDestroy {
 
   protected videoEl = viewChild.required<ElementRef<HTMLVideoElement>>('video');
 
-  protected playing = signal(false);
+  /**
+   * Public because a host may need to know: generating from a frame only makes
+   * sense once the user has stopped on the one they want.
+   */
+  readonly playing = signal(false);
   protected muted = signal(false);
   protected currentTime = signal(0);
   protected duration = signal(0);
@@ -296,6 +303,46 @@ export class VideoPlayer implements OnDestroy {
     this.playing.set(false);
     this.controlsVisible.set(true);
     this.ended.emit();
+  }
+
+  // ── Frame capture ──────────────────────────────────────────────────────────
+
+  /**
+   * The frame on screen right now, as a JPEG — what a caller feeds to a
+   * generator when the user has scrubbed to the moment they want.
+   *
+   * Playback is stopped first so the captured frame is the one that was on
+   * screen when they asked, rather than whichever came up while the dialog
+   * opened. Null means there was nothing to read: metadata not loaded yet, or a
+   * source the canvas refuses to give pixels back for.
+   */
+  async captureFrame(): Promise<Blob | null> {
+    const video = this.videoEl().nativeElement;
+    if (!video.paused) video.pause();
+
+    const { videoWidth: width, videoHeight: height } = video;
+    if (!width || !height) return null;
+
+    const canvas = document.createElement('canvas');
+    canvas.width = width;
+    canvas.height = height;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return null;
+
+    try {
+      ctx.drawImage(video, 0, 0, width, height);
+      return await new Promise<Blob | null>(resolve =>
+        canvas.toBlob(resolve, 'image/jpeg', FRAME_QUALITY)
+      );
+    } catch {
+      // A cross-origin source taints the canvas and toBlob() throws on read.
+      return null;
+    }
+  }
+
+  /** Where the playhead is, for labelling a capture taken from this player. */
+  frameTime(): number {
+    return this.videoEl().nativeElement.currentTime;
   }
 
   /** Formats seconds as m:ss (or h:mm:ss past an hour). */

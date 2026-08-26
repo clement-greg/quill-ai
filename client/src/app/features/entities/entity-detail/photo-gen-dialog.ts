@@ -13,6 +13,8 @@ export interface PhotoGenDialogData {
   /** Thumbnail of the photo the face is taken from, shown for confirmation. */
   thumbnailUrl: string;
   caption?: string;
+  /** Overrides the line under the thumbnail — a captured video frame says so. */
+  hint?: string;
 }
 
 /**
@@ -71,7 +73,7 @@ const ADVANCED_LIMITS = {
     <mat-dialog-content>
       <div class="still">
         <img [src]="data.thumbnailUrl" [alt]="data.caption || 'Reference photo'" />
-        <p class="still-hint">This photo's face is kept. Describe the images you want.</p>
+        <p class="still-hint">{{ data.hint || "This photo's face is kept. Describe the images you want." }}</p>
       </div>
       <mat-form-field appearance="outline" class="prompt-field">
         <mat-label>Image prompt</mat-label>

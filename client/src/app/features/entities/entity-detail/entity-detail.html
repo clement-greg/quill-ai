@@ -561,6 +561,23 @@
       </div>
 
       <div class="lightbox-actions" (click)="$event.stopPropagation()">
+        <!--
+          Generation from a video starts at whatever frame is on screen, so these
+          only appear on a paused video — a still already has the same two
+          actions on its long-press menu.
+        -->
+        @if (isVideo(photo.url) && canGenerateFromFrame()) {
+          <button mat-stroked-button class="lightbox-action-btn" [disabled]="capturingFrame()"
+                  (click)="generateVideoFromCurrentFrame()" aria-label="Generate video from this frame">
+            <mat-icon>movie</mat-icon>
+            Video from frame
+          </button>
+          <button mat-stroked-button class="lightbox-action-btn" [disabled]="capturingFrame()"
+                  (click)="generateImagesFromCurrentFrame()" aria-label="Generate photos from this frame">
+            <mat-icon>auto_awesome</mat-icon>
+            Photos from frame
+          </button>
+        }
         @if (photo.hidden) {
           <button mat-stroked-button class="lightbox-action-btn" (click)="lightboxUnhide()" aria-label="Unhide photo">
             <mat-icon>visibility</mat-icon>
