@@ -57,11 +57,29 @@ interface AppConfig {
  */
 export const FOUNDRY_API_VERSION_DEFAULT = '2025-04-01-preview';
 
+/**
+ * Deployment names used when a chat tier is not configured.
+ *
+ * These are the tiers the app is built around, so they are defaults rather than
+ * required settings: an environment that has not been told about them still
+ * gets working AI instead of a 404 on every request. Override per environment
+ * with FOUNDRY_LOW_MODEL / FOUNDRY_MID_MODEL / FOUNDRY_HIGH_MODEL when the
+ * deployments are named differently.
+ */
+export const FOUNDRY_CHAT_TIER_DEFAULTS = {
+  lowModel: 'gpt-5.6-luna',
+  midModel: 'gpt-5.6-terra',
+  highModel: 'gpt-5.6-sol',
+} as const;
+
 function loadConfig(): AppConfig {
   const localPath = path.join(__dirname, '..', '_private', 'config.json');
   if (fs.existsSync(localPath)) {
     const local = JSON.parse(fs.readFileSync(localPath, 'utf-8')) as AppConfig;
     local.foundry.apiVersion ||= FOUNDRY_API_VERSION_DEFAULT;
+    local.foundry.lowModel ||= FOUNDRY_CHAT_TIER_DEFAULTS.lowModel;
+    local.foundry.midModel ||= FOUNDRY_CHAT_TIER_DEFAULTS.midModel;
+    local.foundry.highModel ||= FOUNDRY_CHAT_TIER_DEFAULTS.highModel;
     return local;
   }
 
@@ -83,9 +101,9 @@ function loadConfig(): AppConfig {
       key: process.env['FOUNDRY_KEY']!,
       apiVersion: process.env['FOUNDRY_API_VERSION'] || FOUNDRY_API_VERSION_DEFAULT,
       embeddingModel: process.env['FOUNDRY_EMBEDDING_MODEL']!,
-      lowModel: process.env['FOUNDRY_LOW_MODEL']!,
-      midModel: process.env['FOUNDRY_MID_MODEL']!,
-      highModel: process.env['FOUNDRY_HIGH_MODEL']!,
+      lowModel: process.env['FOUNDRY_LOW_MODEL'] || FOUNDRY_CHAT_TIER_DEFAULTS.lowModel,
+      midModel: process.env['FOUNDRY_MID_MODEL'] || FOUNDRY_CHAT_TIER_DEFAULTS.midModel,
+      highModel: process.env['FOUNDRY_HIGH_MODEL'] || FOUNDRY_CHAT_TIER_DEFAULTS.highModel,
       imageGenerationEndpoint: process.env['FOUNDRY_IMAGE_GENERATION_ENDPOINT']!,
       imageGenerationKey: process.env['FOUNDRY_IMAGE_GENERATION_KEY']!,
       imageGenerationModel: process.env['FOUNDRY_IMAGE_GENERATION_MODEL']!,
