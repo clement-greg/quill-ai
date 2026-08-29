@@ -7,7 +7,7 @@ const router = Router();
 const client = new AzureOpenAI({
   endpoint: config.foundry.endpoint,
   apiKey: config.foundry.key,
-  apiVersion: '2024-10-21',
+  apiVersion: config.foundry.apiVersion,
 });
 
 interface GrammarError {
@@ -69,7 +69,7 @@ router.post('/check', async (req: Request, res: Response) => {
 
   try {
     const completion = await client.chat.completions.create({
-      model: config.foundry.miniModel,
+      model: config.foundry.midModel,
       messages: [
         { role: 'system', content: SYSTEM_PROMPT },
         { role: 'user', content: userContent },

@@ -295,12 +295,13 @@ export async function buildChapterContext(
 const beatSheetClient = new AzureOpenAI({
   endpoint: config.foundry.endpoint,
   apiKey: config.foundry.key,
-  apiVersion: '2024-10-21',
+  apiVersion: config.foundry.apiVersion,
 });
 
 /**
  * Stage 1 of drafting: turn the assembled context into a short, ordered scene
- * beat sheet. Cheap (mini model) and dramatically improves the structural
+ * beat sheet. Runs on the mid tier — this is structure, not prose — and
+ * dramatically improves the structural
  * coherence of the prose draft that follows. Returns null on failure so the
  * caller can fall back to drafting directly from the outline.
  */
@@ -310,7 +311,7 @@ export async function generateChapterBeatSheet(
 ): Promise<string | null> {
   try {
     const response = await beatSheetClient.chat.completions.create({
-      model: config.foundry.miniModel,
+      model: config.foundry.midModel,
       messages: [
         {
           role: 'system',

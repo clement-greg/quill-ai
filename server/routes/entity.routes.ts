@@ -14,7 +14,7 @@ import { deleteTimelineEventChunksForEntity } from '../services/timeline-event-c
 const aiClient = new AzureOpenAI({
   endpoint: config.foundry.endpoint,
   apiKey: config.foundry.key,
-  apiVersion: '2024-10-21',
+  apiVersion: config.foundry.apiVersion,
 });
 
 const router = Router();
@@ -669,7 +669,7 @@ router.post('/:id/generate-personality', async (req: Request, res: Response) => 
       `Basic description: ${basicDescription}`;
 
     const completion = await aiClient.chat.completions.create({
-      model: config.foundry.miniModel,
+      model: config.foundry.midModel,
       messages: [{ role: 'user', content: metaPrompt }],
     });
 
@@ -775,7 +775,7 @@ router.post('/:id/generate-biography', async (req: Request, res: Response) => {
       contextBlock;
 
     const completion = await aiClient.chat.completions.create({
-      model: config.foundry.miniModel,
+      model: config.foundry.midModel,
       messages: [{ role: 'user', content: prompt }],
     });
 

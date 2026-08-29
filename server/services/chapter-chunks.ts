@@ -213,9 +213,13 @@ export async function searchChapterChunks(
  * remembers verbatim — because a short name embeds into roughly the same place
  * as every other name. This complements it with a substring match.
  *
- * The full phrase is tried first; if it yields nothing, the query's significant
- * tokens (stop words and 2-letter fragments dropped) are AND-ed, so "how long
- * did Dale stay" still matches a passage containing both "Dale" and "stay".
+ * Three passes, each used only if the previous found nothing: the whole phrase;
+ * then the query's significant tokens (stop words and 2-letter fragments
+ * dropped) AND-ed together; then those tokens OR-ed, ranked by how many of them
+ * a passage contains. The OR pass matters for the questions authors actually
+ * ask -- "what did Mattice tell Dale about Site D" names three things that
+ * rarely all land in one 1200-character passage, but the passage carrying two
+ * of them is usually the answer.
  * Returns an empty array on any failure so callers can fall back gracefully.
  */
 const KEYWORD_STOP_WORDS = new Set([
@@ -250,12 +254,17 @@ export async function keywordSearchChapterChunks(
     scopeParams.push({ name: '@seriesId', value: opts.seriesId });
   }
 
-  const run = async (matchFilters: string[], matchParams: SqlParameter[]): Promise<ChunkSearchResult[]> => {
+  const run = async (
+    matchFilters: string[],
+    matchParams: SqlParameter[],
+    limit = topK,
+  ): Promise<ChunkSearchResult[]> => {
     const filters = [...scopeFilters, ...matchFilters];
+    const top = Math.max(1, Math.min(150, Math.floor(limit)));
     const query = withOwnerFilter(source, {
       // score 0 keeps the shape identical to the vector results (0 = perfect
       // match under cosine distance), so callers can merge the two lists.
-      query: `SELECT TOP ${topK} c.chapterId, c.content, 0 AS score FROM c WHERE ${filters.join(' AND ')}`,
+      query: `SELECT TOP ${top} c.chapterId, c.content, 0 AS score FROM c WHERE ${filters.join(' AND ')}`,
       parameters: [...scopeParams, ...matchParams],
     });
     const { resources } = await chunksContainer.items.query<ChunkSearchResult>(query).fetchAll();
@@ -273,10 +282,24 @@ export async function keywordSearchChapterChunks(
     )].slice(0, 6);
     if (tokens.length === 0) return [];
 
-    return await run(
-      tokens.map((_, i) => `CONTAINS(c.content, @t${i}, true)`),
-      tokens.map((t, i) => ({ name: `@t${i}`, value: t })),
-    );
+    const conditions = tokens.map((_, i) => `CONTAINS(c.content, @t${i}, true)`);
+    const tokenParams = tokens.map((t, i) => ({ name: `@t${i}`, value: t }));
+
+    const allHits = await run(conditions, tokenParams);
+    if (allHits.length > 0) return allHits;
+    if (tokens.length < 2) return [];
+
+    // OR pass: fetch a wider slice, then rank locally by how many of the query's
+    // tokens the passage actually contains, so the best partial matches lead.
+    const anyHits = await run([`(${conditions.join(' OR ')})`], tokenParams, topK * 3);
+    return anyHits
+      .map(hit => {
+        const haystack = hit.content.toLowerCase();
+        return { hit, matched: tokens.filter(t => haystack.includes(t)).length };
+      })
+      .sort((a, b) => b.matched - a.matched)
+      .slice(0, topK)
+      .map(({ hit }) => hit);
   } catch (err) {
     console.error('Chapter chunk keyword search failed:', err);
     return [];

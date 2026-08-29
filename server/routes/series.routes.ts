@@ -8,7 +8,7 @@ import { readOwnedItem, readAccessibleItem } from '../middleware/owner-guard';
 const aiClient = new AzureOpenAI({
   endpoint: config.foundry.endpoint,
   apiKey: config.foundry.key,
-  apiVersion: '2024-10-21',
+  apiVersion: config.foundry.apiVersion,
 });
 
 const router = Router();
@@ -264,7 +264,7 @@ router.post('/:id/generate-system-prompt', async (req: Request, res: Response) =
       `Basic description: ${basicPrompt}`;
 
     const completion = await aiClient.chat.completions.create({
-      model: config.foundry.miniModel,
+      model: config.foundry.midModel,
       messages: [{ role: 'user', content: metaPrompt }],
     });
 

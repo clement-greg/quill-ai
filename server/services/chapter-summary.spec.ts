@@ -91,9 +91,9 @@ describe('generateChapterSummary', () => {
   });
 
   it('drops the filtered paragraph and summarizes the rest when the filter trips', async () => {
-    createMock.mockImplementation(async (req: { messages: { content: string }[]; max_tokens?: number }) => {
+    createMock.mockImplementation(async (req: { messages: { content: string }[]; max_completion_tokens?: number }) => {
       const input = req.messages[req.messages.length - 1].content;
-      const isProbe = req.max_tokens === 1;
+      const isProbe = req.max_completion_tokens === 1;
       if (isProbe) {
         if (input.includes('Ford argues')) throw filterError;
         return {};
@@ -124,9 +124,9 @@ describe('generateChapterSummary', () => {
   });
 
   it('keeps a paragraph when its filter probe fails for an unrelated reason', async () => {
-    createMock.mockImplementation(async (req: { max_tokens?: number }) => {
-      if (req.max_tokens === 1) throw new Error('probe timeout');
-      if (createMock.mock.calls.filter(c => c[0].max_tokens !== 1).length === 1) throw filterError;
+    createMock.mockImplementation(async (req: { max_completion_tokens?: number }) => {
+      if (req.max_completion_tokens === 1) throw new Error('probe timeout');
+      if (createMock.mock.calls.filter(c => c[0].max_completion_tokens !== 1).length === 1) throw filterError;
       return { choices: [{ message: { content: 'Full summary after all.' } }] };
     });
 

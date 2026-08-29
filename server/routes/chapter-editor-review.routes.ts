@@ -16,7 +16,7 @@ const router = Router();
 const client = new AzureOpenAI({
   endpoint: config.foundry.endpoint,
   apiKey: config.foundry.key,
-  apiVersion: '2024-10-21',
+  apiVersion: config.foundry.apiVersion,
 });
 
 const VALID_CATEGORIES: ReadonlySet<string> = new Set<SuggestionCategory>([
@@ -167,7 +167,7 @@ router.post('/', async (req: Request, res: Response) => {
     }
 
     const stream = await client.chat.completions.create({
-      model: config.foundry.fullModel,
+      model: config.foundry.highModel,
       messages: [
         { role: 'system', content: buildEditorPrompt(cleanBlocks, contextText) },
         { role: 'user', content: 'Review the chapter and emit editorial suggestions as JSONL.' },
@@ -283,7 +283,7 @@ router.post('/refine', async (req: Request, res: Response) => {
 
   try {
     const response = await client.chat.completions.create({
-      model: config.foundry.fullModel,
+      model: config.foundry.midModel,
       messages: [
         { role: 'system', content: systemPrompt },
         { role: 'user', content: instruction },

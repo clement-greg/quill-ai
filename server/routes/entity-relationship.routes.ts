@@ -25,7 +25,7 @@ const chaptersContainer = getContainer('chapters');
 const aiClient = new AzureOpenAI({
   endpoint: config.foundry.endpoint,
   apiKey: config.foundry.key,
-  apiVersion: '2024-10-21',
+  apiVersion: config.foundry.apiVersion,
 });
 
 const VALID_RELATIONSHIP_TYPES = new Set<RelationshipType>([
@@ -186,7 +186,7 @@ router.post('/extract-from-chapter', async (req: Request, res: Response) => {
     ].join('\n');
 
     const completion = await aiClient.chat.completions.create({
-      model: config.foundry.fullModel,
+      model: config.foundry.highModel,
       messages: [
         { role: 'system', content: RELATIONSHIP_EXTRACTION_PROMPT },
         { role: 'user', content: userContent },

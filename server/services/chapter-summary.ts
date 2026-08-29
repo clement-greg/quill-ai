@@ -8,7 +8,7 @@ import { Chapter } from '../../shared/models/chapter.model';
 const client = new AzureOpenAI({
   endpoint: config.foundry.endpoint,
   apiKey: config.foundry.key,
-  apiVersion: '2024-10-21',
+  apiVersion: config.foundry.apiVersion,
 });
 
 const SUMMARY_SYSTEM_PROMPT =
@@ -46,7 +46,7 @@ function isContentFilterError(err: unknown): boolean {
 
 async function requestSummary(input: string): Promise<string | null> {
   const response = await client.chat.completions.create({
-    model: config.foundry.miniModel,
+    model: config.foundry.midModel,
     messages: [
       { role: 'system', content: SUMMARY_SYSTEM_PROMPT },
       { role: 'user', content: input },
@@ -59,13 +59,15 @@ async function requestSummary(input: string): Promise<string | null> {
 /**
  * Cheap 1-token probe to check whether a prompt alone would be blocked by the
  * content filter, without paying for a full completion.
+ * Must use the same tier as the real call — Azure content filters are
+ * configured per deployment, so a probe on another tier proves nothing.
  */
 async function isPromptSafe(input: string): Promise<boolean> {
   try {
     await client.chat.completions.create({
-      model: config.foundry.miniModel,
+      model: config.foundry.midModel,
       messages: [{ role: 'user', content: input }],
-      max_tokens: 1,
+      max_completion_tokens: 1,
       stream: false,
     });
     return true;

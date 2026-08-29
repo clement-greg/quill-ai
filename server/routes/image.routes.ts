@@ -9,7 +9,7 @@ import { parseRange } from '../services/http-range';
 const aiClient = new AzureOpenAI({
   endpoint: config.foundry.endpoint,
   apiKey: config.foundry.key,
-  apiVersion: '2024-10-21',
+  apiVersion: config.foundry.apiVersion,
 });
 
 const router = Router();
@@ -68,7 +68,7 @@ function isContentFilterError(err: unknown): boolean {
 
 async function requestImagePrompt(userContent: string): Promise<string> {
   const completion = await aiClient.chat.completions.create({
-    model: config.foundry.miniModel,
+    model: config.foundry.midModel,
     messages: [
       { role: 'system', content: SUGGEST_PROMPT_SYSTEM_PROMPT },
       { role: 'user', content: userContent },
@@ -80,13 +80,15 @@ async function requestImagePrompt(userContent: string): Promise<string> {
 /**
  * Cheap 1-token probe to check whether a passage alone would be blocked by the
  * content filter, without paying for a full completion.
+ * Must use the same tier as the real call — Azure content filters are
+ * configured per deployment, so a probe on another tier proves nothing.
  */
 async function isPromptSafe(input: string): Promise<boolean> {
   try {
     await aiClient.chat.completions.create({
-      model: config.foundry.miniModel,
+      model: config.foundry.midModel,
       messages: [{ role: 'user', content: input }],
-      max_tokens: 1,
+      max_completion_tokens: 1,
     });
     return true;
   } catch (err) {

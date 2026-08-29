@@ -2,6 +2,7 @@ import { Request } from 'express';
 import { getContainer } from './cosmos';
 import { searchChapterChunks, hybridSearchChapterChunks } from './chapter-chunks';
 import { Chapter } from '../../shared/models/chapter.model';
+import { ChapterCitation } from '../../shared/models/chat-session.model';
 import { Book } from '../../shared/models/book.model';
 import { Entity } from '../../shared/models/entity.model';
 import { EntityQuote } from '../../shared/models/entity-quote.model';
@@ -18,13 +19,26 @@ import { EntityQuote } from '../../shared/models/entity-quote.model';
  */
 export async function buildChapterContextPrompt(
   chapterId: string,
-  opts: { selectedText?: string; retrievalQuery?: string; retrievalQueries?: string[]; instructionText?: string },
+  opts: {
+    selectedText?: string;
+    retrievalQuery?: string;
+    retrievalQueries?: string[];
+    instructionText?: string;
+    /**
+     * Tag each excerpt with a citation number and return the chapters behind
+     * them, so an answer to a factual question can be sourced. Off by default:
+     * the inline AI only ever emits prose for insertion, where a stray "[1]"
+     * would land in the manuscript.
+     */
+     cite?: boolean;
+  },
   req: Request,
-): Promise<{ chapterTitle: string; contextSuffix: string }> {
+): Promise<{ chapterTitle: string; contextSuffix: string; citations: ChapterCitation[] }> {
+  let citations: ChapterCitation[] = [];
   try {
     const container = getContainer('chapters');
     const { resource } = await container.item(chapterId, chapterId).read<Chapter>();
-    if (!resource) return { chapterTitle: '', contextSuffix: '' };
+    if (!resource) return { chapterTitle: '', contextSuffix: '', citations };
 
     let contextSuffix = '';
 
@@ -46,19 +60,49 @@ export async function buildChapterContextPrompt(
         queries.map(q => hybridSearchChapterChunks(q, { bookId: resource.bookId, topK: 6 }, req)),
       );
       const seen = new Set<string>();
-      const contents: string[] = [];
+      const hits: { chapterId: string; content: string }[] = [];
       // Round-robin across the queries so no single one crowds the others out.
-      for (let rank = 0; contents.length < 12; rank++) {
-        const round = perQuery.map(hits => hits[rank]).filter(Boolean);
+      for (let rank = 0; hits.length < 12; rank++) {
+        const round = perQuery.map(qHits => qHits[rank]).filter(Boolean);
         if (round.length === 0) break;
         for (const hit of round) {
           if (seen.has(hit.content)) continue;
           seen.add(hit.content);
-          contents.push(hit.content);
+          hits.push({ chapterId: hit.chapterId, content: hit.content });
         }
       }
-      if (contents.length > 0) {
-        contextSuffix = `\n\nHere are the most relevant excerpts from the book:\n\n${contents.join('\n\n---\n\n')}`;
+
+      if (hits.length > 0 && opts.cite) {
+        // Number the distinct source chapters so a factual answer can cite them,
+        // and resolve their titles for the author-facing source chips.
+        const distinctChapterIds = [...new Set(hits.map(h => h.chapterId))];
+        const titleById = new Map<string, string>();
+        await Promise.all(
+          distinctChapterIds.map(async cid => {
+            try {
+              const { resource: chapter } = await container.item(cid, cid).read<Chapter>();
+              if (chapter?.title) titleById.set(cid, chapter.title);
+            } catch {
+              // Leave untitled if the chapter can't be read.
+            }
+          })
+        );
+        const numberById = new Map(distinctChapterIds.map((cid, i) => [cid, i + 1]));
+        citations = distinctChapterIds.map(cid => ({
+          n: numberById.get(cid)!,
+          chapterId: cid,
+          title: titleById.get(cid) ?? 'Untitled chapter',
+        }));
+        const labeled = hits
+          .map(h => `[${numberById.get(h.chapterId)}] (from "${titleById.get(h.chapterId) ?? 'Untitled chapter'}")\n${h.content}`)
+          .join('\n\n---\n\n');
+        contextSuffix =
+          `\n\nHere are the most relevant excerpts from the book, each prefixed with a numbered ` +
+          `source tag:\n\n${labeled}`;
+      } else if (hits.length > 0) {
+        contextSuffix =
+          `\n\nHere are the most relevant excerpts from the book:\n\n` +
+          hits.map(h => h.content).join('\n\n---\n\n');
       }
     }
 
@@ -85,9 +129,9 @@ export async function buildChapterContextPrompt(
       }
     }
 
-    return { chapterTitle: resource.title ?? '', contextSuffix };
+    return { chapterTitle: resource.title ?? '', contextSuffix, citations };
   } catch {
-    return { chapterTitle: '', contextSuffix: '' };
+    return { chapterTitle: '', contextSuffix: '', citations: [] };
   }
 }
 

@@ -5,7 +5,7 @@ import { sanitizeForModeration } from './content-sanitize';
 const client = new AzureOpenAI({
   endpoint: config.foundry.endpoint,
   apiKey: config.foundry.key,
-  apiVersion: '2024-10-21',
+  apiVersion: config.foundry.apiVersion,
 });
 
 export async function generateEmbedding(text: string): Promise<number[]> {

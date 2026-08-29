@@ -10,7 +10,7 @@ const router = Router();
 const client = new AzureOpenAI({
   endpoint: config.foundry.endpoint,
   apiKey: config.foundry.key,
-  apiVersion: '2024-10-21',
+  apiVersion: config.foundry.apiVersion,
 });
 
 // POST /general — generic inline AI assist (for notes, etc.) with optional series context
@@ -57,12 +57,12 @@ router.post('/general', async (req: Request, res: Response) => {
 
   try {
     const stream = await client.chat.completions.create({
-      model: config.foundry.miniModel,
+      model: config.foundry.midModel,
       messages: [
         { role: 'system', content: systemPrompt },
         ...messages,
       ],
-      max_tokens: 2048,
+      max_completion_tokens: 2048,
       stream: true,
     });
 
@@ -176,12 +176,12 @@ router.post('/:chapterId', async (req: Request, res: Response) => {
 
   try {
     const stream = await client.chat.completions.create({
-      model: config.foundry.miniModel,
+      model: config.foundry.midModel,
       messages: [
         { role: 'system', content: systemPrompt },
         ...messages,
       ],
-      max_tokens: 2048,
+      max_completion_tokens: 2048,
       stream: true,
     });
 

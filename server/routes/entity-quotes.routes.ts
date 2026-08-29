@@ -13,7 +13,7 @@ const router = Router();
 const aiClient = new AzureOpenAI({
   endpoint: config.foundry.endpoint,
   apiKey: config.foundry.key,
-  apiVersion: '2024-10-21',
+  apiVersion: config.foundry.apiVersion,
 });
 
 // POST /api/entity-quotes/capture
@@ -75,7 +75,7 @@ router.post('/capture', async (req: Request, res: Response) => {
       `Who is speaking this quote? Reply with ONLY the exact character name from the list above, or "unknown" if you cannot determine it.`;
 
     const aiResponse = await aiClient.chat.completions.create({
-      model: config.foundry.miniModel,
+      model: config.foundry.lowModel,
       messages: [{ role: 'user', content: aiPrompt }],
     });
 

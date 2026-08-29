@@ -22,9 +22,18 @@ interface AppConfig {
     projectId: string;
     endpoint: string;
     key: string;
+    /** Azure OpenAI REST api-version used by every chat client. */
+    apiVersion: string;
     embeddingModel: string;
-    miniModel: string;
-    fullModel: string;
+    /**
+     * The three chat tiers. Every completion picks one deliberately:
+     * `low` for mechanical one-liners and latency-sensitive probes, `mid` for
+     * interactive assistant turns and bounded structured work, `high` for
+     * long-form prose and whole-chapter extraction where quality wins.
+     */
+    lowModel: string;
+    midModel: string;
+    highModel: string;
     imageGenerationEndpoint: string;
     imageGenerationKey: string;
     imageGenerationModel: string;
@@ -40,10 +49,19 @@ interface AppConfig {
   };
 }
 
+/**
+ * Azure OpenAI api-version used when none is configured. The gpt-5.6 family is
+ * only exposed from 2025-04-01-preview onward, so this must not be lowered
+ * below that while those deployments are in use.
+ */
+export const FOUNDRY_API_VERSION_DEFAULT = '2025-04-01-preview';
+
 function loadConfig(): AppConfig {
   const localPath = path.join(__dirname, '..', '_private', 'config.json');
   if (fs.existsSync(localPath)) {
-    return JSON.parse(fs.readFileSync(localPath, 'utf-8'));
+    const local = JSON.parse(fs.readFileSync(localPath, 'utf-8')) as AppConfig;
+    local.foundry.apiVersion ||= FOUNDRY_API_VERSION_DEFAULT;
+    return local;
   }
 
   return {
@@ -62,9 +80,11 @@ function loadConfig(): AppConfig {
       projectId: process.env['FOUNDRY_PROJECT_ID']!,
       endpoint: process.env['FOUNDRY_ENDPOINT']!,
       key: process.env['FOUNDRY_KEY']!,
+      apiVersion: process.env['FOUNDRY_API_VERSION'] || FOUNDRY_API_VERSION_DEFAULT,
       embeddingModel: process.env['FOUNDRY_EMBEDDING_MODEL']!,
-      miniModel: process.env['FOUNDRY_MINI_MODEL']!,
-      fullModel: process.env['FOUNDRY_FULL_MODEL']!,
+      lowModel: process.env['FOUNDRY_LOW_MODEL']!,
+      midModel: process.env['FOUNDRY_MID_MODEL']!,
+      highModel: process.env['FOUNDRY_HIGH_MODEL']!,
       imageGenerationEndpoint: process.env['FOUNDRY_IMAGE_GENERATION_ENDPOINT']!,
       imageGenerationKey: process.env['FOUNDRY_IMAGE_GENERATION_KEY']!,
       imageGenerationModel: process.env['FOUNDRY_IMAGE_GENERATION_MODEL']!,

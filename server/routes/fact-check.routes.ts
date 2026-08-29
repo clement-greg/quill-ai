@@ -15,7 +15,7 @@ const router = Router();
 const client = new AzureOpenAI({
   endpoint: config.foundry.endpoint,
   apiKey: config.foundry.key,
-  apiVersion: '2024-10-21',
+  apiVersion: config.foundry.apiVersion,
 });
 
 /** Chapters longer than this are checked from the start only, to bound cost. */
@@ -237,7 +237,7 @@ router.post('/', async (req: Request, res: Response) => {
 
   try {
     const completion = await client.chat.completions.create({
-      model: config.foundry.fullModel,
+      model: config.foundry.highModel,
       messages: [
         { role: 'system', content: SYSTEM_PROMPT },
         { role: 'user', content: userContent },

@@ -237,6 +237,36 @@ describe('keywordSearchChapterChunks', () => {
     expect(query).toContain('CONTAINS(c.content, @t0, true) AND CONTAINS(c.content, @t1, true)');
   });
 
+  it('falls back to OR-ing tokens, ranked by coverage, when the AND pass misses', async () => {
+    let call = 0;
+    chunksContainer.items.query.mockImplementation((spec: any) => ({
+      fetchAll: async () => {
+        call++;
+        // 1: whole phrase — miss. 2: all tokens AND-ed — miss. 3: OR pass.
+        if (call < 3) return { resources: [] };
+        expect(spec.query).toContain(' OR ');
+        return {
+          resources: [
+            { chapterId: 'ch-1', content: 'Only Dale was there.', score: 0 },
+            { chapterId: 'ch-2', content: 'Dale reached Site D with Mattice.', score: 0 },
+          ],
+        };
+      },
+    }));
+
+    const results = await keywordSearchChapterChunks('what did Mattice tell Dale about Site D', {}, OWNER);
+    // The passage containing the most query terms leads, even though neither
+    // passage contains all of them.
+    expect(results.map((r: any) => r.chapterId)).toEqual(['ch-2', 'ch-1']);
+  });
+
+  it('does not run an OR pass for a single-token query', async () => {
+    stubQueryResults([]);
+    expect(await keywordSearchChapterChunks('Mattice', {}, OWNER)).toEqual([]);
+    // Phrase pass and the single-token AND pass only.
+    expect(chunksContainer.items.query).toHaveBeenCalledTimes(2);
+  });
+
   it('returns an empty array on failure or an empty query', async () => {
     expect(await keywordSearchChapterChunks('   ', {}, OWNER)).toEqual([]);
     chunksContainer.items.query.mockImplementation(() => { throw new Error('cosmos down'); });

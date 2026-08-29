@@ -4,7 +4,12 @@ import { randomUUID } from 'crypto';
 import config from '../config';
 import { getContainer } from '../services/cosmos';
 import { withOwnerFilter } from '../middleware/owner-guard';
-import { searchChapterChunks, hybridSearchChapterChunks, reindexChapterChunks } from '../services/chapter-chunks';
+import {
+  searchChapterChunks,
+  hybridSearchChapterChunks,
+  reindexChapterChunks,
+  ChunkSearchResult,
+} from '../services/chapter-chunks';
 import { searchTimelineEvents, TimelineEventSearchResult } from '../services/timeline-event-chunks';
 import { Chapter, ChapterNote, OutlineItem } from '../../shared/models/chapter.model';
 import { ChapterCitation } from '../../shared/models/chat-session.model';
@@ -45,7 +50,7 @@ const router = Router();
 const client = new AzureOpenAI({
   endpoint: config.foundry.endpoint,
   apiKey: config.foundry.key,
-  apiVersion: '2024-10-21',
+  apiVersion: config.foundry.apiVersion,
 });
 
 const BASE_SYSTEM_PROMPT =
@@ -125,7 +130,8 @@ const SEARCH_CHAPTER_TEXT_GUIDANCE =
 
 /**
  * Builds a RAG-grounded system prompt for a chat turn. Embeds the last user
- * message, retrieves the most relevant story passages within `scope` (omit
+ * message (and the one before it, for elliptical follow-ups), retrieves the
+ * most relevant story passages within `scope` (omit
  * `seriesId` to search every chapter the user owns), and appends numbered,
  * citable excerpts. Returns the base prompt unchanged when nothing is retrieved.
  */
@@ -137,18 +143,36 @@ async function buildRagSystemPrompt(
   let systemPrompt = BASE_SYSTEM_PROMPT;
   let citations: ChapterCitation[] = [];
 
-  const lastUserMessage = [...messages].reverse().find(m => m.role === 'user');
-  const retrievalQuery = (lastUserMessage?.content ?? '').trim();
+  // Retrieve for the current question, and separately for the one before it.
+  // Follow-ups are usually elliptical ("and how long did that last?") and embed
+  // to nothing on their own; the previous question carries the nouns. They are
+  // kept as separate queries rather than concatenated so neither dilutes the
+  // other's embedding.
+  const userMessages = messages.filter(m => m.role === 'user');
+  const retrievalQuery = (userMessages.at(-1)?.content ?? '').trim();
   if (!retrievalQuery) return { systemPrompt, citations };
+  const priorQuery = (userMessages.at(-2)?.content ?? '').trim();
 
   // Search both the prose chunks and the structured timeline events (the LLM-built
   // "key events" on entities). Events capture plot-defining facts — deaths,
   // betrayals, revelations — that the prose often only alludes to, so they ground
   // questions ("what was Jim's fate") the prose alone answers incompletely.
-  const [chunks, timelineHits] = await Promise.all([
+  const [primaryChunks, priorChunks, timelineHits] = await Promise.all([
     hybridSearchChapterChunks(retrievalQuery, { ...scope, topK: 8 }, req),
+    priorQuery
+      ? hybridSearchChapterChunks(priorQuery, { ...scope, topK: 3 }, req)
+      : Promise.resolve([] as ChunkSearchResult[]),
     searchTimelineEvents(retrievalQuery, { seriesId: scope.seriesId, topK: 5 }, req),
   ]);
+
+  // Current-question hits lead; the follow-up context fills in behind them.
+  const seenContent = new Set<string>();
+  const chunks = [...primaryChunks, ...priorChunks].filter(c => {
+    const key = `${c.chapterId}::${c.content}`;
+    if (seenContent.has(key)) return false;
+    seenContent.add(key);
+    return true;
+  });
   if (chunks.length === 0 && timelineHits.length === 0) return { systemPrompt, citations };
 
   // Chapter-extracted events carry a chapterId, so they share the prose's chapter
@@ -253,7 +277,7 @@ async function streamChatResponse(
   messages: { role: 'user' | 'assistant'; content: string }[],
   citations: ChapterCitation[],
   tools?: Record<string, ChatTool>,
-  model: string = config.foundry.miniModel,
+  model: string = config.foundry.midModel,
 ): Promise<void> {
   // The running conversation; grows as tool calls/results are appended.
   const convo: unknown[] = [{ role: 'system', content: systemPrompt }, ...messages];
@@ -261,13 +285,30 @@ async function streamChatResponse(
   // Lottie URL to emit after the model's final text response (set when a tool with successLottie succeeds).
   let pendingLottie: string | null = null;
 
+  // Factual questions about the story routinely need several rounds -- look up an
+  // entity, search the prose for the name it surfaced, search again with a
+  // different term when the first misses -- and each round costs a turn. On the
+  // final turn tools are withheld so the model must produce text: without that,
+  // a question that used its whole budget searching ends as an empty reply.
+  const MAX_TURNS = 7;
+
   try {
     // Bounded loop: model turn → optional tool calls → model turn → … → answer.
-    for (let turn = 0; turn < 4; turn++) {
+    for (let turn = 0; turn < MAX_TURNS; turn++) {
+      const isFinalTurn = turn === MAX_TURNS - 1;
+      if (isFinalTurn && toolDefinitions) {
+        convo.push({
+          role: 'system',
+          content:
+            'You have no more searches available. Answer now from what you have already found. If it ' +
+            'is not enough, say plainly what you could not confirm and name the terms you searched, ' +
+            'so the author can point you somewhere better. Do not invent details.',
+        });
+      }
       const stream = await client.chat.completions.create({
         model,
         messages: convo as never,
-        ...(toolDefinitions ? { tools: toolDefinitions as never } : {}),
+        ...(toolDefinitions && !isFinalTurn ? { tools: toolDefinitions as never } : {}),
         stream: true,
       });
 
@@ -289,7 +330,7 @@ async function streamChatResponse(
       }
 
       const calls = toolCalls.filter(Boolean);
-      if (calls.length === 0 || !tools) {
+      if (calls.length === 0 || !tools || isFinalTurn) {
         if (pendingLottie) res.write(`data: ${JSON.stringify({ lottie: pendingLottie })}\n\n`);
         emitUsedCitations(res, answer, citations);
         res.write('data: [DONE]\n\n');
@@ -327,7 +368,8 @@ async function streamChatResponse(
         convo.push({ role: 'tool', tool_call_id: c.id, content: JSON.stringify(toolResult) });
       }
     }
-    // Exhausted the loop without a final text answer; close cleanly.
+    // Unreachable in practice: the final turn runs without tools and always
+    // returns above. Kept so the stream is closed cleanly regardless.
     res.write('data: [DONE]\n\n');
   } catch (err) {
     console.error('Chat session streaming error:', err);
@@ -671,7 +713,7 @@ async function generateChapterContent(bookId: string, title: string, description
 
   try {
     const response = await client.chat.completions.create({
-      model: config.foundry.fullModel,
+      model: config.foundry.highModel,
       messages: [
         { role: 'system', content: systemPrompt },
         { role: 'user', content: `Write the content for a chapter titled "${title}" based on the following description:\n\n${description}` },
@@ -1188,7 +1230,16 @@ function getSearchChapterTextTool(
       }
       const chunks = await hybridSearchChapterChunks(query, { ...scope, topK: 8 }, req);
       if (chunks.length === 0) {
-        return { toolResult: { found: false, message: `No chapter passages matched "${query}".` } };
+        return {
+          toolResult: {
+            found: false,
+            message:
+              `No chapter passages matched "${query}". This usually means the wording was off, not that ` +
+              `the fact is missing. Try again with a different term: a character's first name on its ` +
+              `own, a place or object, or a short phrase the passage itself would use. Only tell the ` +
+              `author you could not find it after two or three genuinely different attempts.`,
+          },
+        };
       }
 
       const chaptersContainer = getContainer('chapters');
@@ -2149,7 +2200,7 @@ router.post('/quick-chat', async (req: Request, res: Response) => {
 
   // Whole-chapter drafting: when the author asks to "write the chapter", assemble
   // the rich continuity-aware context (prior chapters, cast, voice, canon) and
-  // draft with the full model, no tools — just polished prose to insert.
+  // draft with the high tier, no tools — just polished prose to insert.
   if (chapterContext?.chapterId) {
     const lastUser = [...messages].reverse().find(m => m.role === 'user');
     if (isWholeChapterDraftRequest(lastUser?.content ?? '')) {
@@ -2173,11 +2224,11 @@ router.post('/quick-chat', async (req: Request, res: Response) => {
       const beats = await generateChapterBeatSheet(draftPrompt, lastUser?.content ?? '');
       if (beats) res.write(`data: ${JSON.stringify({ beats })}\n\n`);
 
-      // Stage 2: full-model prose draft, grounded in the beat sheet.
+      // Stage 2: high-tier prose draft, grounded in the beat sheet.
       const prosePrompt = beats
         ? `${draftPrompt}\n\nFollow this beat sheet, expanding each beat into immersive prose:\n${beats}`
         : draftPrompt;
-      await streamChatResponse(res, prosePrompt, messages, [], undefined, config.foundry.fullModel);
+      await streamChatResponse(res, prosePrompt, messages, [], undefined, config.foundry.highModel);
       return;
     }
   }
@@ -2190,11 +2241,13 @@ router.post('/quick-chat', async (req: Request, res: Response) => {
     // which is why factual questions used to miss the passage that answered them.
     const retrievalQueries = [lastUserMessage?.content, selectedText, surroundingText]
       .map(t => (t ?? '').trim()).filter(Boolean);
-    const { chapterTitle, contextSuffix } = await buildChapterContextPrompt(
+    const chapterCtx = await buildChapterContextPrompt(
       chapterContext.chapterId,
-      { selectedText, retrievalQueries, instructionText: lastUserMessage?.content ?? '' },
+      { selectedText, retrievalQueries, instructionText: lastUserMessage?.content ?? '', cite: true },
       req,
     );
+    const { chapterTitle, contextSuffix } = chapterCtx;
+    citations = chapterCtx.citations;
 
     const titlePart = chapterTitle ? ` chapter titled "${chapterTitle}"` : '';
     systemPrompt =
@@ -2205,7 +2258,14 @@ router.post('/quick-chat', async (req: Request, res: Response) => {
       'a QUESTION about the story - what happened, who said what, how long something lasts - answer it ' +
       'conversationally and ground the answer in the excerpts and your tools rather than writing prose ' +
       'to insert. Never invent a detail the story does not support.' +
-      contextSuffix;
+      contextSuffix +
+      (chapterCtx.citations.length > 0
+        ? '\n\nCITATION RULES (follow exactly): when you are ANSWERING A QUESTION, append the ' +
+          'source\'s number at the end of each sentence that uses it, written exactly like [1], ' +
+          'or [1][2] for two sources. Only cite numbers listed above. ' +
+          'When you are writing PROSE FOR THE AUTHOR TO INSERT ' +
+          'into the chapter, never include a bracketed number - it would land in the manuscript.'
+        : '');
 
     if (outline && outline.length > 0) {
       const outlineText = outline.map(item => {
@@ -2282,7 +2342,7 @@ router.post('/:id/name', async (req: Request, res: Response) => {
 
   try {
     const response = await client.chat.completions.create({
-      model: config.foundry.miniModel,
+      model: config.foundry.lowModel,
       messages: [
         {
           role: 'system',

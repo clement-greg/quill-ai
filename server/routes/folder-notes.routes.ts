@@ -10,7 +10,7 @@ const router = Router();
 const client = new AzureOpenAI({
   endpoint: config.foundry.endpoint,
   apiKey: config.foundry.key,
-  apiVersion: '2024-10-21',
+  apiVersion: config.foundry.apiVersion,
 });
 
 /** Strip HTML tags and return the first non-empty paragraph of plain text. */
@@ -30,7 +30,7 @@ function extractFirstParagraph(html: string): string {
 async function generateNoteName(firstParagraph: string): Promise<string> {
   try {
     const completion = await client.chat.completions.create({
-      model: config.foundry.miniModel,
+      model: config.foundry.lowModel,
       messages: [
         {
           role: 'system',
@@ -39,7 +39,7 @@ async function generateNoteName(firstParagraph: string): Promise<string> {
         },
         { role: 'user', content: firstParagraph },
       ],
-      max_tokens: 20,
+      max_completion_tokens: 20,
     });
     const name = completion.choices[0]?.message?.content?.trim();
     return name && name.length > 0 ? name : 'Untitled Note';

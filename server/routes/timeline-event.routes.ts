@@ -29,7 +29,7 @@ const chaptersContainer = getContainer('chapters');
 const aiClient = new AzureOpenAI({
   endpoint: config.foundry.endpoint,
   apiKey: config.foundry.key,
-  apiVersion: '2024-10-21',
+  apiVersion: config.foundry.apiVersion,
 });
 
 // GET all timeline events for an entity, in relative order
@@ -349,7 +349,7 @@ router.post('/extract-from-chapter', async (req: Request, res: Response) => {
     ].join('\n');
 
     const completion = await aiClient.chat.completions.create({
-      model: config.foundry.fullModel,
+      model: config.foundry.highModel,
       messages: [
         { role: 'system', content: EXTRACTION_SYSTEM_PROMPT },
         { role: 'user', content: userContent },
@@ -575,7 +575,7 @@ router.get('/places/autocomplete', async (req: Request, res: Response) => {
   }
   try {
     const completion = await aiClient.chat.completions.create({
-      model: config.foundry.miniModel,
+      model: config.foundry.lowModel,
       messages: [
         {
           role: 'system',
@@ -584,7 +584,7 @@ router.get('/places/autocomplete', async (req: Request, res: Response) => {
         { role: 'user', content: q },
       ],
       response_format: { type: 'json_object' },
-      max_tokens: 200,
+      max_completion_tokens: 200,
     });
     const raw = completion.choices[0]?.message?.content ?? '{"suggestions":[]}';
     let suggestions: string[] = [];
