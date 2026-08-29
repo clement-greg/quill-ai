@@ -51,6 +51,15 @@ export class FactCheckReportService {
     () => this.selected()?.findings.filter(f => !f.resolved && f.verdict === 'disputed').length ?? 0,
   );
 
+  /** Unresolved findings that ask something of the author. Verified claims are
+   * left out: they need no action, so counting them would make a clean chapter
+   * look like a long to-do list on the sidebar tab badge. */
+  readonly openActionableCount = computed(
+    () => this.selected()?.findings.filter(
+      f => !f.resolved && f.verdict !== 'verified',
+    ).length ?? 0,
+  );
+
   /**
    * Loads a chapter's saved reports and selects the newest. A repeat call for
    * the same chapter is a no-op unless `force` is set, so opening the panel

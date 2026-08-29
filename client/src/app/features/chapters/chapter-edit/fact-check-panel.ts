@@ -1,9 +1,12 @@
-import { Component, inject, signal, computed, input, effect, ChangeDetectionStrategy } from '@angular/core';
+import {
+  Component, inject, signal, computed, input, output, effect, ChangeDetectionStrategy,
+} from '@angular/core';
 import { DatePipe } from '@angular/common';
 import { MatButtonModule } from '@angular/material/button';
 import { MatIconModule } from '@angular/material/icon';
 import { MatTooltipModule } from '@angular/material/tooltip';
 import { MatCheckboxModule } from '@angular/material/checkbox';
+import { MatSlideToggleModule } from '@angular/material/slide-toggle';
 import { MatProgressBarModule } from '@angular/material/progress-bar';
 import {
   FactCheckReport, FactCheckVerdict, SavedFactCheckFinding,
@@ -58,33 +61,49 @@ function confidenceLabel(confidence: number): string {
 }
 
 /**
- * Report for a chapter fact check, shown in the editor's slide-out panel rather
- * than a dialog: the author needs the chapter itself to act on the findings, so
- * nothing here blocks the editor.
+ * The chapter editor's Fact Check sidebar tab: the one place a check is started
+ * from and every saved report is read. It sits beside the prose rather than over
+ * it, because acting on a finding means editing the chapter it came from.
  *
- * The panel has two faces. While a run streams it shows live progress and fills
- * in each finding as its lookup settles. Once the run is saved — and whenever
- * the author reopens an earlier run from the picker — it shows a saved report,
- * where every finding carries a checkbox: the author ticks each one off as they
- * either correct the prose or decide they're content to leave it as written.
+ * The tab has two faces. While a run streams it shows live progress and fills in
+ * each finding as its lookup settles. Once the run is saved — and whenever the
+ * author reopens an earlier run from the picker — it shows a saved report, where
+ * every finding carries a checkbox: the author ticks each one off as they either
+ * correct the prose or decide they're content to leave it as written.
  */
 @Component({
   selector: 'app-fact-check-panel',
   changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [
     DatePipe, MatButtonModule, MatIconModule, MatTooltipModule, MatCheckboxModule,
-    MatProgressBarModule,
+    MatSlideToggleModule, MatProgressBarModule,
   ],
   template: `
     <div class="panel-header">
-      <mat-icon aria-hidden="true">fact_check</mat-icon>
-      <h2>Fact Check</h2>
-      @if (!factCheck.running() && findings().length > 0) {
-        <button mat-button type="button" class="copy-btn" (click)="copyReport()">
-          <mat-icon>{{ copied() ? 'check' : 'content_copy' }}</mat-icon>
-          {{ copied() ? 'Copied' : 'Copy report' }}
-        </button>
-      }
+      <div class="panel-title">
+        <mat-icon aria-hidden="true">fact_check</mat-icon>
+        <h2>Fact Check</h2>
+        @if (!factCheck.running() && findings().length > 0) {
+          <button mat-button type="button" class="copy-btn" (click)="copyReport()">
+            <mat-icon>{{ copied() ? 'check' : 'content_copy' }}</mat-icon>
+            {{ copied() ? 'Copied' : 'Copy report' }}
+          </button>
+        }
+      </div>
+      <!-- The run button lives here rather than in the chapter menu: this tab is
+           where the author already is when they want another pass. -->
+      <button mat-flat-button type="button" class="run-btn"
+              [disabled]="factCheck.running() || saved.saving()"
+              (click)="runCheck.emit()">
+        <mat-icon>{{ factCheck.running() ? 'hourglass_top' : 'travel_explore' }}</mat-icon>
+        @if (factCheck.running()) {
+          Checking…
+        } @else if (saved.hasReports()) {
+          Run a new check
+        } @else {
+          Fact check this chapter
+        }
+      </button>
     </div>
     <div class="panel-body">
 
@@ -168,7 +187,7 @@ function confidenceLabel(confidence: number): string {
                     (change)="onSelectRun($event)">
               @for (report of saved.reports(); track report.id) {
                 <option [value]="report.id">
-                  {{ report.runAt | date: 'MMM d, y, h:mm a' }} —
+                  {{ report.runAt | date: 'MMM d, h:mm a' }} —
                   {{ report.findings.length }}
                   {{ report.findings.length === 1 ? 'claim' : 'claims' }}{{ doneSuffix(report) }}
                 </option>
@@ -277,16 +296,18 @@ function confidenceLabel(confidence: number): string {
               {{ group.findings.length }} {{ group.label }}
             </button>
           }
-          @if (checkable() && doneCount() > 0) {
-            <button type="button" class="filter-chip filter-chip--done"
-                    [class.filter-chip--off]="hideDone()"
-                    [attr.aria-pressed]="!hideDone()"
-                    (click)="hideDone.set(!hideDone())">
-              <mat-icon aria-hidden="true">{{ hideDone() ? 'visibility_off' : 'task_alt' }}</mat-icon>
-              {{ hideDone() ? 'Showing open only' : doneCount() + ' checked off' }}
-            </button>
-          }
         </div>
+
+        @if (checkable()) {
+          <div class="done-toggle">
+            <mat-slide-toggle [checked]="hideDone()" (change)="setHideDone($event.checked)">
+              Hide checked off
+              @if (doneCount() > 0) {
+                <span class="done-toggle-count">{{ doneCount() }}</span>
+              }
+            </mat-slide-toggle>
+          </div>
+        }
 
         @for (group of visibleGroups(); track group.verdict) {
           <div class="section-header" [class]="'section-header--' + group.verdict">
@@ -302,7 +323,8 @@ function confidenceLabel(confidence: number): string {
 
           @for (finding of group.findings; track finding.id) {
             <div class="finding" [class]="'finding--' + finding.verdict"
-                 [class.finding--resolved]="finding.resolved">
+                 [class.finding--resolved]="finding.resolved"
+                 [class.finding--leaving]="leaving().has(finding.id)">
               <div class="finding-head">
                 @if (checkable()) {
                   <mat-checkbox class="finding-check" [checked]="!!finding.resolved"
@@ -313,9 +335,12 @@ function confidenceLabel(confidence: number): string {
                                 [attr.aria-label]="'Check off: ' + finding.claim" />
                 }
                 <p class="finding-claim">{{ finding.claim }}</p>
+                <!-- Just "High · 92%", not "High confidence · 92%": the pill
+                     can't wrap, and the longer wording set the narrowest the
+                     whole sidebar could go. The tooltip carries the noun. -->
                 <span class="confidence" [class]="'confidence--' + confidenceClass(finding.confidence)"
-                      [matTooltip]="'How sure the check is of this verdict'">
-                  {{ label(finding.confidence) }} confidence · {{ finding.confidence }}%
+                      [matTooltip]="'Confidence: how sure the check is of this verdict'">
+                  {{ label(finding.confidence) }} · {{ finding.confidence }}%
                 </span>
               </div>
               <div class="finding-tags">
@@ -340,7 +365,12 @@ function confidenceLabel(confidence: number): string {
                 }
               </div>
               @if (finding.quote) {
-                <p class="finding-quote">&ldquo;{{ finding.quote }}&rdquo;</p>
+                <button type="button" class="finding-quote"
+                        matTooltip="Go to this passage in the chapter"
+                        (click)="reveal(finding)">
+                  <span class="finding-quote-text">&ldquo;{{ finding.quote }}&rdquo;</span>
+                  <mat-icon aria-hidden="true" class="goto-icon">my_location</mat-icon>
+                </button>
               }
               <p class="finding-explanation">{{ finding.explanation }}</p>
               @if (finding.sources?.length) {
@@ -359,13 +389,24 @@ function confidenceLabel(confidence: number): string {
                 </div>
               }
               @if (finding.remedy) {
-                <div class="finding-remedy">
+                <!-- A remedy is an instruction about a specific passage, so the
+                     whole block doubles as the way back to that passage. -->
+                <button type="button" class="finding-remedy"
+                        [class.finding-remedy--linked]="!!finding.quote"
+                        [disabled]="!finding.quote"
+                        [matTooltip]="finding.quote ? 'Go to this passage in the chapter' : ''"
+                        (click)="reveal(finding)">
                   <mat-icon aria-hidden="true">build</mat-icon>
-                  <div>
-                    <span class="remedy-label">How to fix</span>
-                    <p class="remedy-text">{{ finding.remedy }}</p>
-                  </div>
-                </div>
+                  <span class="remedy-body">
+                    <span class="remedy-label">
+                      How to fix
+                      @if (finding.quote) {
+                        <mat-icon aria-hidden="true" class="goto-icon">my_location</mat-icon>
+                      }
+                    </span>
+                    <span class="remedy-text">{{ finding.remedy }}</span>
+                  </span>
+                </button>
               }
             </div>
           }
@@ -384,25 +425,36 @@ function confidenceLabel(confidence: number): string {
     </div>
   `,
   styles: [`
-    :host { display: block; box-sizing: border-box; }
-    /* The slide-out container owns the scrolling, so the header sticks to the
-       scrollport rather than the panel growing its own scroll area. That
-       scrollport carries 56px of top padding to clear its close button, so the
-       header rises into the gap — otherwise findings scroll through it. */
+    /* The sidebar tab gives this component a fixed-height box, so the panel
+       owns its own scrolling: a header that stays put over a scrolling report. */
+    :host {
+      display: flex; flex-direction: column;
+      height: 100%; min-height: 0; overflow: hidden;
+      box-sizing: border-box;
+    }
     .panel-header {
-      position: sticky; top: -56px; margin-top: -56px; z-index: 2;
-      display: flex; align-items: center; gap: 8px;
-      /* Right padding clears the container's close button, which sits top-right. */
-      padding: 68px 52px 12px 20px;
+      flex-shrink: 0;
+      display: flex; flex-direction: column; gap: 8px;
+      padding: 12px 14px;
       background: var(--mat-sys-surface, #fffbfe);
       border-bottom: 1px solid var(--mat-sys-outline-variant, #cac4d0);
-      h2 { margin: 0; font-size: 1.1rem; font-weight: 600; flex: 1; min-width: 0; }
+    }
+    .panel-title {
+      display: flex; align-items: center; gap: 8px;
+      h2 { margin: 0; font-size: 1rem; font-weight: 600; flex: 1; min-width: 0; }
       mat-icon { color: var(--mat-sys-primary, #6750a4); flex-shrink: 0; }
     }
-    .copy-btn { flex-shrink: 0; font-size: 0.8rem;
+    .run-btn {
+      width: 100%;
+      mat-icon { font-size: 18px; width: 18px; height: 18px; margin-right: 6px; }
+    }
+    .copy-btn { flex-shrink: 0; font-size: 0.75rem; min-width: 0; padding: 0 8px;
       mat-icon { font-size: 16px; width: 16px; height: 16px; margin-right: 4px; color: inherit; }
     }
-    .panel-body { padding: 16px 20px 24px; }
+    .panel-body {
+      flex: 1; min-height: 0; overflow-y: auto;
+      padding: 14px 14px 24px;
+    }
     .intro { margin: 0 0 12px; color: var(--mat-sys-on-surface-variant, #49454f); font-size: 0.9rem; }
     .notice {
       display: flex; align-items: center; gap: 8px; margin: 0 0 12px;
@@ -467,8 +519,32 @@ function confidenceLabel(confidence: number): string {
       from { opacity: 0; transform: translateY(6px); }
       to { opacity: 1; transform: none; }
     }
+    /* Checking a finding off while they're hidden removes it from the list. It
+       slides out and collapses rather than blinking away, so the author sees
+       which card left and that the list closed over it. */
+    @keyframes fc-leave {
+      0% { opacity: 1; transform: none; max-height: 600px; }
+      55% { opacity: 0; transform: translateX(28px); max-height: 600px; }
+      100% {
+        opacity: 0; transform: translateX(28px);
+        max-height: 0; margin-bottom: 0;
+        padding-top: 0; padding-bottom: 0; border-width: 0;
+      }
+    }
 
-    .filters { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 16px; }
+    .filters { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 10px; }
+    .done-toggle {
+      display: flex; align-items: center;
+      margin-bottom: 16px; padding-bottom: 12px;
+      border-bottom: 1px solid var(--mat-sys-outline-variant, #cac4d0);
+      --mat-slide-toggle-label-text-size: 0.8rem;
+    }
+    .done-toggle-count {
+      display: inline-block; margin-left: 6px; padding: 0 6px;
+      border-radius: 8px; font-size: 0.7rem; font-weight: 700;
+      background: var(--mat-sys-secondary-container, #e8def8);
+      color: var(--mat-sys-on-secondary-container, #1d192b);
+    }
     .filter-chip {
       display: inline-flex; align-items: center; gap: 6px;
       padding: 5px 12px; border-radius: 16px; cursor: pointer;
@@ -504,11 +580,20 @@ function confidenceLabel(confidence: number): string {
       color: var(--mat-sys-on-surface-variant, #49454f);
     }
     .finding {
-      padding: 10px 12px; border-radius: 8px; margin-bottom: 8px;
+      /* Findings carry text nobody controls — source domains, quoted prose,
+         model wording. In a sidebar that narrows to 200px, a single long
+         unbroken run would otherwise push the whole card wider than the panel. */
+      overflow-wrap: anywhere;
+      padding: 10px; border-radius: 8px; margin-bottom: 8px;
       border-left: 3px solid transparent;
       background: var(--mat-sys-surface-variant, #f3edf7);
       /* Each finding is inserted the moment its lookup lands. */
       animation: fc-land 220ms ease-out;
+    }
+    .finding--leaving {
+      animation: fc-leave 340ms ease-in forwards;
+      overflow: hidden;
+      pointer-events: none;
     }
     .finding--disputed { border-left-color: #b3261e; }
     .finding--unverifiable { border-left-color: #8a5200; }
@@ -524,7 +609,10 @@ function confidenceLabel(confidence: number): string {
       flex-wrap: wrap;
     }
     .finding-check { flex-shrink: 0; margin-left: -8px; }
-    .finding-claim { margin: 0; font-weight: 600; font-size: 0.9rem; flex: 1; min-width: 160px; }
+    /* The min-width keeps the claim from being squeezed to a sliver by the
+       confidence badge, but has to stay under the narrowest the sidebar goes
+       (200px) minus the checkbox, gap and padding — or the card overflows. */
+    .finding-claim { margin: 0; font-weight: 600; font-size: 0.88rem; flex: 1; min-width: 90px; }
     .confidence {
       flex-shrink: 0; padding: 2px 8px; border-radius: 10px;
       font-size: 0.72rem; font-weight: 600; white-space: nowrap;
@@ -559,36 +647,75 @@ function confidenceLabel(confidence: number): string {
       a {
         display: inline-flex; align-items: center; gap: 3px;
         font-size: 0.8rem; color: var(--mat-sys-primary, #6750a4);
-        mat-icon { font-size: 13px; width: 13px; height: 13px; }
+        /* A long domain has to wrap rather than set the card's minimum width. */
+        min-width: 0; overflow-wrap: anywhere;
+        mat-icon { font-size: 13px; width: 13px; height: 13px; flex-shrink: 0; }
       }
     }
+    /* Quote and remedy are buttons so they can be clicked and tabbed to, but
+       they keep reading as the blockquote and callout they were. */
     .finding-quote {
-      margin: 8px 0 0; padding-left: 10px;
-      border-left: 2px solid var(--mat-sys-outline-variant, #cac4d0);
-      font-style: italic; font-size: 0.85rem;
+      display: flex; align-items: flex-start; gap: 6px;
+      width: 100%; margin: 8px 0 0; padding: 2px 4px 2px 10px;
+      border: 0; border-left: 2px solid var(--mat-sys-outline-variant, #cac4d0);
+      border-radius: 0 4px 4px 0;
+      background: transparent; text-align: left; cursor: pointer;
+      font: inherit; font-style: italic; font-size: 0.85rem;
       color: var(--mat-sys-on-surface-variant, #49454f);
+      &:hover, &:focus-visible {
+        background: var(--mat-sys-surface, #fffbfe);
+        border-left-color: var(--mat-sys-primary, #6750a4);
+        .goto-icon { opacity: 1; }
+      }
+    }
+    .finding-quote-text { flex: 1; min-width: 0; }
+    .goto-icon {
+      flex-shrink: 0; opacity: 0; transition: opacity 120ms ease;
+      font-size: 15px; width: 15px; height: 15px;
+      color: var(--mat-sys-primary, #6750a4);
     }
     .finding-explanation { margin: 8px 0 0; font-size: 0.85rem; }
     .finding-remedy {
       display: flex; align-items: flex-start; gap: 8px;
-      margin-top: 10px; padding: 8px 10px; border-radius: 6px;
+      width: 100%; margin-top: 10px; padding: 8px 10px;
+      border: 0; border-radius: 6px; text-align: left; font: inherit;
       background: var(--mat-sys-surface, #fffbfe);
-      mat-icon { font-size: 18px; width: 18px; height: 18px; flex-shrink: 0; }
+      color: inherit;
+      > mat-icon { font-size: 18px; width: 18px; height: 18px; flex-shrink: 0; }
     }
+    .finding-remedy--linked {
+      cursor: pointer;
+      &:hover, &:focus-visible {
+        outline: 1px solid var(--mat-sys-primary, #6750a4);
+        .goto-icon { opacity: 1; }
+      }
+    }
+    .remedy-body { display: block; flex: 1; min-width: 0; }
     .remedy-label {
-      display: block; font-size: 0.7rem; font-weight: 700; letter-spacing: 0.04em;
+      display: flex; align-items: center; gap: 4px;
+      font-size: 0.7rem; font-weight: 700; letter-spacing: 0.04em;
       text-transform: uppercase; color: var(--mat-sys-on-surface-variant, #49454f);
     }
-    .remedy-text { margin: 2px 0 0; font-size: 0.85rem; }
+    .remedy-text { display: block; margin: 2px 0 0; font-size: 0.85rem; }
 
     @media (prefers-reduced-motion: reduce) {
       .progress-icon, .finding { animation: none; }
+      /* The card still has to leave, just without the travel. */
+      .finding--leaving { animation-duration: 1ms; }
     }
   `],
 })
 export class FactCheckPanelComponent {
   /** The chapter whose saved reports the panel lists. */
   chapterId = input<string | null>(null);
+  /** True while this sidebar tab is the visible one. Reports are fetched the
+   * first time the author actually opens the tab, not on every chapter load. */
+  active = input(false);
+
+  /** Asks the editor to start a run — it owns the chapter text and entity list. */
+  runCheck = output<void>();
+  /** Asks the editor to scroll to a passage of the chapter and highlight it. */
+  revealPassage = output<string>();
 
   /** Public so the template can read the live run state. */
   readonly factCheck = inject(FactCheckService);
@@ -600,6 +727,15 @@ export class FactCheckPanelComponent {
   /** Hides findings already checked off, so the panel becomes a to-do list. */
   readonly hideDone = signal(false);
   copied = signal(false);
+
+  /** Findings mid-exit: checked off while hidden, still on screen playing their
+   * leave animation. Held here so the list can keep rendering them for exactly
+   * as long as the animation runs, then drop them. */
+  private readonly leavingIds = signal<ReadonlySet<string>>(new Set());
+  readonly leaving = this.leavingIds.asReadonly();
+
+  /** Matches the fc-leave animation; the card is dropped when it finishes. */
+  private static readonly LEAVE_MS = 340;
 
   /**
    * True while a run is streaming or has finished without being saved. The
@@ -651,10 +787,13 @@ export class FactCheckPanelComponent {
     return VERDICT_ORDER
       .map(verdict => {
         const all = findings.filter(f => f.verdict === verdict);
+        const leaving = this.leavingIds();
         return {
           verdict,
           ...VERDICT_META[verdict],
-          findings: hideDone ? all.filter(f => !f.resolved) : all,
+          findings: hideDone
+            ? all.filter(f => !f.resolved || leaving.has(f.id))
+            : all,
           doneCount: all.filter(f => f.resolved).length,
         };
       })
@@ -664,11 +803,11 @@ export class FactCheckPanelComponent {
   visibleGroups = computed(() => this.groups().filter(g => this.shownVerdicts().has(g.verdict)));
 
   constructor() {
-    // Saved reports belong to one chapter; load them whenever the panel is
-    // pointed at a chapter, and again when the editor navigates to another.
+    // Saved reports belong to one chapter. Load them once the tab is open, and
+    // again when the editor navigates to a different chapter with it still open.
     effect(() => {
       const id = this.chapterId();
-      if (id) void this.saved.load(id);
+      if (id && this.active()) void this.saved.load(id);
     });
   }
 
@@ -697,7 +836,37 @@ export class FactCheckPanelComponent {
   setResolved(finding: SavedFactCheckFinding, resolved: boolean): void {
     const reportId = this.saved.selectedId();
     if (!reportId) return;
+    // Checking one off while checked-off findings are hidden takes it out of
+    // the list, so let it animate out first — otherwise it vanishes under the
+    // author's cursor with no sign of where it went.
+    if (resolved && this.hideDone()) this.playLeave(finding.id);
     void this.saved.setResolved(reportId, finding.id, resolved);
+  }
+
+  /** Switching the toggle on hides the checked-off findings outright: they were
+   *  already read, so there is nothing to show leaving. */
+  setHideDone(hide: boolean): void {
+    this.hideDone.set(hide);
+    if (!hide) this.leavingIds.set(new Set());
+  }
+
+  /** Takes the author to the passage a finding came from. */
+  reveal(finding: SavedFactCheckFinding): void {
+    if (finding.quote) this.revealPassage.emit(finding.quote);
+  }
+
+  private playLeave(id: string): void {
+    this.leavingIds.update(ids => new Set(ids).add(id));
+    const reduced = typeof matchMedia === 'function'
+      && matchMedia('(prefers-reduced-motion: reduce)').matches;
+    setTimeout(
+      () => this.leavingIds.update(ids => {
+        const next = new Set(ids);
+        next.delete(id);
+        return next;
+      }),
+      reduced ? 0 : FactCheckPanelComponent.LEAVE_MS,
+    );
   }
 
   /** " · 2 done", or nothing when a run hasn't been triaged yet. */

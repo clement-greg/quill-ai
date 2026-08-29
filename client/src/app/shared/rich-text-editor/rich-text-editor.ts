@@ -40,6 +40,16 @@ export interface SuggestedEntityCard {
   draftEntity?: Entity;
 }
 
+/**
+ * Every transient mark the editor paints into the live DOM: review decorations
+ * and the highlights that point the author at a passage. None of them belong in
+ * saved content, so `commitCleanContent` unwraps this whole set before emitting.
+ * A new highlight class MUST be added here, or it gets written into the prose.
+ */
+const TRANSIENT_MARK_SELECTOR =
+  '.quill-suggestion-mark, mark.quill-review-highlight, mark.quill-passage-highlight';
+
+
 @Component({
   selector: 'app-rich-text-editor',
   imports: [MatButtonModule, MatIconModule, MatProgressSpinnerModule, MatTooltipModule, DecimalPipe, RouterLink],
@@ -367,6 +377,7 @@ export class RichTextEditorComponent implements OnInit, AfterViewInit, OnDestroy
   }
 
   ngOnDestroy(): void {
+    this.passageHighlightCleanup?.();
     if (this.emitTimer) clearTimeout(this.emitTimer);
     if (this.grammarTimer) clearTimeout(this.grammarTimer);
     if (this.longPressTimer) clearTimeout(this.longPressTimer);
@@ -859,7 +870,7 @@ export class RichTextEditorComponent implements OnInit, AfterViewInit, OnDestroy
     const el = this.editorRef?.nativeElement;
     if (!el) return;
     const clone = el.cloneNode(true) as HTMLElement;
-    clone.querySelectorAll<HTMLElement>('.quill-suggestion-mark, mark.quill-review-highlight')
+    clone.querySelectorAll<HTMLElement>(TRANSIENT_MARK_SELECTOR)
       .forEach(s => {
         const parent = s.parentNode!;
         while (s.firstChild) parent.insertBefore(s.firstChild, s);
@@ -952,8 +963,77 @@ export class RichTextEditorComponent implements OnInit, AfterViewInit, OnDestroy
     block.scrollIntoView({ behavior: 'smooth', block: 'center' });
   }
 
+  /**
+   * Scrolls to an exact passage anywhere in the chapter and flashes it, for
+   * callers that know the prose but not which block holds it — a fact-check
+   * finding quotes the chapter without recording a block index.
+   *
+   * Blocks are searched in order and the first match wins. Returns false when
+   * the passage isn't there any more, so the caller can say so rather than
+   * scrolling nowhere in silence.
+   */
+  private static readonly PASSAGE_HIGHLIGHT_MS = 8000;
+
+  highlightPassage(text: string): boolean {
+    const el = this.editorRef?.nativeElement;
+    const target = text?.trim();
+    if (!el || !target) return false;
+    this.clearReviewHighlight();
+
+    for (const block of Array.from(el.children) as HTMLElement[]) {
+      const range = this.locateRangeInBlock(block, target);
+      if (!range) continue;
+      const mark = document.createElement('mark');
+      mark.className = 'quill-passage-highlight';
+      try {
+        range.surroundContents(mark);
+        this.reviewHighlightEl = mark;
+        this.armPassageHighlightCleanup();
+        mark.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      } catch {
+        // The passage straddles inline elements, so it can't be wrapped in one
+        // mark. Scrolling to its block still puts the author in the right place.
+        block.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      }
+      return true;
+    }
+    return false;
+  }
+
+  /**
+   * Takes the passage highlight down the moment the author starts typing, and
+   * after a while regardless.
+   *
+   * This matters because content is captured straight from `innerHTML` on edit:
+   * a highlight still in the DOM when the author begins fixing the passage would
+   * be written into the chapter and saved. `beforeinput` fires ahead of the DOM
+   * change, so unwrapping there keeps the captured HTML clean — and jumping to a
+   * passage in order to edit it is the whole point of the feature, so this is
+   * the expected path, not an edge case.
+   */
+  private passageHighlightCleanup: (() => void) | null = null;
+
+  private armPassageHighlightCleanup(): void {
+    const el = this.editorRef?.nativeElement;
+    if (!el) return;
+    this.passageHighlightCleanup?.();
+
+    const clear = (): void => {
+      this.passageHighlightCleanup?.();
+      this.clearReviewHighlight();
+    };
+    el.addEventListener('beforeinput', clear);
+    const timer = setTimeout(clear, RichTextEditorComponent.PASSAGE_HIGHLIGHT_MS);
+    this.passageHighlightCleanup = () => {
+      this.passageHighlightCleanup = null;
+      el.removeEventListener('beforeinput', clear);
+      clearTimeout(timer);
+    };
+  }
+
   /** Removes the transient review highlight without dirtying saved content. */
   clearReviewHighlight(): void {
+    this.passageHighlightCleanup?.();
     const mark = this.reviewHighlightEl;
     this.reviewHighlightEl = null;
     if (!mark || !mark.isConnected) return;

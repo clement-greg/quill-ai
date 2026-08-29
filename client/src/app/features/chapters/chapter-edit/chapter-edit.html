@@ -1,6 +1,6 @@
-<app-slide-out-panel-container [showRightPanel]="!!editingEntity() || showAiStats() || showFactCheck()"
+<app-slide-out-panel-container [showRightPanel]="!!editingEntity() || showAiStats()"
   (showRightPanelChange)="onRightPanelChange($event)"
-  [rightPanelWidth]="showAiStats() || showFactCheck() ? 520 : 450">
+  [rightPanelWidth]="showAiStats() ? 520 : 450">
 
   <div main-content>
     <div class="page">
@@ -90,10 +90,6 @@
             <button mat-menu-item (click)="factCheckChapter()" [disabled]="factChecking()">
               <mat-icon>fact_check</mat-icon>
               {{ factChecking() ? 'Fact-checking…' : 'Fact check chapter' }}
-            </button>
-            <button mat-menu-item (click)="openSavedFactChecks()" [disabled]="factChecking()">
-              <mat-icon>history</mat-icon>
-              Saved fact checks
             </button>
             <button mat-menu-item (click)="archiveChapter()">
               <mat-icon>archive</mat-icon> Archive chapter
@@ -455,6 +451,23 @@
                 (runReview)="startQuillReview()" />
             </mat-tab>
 
+            <!-- Tab 4: Fact Check (run a check, and work through saved reports) -->
+            <mat-tab>
+              <ng-template mat-tab-label>
+                <span class="entity-suggestion-tab-label">
+                  <mat-icon>fact_check</mat-icon>
+                  @if (factCheckOpenCount() > 0) {
+                    <span class="entity-suggestion-tab-badge">{{ factCheckOpenCount() }}</span>
+                  }
+                </span>
+              </ng-template>
+              <app-fact-check-panel class="sidebar-tab-content"
+                [chapterId]="chapter()!.id"
+                [active]="sidebarTabIndex() === 4"
+                (runCheck)="factCheckChapter()"
+                (revealPassage)="revealChapterPassage($event)" />
+            </mat-tab>
+
             </mat-tab-group>
           </aside>
         </div>
@@ -508,6 +521,19 @@
               }
             </span>
           </button>
+          <button mat-icon-button class="mobile-tab-btn"
+                  [class.mobile-tab-btn--active]="mobileSidebarOpen() && sidebarTabIndex() === 4"
+                  (click)="activateSidebarTab(4)"
+                  role="tab"
+                  [attr.aria-selected]="mobileSidebarOpen() && sidebarTabIndex() === 4"
+                  aria-label="Fact check">
+            <span class="mobile-tab-icon">
+              <mat-icon>fact_check</mat-icon>
+              @if (factCheckOpenCount() > 0) {
+                <span class="mobile-tab-badge" aria-hidden="true">{{ factCheckOpenCount() }}</span>
+              }
+            </span>
+          </button>
         </div>
 
         <!-- Backdrop to dismiss sidebar on mobile -->
@@ -558,9 +584,6 @@
     }
     @if (showAiStats() && chapter()) {
       <app-ai-stats [chapters]="[chapter()!]" [loading]="false" [entities]="entities()" />
-    }
-    @if (showFactCheck()) {
-      <app-fact-check-panel [chapterId]="chapter()?.id ?? null" />
     }
   </div>
 

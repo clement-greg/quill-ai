@@ -1012,6 +1012,31 @@ mark.quill-review-highlight {
   box-shadow: 0 0 0 2px #ffe082;
 }
 
+/* Passage a fact-check finding points at. It flashes on arrival because the
+   author asked to be taken here — the movement is what tells them the jump
+   landed — then settles to a quiet highlight they can read through. */
+mark.quill-passage-highlight {
+  background: #fff3c4;
+  border-radius: 2px;
+  box-shadow: 0 0 0 2px #ffe082;
+  animation: quill-passage-flash 1.4s ease-out;
+}
+
+@keyframes quill-passage-flash {
+  0%, 40% {
+    background: #ffd54f;
+    box-shadow: 0 0 0 3px #ffb300;
+  }
+  100% {
+    background: #fff3c4;
+    box-shadow: 0 0 0 2px #ffe082;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  mark.quill-passage-highlight { animation: none; }
+}
+
 // ── Quill Editor inline decorations ───────────────────────────────────────
 // Decorations are created via the DOM API (not the template), so they carry no
 // Angular encapsulation attribute — styles must pierce with :host ::ng-deep.

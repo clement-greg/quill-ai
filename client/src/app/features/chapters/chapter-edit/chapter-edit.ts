@@ -139,7 +139,6 @@ export class ChapterEditComponent implements OnInit, OnDestroy {
   /** True while a fact-check run is streaming; the service owns the run state. */
   factChecking = computed(() => this.factCheckService.running());
   /** Whether the report panel is showing in the right slide-out. */
-  showFactCheck = signal(false);
   private factCheckToast?: MatSnackBarRef<FactCheckToastComponent>;
 
   // ── Outline ──────────────────────────────────────────────────────────────
@@ -218,11 +217,18 @@ export class ChapterEditComponent implements OnInit, OnDestroy {
   // ── Quill Editor (AI review pass) ─────────────────────────────────────────
   /** Index of the "Quill Editor" sidebar tab. */
   static readonly QUILL_REVIEW_TAB = 3;
+  /** Index of the "Fact Check" sidebar tab. */
+  static readonly FACT_CHECK_TAB = 4;
   /** Open-suggestion count for the sidebar/mobile tab badges; the panel itself
    *  lives in QuillReviewPanelComponent. */
   quillOpenCount = computed(() =>
     this.editorReview.visible(false).filter(s => s.status === 'open').length,
   );
+
+  /** Findings still asking something of the author in the saved report on show,
+   *  for the tab badge — so an unfinished fact check stays visible with the tab
+   *  closed. Verified claims are excluded; they need no action. */
+  factCheckOpenCount = computed(() => this.factCheckReports.openActionableCount());
   /** Suggestion id currently hovered in the document (doc→sidebar highlight). */
   quillHoveredId = signal<string | null>(null);
 
@@ -488,8 +494,7 @@ export class ChapterEditComponent implements OnInit, OnDestroy {
   }
 
   onEntityEditRequest(entity: Entity): void {
-    // One panel at a time in the right slide-out; the report stays in the service.
-    this.showFactCheck.set(false);
+    // One panel at a time in the right slide-out.
     this.showAiStats.set(false);
     this.editingEntity.set(entity);
   }
@@ -1217,9 +1222,10 @@ export class ChapterEditComponent implements OnInit, OnDestroy {
       return;
     }
 
+    this.openFactCheckPanel();
     this.factCheckToast = this.snackBar.openFromComponent(FactCheckToastComponent, {
       data: {
-        onView: () => this.showFactCheck.set(true),
+        onView: () => this.openFactCheckPanel(),
         onStop: () => this.factCheckService.stop(),
       } satisfies FactCheckToastData,
       // Stays until the run ends — it is the run's only status indicator when
@@ -1242,9 +1248,12 @@ export class ChapterEditComponent implements OnInit, OnDestroy {
     this.factCheckToast = undefined;
     if (this.destroyed) return;
 
+    // A run with nothing to save has to clear itself, or the panel keeps
+    // showing that empty run in place of the saved reports behind it.
     const error = this.factCheckService.error();
     if (error) {
       this.snackBar.open(error, undefined, { duration: 6000 });
+      this.factCheckService.reset();
       return;
     }
     const count = this.factCheckService.findings().length;
@@ -1256,6 +1265,7 @@ export class ChapterEditComponent implements OnInit, OnDestroy {
         undefined,
         { duration: 4000 },
       );
+      this.factCheckService.reset();
       return;
     }
     // A stopped run is the author's decision to look away, so don't shove the
@@ -1264,13 +1274,13 @@ export class ChapterEditComponent implements OnInit, OnDestroy {
     await this.saveFactCheckRun();
     if (this.destroyed) return;
 
-    if (stoppedEarly && !this.showFactCheck()) {
+    if (stoppedEarly && !this.factCheckPanelOpen()) {
       const ref = this.snackBar.open(
         `Fact check stopped — ${count} ${count === 1 ? 'claim' : 'claims'} checked and saved`,
         'View report',
         { duration: 8000 },
       );
-      ref.onAction().subscribe(() => this.showFactCheck.set(true));
+      ref.onAction().subscribe(() => this.openFactCheckPanel());
       return;
     }
     this.openFactCheckPanel();
@@ -1295,24 +1305,31 @@ export class ChapterEditComponent implements OnInit, OnDestroy {
     if (saved) this.factCheckService.reset();
   }
 
-  /** Opens the panel on the chapter's saved checks without running a new one. */
-  openSavedFactChecks(): void {
-    this.factCheckService.reset();
-    this.openFactCheckPanel();
+
+
+  /** True when the Fact Check tab is the selected sidebar tab. */
+  private factCheckPanelOpen(): boolean {
+    return this.sidebarTabIndex() === ChapterEditComponent.FACT_CHECK_TAB;
   }
 
-  /** Shows the report in the right slide-out, which one panel owns at a time. */
+  /** Scrolls the editor to the passage a fact-check finding came from and
+   *  flashes it. The prose can have moved on since the check ran, so a passage
+   *  that is no longer there is reported rather than silently doing nothing. */
+  revealChapterPassage(passage: string): void {
+    if (!this.editorRef?.highlightPassage(passage)) {
+      this.snackBar.open(
+        "That passage isn't in the chapter any more — it may have been edited since this check ran.",
+        'OK',
+        { duration: 5000 },
+      );
+    }
+  }
+
+  /** Brings the Fact Check sidebar tab to the front. On mobile the sidebar is
+   *  left as the author had it — same as starting a Quill review — because
+   *  sliding it up unprompted would cover the chapter they're reading. */
   private openFactCheckPanel(): void {
-    this.editingEntity.set(null);
-    this.showAiStats.set(false);
-    this.showFactCheck.set(true);
-  }
-
-  /** Closes the report panel. Saved reports survive — only an unsaved live run
-   *  is discarded, and by this point a finished run has already been saved. */
-  closeFactCheck(): void {
-    this.showFactCheck.set(false);
-    this.factCheckService.reset();
+    this.onSidebarTabChange(ChapterEditComponent.FACT_CHECK_TAB);
   }
 
   // ── Entity suggestions ───────────────────────────────────────────────────
@@ -1395,9 +1412,6 @@ export class ChapterEditComponent implements OnInit, OnDestroy {
 
   openAiStats(): void {
     this.editingEntity.set(null);
-    // The right slide-out shows one panel at a time; the report survives in the
-    // service, so hiding it here doesn't throw the findings away.
-    this.showFactCheck.set(false);
     const current = this.chapter();
     if (current && this.editorRef) {
       this.chapter.set({ ...current, content: this.editorRef.getContent() });
@@ -1438,7 +1452,6 @@ export class ChapterEditComponent implements OnInit, OnDestroy {
     if (!open) {
       this.editingEntity.set(null);
       this.showAiStats.set(false);
-      if (this.showFactCheck()) this.closeFactCheck();
     }
   }
 
