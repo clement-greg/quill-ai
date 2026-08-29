@@ -57,8 +57,21 @@ async function requestSummary(input: string): Promise<string | null> {
 }
 
 /**
- * Cheap 1-token probe to check whether a prompt alone would be blocked by the
- * content filter, without paying for a full completion.
+ * Output cap for the content-filter probes below. The gpt-5.6 family rejects a
+ * cap under 4 outright ("output limit was reached"), so a 1-token probe is not
+ * an option; this leaves headroom while staying too small to matter on cost.
+ */
+const PROBE_MAX_TOKENS = 16;
+
+/** True for the 400 Azure returns when the output cap is hit before any text. */
+function isOutputLimitError(err: unknown): boolean {
+  const message = (err as { message?: string } | null)?.message ?? '';
+  return /max_tokens or model output limit was reached/i.test(message);
+}
+
+/**
+ * Cheap probe to check whether a prompt alone would be blocked by the content
+ * filter, without paying for a full completion.
  * Must use the same tier as the real call — Azure content filters are
  * configured per deployment, so a probe on another tier proves nothing.
  */
@@ -67,12 +80,15 @@ async function isPromptSafe(input: string): Promise<boolean> {
     await client.chat.completions.create({
       model: config.foundry.midModel,
       messages: [{ role: 'user', content: input }],
-      max_completion_tokens: 1,
+      max_completion_tokens: PROBE_MAX_TOKENS,
       stream: false,
     });
     return true;
   } catch (err) {
     if (isContentFilterError(err)) return false;
+    // Hitting the tiny cap means generation started, which is itself proof the
+    // prompt passed the filter.
+    if (isOutputLimitError(err)) return true;
     throw err;
   }
 }

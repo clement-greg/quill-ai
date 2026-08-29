@@ -1,5 +1,6 @@
 import fs from 'fs';
 import path from 'path';
+import { warnIfChatTiersMissing } from './config-validation';
 
 interface AppConfig {
   googleClientId: string;
@@ -98,4 +99,7 @@ function loadConfig(): AppConfig {
 }
 
 const config: AppConfig = loadConfig();
+
+warnIfChatTiersMissing(config);
+
 export default config;

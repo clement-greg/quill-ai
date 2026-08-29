@@ -39,7 +39,9 @@ async function generateNoteName(firstParagraph: string): Promise<string> {
         },
         { role: 'user', content: firstParagraph },
       ],
-      max_completion_tokens: 20,
+      // Roomy enough that a reasoning-capable model still has budget left for
+      // the name itself after any internal reasoning tokens.
+      max_completion_tokens: 64,
     });
     const name = completion.choices[0]?.message?.content?.trim();
     return name && name.length > 0 ? name : 'Untitled Note';

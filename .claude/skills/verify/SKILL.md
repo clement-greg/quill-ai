@@ -5,6 +5,19 @@ description: How to build, launch, and drive Quill AI to verify changes end-to-e
 
 # Verifying Quill AI changes
 
+## Scope — what to test without asking
+
+Standing authorization: drive and test **any** feature end-to-end, including ones
+that make real AI calls and cost tokens (chat, Quill editor review, fact check,
+extraction, summaries, drafting). No need to ask first.
+
+Two exceptions — do not exercise these:
+- Image or video **generation** (any flow that produces new media).
+- **Viewing** images on the entity summary or in the image gallery.
+
+Verify the surrounding logic for those by other means (unit tests, API responses,
+inspecting the request the client would send) rather than triggering them.
+
 ## Build / launch
 - Dev server: `npm run dev` from repo root (concurrently runs Express on :3200 and `ng serve` on :6258 with proxy). Check first — it's usually already running: `curl -s -o /dev/null -w "%{http_code}" http://localhost:6258/`.
 - App URL: http://localhost:6258 (NOT :4200).
