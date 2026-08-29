@@ -4,7 +4,7 @@ import { randomUUID } from 'crypto';
 import config from '../config';
 import { getContainer } from '../services/cosmos';
 import { withOwnerFilter } from '../middleware/owner-guard';
-import { searchChapterChunks, reindexChapterChunks } from '../services/chapter-chunks';
+import { searchChapterChunks, hybridSearchChapterChunks, reindexChapterChunks } from '../services/chapter-chunks';
 import { searchTimelineEvents, TimelineEventSearchResult } from '../services/timeline-event-chunks';
 import { Chapter, ChapterNote, OutlineItem } from '../../shared/models/chapter.model';
 import { ChapterCitation } from '../../shared/models/chat-session.model';
@@ -109,11 +109,18 @@ const ENTITY_RESEARCH_GUIDANCE =
 
 // Appended whenever the search_chapter_text tool is available (always, alongside research_entity).
 const SEARCH_CHAPTER_TEXT_GUIDANCE =
-  '\n\nFINDING WHICH CHAPTER: If the author asks which chapter something was mentioned, used, or first ' +
-  'appeared in — including a fact you just learned from research_entity, such as an alias or nickname — ' +
-  'and the story passages already provided don\'t show it, call search_chapter_text with that exact word ' +
-  'or phrase (e.g. the alias itself, not the question) to find the source chapter. Cite its result the ' +
-  'same way as the story passages, using the bracketed number it returns.';
+  '\n\nSEARCHING THE PROSE: Most of what the author asks about lives in the chapter prose, not in the ' +
+  'story-bible entity records. Whenever a question is about something that happened, was said, or was ' +
+  'decided in the story (a duration, a place, a plan, who said what, which chapter something appeared ' +
+  'in) and the story passages already provided do not clearly answer it, call search_chapter_text ' +
+  'BEFORE answering, and before concluding you do not have the information. Prefer it over ' +
+  'research_entity for anything that is not biographical. Never tell the author you could search the ' +
+  'chapters and ask whether you should - just search.\n' +
+  '- Search for the distinctive words that would appear in the passage itself, NOT the question. For ' +
+  '\'how long is Dale staying at Site D?\', search \'Site D\' or \'two weeks\', not the whole sentence.\n' +
+  '- If the first search comes back empty or unhelpful, try again with a different term (a first name ' +
+  'alone, a place, an object, a likely phrase) before giving up. Two or three attempts are expected.\n' +
+  '- Cite its results using the bracketed number it returns, like the story passages.';
 
 
 /**
@@ -139,7 +146,7 @@ async function buildRagSystemPrompt(
   // betrayals, revelations — that the prose often only alludes to, so they ground
   // questions ("what was Jim's fate") the prose alone answers incompletely.
   const [chunks, timelineHits] = await Promise.all([
-    searchChapterChunks(retrievalQuery, { ...scope, topK: 8 }, req),
+    hybridSearchChapterChunks(retrievalQuery, { ...scope, topK: 8 }, req),
     searchTimelineEvents(retrievalQuery, { seriesId: scope.seriesId, topK: 5 }, req),
   ]);
   if (chunks.length === 0 && timelineHits.length === 0) return { systemPrompt, citations };
@@ -1157,12 +1164,14 @@ function getSearchChapterTextTool(
       function: {
         name: 'search_chapter_text',
         description:
-          'Search the full text of the author\'s chapters for a specific word or phrase — an alias, ' +
-          'nickname, item, or place name — and return the passages where it appears, with the chapter each ' +
-          'is from. Call this when the author asks WHICH chapter something was mentioned, used, or first ' +
-          'appeared in, especially after research_entity surfaces a fact (like an alias) whose source ' +
-          'chapter isn\'t already shown in the story passages you were given. Pass the exact word or ' +
-          'phrase to search for, e.g. "Mara Wilson".',
+          'Search the full text of the author\'s chapters and return the matching passages, with the ' +
+          'chapter each came from. This is the primary way to answer any question about what actually ' +
+          'happens in the story (events, dialogue, durations, plans, places, objects), as opposed to ' +
+          'the biographical story-bible records research_entity returns. Call it whenever the passages ' +
+          'you were already given do not clearly contain the answer, and call it again with a different ' +
+          'term if the first attempt misses. Search combines semantic and exact-word matching, so pass ' +
+          'the distinctive words you expect to appear in the passage itself (a name, a place, a phrase ' +
+          'like "two weeks") rather than the author\'s full question.',
         parameters: {
           type: 'object',
           properties: {
@@ -1177,7 +1186,7 @@ function getSearchChapterTextTool(
       if (!query) {
         return { toolResult: { found: false, message: 'No search text was given. Ask the author what to search for.' } };
       }
-      const chunks = await searchChapterChunks(query, { ...scope, topK: 5 }, req);
+      const chunks = await hybridSearchChapterChunks(query, { ...scope, topK: 8 }, req);
       if (chunks.length === 0) {
         return { toolResult: { found: false, message: `No chapter passages matched "${query}".` } };
       }
@@ -2176,11 +2185,14 @@ router.post('/quick-chat', async (req: Request, res: Response) => {
   if (chapterContext?.chapterId) {
     const { surroundingText, selectedText, outline, notes } = chapterContext;
     const lastUserMessage = [...messages].reverse().find(m => m.role === 'user');
-    const retrievalQuery = [selectedText, surroundingText, lastUserMessage?.content]
-      .filter(Boolean).join('\n\n').trim();
+    // Retrieve for the question and for the cursor context as separate queries.
+    // Concatenating them buries a short question inside a paragraph of narration,
+    // which is why factual questions used to miss the passage that answered them.
+    const retrievalQueries = [lastUserMessage?.content, selectedText, surroundingText]
+      .map(t => (t ?? '').trim()).filter(Boolean);
     const { chapterTitle, contextSuffix } = await buildChapterContextPrompt(
       chapterContext.chapterId,
-      { selectedText, retrievalQuery, instructionText: lastUserMessage?.content ?? '' },
+      { selectedText, retrievalQueries, instructionText: lastUserMessage?.content ?? '' },
       req,
     );
 
@@ -2189,7 +2201,10 @@ router.post('/quick-chat', async (req: Request, res: Response) => {
       `You are a helpful writing assistant helping an author with their story${titlePart}. ` +
       'When the author asks you to write or insert prose, provide only the requested content as plain ' +
       'prose — no markdown, no preamble, and no meta-commentary such as "Sure, here you go". The author ' +
-      'will insert your answer directly into the chapter at their cursor.' +
+      'will insert your answer directly into the chapter at their cursor. When the author instead asks ' +
+      'a QUESTION about the story - what happened, who said what, how long something lasts - answer it ' +
+      'conversationally and ground the answer in the excerpts and your tools rather than writing prose ' +
+      'to insert. Never invent a detail the story does not support.' +
       contextSuffix;
 
     if (outline && outline.length > 0) {
@@ -2212,8 +2227,8 @@ router.post('/quick-chat', async (req: Request, res: Response) => {
     if (surroundingText) {
       systemPrompt +=
         `\n\nThe text surrounding the author's cursor (the insertion point is marked [CURSOR]):\n` +
-        `"${surroundingText}"\n\nUse it only as context. Do NOT repeat any of the surrounding text — ` +
-        `return ONLY the new content to insert at the cursor.`;
+        `"${surroundingText}"\n\nUse it only as context. When you are writing prose to insert, do NOT ` +
+        `repeat any of the surrounding text - return ONLY the new content to insert at the cursor.`;
     }
     if (selectedText) {
       systemPrompt += `\n\nThe author currently has this text selected:\n"${selectedText}"`;

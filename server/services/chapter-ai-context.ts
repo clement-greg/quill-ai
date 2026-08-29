@@ -1,6 +1,6 @@
 import { Request } from 'express';
 import { getContainer } from './cosmos';
-import { searchChapterChunks } from './chapter-chunks';
+import { searchChapterChunks, hybridSearchChapterChunks } from './chapter-chunks';
 import { Chapter } from '../../shared/models/chapter.model';
 import { Book } from '../../shared/models/book.model';
 import { Entity } from '../../shared/models/entity.model';
@@ -18,7 +18,7 @@ import { EntityQuote } from '../../shared/models/entity-quote.model';
  */
 export async function buildChapterContextPrompt(
   chapterId: string,
-  opts: { selectedText?: string; retrievalQuery?: string; instructionText?: string },
+  opts: { selectedText?: string; retrievalQuery?: string; retrievalQueries?: string[]; instructionText?: string },
   req: Request,
 ): Promise<{ chapterTitle: string; contextSuffix: string }> {
   try {
@@ -32,12 +32,33 @@ export async function buildChapterContextPrompt(
     // request, instead of dumping the whole chapter into the prompt. Book-wide
     // scope lets the assistant answer questions whose answer lives in another
     // chapter; relevance ranking still surfaces the current chapter when apt.
-    const retrievalQuery = (opts.retrievalQuery ?? '').trim();
-    if (retrievalQuery) {
-      const chunks = await searchChapterChunks(retrievalQuery, { bookId: resource.bookId, topK: 6 }, req);
-      if (chunks.length > 0) {
-        const excerpts = chunks.map(c => c.content).join('\n\n---\n\n');
-        contextSuffix = `\n\nHere are the most relevant excerpts from the book:\n\n${excerpts}`;
+    // Each query is retrieved for separately and the hits merged. Concatenating
+    // the author's question with the prose around their cursor into one query
+    // buries the question's signal under a paragraph of unrelated narration, so
+    // a question like "how long is Dale's stay?" never retrieves the passage
+    // that answers it. Retrieval is hybrid (semantic + exact-word), so proper
+    // nouns and phrases the author remembers verbatim match literally too.
+    const queries = [...(opts.retrievalQueries ?? []), opts.retrievalQuery ?? '']
+      .map(q => (q ?? '').trim())
+      .filter(Boolean);
+    if (queries.length > 0) {
+      const perQuery = await Promise.all(
+        queries.map(q => hybridSearchChapterChunks(q, { bookId: resource.bookId, topK: 6 }, req)),
+      );
+      const seen = new Set<string>();
+      const contents: string[] = [];
+      // Round-robin across the queries so no single one crowds the others out.
+      for (let rank = 0; contents.length < 12; rank++) {
+        const round = perQuery.map(hits => hits[rank]).filter(Boolean);
+        if (round.length === 0) break;
+        for (const hit of round) {
+          if (seen.has(hit.content)) continue;
+          seen.add(hit.content);
+          contents.push(hit.content);
+        }
+      }
+      if (contents.length > 0) {
+        contextSuffix = `\n\nHere are the most relevant excerpts from the book:\n\n${contents.join('\n\n---\n\n')}`;
       }
     }
 

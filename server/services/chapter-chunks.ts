@@ -206,3 +206,106 @@ export async function searchChapterChunks(
     return [];
   }
 }
+
+/**
+ * Literal keyword search over chapter chunks. Vector search is weak at exact
+ * lexical lookup — a proper noun, an alias, a number, a phrase the author
+ * remembers verbatim — because a short name embeds into roughly the same place
+ * as every other name. This complements it with a substring match.
+ *
+ * The full phrase is tried first; if it yields nothing, the query's significant
+ * tokens (stop words and 2-letter fragments dropped) are AND-ed, so "how long
+ * did Dale stay" still matches a passage containing both "Dale" and "stay".
+ * Returns an empty array on any failure so callers can fall back gracefully.
+ */
+const KEYWORD_STOP_WORDS = new Set([
+  'the', 'and', 'was', 'were', 'that', 'this', 'with', 'for', 'from', 'his', 'her', 'she', 'him',
+  'they', 'them', 'their', 'what', 'when', 'where', 'which', 'who', 'whom', 'why', 'how', 'did',
+  'does', 'do', 'is', 'are', 'be', 'been', 'has', 'have', 'had', 'will', 'would', 'about', 'into',
+  'said', 'says', 'say', 'tell', 'told', 'you', 'your', 'not', 'but', 'any', 'all', 'can', 'could',
+  'long', 'much', 'many', 'get', 'got', 'chapter', 'chapters', 'story', 'book',
+]);
+
+export async function keywordSearchChapterChunks(
+  queryText: string,
+  opts: { chapterId?: string; bookId?: string; seriesId?: string; topK?: number },
+  source: Request | string,
+): Promise<ChunkSearchResult[]> {
+  const term = queryText.trim();
+  if (!term) return [];
+  const topK = Math.max(1, Math.min(50, Math.floor(opts.topK ?? 6)));
+
+  const scopeFilters: string[] = [];
+  const scopeParams: SqlParameter[] = [];
+  if (opts.chapterId) {
+    scopeFilters.push('c.chapterId = @chapterId');
+    scopeParams.push({ name: '@chapterId', value: opts.chapterId });
+  }
+  if (opts.bookId) {
+    scopeFilters.push('c.bookId = @bookId');
+    scopeParams.push({ name: '@bookId', value: opts.bookId });
+  }
+  if (opts.seriesId) {
+    scopeFilters.push('c.seriesId = @seriesId');
+    scopeParams.push({ name: '@seriesId', value: opts.seriesId });
+  }
+
+  const run = async (matchFilters: string[], matchParams: SqlParameter[]): Promise<ChunkSearchResult[]> => {
+    const filters = [...scopeFilters, ...matchFilters];
+    const query = withOwnerFilter(source, {
+      // score 0 keeps the shape identical to the vector results (0 = perfect
+      // match under cosine distance), so callers can merge the two lists.
+      query: `SELECT TOP ${topK} c.chapterId, c.content, 0 AS score FROM c WHERE ${filters.join(' AND ')}`,
+      parameters: [...scopeParams, ...matchParams],
+    });
+    const { resources } = await chunksContainer.items.query<ChunkSearchResult>(query).fetchAll();
+    return resources;
+  };
+
+  try {
+    // `true` = case-insensitive CONTAINS.
+    const phraseHits = await run(['CONTAINS(c.content, @term, true)'], [{ name: '@term', value: term }]);
+    if (phraseHits.length > 0) return phraseHits;
+
+    const tokens = [...new Set(
+      term.toLowerCase().replace(/[^\p{L}\p{N}\s'-]/gu, ' ').split(/\s+/)
+        .filter(t => t.length > 2 && !KEYWORD_STOP_WORDS.has(t))
+    )].slice(0, 6);
+    if (tokens.length === 0) return [];
+
+    return await run(
+      tokens.map((_, i) => `CONTAINS(c.content, @t${i}, true)`),
+      tokens.map((t, i) => ({ name: `@t${i}`, value: t })),
+    );
+  } catch (err) {
+    console.error('Chapter chunk keyword search failed:', err);
+    return [];
+  }
+}
+
+/**
+ * Hybrid retrieval: semantic (vector) hits plus literal keyword hits, merged and
+ * de-duplicated. Keyword hits are appended after the vector hits rather than
+ * interleaved, since their score is synthetic and not comparable.
+ */
+export async function hybridSearchChapterChunks(
+  queryText: string,
+  opts: { chapterId?: string; bookId?: string; seriesId?: string; topK?: number },
+  source: Request | string,
+): Promise<ChunkSearchResult[]> {
+  const topK = Math.max(1, Math.min(50, Math.floor(opts.topK ?? 6)));
+  const [vectorHits, keywordHits] = await Promise.all([
+    searchChapterChunks(queryText, opts, source),
+    keywordSearchChapterChunks(queryText, opts, source),
+  ]);
+
+  const merged: ChunkSearchResult[] = [];
+  const seen = new Set<string>();
+  for (const hit of [...vectorHits, ...keywordHits]) {
+    const key = `${hit.chapterId}::${hit.content}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    merged.push(hit);
+  }
+  return merged.slice(0, topK * 2);
+}

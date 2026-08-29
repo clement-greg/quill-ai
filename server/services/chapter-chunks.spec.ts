@@ -20,7 +20,13 @@ jest.mock('./embeddings', () => ({
 
 import { getContainer } from './cosmos';
 import { generateEmbedding, generateEmbeddings } from './embeddings';
-import { deleteChapterChunks, reindexChapterChunks, searchChapterChunks } from './chapter-chunks';
+import {
+  deleteChapterChunks,
+  reindexChapterChunks,
+  searchChapterChunks,
+  keywordSearchChapterChunks,
+  hybridSearchChapterChunks,
+} from './chapter-chunks';
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 const chunksContainer = getContainer('chapter-chunks') as any;
@@ -197,5 +203,67 @@ describe('searchChapterChunks', () => {
   it('returns an empty array when the search fails', async () => {
     embedMock.mockRejectedValue(new Error('embedding down'));
     expect(await searchChapterChunks('q', {}, OWNER)).toEqual([]);
+  });
+});
+
+describe('keywordSearchChapterChunks', () => {
+  const calls = () => chunksContainer.items.query.mock.calls.map((c: any[]) => c[0]);
+
+  it('matches the whole phrase, case-insensitively, scoped to the owner', async () => {
+    stubQueryResults([{ chapterId: 'ch-1', content: 'two weeks or so', score: 0 }]);
+
+    const results = await keywordSearchChapterChunks('two weeks', { bookId: 'b-1' }, OWNER);
+    expect(results).toEqual([{ chapterId: 'ch-1', content: 'two weeks or so', score: 0 }]);
+
+    const { query, parameters } = calls()[0];
+    expect(query).toContain('CONTAINS(c.content, @term, true)');
+    expect(query).toContain('c.bookId = @bookId');
+    expect(parameters).toContainEqual({ name: '@term', value: 'two weeks' });
+    expect(parameters).toContainEqual({ name: '@_owner', value: OWNER });
+  });
+
+  it('falls back to AND-ing significant tokens when the phrase misses', async () => {
+    chunksContainer.items.query
+      .mockReturnValueOnce({ fetchAll: async () => ({ resources: [] }) })
+      .mockReturnValueOnce({ fetchAll: async () => ({ resources: [{ chapterId: 'ch-1', content: 'hit', score: 0 }] }) });
+
+    const results = await keywordSearchChapterChunks('How long did Dale stay at Site D?', {}, OWNER);
+    expect(results).toHaveLength(1);
+
+    const { query, parameters } = calls()[1];
+    // Stop words and short fragments ("how", "long", "did", "at", "d") are dropped.
+    const terms = parameters.filter((p: any) => /^@t\d+$/.test(p.name)).map((p: any) => p.value);
+    expect(terms).toEqual(['dale', 'stay', 'site']);
+    expect(query).toContain('CONTAINS(c.content, @t0, true) AND CONTAINS(c.content, @t1, true)');
+  });
+
+  it('returns an empty array on failure or an empty query', async () => {
+    expect(await keywordSearchChapterChunks('   ', {}, OWNER)).toEqual([]);
+    chunksContainer.items.query.mockImplementation(() => { throw new Error('cosmos down'); });
+    expect(await keywordSearchChapterChunks('gate', {}, OWNER)).toEqual([]);
+  });
+});
+
+describe('hybridSearchChapterChunks', () => {
+  it('merges vector and keyword hits, de-duplicating by chapter and content', async () => {
+    const shared = { chapterId: 'ch-1', content: 'shared passage', score: 0.2 };
+    // The two searches run concurrently, so dispatch on the query rather than call order.
+    chunksContainer.items.query.mockImplementation((spec: any) => ({
+      fetchAll: async () =>
+        spec.query.includes('VectorDistance')
+          ? { resources: [shared] }
+          : { resources: [{ ...shared, score: 0 }, { chapterId: 'ch-2', content: 'literal only', score: 0 }] },
+    }));
+
+    const results = await hybridSearchChapterChunks('two weeks', {}, OWNER);
+    expect(results).toEqual([shared, { chapterId: 'ch-2', content: 'literal only', score: 0 }]);
+  });
+
+  it('still returns keyword hits when the vector search fails', async () => {
+    embedMock.mockRejectedValue(new Error('embedding down'));
+    stubQueryResults([{ chapterId: 'ch-2', content: 'literal only', score: 0 }]);
+
+    expect(await hybridSearchChapterChunks('Site D', {}, OWNER))
+      .toEqual([{ chapterId: 'ch-2', content: 'literal only', score: 0 }]);
   });
 });
