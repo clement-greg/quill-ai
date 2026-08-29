@@ -22,6 +22,7 @@ import exportRoutes from './routes/export.routes';
 import bookNotesRoutes from './routes/book-notes.routes';
 import grammarRoutes from './routes/grammar.routes';
 import factCheckRoutes from './routes/fact-check.routes';
+import factCheckReportRoutes from './routes/fact-check-reports.routes';
 import entityQuotesRoutes from './routes/entity-quotes.routes';
 import timelineEventRoutes from './routes/timeline-event.routes';
 import backfillRoutes from './routes/backfill.routes';
@@ -50,7 +51,9 @@ app.use((_req: Request, res: Response, next) => {
   next();
 });
 
-app.use(express.json());
+// Chapter payloads (prose for a fact check, HTML on save) run well past the
+// 100kb Express default — a long chapter used to be rejected outright with 413.
+app.use(express.json({ limit: '5mb' }));
 
 // Public route — used to verify login and return user profile
 app.get('/api/hello', (_req: Request, res: Response) => {
@@ -90,6 +93,7 @@ app.use('/api/export', exportRoutes);
 app.use('/api/book-notes', bookNotesRoutes);
 app.use('/api/grammar', grammarRoutes);
 app.use('/api/fact-check', factCheckRoutes);
+app.use('/api/fact-check-reports', factCheckReportRoutes);
 app.use('/api/entity-quotes', entityQuotesRoutes);
 app.use('/api/timeline-events', timelineEventRoutes);
 app.use('/api/backfill', backfillRoutes);

@@ -11,7 +11,8 @@ export const COLLABORATOR = 'carol@example.com';
  */
 export function makeTestApp(basePath: string, router: Router): express.Express {
   const app = express();
-  app.use(express.json());
+  // Matches the real app's raised limit so a test can post a long chapter.
+  app.use(express.json({ limit: '5mb' }));
   app.use((req, _res, next) => {
     const email = (req.headers['x-test-user'] as string) || USER_A;
     req.user = { email, sub: `sub-${email}` };

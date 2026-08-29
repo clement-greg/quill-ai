@@ -43,6 +43,10 @@ export interface Chapter extends AuditedRecord {
 
 export interface ChapterVersion {
     id: string;
+    /** Discriminator for the shared `chapter-versions` container, which also
+     * holds saved fact-check reports. Absent on snapshots written before the
+     * field existed, which are still versions. */
+    docType?: 'version';
     chapterId: string;
     savedAt: string;  // ISO timestamp
     content: string;  // HTML snapshot of chapter content

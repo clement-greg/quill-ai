@@ -104,8 +104,9 @@ describe('fact-check routes', () => {
     expect(res.text).toContain('data: [DONE]');
 
     const events = eventsOf(res.text);
-    expect(events[0]).toEqual({ stage: 'extracting' });
-    expect(events[1]).toEqual({
+    expect(events[0]).toEqual({ stage: 'extracting', segmentsTotal: 1, segmentsDone: 0 });
+    expect(events[1]).toEqual({ stage: 'extracting', segmentsTotal: 1, segmentsDone: 1 });
+    expect(events[2]).toEqual({
       stage: 'checking', total: 2, webCheckCount: 0, truncated: false, searchAvailable: false,
     });
     // Claims are emitted in grounding priority order: disputes first.
@@ -174,14 +175,51 @@ describe('fact-check routes', () => {
     expect(findingsOf(res.text)[0].confidence).toBe(99);
   });
 
-  it('flags truncation and sends only the leading portion of a long chapter', async () => {
-    modelReplies({ findings: [] });
-    const res = await post({ text: 'a'.repeat(20050) });
+  it('reads a long chapter in parts instead of dropping its tail', async () => {
+    // Two segments' worth: the tail must be read, not silently skipped.
+    create.mockResolvedValue({ choices: [{ message: { content: '{"findings":[]}' } }] });
+    const head = 'a'.repeat(20000);
+    const tail = 'b'.repeat(50);
+    const res = await post({ text: head + tail });
 
+    expect(create).toHaveBeenCalledTimes(2);
+    const sent = create.mock.calls.map(c => c[0].messages[1].content as string);
+    expect(sent.some(m => m.includes(head))).toBe(true);
+    expect(sent.some(m => m.includes(tail))).toBe(true);
+    // Every part was read, so nothing was truncated.
+    expect(checkingEvent(res.text)).toMatchObject({ truncated: false });
+  });
+
+  it('reports the reading stage part by part so a long chapter shows progress', async () => {
+    create.mockResolvedValue({ choices: [{ message: { content: '{"findings":[]}' } }] });
+    const res = await post({ text: 'a'.repeat(20000) + 'b'.repeat(50) });
+
+    const extracting = eventsOf(res.text).filter(
+      (e): e is { stage: 'extracting'; segmentsTotal: number; segmentsDone: number } =>
+        'stage' in e && e.stage === 'extracting',
+    );
+    expect(extracting[0]).toEqual({ stage: 'extracting', segmentsTotal: 2, segmentsDone: 0 });
+    expect(extracting.map(e => e.segmentsDone)).toEqual([0, 1, 2]);
+  });
+
+  it('keeps the rest of the report when one part of a long chapter fails', async () => {
+    create
+      .mockResolvedValueOnce({ choices: [{ message: { content: '{"findings":[]}' } }] })
+      .mockRejectedValueOnce(new Error('content_filter'));
+    const res = await post({ text: 'a'.repeat(20000) + 'b'.repeat(50) });
+
+    // One part failing is a thinner report, not a failed run.
+    expect(res.text).not.toContain('"error"');
+    expect(checkingEvent(res.text)).toMatchObject({ total: 0 });
+  });
+
+  it('flags truncation only once a chapter runs past every part it will read', async () => {
+    create.mockResolvedValue({ choices: [{ message: { content: '{"findings":[]}' } }] });
+    // 12 segments are read; a 13th means the chapter really did overrun.
+    const res = await post({ text: 'a'.repeat(20000 * 13) });
+
+    expect(create).toHaveBeenCalledTimes(12);
     expect(checkingEvent(res.text)).toMatchObject({ truncated: true });
-    const userMessage = create.mock.calls[0][0].messages[1].content as string;
-    expect(userMessage).toContain('a'.repeat(20000));
-    expect(userMessage).not.toContain('a'.repeat(20001));
   });
 
   it('reports search as unavailable and grounds nothing when Gemini is not configured', async () => {
@@ -326,7 +364,7 @@ describe('fact-check routes', () => {
       ]);
     });
 
-    it('double-checks at most 20 claims but still reports the rest, unchecked', async () => {
+    it('double-checks at most 20 claims per chapter part, still reporting the rest', async () => {
       modelReplies({
         findings: Array.from({ length: 25 }, (_, i) => ({
           // All below the confidence gate, so all 25 qualify for a web check.

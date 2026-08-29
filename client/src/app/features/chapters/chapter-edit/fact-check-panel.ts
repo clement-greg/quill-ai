@@ -1,10 +1,15 @@
-import { Component, inject, signal, computed, ChangeDetectionStrategy } from '@angular/core';
+import { Component, inject, signal, computed, input, effect, ChangeDetectionStrategy } from '@angular/core';
+import { DatePipe } from '@angular/common';
 import { MatButtonModule } from '@angular/material/button';
 import { MatIconModule } from '@angular/material/icon';
 import { MatTooltipModule } from '@angular/material/tooltip';
+import { MatCheckboxModule } from '@angular/material/checkbox';
 import { MatProgressBarModule } from '@angular/material/progress-bar';
-import { FactCheckFinding, FactCheckVerdict } from '@shared/models/fact-check.model';
+import {
+  FactCheckReport, FactCheckVerdict, SavedFactCheckFinding,
+} from '@shared/models/fact-check.model';
 import { FactCheckService } from '../fact-check.service';
+import { FactCheckReportService } from '../fact-check-report.service';
 
 interface VerdictGroup {
   verdict: FactCheckVerdict;
@@ -12,7 +17,9 @@ interface VerdictGroup {
   icon: string;
   /** One line telling the author what this group means for them. */
   blurb: string;
-  findings: FactCheckFinding[];
+  findings: SavedFactCheckFinding[];
+  /** How many of the group's findings the author has checked off. */
+  doneCount: number;
 }
 
 const VERDICT_META: Record<FactCheckVerdict, { label: string; icon: string; blurb: string }> = {
@@ -35,6 +42,13 @@ const VERDICT_META: Record<FactCheckVerdict, { label: string; icon: string; blur
 
 const VERDICT_ORDER: readonly FactCheckVerdict[] = ['disputed', 'unverifiable', 'verified'];
 
+/** Report order: the author's to-do list first. */
+const VERDICT_RANK: Record<FactCheckVerdict, number> = {
+  disputed: 0,
+  unverifiable: 1,
+  verified: 2,
+};
+
 /** Confidence is reported as a word as well as a number, so the badge never
  * relies on colour alone to carry meaning. */
 function confidenceLabel(confidence: number): string {
@@ -44,16 +58,23 @@ function confidenceLabel(confidence: number): string {
 }
 
 /**
- * Live report for a chapter fact-check run, shown in the editor's slide-out
- * panel rather than a dialog: the author needs the chapter itself to act on the
- * findings, so nothing here blocks the editor. It shows what stage the run is
- * at, fills in each finding as its web lookup settles, and can stop the run
- * mid-flight — findings already in hand stay on screen.
+ * Report for a chapter fact check, shown in the editor's slide-out panel rather
+ * than a dialog: the author needs the chapter itself to act on the findings, so
+ * nothing here blocks the editor.
+ *
+ * The panel has two faces. While a run streams it shows live progress and fills
+ * in each finding as its lookup settles. Once the run is saved — and whenever
+ * the author reopens an earlier run from the picker — it shows a saved report,
+ * where every finding carries a checkbox: the author ticks each one off as they
+ * either correct the prose or decide they're content to leave it as written.
  */
 @Component({
   selector: 'app-fact-check-panel',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [MatButtonModule, MatIconModule, MatTooltipModule, MatProgressBarModule],
+  imports: [
+    DatePipe, MatButtonModule, MatIconModule, MatTooltipModule, MatCheckboxModule,
+    MatProgressBarModule,
+  ],
   template: `
     <div class="panel-header">
       <mat-icon aria-hidden="true">fact_check</mat-icon>
@@ -76,8 +97,22 @@ function confidenceLabel(confidence: number): string {
             </mat-icon>
             <div class="progress-text">
               @if (factCheck.stage() === 'extracting') {
-                <span class="progress-title">Reading the chapter for checkable claims…</span>
-                <span class="progress-sub">This part takes a few seconds.</span>
+                @if (factCheck.segmentsTotal() > 1) {
+                  <!-- Parts are read side by side, so report how many are done
+                       rather than naming "the current part", which would suggest
+                       a sequential walk through the chapter. -->
+                  <span class="progress-title">
+                    Reading the chapter for checkable claims —
+                    {{ factCheck.segmentsDone() }} of {{ factCheck.segmentsTotal() }} parts done
+                  </span>
+                  <span class="progress-sub">
+                    This chapter is long, so it's being read in
+                    {{ factCheck.segmentsTotal() }} parts at once — all of it gets checked.
+                  </span>
+                } @else {
+                  <span class="progress-title">Reading the chapter for checkable claims…</span>
+                  <span class="progress-sub">This part takes a few seconds.</span>
+                }
               } @else if (factCheck.webCheckTotal() > 0) {
                 <span class="progress-title">
                   Double-checking claim {{ nextWebCheckNumber() }} of
@@ -98,7 +133,10 @@ function confidenceLabel(confidence: number): string {
               Stop
             </button>
           </div>
-          @if (factCheck.stage() === 'checking' && factCheck.webCheckTotal() > 0) {
+          @if (factCheck.stage() === 'extracting' && factCheck.segmentsTotal() > 1) {
+            <mat-progress-bar mode="determinate" [value]="readPercent()"
+              [attr.aria-label]="'Parts read: ' + factCheck.segmentsDone() + ' of ' + factCheck.segmentsTotal()" />
+          } @else if (factCheck.stage() === 'checking' && factCheck.webCheckTotal() > 0) {
             <mat-progress-bar mode="determinate" [value]="factCheck.percentComplete()"
               [attr.aria-label]="'Web double-checks done: ' + factCheck.webChecked() + ' of ' + factCheck.webCheckTotal()" />
           } @else {
@@ -113,8 +151,72 @@ function confidenceLabel(confidence: number): string {
           {{ factCheck.error() }}
         </p>
       }
+      @if (saved.error(); as saveError) {
+        <p class="notice notice--error" role="alert">
+          <mat-icon aria-hidden="true">error</mat-icon>
+          {{ saveError }}
+          <button mat-button type="button" (click)="saved.dismissError()">Dismiss</button>
+        </p>
+      }
 
-      @if (factCheck.stopped() && findings().length > 0) {
+      <!-- ── Saved-run picker: every past check on this chapter ── -->
+      @if (!showLive() && saved.hasReports()) {
+        <div class="runs">
+          <label class="runs-label" for="fc-run-select">Saved checks</label>
+          <div class="runs-row">
+            <select id="fc-run-select" class="runs-select" [value]="saved.selectedId() ?? ''"
+                    (change)="onSelectRun($event)">
+              @for (report of saved.reports(); track report.id) {
+                <option [value]="report.id">
+                  {{ report.runAt | date: 'MMM d, y, h:mm a' }} —
+                  {{ report.findings.length }}
+                  {{ report.findings.length === 1 ? 'claim' : 'claims' }}{{ doneSuffix(report) }}
+                </option>
+              }
+            </select>
+            <button mat-icon-button type="button" class="run-delete"
+                    matTooltip="Delete this saved check"
+                    aria-label="Delete this saved check"
+                    (click)="deleteSelected()">
+              <mat-icon>delete_outline</mat-icon>
+            </button>
+          </div>
+          @if (saved.selected(); as report) {
+            <p class="runs-progress">
+              @if (saved.openCount() === 0) {
+                <mat-icon aria-hidden="true" class="runs-done-icon">task_alt</mat-icon>
+                All {{ report.findings.length }}
+                {{ report.findings.length === 1 ? 'finding' : 'findings' }} checked off.
+              } @else {
+                {{ report.findings.length - saved.openCount() }} of {{ report.findings.length }}
+                checked off
+                @if (saved.openDisputedCount() > 0) {
+                  · {{ saved.openDisputedCount() }} disputed still open
+                }
+              }
+            </p>
+          }
+        </div>
+      }
+
+      @if (saved.loading()) {
+        <p class="intro">Loading saved fact checks…</p>
+      }
+
+      @if (isFinished() && findings().length === 0 && !factCheck.error() && !saved.loading()) {
+        <p class="intro">
+          @if (showLive() && factCheck.stopped()) {
+            Stopped before any claim was checked.
+          } @else if (showLive()) {
+            No real-world claims were found in this chapter — nothing here to fact-check.
+          } @else if (!saved.hasReports()) {
+            No fact check has been saved for this chapter yet. Run one from the chapter menu
+            and its findings will be kept here for you to work through.
+          }
+        </p>
+      }
+
+      @if (showLive() && factCheck.stopped() && findings().length > 0) {
         <p class="notice" role="note">
           <mat-icon aria-hidden="true">stop_circle</mat-icon>
           Stopped after {{ findings().length }} of {{ factCheck.total() }}
@@ -122,51 +224,50 @@ function confidenceLabel(confidence: number): string {
         </p>
       }
 
-      @if (isFinished() && findings().length === 0 && !factCheck.error()) {
-        <p class="intro">
-          @if (factCheck.stopped()) {
-            Stopped before any claim was checked.
-          } @else {
-            No real-world claims were found in this chapter — nothing here to fact-check.
-          }
-        </p>
-      }
-
       @if (findings().length > 0) {
         @if (isFinished()) {
-          <p class="intro">
-            {{ findings().length }} checkable
-            {{ findings().length === 1 ? 'claim' : 'claims' }} reported.
-            @if (factCheck.groundedCount() > 0) {
-              The model was unsure of {{ factCheck.groundedCount() }} of them, so
-              {{ factCheck.groundedCount() === 1 ? 'it was' : 'those were' }} double-checked
-              against live web sources, linked below.
-              @if (factCheck.groundedCount() < findings().length) {
-                The rest it answered confidently on its own.
+          @if (showLive()) {
+            <p class="intro">
+              {{ findings().length }} checkable
+              {{ findings().length === 1 ? 'claim' : 'claims' }} reported.
+              @if (factCheck.groundedCount() > 0) {
+                The model was unsure of {{ factCheck.groundedCount() }} of them, so
+                {{ factCheck.groundedCount() === 1 ? 'it was' : 'those were' }} double-checked
+                against live web sources, linked below.
+                @if (factCheck.groundedCount() < findings().length) {
+                  The rest it answered confidently on its own.
+                }
+              } @else if (factCheck.webCheckTotal() > 0) {
+                Web search wasn't reachable for this run, so these come from the model's own
+                knowledge.
+              } @else if (factCheck.searchAvailable()) {
+                The model answered every one of them confidently, so none needed a web
+                double-check.
+              } @else {
+                These come from the model's own knowledge — web search isn't configured on the
+                server.
               }
-            } @else if (factCheck.webCheckTotal() > 0) {
-              Web search wasn't reachable for this run, so these come from the model's own
-              knowledge.
-            } @else if (factCheck.searchAvailable()) {
-              The model answered every one of them confidently, so none needed a web
-              double-check.
-            } @else {
-              These come from the model's own knowledge — web search isn't configured on the
-              server.
-            }
-            Treat the confidence level on each finding as part of the finding.
-          </p>
+              Treat the confidence level on each finding as part of the finding.
+            </p>
+          }
 
-          @if (factCheck.truncated()) {
+          @if (truncated()) {
             <p class="notice" role="note">
               <mat-icon aria-hidden="true">content_cut</mat-icon>
-              This chapter is long, so only its opening portion was checked.
+              This chapter ran past even the checker's multi-part limit, so its final section
+              wasn't read.
+            </p>
+          }
+          @if (!showLive() && stopped()) {
+            <p class="notice" role="note">
+              <mat-icon aria-hidden="true">stop_circle</mat-icon>
+              This check was stopped early, so it covers only part of the chapter.
             </p>
           }
         }
 
         <!-- Verdict filters: counts double as show/hide toggles. -->
-        <div class="filters" role="group" aria-label="Filter findings by verdict">
+        <div class="filters" role="group" aria-label="Filter findings">
           @for (group of groups(); track group.verdict) {
             <button type="button" class="filter-chip" [class]="'filter-chip--' + group.verdict"
                     [class.filter-chip--off]="!shown().has(group.verdict)"
@@ -176,18 +277,41 @@ function confidenceLabel(confidence: number): string {
               {{ group.findings.length }} {{ group.label }}
             </button>
           }
+          @if (checkable() && doneCount() > 0) {
+            <button type="button" class="filter-chip filter-chip--done"
+                    [class.filter-chip--off]="hideDone()"
+                    [attr.aria-pressed]="!hideDone()"
+                    (click)="hideDone.set(!hideDone())">
+              <mat-icon aria-hidden="true">{{ hideDone() ? 'visibility_off' : 'task_alt' }}</mat-icon>
+              {{ hideDone() ? 'Showing open only' : doneCount() + ' checked off' }}
+            </button>
+          }
         </div>
 
         @for (group of visibleGroups(); track group.verdict) {
           <div class="section-header" [class]="'section-header--' + group.verdict">
             <mat-icon aria-hidden="true">{{ group.icon }}</mat-icon>
-            <h3>{{ group.label }} ({{ group.findings.length }})</h3>
+            <h3>
+              {{ group.label }} ({{ group.findings.length }})
+              @if (checkable() && group.doneCount > 0) {
+                <span class="section-done">· {{ group.doneCount }} done</span>
+              }
+            </h3>
           </div>
           <p class="section-blurb">{{ group.blurb }}</p>
 
           @for (finding of group.findings; track finding.id) {
-            <div class="finding" [class]="'finding--' + finding.verdict">
+            <div class="finding" [class]="'finding--' + finding.verdict"
+                 [class.finding--resolved]="finding.resolved">
               <div class="finding-head">
+                @if (checkable()) {
+                  <mat-checkbox class="finding-check" [checked]="!!finding.resolved"
+                                (change)="setResolved(finding, $event.checked)"
+                                [matTooltip]="finding.resolved
+                                  ? 'Put this back on the list'
+                                  : 'Check off — fixed, or fine as written'"
+                                [attr.aria-label]="'Check off: ' + finding.claim" />
+                }
                 <p class="finding-claim">{{ finding.claim }}</p>
                 <span class="confidence" [class]="'confidence--' + confidenceClass(finding.confidence)"
                       [matTooltip]="'How sure the check is of this verdict'">
@@ -206,6 +330,12 @@ function confidenceLabel(confidence: number): string {
                         matTooltip="No web sources for this one — judged from the model's training knowledge">
                     <mat-icon aria-hidden="true">psychology</mat-icon>
                     Model knowledge
+                  </span>
+                }
+                @if (finding.resolved && finding.resolvedAt) {
+                  <span class="source-badge source-badge--done">
+                    <mat-icon aria-hidden="true">task_alt</mat-icon>
+                    Checked off {{ finding.resolvedAt | date: 'MMM d' }}
                   </span>
                 }
               </div>
@@ -242,7 +372,13 @@ function confidenceLabel(confidence: number): string {
         }
 
         @if (visibleGroups().length === 0) {
-          <p class="intro">All verdicts are hidden — turn one back on above to see findings.</p>
+          <p class="intro">
+            @if (hideDone() && doneCount() > 0) {
+              Everything shown is checked off — turn a filter back on above to see it.
+            } @else {
+              All verdicts are hidden — turn one back on above to see findings.
+            }
+          </p>
         }
       }
     </div>
@@ -275,6 +411,29 @@ function confidenceLabel(confidence: number): string {
       mat-icon { font-size: 18px; width: 18px; height: 18px; flex-shrink: 0; }
     }
     .notice--error { background: #f7d9d7; color: #6b1712; }
+
+    /* ── Saved runs ── */
+    .runs { margin-bottom: 16px; }
+    .runs-label {
+      display: block; font-size: 0.7rem; font-weight: 700; letter-spacing: 0.04em;
+      text-transform: uppercase; color: var(--mat-sys-on-surface-variant, #49454f);
+      margin-bottom: 4px;
+    }
+    .runs-row { display: flex; align-items: center; gap: 4px; }
+    .runs-select {
+      flex: 1; min-width: 0; font: inherit; font-size: 0.85rem;
+      padding: 6px 8px; border-radius: 6px;
+      border: 1px solid var(--mat-sys-outline-variant, #cac4d0);
+      background: var(--mat-sys-surface, #fffbfe);
+      color: var(--mat-sys-on-surface, #1d1b20);
+    }
+    .run-delete { flex-shrink: 0; color: var(--mat-sys-on-surface-variant, #49454f); }
+    .runs-progress {
+      display: flex; align-items: center; gap: 4px;
+      margin: 6px 0 0; font-size: 0.8rem;
+      color: var(--mat-sys-on-surface-variant, #49454f);
+    }
+    .runs-done-icon { font-size: 16px; width: 16px; height: 16px; color: #1b5e20; }
 
     /* ── Working state ── */
     .progress-panel {
@@ -320,9 +479,15 @@ function confidenceLabel(confidence: number): string {
     .filter-chip--disputed { color: #b3261e; }
     .filter-chip--unverifiable { color: #8a5200; }
     .filter-chip--verified { color: #1b5e20; }
+    .filter-chip--done { color: var(--mat-sys-primary, #6750a4); }
     .filter-chip--off {
       color: var(--mat-sys-on-surface-variant, #49454f);
       text-decoration: line-through;
+    }
+    /* "Showing open only" is a live state, not a hidden group, so it keeps its
+       colour where the verdict chips grey out. */
+    .filter-chip--done.filter-chip--off {
+      color: var(--mat-sys-primary, #6750a4); text-decoration: none;
     }
     .section-header {
       display: flex; align-items: center; gap: 8px; margin: 20px 0 2px;
@@ -330,6 +495,7 @@ function confidenceLabel(confidence: number): string {
       h3 { margin: 0; font-size: 0.95rem; font-weight: 600; }
       &:first-of-type { margin-top: 0; }
     }
+    .section-done { font-weight: 500; color: var(--mat-sys-on-surface-variant, #49454f); }
     .section-header--disputed { color: #b3261e; }
     .section-header--unverifiable { color: #8a5200; }
     .section-header--verified { color: #1b5e20; }
@@ -347,11 +513,18 @@ function confidenceLabel(confidence: number): string {
     .finding--disputed { border-left-color: #b3261e; }
     .finding--unverifiable { border-left-color: #8a5200; }
     .finding--verified { border-left-color: #1b5e20; }
+    /* A checked-off finding recedes but stays readable — the author may want to
+       see what they decided, and un-tick it. */
+    .finding--resolved {
+      opacity: 0.6;
+      .finding-claim { text-decoration: line-through; }
+    }
     .finding-head {
       display: flex; align-items: flex-start; justify-content: space-between; gap: 10px;
       flex-wrap: wrap;
     }
-    .finding-claim { margin: 0; font-weight: 600; font-size: 0.9rem; flex: 1; min-width: 200px; }
+    .finding-check { flex-shrink: 0; margin-left: -8px; }
+    .finding-claim { margin: 0; font-weight: 600; font-size: 0.9rem; flex: 1; min-width: 160px; }
     .confidence {
       flex-shrink: 0; padding: 2px 8px; border-radius: 10px;
       font-size: 0.72rem; font-weight: 600; white-space: nowrap;
@@ -374,6 +547,7 @@ function confidenceLabel(confidence: number): string {
       mat-icon { font-size: 13px; width: 13px; height: 13px; }
     }
     .source-badge--web { background: #d7f0d9; color: #14471a; }
+    .source-badge--done { background: #e8def8; color: #1d192b; }
     .finding-sources { margin-top: 10px; }
     .sources-label {
       display: block; font-size: 0.7rem; font-weight: 700; letter-spacing: 0.04em;
@@ -413,16 +587,57 @@ function confidenceLabel(confidence: number): string {
   `],
 })
 export class FactCheckPanelComponent {
+  /** The chapter whose saved reports the panel lists. */
+  chapterId = input<string | null>(null);
+
   /** Public so the template can read the live run state. */
   readonly factCheck = inject(FactCheckService);
+  readonly saved = inject(FactCheckReportService);
 
   /** Which verdict groups are currently expanded. All start visible. */
   private shownVerdicts = signal<ReadonlySet<FactCheckVerdict>>(new Set(VERDICT_ORDER));
   readonly shown = this.shownVerdicts.asReadonly();
+  /** Hides findings already checked off, so the panel becomes a to-do list. */
+  readonly hideDone = signal(false);
   copied = signal(false);
 
-  readonly findings = this.factCheck.sortedFindings;
-  readonly isFinished = computed(() => this.factCheck.stage() === 'done');
+  /**
+   * True while a run is streaming or has finished without being saved. The
+   * panel shows the live report then, and the saved report otherwise — a run is
+   * saved the moment it finishes, so this is normally brief.
+   */
+  readonly showLive = computed(() => this.factCheck.stage() !== 'idle');
+
+  /** Check-offs need a saved report to write to, so the live view has none. */
+  readonly checkable = computed(() => !this.showLive() && this.saved.selected() !== null);
+
+  /** Findings on show, in report order, from whichever source is current. */
+  readonly findings = computed<SavedFactCheckFinding[]>(() => {
+    const list: SavedFactCheckFinding[] = this.showLive()
+      ? this.factCheck.sortedFindings()
+      : (this.saved.selected()?.findings ?? []);
+    return [...list].sort(
+      (a, b) => VERDICT_RANK[a.verdict] - VERDICT_RANK[b.verdict] || b.confidence - a.confidence,
+    );
+  });
+
+  readonly doneCount = computed(() => this.findings().filter(f => f.resolved).length);
+
+  /** Run caveats, read from the live run or the saved report as appropriate. */
+  readonly truncated = computed(() =>
+    this.showLive() ? this.factCheck.truncated() : (this.saved.selected()?.truncated ?? false),
+  );
+  readonly stopped = computed(() =>
+    this.showLive() ? this.factCheck.stopped() : (this.saved.selected()?.stopped ?? false),
+  );
+
+  readonly isFinished = computed(() => !this.showLive() || this.factCheck.stage() === 'done');
+
+  /** Progress through the reading stage of a chapter split into parts. */
+  readonly readPercent = computed(() => {
+    const total = this.factCheck.segmentsTotal();
+    return total > 0 ? Math.round((this.factCheck.segmentsDone() / total) * 100) : 0;
+  });
 
   /** 1-based number of the web double-check currently in flight. */
   readonly nextWebCheckNumber = computed(() =>
@@ -432,16 +647,30 @@ export class FactCheckPanelComponent {
   /** Every non-empty verdict group, in report order. */
   groups = computed<VerdictGroup[]>(() => {
     const findings = this.findings();
+    const hideDone = this.hideDone();
     return VERDICT_ORDER
-      .map(verdict => ({
-        verdict,
-        ...VERDICT_META[verdict],
-        findings: findings.filter(f => f.verdict === verdict),
-      }))
+      .map(verdict => {
+        const all = findings.filter(f => f.verdict === verdict);
+        return {
+          verdict,
+          ...VERDICT_META[verdict],
+          findings: hideDone ? all.filter(f => !f.resolved) : all,
+          doneCount: all.filter(f => f.resolved).length,
+        };
+      })
       .filter(g => g.findings.length > 0);
   });
 
   visibleGroups = computed(() => this.groups().filter(g => this.shownVerdicts().has(g.verdict)));
+
+  constructor() {
+    // Saved reports belong to one chapter; load them whenever the panel is
+    // pointed at a chapter, and again when the editor navigates to another.
+    effect(() => {
+      const id = this.chapterId();
+      if (id) void this.saved.load(id);
+    });
+  }
 
   /** Stops the run but leaves the report open with what it found. */
   stop(): void {
@@ -456,6 +685,27 @@ export class FactCheckPanelComponent {
     });
   }
 
+  onSelectRun(event: Event): void {
+    this.saved.select((event.target as HTMLSelectElement).value || null);
+  }
+
+  deleteSelected(): void {
+    const id = this.saved.selectedId();
+    if (id) void this.saved.remove(id);
+  }
+
+  setResolved(finding: SavedFactCheckFinding, resolved: boolean): void {
+    const reportId = this.saved.selectedId();
+    if (!reportId) return;
+    void this.saved.setResolved(reportId, finding.id, resolved);
+  }
+
+  /** " · 2 done", or nothing when a run hasn't been triaged yet. */
+  doneSuffix(report: FactCheckReport): string {
+    const done = report.findings.filter(f => f.resolved).length;
+    return done > 0 ? ` · ${done} done` : '';
+  }
+
   label(confidence: number): string {
     return confidenceLabel(confidence);
   }
@@ -467,12 +717,12 @@ export class FactCheckPanelComponent {
   /** Copies the whole report as markdown, so it can be pasted into notes. */
   copyReport(): void {
     const lines: string[] = ['# Fact check'];
-    if (this.factCheck.truncated()) lines.push('_Only the opening portion of this chapter was checked._');
-    if (this.factCheck.stopped()) lines.push('_The check was stopped early; this is a partial report._');
+    if (this.truncated()) lines.push("_This chapter's final section was too long to read._");
+    if (this.stopped()) lines.push('_The check was stopped early; this is a partial report._');
     for (const group of this.groups()) {
       lines.push('', `## ${group.label} (${group.findings.length})`);
       for (const f of group.findings) {
-        lines.push('', `### ${f.claim}`);
+        lines.push('', `### ${this.checkable() ? (f.resolved ? '[x] ' : '[ ] ') : ''}${f.claim}`);
         lines.push(`- Confidence: ${confidenceLabel(f.confidence)} (${f.confidence}%) · ${f.category}`);
         lines.push(`- Basis: ${f.grounded ? 'live web sources' : 'model knowledge only'}`);
         if (f.quote) lines.push(`- Passage: "${f.quote}"`);

@@ -91,6 +91,10 @@
               <mat-icon>fact_check</mat-icon>
               {{ factChecking() ? 'Fact-checking…' : 'Fact check chapter' }}
             </button>
+            <button mat-menu-item (click)="openSavedFactChecks()" [disabled]="factChecking()">
+              <mat-icon>history</mat-icon>
+              Saved fact checks
+            </button>
             <button mat-menu-item (click)="archiveChapter()">
               <mat-icon>archive</mat-icon> Archive chapter
             </button>
@@ -556,7 +560,7 @@
       <app-ai-stats [chapters]="[chapter()!]" [loading]="false" [entities]="entities()" />
     }
     @if (showFactCheck()) {
-      <app-fact-check-panel />
+      <app-fact-check-panel [chapterId]="chapter()?.id ?? null" />
     }
   </div>
 

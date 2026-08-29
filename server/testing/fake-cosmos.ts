@@ -6,6 +6,7 @@
  * in this codebase:
  *   - `c.field = @param` / `c.field = true|false`
  *   - `(NOT IS_DEFINED(c.field) OR c.field = false)`
+ *   - `(NOT IS_DEFINED(c.field) OR c.field = @param)`
  *   - `(c.owner = @owner OR ARRAY_CONTAINS(c.collaborators, @email))`
  *   - `c.field IN ('a', 'b')`
  *   - `c.field < @param` / `>` / `<=` / `>=`
@@ -92,6 +93,17 @@ export class FakeContainer {
             doc[field] === params.get(param) ||
             (Array.isArray(doc[arrayField]) && (doc[arrayField] as unknown[]).includes(params.get(arrayParam))),
         );
+        return 'TRUE';
+      },
+    );
+
+    // (NOT IS_DEFINED(c.field) OR c.field = @param) — a discriminator whose
+    // absence means the default kind, as on documents written before the field
+    // was introduced.
+    rest = rest.replace(
+      /\(NOT\s+IS_DEFINED\(c\.(\w+)\)\s+OR\s+c\.\1\s*=\s*(@\w+)\)/gi,
+      (_m, field: string, param: string) => {
+        predicates.push(doc => doc[field] === undefined || doc[field] === params.get(param));
         return 'TRUE';
       },
     );

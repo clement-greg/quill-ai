@@ -50,6 +50,7 @@ import { ChapterSyncService } from '../chapter-sync.service';
 import { RecentChaptersService } from '../recent-chapters.service';
 import { EditorReviewService } from '../editor-review.service';
 import { FactCheckService } from '../fact-check.service';
+import { FactCheckReportService } from '../fact-check-report.service';
 import { QuillReviewPanelComponent } from './quill-review-panel/quill-review-panel';
 import { MentionedEntitiesPanelComponent } from './mentioned-entities-panel';
 import { VersionHistoryPanelComponent } from './version-history-panel/version-history-panel';
@@ -102,6 +103,7 @@ export class ChapterEditComponent implements OnInit, OnDestroy {
   private chapterSync = inject(ChapterSyncService);
   private recentChapters = inject(RecentChaptersService);
   private factCheckService = inject(FactCheckService);
+  private factCheckReports = inject(FactCheckReportService);
   /** Public so the template can read the streamed review suggestions. */
   readonly editorReview = inject(EditorReviewService);
   private routeSub?: Subscription;
@@ -406,6 +408,7 @@ export class ChapterEditComponent implements OnInit, OnDestroy {
     // A run has nowhere to report to once the editor is gone, so abandon it.
     this.factCheckToast?.dismiss();
     this.factCheckService.reset();
+    this.factCheckReports.reset();
     document.removeEventListener('keydown', this.onDocumentKeyDown);
     this.editorBridge.unregister();
     this.routeSub?.unsubscribe();
@@ -1228,11 +1231,13 @@ export class ChapterEditComponent implements OnInit, OnDestroy {
     // Entity names tell the check which people and places are invented, so it
     // doesn't report the story's own world as factually wrong.
     const entityNames = this.entities().map(e => e.name).filter(Boolean);
-    void this.factCheckService.run(text, entityNames).then(() => this.onFactCheckFinished());
+    void this.factCheckService.run(text, entityNames).then(() => void this.onFactCheckFinished());
   }
 
-  /** Swaps the progress toast for the finished report once a run settles. */
-  private onFactCheckFinished(): void {
+  /** Swaps the progress toast for the finished report once a run settles, and
+   *  keeps the run: a finished check is saved against the chapter so the author
+   *  can come back to it and tick findings off as they deal with them. */
+  private async onFactCheckFinished(): Promise<void> {
     this.factCheckToast?.dismiss();
     this.factCheckToast = undefined;
     if (this.destroyed) return;
@@ -1255,15 +1260,44 @@ export class ChapterEditComponent implements OnInit, OnDestroy {
     }
     // A stopped run is the author's decision to look away, so don't shove the
     // panel in front of them — just say where the partial report is.
-    if (this.factCheckService.stopped() && !this.showFactCheck()) {
+    const stoppedEarly = this.factCheckService.stopped();
+    await this.saveFactCheckRun();
+    if (this.destroyed) return;
+
+    if (stoppedEarly && !this.showFactCheck()) {
       const ref = this.snackBar.open(
-        `Fact check stopped — ${count} ${count === 1 ? 'claim' : 'claims'} checked`,
+        `Fact check stopped — ${count} ${count === 1 ? 'claim' : 'claims'} checked and saved`,
         'View report',
         { duration: 8000 },
       );
       ref.onAction().subscribe(() => this.showFactCheck.set(true));
       return;
     }
+    this.openFactCheckPanel();
+  }
+
+  /** Saves the run just finished, then clears the live report so the panel
+   *  shows the saved, checkable copy instead. A failed save leaves the live
+   *  report up — the panel says so — rather than losing the findings silently. */
+  private async saveFactCheckRun(): Promise<void> {
+    const chapter = this.chapter();
+    if (!chapter) return;
+    const saved = await this.factCheckReports.saveRun({
+      chapterId: chapter.id,
+      chapterTitle: chapter.title,
+      runAt: new Date().toISOString(),
+      findings: this.factCheckService.findings(),
+      total: this.factCheckService.total(),
+      truncated: this.factCheckService.truncated(),
+      stopped: this.factCheckService.stopped(),
+      searchAvailable: this.factCheckService.searchAvailable(),
+    });
+    if (saved) this.factCheckService.reset();
+  }
+
+  /** Opens the panel on the chapter's saved checks without running a new one. */
+  openSavedFactChecks(): void {
+    this.factCheckService.reset();
     this.openFactCheckPanel();
   }
 
@@ -1274,7 +1308,8 @@ export class ChapterEditComponent implements OnInit, OnDestroy {
     this.showFactCheck.set(true);
   }
 
-  /** Closes the report panel and discards the run it was showing. */
+  /** Closes the report panel. Saved reports survive — only an unsaved live run
+   *  is discarded, and by this point a finished run has already been saved. */
   closeFactCheck(): void {
     this.showFactCheck.set(false);
     this.factCheckService.reset();

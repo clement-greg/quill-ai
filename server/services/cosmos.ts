@@ -26,6 +26,12 @@ const standardContainerDefs = [
   { id: 'chat-folders', partitionKey: { paths: ['/id'] } },
   { id: 'chat-folder-files', partitionKey: { paths: ['/id'] } },
   { id: 'folder-notes', partitionKey: { paths: ['/id'] } },
+  // Holds two kinds of per-chapter document, told apart by `docType`: version
+  // snapshots ('version', or absent on records written before the field
+  // existed) and saved fact-check runs ('fact-check-report'). They share a
+  // container because the database is at its 25-container ceiling and both are
+  // partitioned by exactly the same key — every query here must filter on
+  // docType so one kind never leaks into the other's results.
   { id: 'chapter-versions', partitionKey: { paths: ['/chapterId'] } },
   { id: 'entity-relationships', partitionKey: { paths: ['/id'] } },
   { id: 'diagram-layouts', partitionKey: { paths: ['/id'] } },
@@ -157,13 +163,29 @@ export async function initDatabase(): Promise<void> {
     throughput: 1000,
   });
 
-  // Create standard containers
-  try {
-    for (const def of standardContainerDefs) {
+  // Create standard containers. Each is attempted on its own: one container
+  // that can't be created must not stop the rest from being, which is what a
+  // single try around the whole loop used to do.
+  for (const def of standardContainerDefs) {
+    try {
       await database.containers.createIfNotExists(def);
+    } catch (err: any) {
+      // 1028: the shared offer already covers this container.
+      if (err.code === 400 && err.substatus === 1028) continue;
+      // 1019: the shared-throughput database is at its 25-container ceiling.
+      // The app still runs — every existing feature works — but whatever reads
+      // this container will fail until a slot is freed or it is given its own
+      // throughput, so say exactly that rather than crashing on boot.
+      if (err.code === 400 && err.substatus === 1019) {
+        console.error(
+          `Cosmos container '${def.id}' was not created: the database is at its ` +
+          '25-container limit. Features backed by it will not work until a container ' +
+          'is removed or this one is created with dedicated throughput.',
+        );
+        continue;
+      }
+      throw err;
     }
-  } catch (err: any) {
-    if (err.code !== 400 || err.substatus !== 1028) throw err;
   }
 
   // Create containers with vector embedding policies if they don't exist.

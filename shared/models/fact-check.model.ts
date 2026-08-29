@@ -3,7 +3,9 @@
  * real-world checkable claim out of a chapter's prose and reports whether it
  * holds up, with a confidence level on every finding.
  *
- * Findings are EPHEMERAL — generated fresh per run and never persisted.
+ * A run's findings are ephemeral while they stream, but a finished run can be
+ * kept: see `FactCheckReport` at the foot of this file, which saves a run
+ * against its chapter along with the author's check-off state per finding.
  *
  * A check runs in two stages: the chapter is read once to pull out its checkable
  * claims, then the claims the model was NOT confident about are re-adjudicated
@@ -12,6 +14,8 @@
  * backed it, and `confidence` to say how much weight the author should put on it
  * either way.
  */
+
+import { AuditedRecord } from './audited-record';
 
 /** How a checkable claim held up against real-world knowledge. */
 export type FactCheckVerdict =
@@ -83,7 +87,15 @@ export interface FactCheckRequest {
  * progress instead of an indefinite wait.
  */
 export type FactCheckStreamEvent =
-  | { stage: 'extracting' }
+  | {
+      stage: 'extracting';
+      /** How many parts the chapter was split into for reading. A chapter short
+       * enough to read in one pass reports 1. */
+      segmentsTotal: number;
+      /** How many of those parts have been read. Re-emitted as each lands, so a
+       * long chapter shows progress through the reading stage too. */
+      segmentsDone: number;
+    }
   | {
       stage: 'checking';
       /** How many claims will be reported, so progress can be determinate. */
@@ -100,3 +112,58 @@ export type FactCheckStreamEvent =
     }
   | { finding: FactCheckFinding }
   | { error: string };
+
+// ── Saved reports ──────────────────────────────────────────────────────────
+//
+// A run is ephemeral while it streams, but the author can keep the result: each
+// finished run is saved as its own dated report against the chapter, so the
+// findings can be revisited later and worked through one at a time. Reports are
+// never rewritten by a later run — a re-check adds a new report alongside the
+// old ones, the same way chapter versions accumulate.
+
+/** One finding inside a saved report, plus the author's triage state. */
+export interface SavedFactCheckFinding extends FactCheckFinding {
+  /** True once the author has dealt with this finding — corrected the prose, or
+   * decided they are content to leave it factually wrong. */
+  resolved?: boolean;
+  /** When it was checked off, for display next to the tick. */
+  resolvedAt?: string;
+}
+
+/**
+ * One saved fact-check run. Carries the run's own caveats alongside its
+ * findings, because a report read weeks later has to explain itself: a
+ * truncated or stopped run covered only part of the chapter, and a run made
+ * without search grounding rests on model knowledge alone.
+ */
+export interface FactCheckReport extends AuditedRecord {
+  id: string;
+  /** Discriminator for the shared `chapter-versions` container, which holds
+   * both version snapshots and these reports. Always set on a saved report. */
+  docType: 'fact-check-report';
+  /** Partition key — all of a chapter's reports live together, alongside that
+   * chapter's version snapshots. */
+  chapterId: string;
+  /** When the run finished, ISO 8601. */
+  runAt: string;
+  /** The chapter's title at run time. Kept on the report so an old run still
+   * names the chapter it checked even after a rename. */
+  chapterTitle?: string;
+  findings: SavedFactCheckFinding[];
+  /** How many claims the run set out to report. Higher than `findings.length`
+   * when the run was stopped part-way. */
+  total: number;
+  /** True when the chapter was too long and only its opening was checked. */
+  truncated: boolean;
+  /** True when the author stopped the run before it finished. */
+  stopped: boolean;
+  /** True when web-search grounding was configured for this run. */
+  searchAvailable: boolean;
+}
+
+/** Body for PATCH /api/fact-check-reports/:id/findings/:findingId. */
+export interface FactCheckResolveRequest {
+  /** Partition key for the report being updated. */
+  chapterId: string;
+  resolved: boolean;
+}

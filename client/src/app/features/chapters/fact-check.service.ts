@@ -36,6 +36,11 @@ export class FactCheckService {
   readonly searchAvailable = signal(false);
   /** True when the author stopped the run before it finished. */
   readonly stopped = signal(false);
+  /** How many parts the chapter was split into for reading; 1 for a chapter
+   * short enough to read in one pass. */
+  readonly segmentsTotal = signal(0);
+  /** How many of those parts have been read so far. */
+  readonly segmentsDone = signal(0);
 
   readonly running = computed(() => this.stage() === 'extracting' || this.stage() === 'checking');
   /** How many claims have been reported so far. */
@@ -150,6 +155,8 @@ export class FactCheckService {
     this.truncated.set(false);
     this.searchAvailable.set(false);
     this.stopped.set(false);
+    this.segmentsTotal.set(0);
+    this.segmentsDone.set(0);
   }
 
   private applyEvent(event: FactCheckStreamEvent): void {
@@ -160,6 +167,10 @@ export class FactCheckService {
     if ('finding' in event) {
       this.findings.update(list => [...list, event.finding]);
       return;
+    }
+    if (event.stage === 'extracting') {
+      this.segmentsTotal.set(event.segmentsTotal);
+      this.segmentsDone.set(event.segmentsDone);
     }
     if (event.stage === 'checking') {
       this.total.set(event.total);

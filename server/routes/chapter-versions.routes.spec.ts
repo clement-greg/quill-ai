@@ -26,6 +26,8 @@ beforeEach(() => {
     { id: 'v-a2', chapterId: 'ch-a', content: '<p>two</p>', savedAt: '2026-01-02T00:00:00Z', owner: USER_A },
     { id: 'v-other-chapter', chapterId: 'ch-x', content: '<p>x</p>', savedAt: '2026-01-03T00:00:00Z', owner: USER_A },
     { id: 'v-b', chapterId: 'ch-a', content: '<p>bob</p>', savedAt: '2026-01-04T00:00:00Z', owner: USER_B },
+    // Saved fact-check reports share this container and partition key.
+    { id: 'fc-a', chapterId: 'ch-a', docType: 'fact-check-report', findings: [], savedAt: '2026-01-05T00:00:00Z', owner: USER_A },
   );
 });
 
@@ -37,6 +39,19 @@ describe('chapter-versions routes', () => {
 
     const asB = await request(app).get('/api/chapter-versions/chapter/ch-a').set('x-test-user', USER_B);
     expect(asB.body.map((v: { id: string }) => v.id)).toEqual(['v-b']);
+  });
+
+  it('GET /chapter/:chapterId leaves saved fact-check reports out of the version list', async () => {
+    const res = await request(app).get('/api/chapter-versions/chapter/ch-a').set('x-test-user', USER_A);
+    expect(res.body.map((v: { id: string }) => v.id).sort()).toEqual(['v-a1', 'v-a2']);
+  });
+
+  it('POST / stamps the version document type so reports stay distinguishable', async () => {
+    const res = await request(app)
+      .post('/api/chapter-versions')
+      .set('x-test-user', USER_A)
+      .send({ chapterId: 'ch-a', content: '<p>new</p>' });
+    expect(res.body.docType).toBe('version');
   });
 
   it('POST / validates chapterId and content', async () => {

@@ -7,14 +7,26 @@ import { withOwnerFilter } from '../middleware/owner-guard';
 const router = Router();
 const container = getContainer('chapter-versions');
 
+/** Marks a document in this container as a version snapshot. Saved fact-check
+ * reports live here too (the database is at its container ceiling), so queries
+ * must say which kind they want. Snapshots written before this field existed
+ * have no `docType` at all and still count as versions. */
+const DOC_TYPE = 'version';
+
 // GET all versions for a chapter, ordered newest first
 router.get('/chapter/:chapterId', async (req: Request, res: Response) => {
   try {
     const chapterId = req.params['chapterId'] as string;
     const { resources } = await container.items
       .query(withOwnerFilter(req, {
-        query: 'SELECT * FROM c WHERE c.chapterId = @chapterId ORDER BY c.savedAt DESC',
-        parameters: [{ name: '@chapterId', value: chapterId }],
+        query:
+          'SELECT * FROM c WHERE c.chapterId = @chapterId ' +
+          'AND (NOT IS_DEFINED(c.docType) OR c.docType = @docType) ' +
+          'ORDER BY c.savedAt DESC',
+        parameters: [
+          { name: '@chapterId', value: chapterId },
+          { name: '@docType', value: DOC_TYPE },
+        ],
       }), { partitionKey: chapterId })
       .fetchAll();
     res.json(resources as ChapterVersion[]);
@@ -38,6 +50,7 @@ router.post('/', async (req: Request, res: Response) => {
     }
     const version: ChapterVersion = {
       id: uuidv4(),
+      docType: DOC_TYPE,
       chapterId: body.chapterId,
       savedAt: new Date().toISOString(),
       content: body.content,

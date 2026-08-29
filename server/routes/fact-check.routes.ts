@@ -18,12 +18,58 @@ const client = new AzureOpenAI({
   apiVersion: config.foundry.apiVersion,
 });
 
-/** Chapters longer than this are checked from the start only, to bound cost. */
-const MAX_TEXT_CHARS = 20000;
+/**
+ * Most a single extraction pass is asked to read. A chapter longer than this is
+ * split into segments and each is read on its own, so a long chapter is checked
+ * end to end rather than from the start until the budget runs out.
+ */
+const MAX_SEGMENT_CHARS = 20000;
 
-/** Ceiling on web-grounded lookups per run — each one costs a round of searches.
- * Claims are grounded in report order, so disputes are always covered first. */
-const MAX_GROUNDED_CLAIMS = 20;
+/** Segments read per run. Twelve covers ~240k characters — far longer than any
+ * real chapter — so `truncated` is now a genuine outlier rather than routine. */
+const MAX_SEGMENTS = 12;
+
+/** Extraction passes in flight at once. Kept low so a long chapter doesn't
+ * burst the Azure deployment's rate limit. */
+const EXTRACT_CONCURRENCY = 3;
+
+/** Web-grounded lookups allowed per segment, and the ceiling across the whole
+ * run. Each lookup costs a round of searches, so the budget grows with the
+ * chapter instead of leaving a long chapter's later claims unchecked. Claims are
+ * grounded in report order, so disputes are always covered first. */
+const GROUNDED_CLAIMS_PER_SEGMENT = 20;
+const MAX_GROUNDED_CLAIMS = 60;
+
+/**
+ * Splits plain chapter prose into extraction-sized segments, each a VERBATIM
+ * substring of the input — quotes are validated against the full chapter, so a
+ * segment that reflowed its whitespace would cost every finding its quote.
+ *
+ * Line breaks are preferred as cut points so a segment starts on a paragraph;
+ * a single paragraph longer than the budget is split on spaces as a last resort.
+ */
+export function segmentText(text: string, maxChars = MAX_SEGMENT_CHARS): string[] {
+  if (text.length <= maxChars) return text.trim() ? [text] : [];
+
+  const segments: string[] = [];
+  let start = 0;
+  while (start < text.length) {
+    if (text.length - start <= maxChars) {
+      segments.push(text.slice(start));
+      break;
+    }
+    const slice = text.slice(start, start + maxChars);
+    // Cut after the last paragraph break, then the last space. A break is only
+    // worth taking if it leaves a segment worth reading; otherwise cut at the
+    // hard limit, which costs at most one claim spanning the seam.
+    let cut = slice.lastIndexOf('\n') + 1;
+    if (cut < maxChars / 2) cut = slice.lastIndexOf(' ') + 1;
+    if (cut < maxChars / 2) cut = maxChars;
+    segments.push(text.slice(start, start + cut));
+    start += cut;
+  }
+  return segments.filter(s => s.trim().length > 0);
+}
 
 /**
  * A first-pass verdict at or above this confidence is taken as settled and is
@@ -179,13 +225,16 @@ function withGroundedVerdict(finding: FactCheckFinding, grounded: GroundedVerdic
  * Fact-checks the real-world claims in a chapter's prose. Body:
  *   { text: string, knownEntityNames?: string[] }
  *
- * Azure OpenAI extracts the claims and judges them from its own knowledge; only
- * the ones it wasn't confident about are then double-checked against live Google
- * Search results (see `needsWebCheck`).
+ * The chapter is read in segments (see `segmentText`) so that a long chapter is
+ * checked end to end rather than from its opening until a character budget runs
+ * out. Azure OpenAI extracts the claims in each segment and judges them from its
+ * own knowledge; the claims across all segments are then pooled, de-duplicated,
+ * and only the ones it wasn't confident about are double-checked against live
+ * Google Search results (see `needsWebCheck`).
  *
- * Streams progress as SSE, because a run makes one Azure call plus a web lookup
- * per unsure claim and can take a minute:
- *   data: {"stage":"extracting"}                         — reading the chapter
+ * Streams progress as SSE, because a run makes one Azure call per segment plus a
+ * web lookup per unsure claim and can take a minute:
+ *   data: {"stage":"extracting","segmentsDone":i,...}    — reading part i
  *   data: {"stage":"checking","total":N,...}             — claims found, lookups starting
  *   data: {"finding":FactCheckFinding}                   — one per claim, as it settles
  *   data: {"error":"..."}                                — run failed
@@ -221,42 +270,81 @@ router.post('/', async (req: Request, res: Response) => {
     res.write(`data: ${JSON.stringify(payload)}\n\n`);
   };
 
-  send({ stage: 'extracting' });
+  const allSegments = segmentText(text);
+  const segments = allSegments.slice(0, MAX_SEGMENTS);
+  const truncated = allSegments.length > MAX_SEGMENTS;
+  const checkedText = segments.join('');
 
-  const truncated = text.length > MAX_TEXT_CHARS;
-  const trimmedText = text.slice(0, MAX_TEXT_CHARS);
+  send({ stage: 'extracting', segmentsTotal: segments.length, segmentsDone: 0 });
+
   const entityList = Array.isArray(knownEntityNames)
     ? knownEntityNames.filter(n => typeof n === 'string' && n.trim().length > 0)
     : [];
 
-  const userContent =
-    (entityList.length > 0
-      ? `Known story entities — these are fictional, never fact-check claims about them: ${entityList.join(', ')}\n\n`
-      : '') +
-    `Chapter prose:\n${trimmedText}`;
+  const entityPreamble = entityList.length > 0
+    ? `Known story entities — these are fictional, never fact-check claims about them: ${entityList.join(', ')}\n\n`
+    : '';
 
-  try {
+  /** Reads one segment and returns its claims. A segment that comes back
+   * unreadable yields nothing rather than failing the whole run — losing one
+   * part of a long chapter beats losing the whole report. */
+  const extractSegment = async (segment: string, index: number): Promise<FactCheckFinding[]> => {
+    // A segment is one slice of a longer chapter, so say so: without this the
+    // model reads a mid-chapter excerpt as a chapter that opens mid-sentence.
+    const positionNote = segments.length > 1
+      ? `This is part ${index + 1} of ${segments.length} of one chapter. Check only the prose below; it may begin or end mid-scene.\n\n`
+      : '';
     const completion = await client.chat.completions.create({
       model: config.foundry.highModel,
       messages: [
         { role: 'system', content: SYSTEM_PROMPT },
-        { role: 'user', content: userContent },
+        { role: 'user', content: `${entityPreamble}${positionNote}Chapter prose:\n${segment}` },
       ],
       response_format: { type: 'json_object' },
     });
+    const parsed = JSON.parse(completion.choices[0]?.message?.content ?? '{}') as { findings?: unknown };
+    if (!Array.isArray(parsed.findings)) return [];
+    // Quotes are matched against the whole checked chapter rather than this
+    // segment, so a quote that straddles a seam still anchors.
+    return parsed.findings
+      .map(f => toFinding(f, checkedText))
+      .filter((f): f is FactCheckFinding => f !== null);
+  };
 
-    let claims: FactCheckFinding[] = [];
-    try {
-      const parsed = JSON.parse(completion.choices[0]?.message?.content ?? '{}') as { findings?: unknown };
-      if (Array.isArray(parsed.findings)) {
-        claims = parsed.findings
-          .map(f => toFinding(f, trimmedText))
-          .filter((f): f is FactCheckFinding => f !== null);
+  try {
+    // Segments are read a few at a time — a twelve-part chapter read strictly in
+    // sequence would keep the author waiting far longer than it needs to.
+    const perSegment: FactCheckFinding[][] = segments.map(() => []);
+    let done = 0;
+    let readable = 0;
+    let next = 0;
+    const worker = async (): Promise<void> => {
+      while (!cancelled) {
+        const index = next++;
+        if (index >= segments.length) return;
+        try {
+          perSegment[index] = await extractSegment(segments[index], index);
+          readable++;
+        } catch (err) {
+          // A content filter or an unparseable reply kills this segment only.
+          console.error(`Fact check: part ${index + 1}/${segments.length} failed:`, err);
+        }
+        done++;
+        send({ stage: 'extracting', segmentsTotal: segments.length, segmentsDone: done });
       }
-    } catch {
+    };
+    await Promise.all(
+      Array.from({ length: Math.min(EXTRACT_CONCURRENCY, segments.length) }, worker),
+    );
+
+    // Every part failing is a real failure; some parts failing is a thinner
+    // report, which is still worth showing.
+    if (readable === 0 && !cancelled) {
       send({ error: 'The fact check came back unreadable — please try again.' });
       return;
     }
+
+    let claims = perSegment.flat();
 
     // Sort before grounding so the claims most worth a web lookup — the disputes —
     // are the ones inside the grounding budget.
@@ -267,8 +355,14 @@ router.post('/', async (req: Request, res: Response) => {
     // Only the claims the first pass was unsure of go out to the web; the rest
     // are already settled, so searching them would buy nothing.
     const searchAvailable = isSearchGroundingEnabled();
+    // The budget grows with the chapter, so a long chapter's later claims get
+    // the same shot at a web check as its opening ones.
+    const groundingBudget = Math.min(
+      MAX_GROUNDED_CLAIMS,
+      GROUNDED_CLAIMS_PER_SEGMENT * segments.length,
+    );
     const toGround = searchAvailable
-      ? claims.filter(needsWebCheck).slice(0, MAX_GROUNDED_CLAIMS)
+      ? claims.filter(needsWebCheck).slice(0, groundingBudget)
       : [];
     const groundingIds = new Set(toGround.map(f => f.id));
 
