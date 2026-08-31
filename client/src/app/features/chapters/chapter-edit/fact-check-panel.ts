@@ -52,6 +52,34 @@ const VERDICT_RANK: Record<FactCheckVerdict, number> = {
   verified: 2,
 };
 
+/**
+ * Where the "hide checked off" preference is kept. It rides in localStorage
+ * beside the editor's other per-device view state (sidebar width, history list
+ * height) rather than in user settings, which holds account-level feature
+ * toggles — this is how one panel is filtered, not how the app behaves.
+ */
+const HIDE_DONE_KEY = 'fact-check-hide-checked-off';
+
+/** Reading a report is triage, so checked-off findings start hidden: the list
+ * is meant to be what's left to do. Storage can throw (private browsing, an
+ * embedded webview), and a preference is never worth failing the panel over. */
+function loadHideDone(): boolean {
+  try {
+    const stored = localStorage.getItem(HIDE_DONE_KEY);
+    return stored === null ? true : stored === 'true';
+  } catch {
+    return true;
+  }
+}
+
+function saveHideDone(hide: boolean): void {
+  try {
+    localStorage.setItem(HIDE_DONE_KEY, String(hide));
+  } catch {
+    // The toggle still works for this session; it just won't be remembered.
+  }
+}
+
 /** Confidence is reported as a word as well as a number, so the badge never
  * relies on colour alone to carry meaning. */
 function confidenceLabel(confidence: number): string {
@@ -724,8 +752,9 @@ export class FactCheckPanelComponent {
   /** Which verdict groups are currently expanded. All start visible. */
   private shownVerdicts = signal<ReadonlySet<FactCheckVerdict>>(new Set(VERDICT_ORDER));
   readonly shown = this.shownVerdicts.asReadonly();
-  /** Hides findings already checked off, so the panel becomes a to-do list. */
-  readonly hideDone = signal(false);
+  /** Hides findings already checked off, so the panel reads as a to-do list.
+   * On by default, and remembered across sessions. */
+  readonly hideDone = signal(loadHideDone());
   copied = signal(false);
 
   /** Findings mid-exit: checked off while hidden, still on screen playing their
@@ -844,9 +873,11 @@ export class FactCheckPanelComponent {
   }
 
   /** Switching the toggle on hides the checked-off findings outright: they were
-   *  already read, so there is nothing to show leaving. */
+   *  already read, so there is nothing to show leaving. The choice sticks for
+   *  every report and every chapter from here on. */
   setHideDone(hide: boolean): void {
     this.hideDone.set(hide);
+    saveHideDone(hide);
     if (!hide) this.leavingIds.set(new Set());
   }
 
