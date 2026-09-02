@@ -46,6 +46,9 @@
   justify-content: space-between;
   margin-bottom: 12px;
   flex-shrink: 0;
+  // Leave room for the floating .panel-toggle-btn, which sits over the
+  // panel's top-left corner and would otherwise cover the title.
+  padding-left: 32px;
 }
 
 .panel-title {
@@ -331,7 +334,8 @@
   flex-direction: column;
   align-items: center;
   gap: 6px;
-  padding-top: 4px;
+  // Clears the floating .panel-toggle-btn pinned to the panel's top-left.
+  padding-top: 44px;
 }
 
 .rail-add-btn {
@@ -488,8 +492,15 @@
   }
 
   // On mobile the panel is always visible and the toggle button is not needed.
+  // !important because Angular Material's `.mat-mdc-icon-button
+  // .mat-mdc-button-base` display rule ties on specificity and wins on order.
   .panel-toggle-btn {
-    display: none;
+    display: none !important;
+  }
+
+  // With the toggle gone, drop the space reserved for it.
+  .panel-header {
+    padding-left: 0;
   }
 
   // Override hidden state — panel always shows on mobile.
