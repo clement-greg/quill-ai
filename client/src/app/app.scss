@@ -60,7 +60,10 @@ main.full-height {
   overflow: auto;
 }
 
-@media (max-width: 768px) {
+/* Must match mat-toolbar's own breakpoint (599px), not our 768px layout one —
+   between 600px and 768px the toolbar is still 64px tall, so subtracting 56px
+   made main 8px too tall and produced a second (body) scrollbar. */
+@media (max-width: 599px) {
   main {
     height: calc(100vh - 56px);
     height: calc(100dvh - 56px); /* iOS Safari: mobile toolbar is 56px */
