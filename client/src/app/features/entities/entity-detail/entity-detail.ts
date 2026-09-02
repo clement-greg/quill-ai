@@ -38,6 +38,7 @@ import { TimelineEventService } from '../timeline-event.service';
 import { EntityRelationshipService } from '../entity-relationship.service';
 import { UserSettingsService } from '@app/core/services/user-settings.service';
 import { VideoPlayer } from '@app/shared/video-player/video-player';
+import { LazyRenderDirective } from '@app/shared/lazy-render/lazy-render';
 import {
   TimelineEventDialogComponent,
   TimelineEventDialogData,
@@ -101,6 +102,7 @@ interface BookGroup {
     TimelineMapComponent,
     FictionalLocationMapComponent,
     VideoPlayer,
+    LazyRenderDirective,
   ],
   templateUrl: './entity-detail.html',
   styleUrl: './entity-detail.scss',

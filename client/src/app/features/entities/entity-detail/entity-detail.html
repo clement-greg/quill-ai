@@ -179,7 +179,8 @@
                 <div class="photo-card photo-card--skeleton" aria-label="Generating image…" aria-busy="true"></div>
               }
               @for (photo of displayedPhotos(); track $index) {
-                <button class="photo-card" draggable="true" (dragstart)="onPhotoDragStart($event, photo)"
+                <button class="photo-card" appLazyRender #photoTile="lazyRender"
+                        draggable="true" (dragstart)="onPhotoDragStart($event, photo)"
                         (click)="onPhotoCardClick($index)"
                         (pointerdown)="onPhotoCardPointerDown($event, photo)"
                         (pointermove)="onPhotoCardPointerMove($event)"
@@ -188,13 +189,18 @@
                         (pointerleave)="cancelPhotoCardPress()"
                         (contextmenu)="onPhotoCardContextMenu($event, photo)"
                         [attr.aria-label]="photo.caption || (isVideo(photo.url) ? 'Video ' : 'Photo ') + ($index + 1)">
-                  @if (isVideo(photo.url)) {
-                    <video [src]="videoPosterUrl(photo.url)" preload="metadata" muted playsinline></video>
-                    <span class="photo-video-badge" aria-hidden="true">
-                      <mat-icon>play_arrow</mat-icon>
-                    </span>
-                  } @else {
-                    <img [src]="proxyUrl(photo.thumbnailUrl) || proxyUrl(photo.url)" [alt]="photo.caption || ''" />
+                  <!-- Media is only built while the tile is near the viewport: an entity
+                       can carry hundreds of photos and videos, and holding them all live
+                       exhausts memory and decode budget. -->
+                  @if (photoTile.visible()) {
+                    @if (isVideo(photo.url)) {
+                      <video [src]="videoPosterUrl(photo.url)" preload="metadata" muted playsinline></video>
+                      <span class="photo-video-badge" aria-hidden="true">
+                        <mat-icon>play_arrow</mat-icon>
+                      </span>
+                    } @else {
+                      <img [src]="proxyUrl(photo.thumbnailUrl) || proxyUrl(photo.url)" [alt]="photo.caption || ''" />
+                    }
                   }
                   @if (photo.caption) {
                     <span class="photo-caption">{{ photo.caption }}</span>
