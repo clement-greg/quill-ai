@@ -118,22 +118,43 @@ export class EntityPageComponent implements OnInit, OnDestroy {
 
   ngOnInit(): void {
     this.headerService.setPage('Entities');
-    const seriesId = this.seriesContext.currentSeriesId();
-    if (seriesId) {
-      this.panel.loadAllSeries(seriesId);
-    } else {
-      // If arriving directly at /entities/:id with no series context, load the
-      // entity first so we can derive its seriesId and seed the left panel.
-      const entityId = this.route.snapshot.paramMap.get('id');
-      if (entityId) {
-        this.entityService.getById(entityId).subscribe({
-          next: (entity) => this.panel.loadAllSeries(entity.seriesId),
-          error: () => this.panel.loadAllSeries(null),
-        });
-      } else {
-        this.panel.loadAllSeries(null);
-      }
+    // /entities and /entities/:id are separate routes, so selecting an entity
+    // recreates this component. The routed entity's own series always wins:
+    // the panel must show the series the visible entity belongs to, not
+    // whatever series was last in context elsewhere in the app.
+    const entityId = this.route.snapshot.paramMap.get('id');
+    if (!entityId) {
+      this.applySeries(this.panel.seriesId() ?? this.seriesContext.currentSeriesId());
+      return;
     }
+    const loaded = [this.panel.narrator(), ...this.panel.entityList()]
+      .find(e => e?.id === entityId);
+    if (loaded) {
+      this.applySeries(loaded.seriesId);
+      return;
+    }
+    // Arriving directly at /entities/:id: fetch the entity to derive its series.
+    this.entityService.getById(entityId).subscribe({
+      next: (entity) => this.applySeries(entity.seriesId),
+      error: () => this.applySeries(this.panel.seriesId() ?? this.seriesContext.currentSeriesId()),
+    });
+  }
+
+  /** Seeds the panel and the app-wide series context with the given series. */
+  private applySeries(seriesId: string | null): void {
+    if (seriesId) {
+      this.seriesContext.set(seriesId);
+    }
+    if (this.panel.allSeries().length === 0) {
+      this.panel.loadAllSeries(seriesId);
+    } else if (seriesId) {
+      this.panel.selectSeries(seriesId);
+    }
+  }
+
+  changeSeries(seriesId: string): void {
+    this.panel.selectSeries(seriesId);
+    this.seriesContext.set(seriesId);
   }
 
   ngOnDestroy(): void {

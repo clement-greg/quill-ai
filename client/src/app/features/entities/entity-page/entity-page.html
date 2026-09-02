@@ -31,7 +31,7 @@
           <mat-icon class="series-icon">auto_stories</mat-icon>
           <mat-select class="series-select"
                       [value]="panel.seriesId()"
-                      (valueChange)="panel.selectSeries($event)"
+                      (valueChange)="changeSeries($event)"
                       placeholder="Select a series">
             @for (s of panel.allSeries(); track s.id) {
               <mat-option [value]="s.id">{{ s.title }}</mat-option>
