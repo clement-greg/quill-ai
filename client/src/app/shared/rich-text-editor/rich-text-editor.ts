@@ -1640,15 +1640,15 @@ export class RichTextEditorComponent implements OnInit, AfterViewInit, OnDestroy
   /**
    * Inserts cleaned HTML at the current cursor position without creating
    * spurious empty paragraphs. For single-block content the inner HTML is
-   * inserted inline. For multi-block content the current paragraph is split
-   * at the cursor and the blocks are merged correctly.
+   * inserted inline. For multi-block content insertHTML splits the current
+   * paragraph at the cursor and merges the first/last pasted blocks into it.
+   *
+   * All mutation goes through execCommand so the paste lands on the browser's
+   * native undo stack (Ctrl+Z). Direct DOM edits here would break undo.
    */
   private insertPastedHtml(html: string): void {
     const sel = window.getSelection();
     if (!sel || sel.rangeCount === 0) return;
-
-    const range = sel.getRangeAt(0);
-    range.deleteContents();
 
     const tmp = document.createElement('div');
     tmp.innerHTML = html;
@@ -1676,63 +1676,15 @@ export class RichTextEditorComponent implements OnInit, AfterViewInit, OnDestroy
     }
 
     // ── Multiple block paragraphs ────────────────────────────────────────
-    // Split the current paragraph at the cursor and stitch the pasted blocks
-    // in between so no extra empty paragraphs appear.
-    const editor = this.editorRef?.nativeElement as HTMLElement | undefined;
-    if (!editor) { document.execCommand('insertHTML', false, html); return; }
-
-    // Find the direct-child block of the editor that contains the cursor.
-    let curBlock: Node | null = range.startContainer;
-    while (curBlock && curBlock.parentNode !== editor) curBlock = curBlock.parentNode;
-    if (!curBlock) { document.execCommand('insertHTML', false, html); return; }
-
-    // Extract everything after the cursor from curBlock (removes it from DOM).
-    const afterRange = document.createRange();
-    afterRange.setStart(range.startContainer, range.startOffset);
-    afterRange.setEnd(curBlock, curBlock.childNodes.length);
-    const afterFrag = afterRange.extractContents();
-
-    // Merge the first pasted block's children into curBlock (now ends at cursor).
-    const firstBlock = pastedNodes[0] as HTMLElement;
-    while (firstBlock.firstChild) curBlock.appendChild(firstBlock.firstChild);
-
-    // Insert any middle blocks.
-    let ref: Node = curBlock;
-    for (let i = 1; i < pastedNodes.length - 1; i++) {
-      const mid = pastedNodes[i] as HTMLElement;
-      if (!mid.innerHTML.trim()) mid.innerHTML = '<br>';
-      editor.insertBefore(mid, ref.nextSibling);
-      ref = mid;
-    }
-
-    // Build trailing block: last pasted block content + what was after cursor.
-    const trailingP = document.createElement('p');
-    const lastBlock = pastedNodes[pastedNodes.length - 1] as HTMLElement;
-    let lastPastedChild: Node | null = null;
-    while (lastBlock.firstChild) {
-      lastPastedChild = lastBlock.firstChild;
-      trailingP.appendChild(lastPastedChild);
-    }
-    trailingP.appendChild(afterFrag);
-    if (!trailingP.textContent && !trailingP.querySelector('br, img')) {
-      trailingP.appendChild(document.createElement('br'));
-    }
-    editor.insertBefore(trailingP, ref.nextSibling);
-
-    // Position cursor at the end of the last pasted content (before the after-text).
-    const newRange = document.createRange();
-    if (lastPastedChild) {
-      if (lastPastedChild.nodeType === Node.TEXT_NODE) {
-        newRange.setStart(lastPastedChild, (lastPastedChild as Text).length);
-      } else {
-        newRange.setStartAfter(lastPastedChild);
-      }
-    } else {
-      newRange.setStart(trailingP, 0);
-    }
-    newRange.collapse(true);
-    sel.removeAllRanges();
-    sel.addRange(newRange);
+    // Empty middle blocks need a <br> or they collapse to zero height.
+    const blocksHtml = pastedNodes
+      .map(n => {
+        const el = n as HTMLElement;
+        if (!el.innerHTML.trim()) el.innerHTML = '<br>';
+        return el.outerHTML;
+      })
+      .join('');
+    document.execCommand('insertHTML', false, blocksHtml);
   }
 
   private cleanPastedHtml(html: string): string {
