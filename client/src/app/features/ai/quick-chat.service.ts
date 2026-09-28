@@ -1,11 +1,14 @@
 import { Injectable, inject, signal, effect } from '@angular/core';
 import { Router } from '@angular/router';
-import { ChapterCitation, ChapterEditProposal, ChatMessageHighlight, ChatSession, ChatSessionMessage, ChatSessionSummary, EntityLinkSession, MapPreview } from '@shared/models';
+import { Subject } from 'rxjs';
+import { ChapterCitation, ChapterEditProposal, ChatMessageHighlight, ChatSession, ChatSessionMessage, ChatSessionSummary, ChatImage, EntityLinkSession, EntityProposal, MapPreview } from '@shared/models';
 import { EditorBridgeService } from '@app/features/chapters/editor-bridge.service';
 import { AiAssistantService } from './ai-assistant.service';
 import { ChapterSyncService, ChapterExternalUpdate } from '@app/features/chapters/chapter-sync.service';
 import { EditorReviewService } from '@app/features/chapters/editor-review.service';
 import { AuthFetchService } from '@app/core/services/auth-fetch.service';
+import { SeriesContextService } from '@app/core/services/series-context.service';
+import { UserSettingsService } from '@app/core/services/user-settings.service';
 
 /** Remembers the last active session so a page refresh reopens it. */
 const LAST_SESSION_KEY = 'quill_last_chat_session_id';
@@ -24,6 +27,12 @@ export class QuickChatService {
   private readonly chapterSync = inject(ChapterSyncService);
   private readonly editorReview = inject(EditorReviewService);
   private readonly authFetchService = inject(AuthFetchService);
+  private readonly seriesContext = inject(SeriesContextService);
+  private readonly userSettings = inject(UserSettingsService);
+
+  /** Emits the message index when the assistant drafts a new entity, so the
+   *  panel can open the entity form for the author to review and save. */
+  readonly entityProposalReady = new Subject<number>();
 
   /** The panel is always present — it cannot be fully closed, only minimized. */
   readonly isOpen = signal(true);
@@ -140,7 +149,20 @@ export class QuickChatService {
       const res = await this.authFetch('/api/chat-sessions/quick-chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ messages: apiMessages, ...(chapterContext ? { chapterContext } : {}) }),
+        body: JSON.stringify({
+          messages: apiMessages,
+          ...(chapterContext ? { chapterContext } : {}),
+          // Lets a drafted entity land in the series in view and use the
+          // author's own gender/race/orientation choices.
+          seriesId: this.seriesContext.currentSeriesId(),
+          entityOptions: {
+            gender: this.userSettings.genderOptions(),
+            race: this.userSettings.raceOptions(),
+            orientation: this.userSettings.orientationOptions(),
+          },
+          // Pictures generated so far, so the assistant can use them for an entity.
+          sessionImages: this.chatImages(),
+        }),
         signal: this.abortController.signal,
       });
 
@@ -181,6 +203,7 @@ export class QuickChatService {
               lottie?: string;
               linkEntityReferences?: { entityId: string; entityName: string; terms: { text: string; refType: string }[] };
               proposeChapterEdit?: ChapterEditProposal;
+              proposeEntity?: EntityProposal;
               tool?: string;
             };
             if (parsed.error) {
@@ -213,7 +236,7 @@ export class QuickChatService {
             } else if (parsed.generatingImage) {
               this.setLastAssistantGenerating(true);
             } else if (parsed.image) {
-              this.setLastAssistantImage(parsed.image.url, parsed.image.thumbnailUrl);
+              this.setLastAssistantImage(parsed.image.url, parsed.image.thumbnailUrl, parsed.image.prompt);
             } else if (parsed.imageError) {
               this.setLastAssistantGenerating(false);
             } else if (parsed.lottie) {
@@ -244,6 +267,11 @@ export class QuickChatService {
               // editor. The assistant's short confirmation text streams after this.
               this.setLastAssistantEditProposal(parsed.proposeChapterEdit);
               this.editorBridge.previewChapterEdit(parsed.proposeChapterEdit);
+            } else if (parsed.proposeEntity) {
+              // The assistant drafted a new entity. Attach it to the message (a
+              // card that reopens the form) and open the form for review now.
+              this.setLastAssistantEntityProposal(parsed.proposeEntity);
+              this.entityProposalReady.next(this.messages().length - 1);
             } else if (parsed.content) {
               this.appendToLastAssistantMessage(parsed.content);
             } else if (parsed.sources) {
@@ -339,16 +367,18 @@ export class QuickChatService {
   private async persistToSession(sessionId: string): Promise<void> {
     const messages = this.messages()
       .filter(m => m.text || m.imageUrl)
-      .map(({ role, text, imageUrl, thumbnailUrl, sources, kind, beats, lottieUrl, editProposal, linkSession, toolsUsed }) => ({
+      .map(({ role, text, imageUrl, thumbnailUrl, imagePrompt, sources, kind, beats, lottieUrl, editProposal, linkSession, entityProposal, toolsUsed }) => ({
         role, text,
         ...(imageUrl ? { imageUrl } : {}),
         ...(thumbnailUrl ? { thumbnailUrl } : {}),
+        ...(imagePrompt ? { imagePrompt } : {}),
         ...(sources?.length ? { sources } : {}),
         ...(kind ? { kind } : {}),
         ...(beats ? { beats } : {}),
         ...(lottieUrl ? { lottieUrl } : {}),
         ...(editProposal ? { editProposal } : {}),
         ...(linkSession ? { linkSession } : {}),
+        ...(entityProposal ? { entityProposal } : {}),
         ...(toolsUsed?.length ? { toolsUsed } : {}),
       }));
     try {
@@ -489,21 +519,40 @@ export class QuickChatService {
   private setLastAssistantGenerating(generating: boolean): void {
     this.messages.update(msgs => {
       if (msgs.length === 0) return msgs;
+      const last = msgs[msgs.length - 1];
+      // Several images in one turn (e.g. "generate a few options") each get
+      // their own message, so a later image never replaces an earlier one.
+      if (generating && last.imageUrl) {
+        return [...msgs, { role: 'assistant', text: '', timestamp: new Date().toISOString(), generatingImage: true }];
+      }
       const copy = [...msgs];
-      copy[copy.length - 1] = { ...copy[copy.length - 1], generatingImage: generating };
+      copy[copy.length - 1] = { ...last, generatingImage: generating };
       return copy;
     });
   }
 
   /** Attaches a generated image to the last assistant message, keeping any
    * streamed caption text and clearing the generating flag. */
-  private setLastAssistantImage(imageUrl: string, thumbnailUrl: string): void {
+  private setLastAssistantImage(imageUrl: string, thumbnailUrl: string, imagePrompt?: string): void {
+    const image = { imageUrl, thumbnailUrl, generatingImage: false, ...(imagePrompt ? { imagePrompt } : {}) };
     this.messages.update(msgs => {
       if (msgs.length === 0) return msgs;
+      const last = msgs[msgs.length - 1];
+      if (last.imageUrl) {
+        return [...msgs, { role: 'assistant', text: '', timestamp: new Date().toISOString(), ...image }];
+      }
       const copy = [...msgs];
-      copy[copy.length - 1] = { ...copy[copy.length - 1], imageUrl, thumbnailUrl, generatingImage: false };
+      copy[copy.length - 1] = { ...last, ...image };
       return copy;
     });
+  }
+
+  /** Every image generated in this chat, oldest first — offered to the
+   *  assistant (and the entity form) as profile/gallery pictures. */
+  chatImages(): ChatImage[] {
+    return this.messages()
+      .filter(m => m.imageUrl && m.thumbnailUrl)
+      .map(m => ({ url: m.imageUrl!, thumbnailUrl: m.thumbnailUrl!, ...(m.imagePrompt ? { prompt: m.imagePrompt } : {}) }));
   }
 
   async addHighlight(messageIndex: number, highlight: ChatMessageHighlight): Promise<void> {
@@ -584,6 +633,28 @@ export class QuickChatService {
       copy[copy.length - 1] = { ...copy[copy.length - 1], beats };
       return copy;
     });
+  }
+
+  private setLastAssistantEntityProposal(entityProposal: EntityProposal): void {
+    this.messages.update(msgs => {
+      if (msgs.length === 0) return msgs;
+      const copy = [...msgs];
+      copy[copy.length - 1] = { ...copy[copy.length - 1], entityProposal };
+      return copy;
+    });
+  }
+
+  /** Records that the author saved a drafted entity, so its card shows as done. */
+  markEntityProposalSaved(messageIndex: number, entityId: string): void {
+    this.messages.update(msgs => {
+      const msg = msgs[messageIndex];
+      if (!msg?.entityProposal) return msgs;
+      const copy = [...msgs];
+      copy[messageIndex] = { ...msg, entityProposal: { ...msg.entityProposal, savedEntityId: entityId } };
+      return copy;
+    });
+    const sessionId = this.activeSessionId();
+    if (sessionId) void this.persistToSession(sessionId);
   }
 
   private setLastAssistantEditProposal(editProposal: ChapterEditProposal): void {

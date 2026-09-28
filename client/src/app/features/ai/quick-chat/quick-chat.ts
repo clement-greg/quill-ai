@@ -16,9 +16,10 @@ import { MatIconModule } from '@angular/material/icon';
 import { MatTooltipModule } from '@angular/material/tooltip';
 import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
 import { MatDialog } from '@angular/material/dialog';
+import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { DomSanitizer, SafeHtml } from '@angular/platform-browser';
 import { firstValueFrom, forkJoin } from 'rxjs';
-import { ChapterEditProposal, ChatMessageHighlight, ChatSessionMessage, EntityLinkGroup, EntityLinkSession, MapPreview } from '@shared/models';
+import { ChapterEditProposal, ChatMessageHighlight, ChatSessionMessage, EntityLinkGroup, EntityLinkSession, EntityProposal, MapPreview } from '@shared/models';
 import { Entity } from '@shared/models/entity.model';
 import { QuickChatService } from '../quick-chat.service';
 import { SpeechRecognitionService } from '@app/core/services/speech-recognition.service';
@@ -32,6 +33,7 @@ import { chatMarkdownToHtml, chapterIdFromClick } from '@app/shared/chat-markdow
 import { annotateEntityReferences, entityIdFromClick } from '@app/shared/entity-references';
 import { MapPreviewComponent } from '@app/features/maps/map-preview/map-preview';
 import { EntityPickerDialogComponent, EntityPickerData } from '@app/features/entities/entity-edit/entity-picker-dialog';
+import { EntityProposalDialogComponent, EntityProposalDialogData } from '@app/features/entities/entity-edit/entity-proposal-dialog';
 import { FolderLocationPickerDialogComponent, FolderLocation, FolderLocationPickerData } from '../ai-assistant/folder-location-picker-dialog';
 
 /** Minimal surface of the `<lottie-player>` web component we interact with. */
@@ -422,6 +424,11 @@ export class QuickChatComponent {
 
 
   constructor() {
+    // When the assistant drafts a new entity, open the form for review right away.
+    this.quickChat.entityProposalReady
+      .pipe(takeUntilDestroyed())
+      .subscribe(index => void this.reviewEntityProposal(index));
+
     // Focus the input whenever the panel expands, and lazily load the resource
     // pool (entities, books, chapters) the first time it's shown.
     effect(() => {
@@ -825,6 +832,44 @@ export class QuickChatComponent {
   /** Discards a proposed edit and clears its preview from the editor. */
   discardEdit(messageIndex: number): void {
     this.quickChat.discardEditProposal(messageIndex);
+  }
+
+  // ── Drafted entity card ──────────────────────────────────────────────────
+  /** Opens the entity form prefilled with the assistant's draft (a new entity,
+   *  or pictures for an existing one). Saving there marks the card as saved. */
+  async reviewEntityProposal(messageIndex: number): Promise<void> {
+    const proposal = this.quickChat.messages()[messageIndex]?.entityProposal;
+    if (!proposal || proposal.savedEntityId) return;
+    const ref = this.dialog.open(EntityProposalDialogComponent, {
+      data: { proposal } satisfies EntityProposalDialogData,
+      width: '640px',
+      maxWidth: '95vw',
+      maxHeight: '90vh',
+      autoFocus: false,
+    });
+    const created = await firstValueFrom(ref.afterClosed());
+    if (!created) return;
+    this.quickChat.markEntityProposalSaved(messageIndex, created.id);
+    // Make the new entity linkable in chat answers and the typeahead.
+    this.entities.update(list =>
+      [...list.filter(e => e.id !== created.id), created].sort((a, b) => a.name.localeCompare(b.name)),
+    );
+    this.htmlCache = new WeakMap<ChatSessionMessage, SafeHtml>();
+    this.showImageToast(proposal.entityId ? `Updated ${created.name}.` : `Created ${created.name}.`);
+  }
+
+  entityProposalIcon(proposal: EntityProposal): string {
+    return proposal.entity.type === 'PLACE' ? 'place' : proposal.entity.type === 'THING' ? 'category' : 'person';
+  }
+
+  /** The card's subtitle, e.g. "New character in Sands of Time · 3 pictures". */
+  entityProposalSummary(proposal: EntityProposal): string {
+    const type = { PERSON: 'character', PLACE: 'place', THING: 'thing' }[proposal.entity.type];
+    const count = proposal.entity.photos?.length ?? 0;
+    return [
+      proposal.entityId ? `Pictures for this ${type}` : `New ${type}${proposal.seriesTitle ? ' in ' + proposal.seriesTitle : ''}`,
+      ...(count ? [`${count} picture${count === 1 ? '' : 's'}`] : []),
+    ].join(' · ');
   }
 
   editProposalLabel(edit: ChapterEditProposal): string {

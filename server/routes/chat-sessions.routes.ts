@@ -12,11 +12,11 @@ import {
 } from '../services/chapter-chunks';
 import { searchTimelineEvents, TimelineEventSearchResult } from '../services/timeline-event-chunks';
 import { Chapter, ChapterNote, OutlineItem } from '../../shared/models/chapter.model';
-import { ChapterCitation } from '../../shared/models/chat-session.model';
+import { ChapterCitation, ChatImage, EntityProposal } from '../../shared/models/chat-session.model';
 import { BookNote } from '../../shared/models/book-note.model';
 import { Thought } from '../../shared/models/thought.model';
 import { Book } from '../../shared/models/book.model';
-import { Entity } from '../../shared/models/entity.model';
+import { Entity, EntityReference } from '../../shared/models/entity.model';
 import { TimelineEvent } from '../../shared/models/timeline-event.model';
 import { EntityRelationship } from '../../shared/models/entity-relationship.model';
 import { generateImage } from '../services/image-generation';
@@ -111,6 +111,19 @@ const ENTITY_RESEARCH_GUIDANCE =
   'one entity), ask the author which one they mean and call it again. If it reports no match, tell the ' +
   'author you have no record of that entity. Do not invent biography, timeline, or relationship details ' +
   'that the tool did not return.';
+
+// Appended whenever the propose_entity tool is available (quick chat).
+const ENTITY_CREATION_GUIDANCE =
+  '\n\nCREATING ENTITIES: When the author asks you to create, add, or make a new character, place, or thing ' +
+  '(entity) for their story bible — including follow-ups like "create an entity with that name" that refer ' +
+  'to something discussed earlier — you MUST call propose_entity. Never tell the author you cannot create ' +
+  'entities: the tool opens the entity form prefilled for them to review and save. Before calling it, gather ' +
+  'as much as you can: resolve references like "that name" or "him" from the conversation, and if the entity ' +
+  'already appears in the story, call search_chapter_text for its name to collect what the prose establishes. ' +
+  'Then fill every field those sources support (name parts, title, nickname, aliases, preferred reference, a ' +
+  '2–4 sentence biography, personality, gender, ...) and leave the rest out — do not invent details. After a ' +
+  'successful call, tell the author in one short sentence that the form is open for them to review and save; ' +
+  'never say the entity has been created or saved.';
 
 // Appended whenever the search_chapter_text tool is available (always, alongside research_entity).
 const SEARCH_CHAPTER_TEXT_GUIDANCE =
@@ -1024,6 +1037,406 @@ function getProposeChapterEditTool(chapterId: string, req: Request): ChatTool {
           message: 'Proposed the edit. Tell the author it is ready below to review, refine, or apply.',
         },
         sse: { proposeChapterEdit: proposal },
+      };
+    },
+  };
+}
+
+/** Lists the series the user owns or collaborates on, as {id, title}. */
+async function listSeries(req: Request): Promise<{ id: string; title: string }[]> {
+  const email = req.user!.email;
+  const { resources } = await getContainer('series').items
+    .query<TitledRecord>({
+      query: `SELECT c.id, c.title FROM c WHERE (c.owner = @owner OR ARRAY_CONTAINS(c.collaborators, @email)) AND ${NOT_HIDDEN}`,
+      parameters: [{ name: '@owner', value: email }, { name: '@email', value: email }],
+    })
+    .fetchAll();
+  return resources.map(r => ({ id: r.id, title: r.title ?? '' }));
+}
+
+/** Resolves the series a chapter belongs to (chapter → book → series), or null. */
+async function seriesIdForChapter(chapterId: string, req: Request): Promise<string | null> {
+  try {
+    const { resource: chapter } = await getContainer('chapters').item(chapterId, chapterId).read<Chapter>();
+    if (!chapter || chapter.owner !== req.user!.email) return null;
+    const { resource: book } = await getContainer('books').item(chapter.bookId, chapter.bookId).read<Book>();
+    return book?.seriesId ?? null;
+  } catch {
+    return null;
+  }
+}
+
+/** Per-request context for propose_entity: where the author is, plus their
+ *  configured gender/race/orientation choices so the draft matches the form. */
+interface ProposeEntityContext {
+  chapterId?: string;
+  /** The series the client last had in view — a hint, not authoritative. */
+  seriesIdHint?: string;
+  options?: { gender?: string[]; race?: string[]; orientation?: string[] };
+  /** Images generated earlier in this chat, numbered from 1 in this order. */
+  images?: ChatImage[];
+}
+
+/** Generated images are stored as `<uuid>.png` with a `<uuid>_thumb.webp` thumbnail. */
+const GENERATED_IMAGE = /^([0-9a-f-]{36})\.png$/i;
+const GENERATED_THUMB = /^([0-9a-f-]{36})_thumb\.webp$/i;
+const MAX_CHAT_IMAGES = 24;
+
+/** Keeps only well-formed generated-image pairs from the client's list of the
+ *  chat's images (oldest first), capped to the most recent MAX_CHAT_IMAGES. */
+function sanitizeChatImages(raw: unknown): ChatImage[] {
+  if (!Array.isArray(raw)) return [];
+  const fileId = (url: unknown, pattern: RegExp) => {
+    if (typeof url !== 'string') return null;
+    try {
+      const u = new URL(url);
+      if (u.protocol !== 'https:') return null;
+      return u.pathname.split('/').pop()?.match(pattern)?.[1]?.toLowerCase() ?? null;
+    } catch {
+      return null;
+    }
+  };
+  const out: ChatImage[] = [];
+  for (const img of raw as { url?: unknown; thumbnailUrl?: unknown; prompt?: unknown }[]) {
+    const id = fileId(img?.url, GENERATED_IMAGE);
+    if (!id || fileId(img?.thumbnailUrl, GENERATED_THUMB) !== id) continue;
+    const prompt = typeof img.prompt === 'string' ? img.prompt.trim().slice(0, 400) : '';
+    out.push({ url: img.url as string, thumbnailUrl: img.thumbnailUrl as string, ...(prompt ? { prompt } : {}) });
+  }
+  return out.slice(-MAX_CHAT_IMAGES);
+}
+
+/** Lists the chat's images for the model so it can pick them by number. */
+function chatImagesGuidance(images: ChatImage[]): string {
+  if (!images.length) return '';
+  const list = images.map((img, i) => `[${i + 1}] ${img.prompt ?? '(no description)'}`).join('\n');
+  return (
+    '\n\nPICTURES GENERATED IN THIS CHAT (numbered oldest to newest; the author sees them above):\n' + list +
+    '\nWhen the author wants any of these as the profile picture or in the gallery of a character, place, or ' +
+    'thing (e.g. "use the second one", "use these options", "the one with the scar"), pass their numbers: to ' +
+    'propose_entity (profileImage / galleryImages) for an entity being created, or to propose_entity_pictures ' +
+    'for one that already exists (including one the author just saved). When the author creates an entity ' +
+    'after generating pictures of it, include those pictures even if they did not mention them: the one they ' +
+    'preferred (or the first) as profileImage, and all of them in galleryImages. Never include pictures of ' +
+    'something else.'
+  );
+}
+
+/** JSON-schema properties for picking chat images by number. */
+function imagePickProperties(count: number): Record<string, unknown> {
+  return {
+    profileImage: {
+      type: 'integer', minimum: 1, maximum: count,
+      description: 'Number of the chat picture to use as the profile picture.',
+    },
+    galleryImages: {
+      type: 'array', items: { type: 'integer', minimum: 1, maximum: count },
+      description: 'Numbers of the chat pictures to add to the photo gallery (the profile picture is added automatically).',
+    },
+  };
+}
+
+type ImagePicks = Partial<Pick<Entity, 'thumbnailUrl' | 'originalUrl' | 'photos'>>;
+
+/** Resolves the model's picture numbers to a profile picture and gallery photos
+ *  (the profile picture first). Numbers outside the list are reported back. */
+function pickChatImages(images: ChatImage[], args: Record<string, unknown>): { picks: ImagePicks; invalid: unknown[] } {
+  const invalid: unknown[] = [];
+  const at = (n: unknown): ChatImage | undefined => {
+    const img = typeof n === 'number' && Number.isInteger(n) ? images[n - 1] : undefined;
+    if (!img) invalid.push(n);
+    return img;
+  };
+  const profile = args['profileImage'] != null ? at(args['profileImage']) : undefined;
+  const requested = Array.isArray(args['galleryImages']) ? args['galleryImages'].map(at) : [];
+  const gallery = [profile, ...requested]
+    .filter((img, i, all): img is ChatImage => !!img && all.findIndex(o => o?.url === img.url) === i);
+  const picks: ImagePicks = {};
+  if (profile) Object.assign(picks, { thumbnailUrl: profile.thumbnailUrl, originalUrl: profile.url });
+  if (gallery.length) picks.photos = gallery.map(img => ({ url: img.url, thumbnailUrl: img.thumbnailUrl }));
+  return { picks, invalid };
+}
+
+/** A short, LLM-readable summary of which pictures were picked. */
+function describeImagePicks(picks: ImagePicks, invalid: unknown[]): string {
+  const parts: string[] = [];
+  if (picks.thumbnailUrl) parts.push('a profile picture');
+  if (picks.photos?.length) parts.push(`${picks.photos.length} gallery picture${picks.photos.length === 1 ? '' : 's'}`);
+  return (
+    (parts.length ? ` The draft includes ${parts.join(' and ')} from this chat.` : '') +
+    (invalid.length ? ` Picture number(s) ${invalid.join(', ')} do not exist and were ignored.` : '')
+  );
+}
+
+const ENTITY_REFERENCES = ['full-name', 'first-name', 'last-name', 'nickname', 'title-full-name', 'title-last-name'] as const;
+
+/**
+ * Tool that drafts a new story-bible entity from what the conversation and the
+ * story establish. It never writes the entity: it resolves the series, guards
+ * against duplicates, normalizes the fields, and hands the draft to the client,
+ * which opens the entity form prefilled for the author to review and save.
+ */
+function getProposeEntityTool(req: Request, ctx: ProposeEntityContext): ChatTool {
+  const optionList = (key: 'gender' | 'race' | 'orientation') => (ctx.options?.[key] ?? []).filter(o => typeof o === 'string' && o.trim());
+  const optionProp = (key: 'gender' | 'race' | 'orientation', label: string) => {
+    const opts = optionList(key);
+    return opts.length
+      ? { type: 'string', enum: opts, description: `PERSON only: ${label}, chosen from the author's options. Omit if unknown.` }
+      : { type: 'string', description: `PERSON only: ${label}. Omit if unknown.` };
+  };
+
+  return {
+    definition: {
+      type: 'function',
+      function: {
+        name: 'propose_entity',
+        description:
+          'Draft a new character, place, or thing (entity) for the author\'s story bible and open the entity ' +
+          'form prefilled with it, for the author to review, adjust, and save. This does NOT save anything. ' +
+          'Fill every field the conversation or story supports, and leave out anything that is not supported — ' +
+          'never invent details. Omit "seriesName" unless the author named a series; if the tool reports it ' +
+          'needs a series, ask the author which one and call again. If it reports a possible duplicate, ask the ' +
+          'author and only call again with "confirmedNew": true if they say it is a different entity.',
+        parameters: {
+          type: 'object',
+          properties: {
+            name: { type: 'string', description: 'The full display name, e.g. "Malik Rashid al-Harbi" or "The Silver Oasis".' },
+            type: { type: 'string', enum: ['PERSON', 'PLACE', 'THING'], description: 'PERSON for characters (including animals/beings), PLACE for locations, THING for objects, organizations, and concepts.' },
+            title: { type: 'string', description: 'PERSON only: an honorific or rank, e.g. "Sheikh", "Dr", "Captain".' },
+            firstName: { type: 'string', description: 'PERSON only: given name.' },
+            lastName: { type: 'string', description: 'PERSON only: family name / surname / nisba, e.g. "al-Harbi".' },
+            nickname: { type: 'string', description: 'A familiar or short name, e.g. "Rashid".' },
+            aliases: {
+              type: 'array',
+              items: { type: 'string' },
+              description: 'Other names or forms the entity is referred to by in the story (not repeating name/nickname).',
+            },
+            preferredReference: {
+              type: 'string',
+              enum: ENTITY_REFERENCES,
+              description: 'How the prose usually refers to the entity. Title-based forms require "title".',
+            },
+            biography: { type: 'string', description: '2–4 sentences summarizing what is known: role, background, notable facts. Only supported details.' },
+            personality: { type: 'string', description: 'PERSON only: temperament and traits, if the story or author established them.' },
+            gender: optionProp('gender', 'gender'),
+            race: optionProp('race', 'race / ethnicity'),
+            orientation: optionProp('orientation', 'sexual orientation'),
+            seriesName: { type: 'string', description: 'The series to add it to, only if the author named one.' },
+            confirmedNew: { type: 'boolean', description: 'Set true only after the author confirmed this is not the existing entity the tool flagged.' },
+            ...(ctx.images?.length ? imagePickProperties(ctx.images.length) : {}),
+          },
+          required: ['name', 'type'],
+        },
+      },
+    },
+    execute: async args => {
+      const str = (k: string) => (typeof args[k] === 'string' ? (args[k] as string).trim() : '');
+      const name = str('name');
+      const type = str('type').toUpperCase();
+      if (!name) return { toolResult: { ok: false, message: 'name is required.' } };
+      if (type !== 'PERSON' && type !== 'PLACE' && type !== 'THING') {
+        return { toolResult: { ok: false, message: 'type must be PERSON, PLACE, or THING.' } };
+      }
+
+      // Series: an explicitly named series wins, then the chapter being edited,
+      // then the series the client last had open, then the author's only series.
+      const series = await listSeries(req);
+      const seriesName = str('seriesName');
+      let target: { id: string; title: string } | undefined;
+      if (seriesName) {
+        const match = bestTitleMatch(series, seriesName);
+        target = match ? series.find(s => s.id === match.id) : undefined;
+      } else {
+        const fromChapter = ctx.chapterId ? await seriesIdForChapter(ctx.chapterId, req) : null;
+        target =
+          series.find(s => s.id === fromChapter) ??
+          series.find(s => s.id === ctx.seriesIdHint) ??
+          (series.length === 1 ? series[0] : undefined);
+      }
+      if (!target) {
+        return {
+          toolResult: {
+            ok: false,
+            needSeries: true,
+            availableSeries: series.map(s => s.title),
+            message: seriesName
+              ? `No series matching "${seriesName}" was found. Ask the author which series to add it to, choosing from availableSeries.`
+              : 'Ask the author which series to add this entity to, choosing from availableSeries.',
+          },
+        };
+      }
+
+      // Duplicate guard: an existing entity in the series already answering to this exact name.
+      if (args['confirmedNew'] !== true) {
+        const { resources } = await getContainer('entities').items
+          .query<EntityNameRecord>({
+            query: `SELECT c.id, c.name, c.title, c.firstName, c.lastName, c.nickname, c.aliases FROM c WHERE c.seriesId = @seriesId AND ${NOT_HIDDEN}`,
+            parameters: [{ name: '@seriesId', value: target.id }],
+          })
+          .fetchAll();
+        const dupe = resources.find(e =>
+          entityNameMatchScore([e.name ?? '', [e.firstName, e.lastName].filter(Boolean).join(' '), ...(e.aliases ?? [])], name) === 1,
+        );
+        if (dupe) {
+          return {
+            toolResult: {
+              ok: false,
+              possibleDuplicate: { id: dupe.id, name: entityDisplayName(dupe) },
+              message:
+                `"${target.title}" already has an entity named "${entityDisplayName(dupe)}". Tell the author and ask ` +
+                'whether to open the existing one (navigate) or create a separate entity anyway (call again with confirmedNew: true).',
+            },
+          };
+        }
+      }
+
+      const isPerson = type === 'PERSON';
+      const pick = (k: string, personOnly = false) => (personOnly && !isPerson ? '' : str(k));
+      // Match an option case-insensitively to the author's configured spelling;
+      // drop values the form's select can't show rather than silently hiding them.
+      const dropped: string[] = [];
+      const option = (k: 'gender' | 'race' | 'orientation') => {
+        const v = pick(k, true);
+        const opts = optionList(k);
+        if (!v || !opts.length) return v;
+        const hit = opts.find(o => o.toLowerCase() === v.toLowerCase());
+        if (!hit) dropped.push(`${k} "${v}"`);
+        return hit ?? '';
+      };
+
+      const nickname = pick('nickname');
+      const seen = new Set([name.toLowerCase(), nickname.toLowerCase()]);
+      const aliases = (Array.isArray(args['aliases']) ? args['aliases'] : [])
+        .map(a => String(a ?? '').trim())
+        .filter(a => a && !seen.has(a.toLowerCase()) && seen.add(a.toLowerCase()));
+
+      const title = pick('title', true);
+      const refArg = str('preferredReference');
+      const preferredReference = (ENTITY_REFERENCES as readonly string[]).includes(refArg) &&
+        (title || !refArg.startsWith('title-')) &&
+        (isPerson || refArg === 'full-name' || refArg === 'nickname')
+        ? (refArg as EntityReference)
+        : undefined;
+
+      const draft: EntityProposal['entity'] = { name, type };
+      const fields = {
+        title, firstName: pick('firstName', true), lastName: pick('lastName', true), nickname,
+        biography: pick('biography'), personality: pick('personality', true),
+        gender: option('gender'), race: option('race'), orientation: option('orientation'),
+      };
+      for (const [k, v] of Object.entries(fields)) if (v) (draft as Record<string, unknown>)[k] = v;
+      if (aliases.length) draft.aliases = aliases;
+      if (preferredReference) draft.preferredReference = preferredReference;
+
+      const images = ctx.images ?? [];
+      const { picks, invalid } = pickChatImages(images, args);
+      Object.assign(draft, picks);
+
+      const proposal: EntityProposal = {
+        seriesId: target.id,
+        seriesTitle: target.title,
+        entity: draft,
+        ...(images.length ? { chatImages: images } : {}),
+      };
+      return {
+        toolResult: {
+          ok: true,
+          series: target.title,
+          prefilled: Object.keys(draft),
+          ...(dropped.length ? { droppedValues: dropped } : {}),
+          message:
+            'The entity form is now open for the author, prefilled with this draft. It is NOT saved yet — the ' +
+            'author reviews and saves it. Tell them so in one short sentence; do not list every field.' +
+            describeImagePicks(picks, invalid) +
+            (dropped.length ? ` These values did not match the author's options and were left blank: ${dropped.join(', ')}.` : ''),
+        },
+        sse: { proposeEntity: proposal },
+      };
+    },
+  };
+}
+
+/**
+ * Tool that proposes pictures generated in this chat as the profile picture
+ * and/or gallery photos of an EXISTING entity (e.g. one the author just saved).
+ * Like propose_entity it writes nothing: the client opens the entity form with
+ * the picks applied for the author to review and save. Only offered when the
+ * chat has generated pictures.
+ */
+function getProposeEntityPicturesTool(req: Request, images: ChatImage[]): ChatTool {
+  return {
+    definition: {
+      type: 'function',
+      function: {
+        name: 'propose_entity_pictures',
+        description:
+          'Propose pictures generated in this chat as the profile picture and/or gallery photos of an existing ' +
+          'character, place, or thing (entity), including one the author just created. Opens the entity form with ' +
+          'the pictures applied for the author to review and save; it does NOT save anything. Use propose_entity ' +
+          'instead for an entity that does not exist yet. If the name is ambiguous or not found, ask the author.',
+        parameters: {
+          type: 'object',
+          properties: {
+            entityName: { type: 'string', description: 'The name, nickname, or alias of the existing entity.' },
+            ...imagePickProperties(images.length),
+          },
+          required: ['entityName'],
+        },
+      },
+    },
+    execute: async args => {
+      const entityName = String(args['entityName'] ?? '').trim();
+      const { picks, invalid } = pickChatImages(images, args);
+      if (!picks.photos?.length) {
+        return {
+          toolResult: {
+            ok: false,
+            message: 'No valid picture numbers were given. Pass profileImage and/or galleryImages from the numbered list.' +
+              describeImagePicks(picks, invalid),
+          },
+        };
+      }
+      const strong = (await resolveEntityCandidates(entityName, req)).filter(c => c.score >= 0.9);
+      const top = strong[0];
+      if (!top) {
+        return {
+          toolResult: {
+            ok: false,
+            message: `No entity matching "${entityName}" was found. Ask the author which entity they mean, or offer to create it.`,
+          },
+        };
+      }
+      const contenders = strong.filter(c => c.score >= top.score - 0.001);
+      if (contenders.length > 1) {
+        return {
+          toolResult: {
+            ok: false,
+            ambiguous: true,
+            candidates: contenders.map(c => c.name),
+            message: `"${entityName}" could refer to more than one entity. Ask the author which one they mean: ${contenders.map(c => c.name).join(', ')}.`,
+          },
+        };
+      }
+      const { resource: entity } = await getContainer('entities').item(top.id, top.id).read<Entity>();
+      if (!entity) return { toolResult: { ok: false, message: `Could not load ${top.name}.` } };
+      const series = (await listSeries(req)).find(s => s.id === entity.seriesId);
+
+      const proposal: EntityProposal = {
+        entityId: entity.id,
+        seriesId: entity.seriesId,
+        ...(series ? { seriesTitle: series.title } : {}),
+        entity: { name: entity.name, type: entity.type, ...picks },
+        chatImages: images,
+      };
+      return {
+        toolResult: {
+          ok: true,
+          entity: entity.name,
+          message:
+            `The entity form for ${entity.name} is now open with the pictures applied. Nothing is saved until the ` +
+            'author saves it; tell them so in one short sentence.' + describeImagePicks(picks, invalid),
+        },
+        sse: { proposeEntity: proposal },
       };
     },
   };
@@ -2189,6 +2602,9 @@ router.post('/quick-chat', async (req: Request, res: Response) => {
   const chapterContext = req.body.chapterContext as
     | { chapterId: string; surroundingText?: string; selectedText?: string; outline?: OutlineItem[]; notes?: ChapterNote[] }
     | undefined;
+  const seriesIdHint = typeof req.body.seriesId === 'string' ? req.body.seriesId : undefined;
+  const entityOptions = req.body.entityOptions as ProposeEntityContext['options'] | undefined;
+  const chatImages = sanitizeChatImages(req.body.sessionImages);
 
   if (!messages || !Array.isArray(messages)) {
     res.status(400).json({ error: 'messages array required' });
@@ -2302,16 +2718,24 @@ router.post('/quick-chat', async (req: Request, res: Response) => {
   res.setHeader('Connection', 'keep-alive');
   res.flushHeaders();
 
+  const entityTools: Record<string, ChatTool> = {
+    propose_entity: getProposeEntityTool(req, {
+      chapterId: chapterContext?.chapterId, seriesIdHint, options: entityOptions, images: chatImages,
+    }),
+    ...(chatImages.length ? { propose_entity_pictures: getProposeEntityPicturesTool(req, chatImages) } : {}),
+  };
   const tools = chapterContext?.chapterId
     ? {
         ...quickChatTools(req, {}, citations),
+        ...entityTools,
         get_chapter_text: getChapterTextTool(chapterContext.chapterId, req),
         link_entity_references: getLinkEntityReferencesTool(req),
         propose_chapter_edit: getProposeChapterEditTool(chapterContext.chapterId, req),
       }
-    : quickChatTools(req, {}, citations);
+    : { ...quickChatTools(req, {}, citations), ...entityTools };
   const guidance =
     IMAGE_TOOL_GUIDANCE + ENTITY_RESEARCH_GUIDANCE + SEARCH_CHAPTER_TEXT_GUIDANCE + SAVE_THOUGHT_GUIDANCE +
+    ENTITY_CREATION_GUIDANCE + chatImagesGuidance(chatImages) +
     (chapterContext?.chapterId ? LINK_REFERENCES_GUIDANCE + SMART_EDIT_GUIDANCE : '');
   await streamChatResponse(res, systemPrompt + guidance, messages, citations, tools);
 });

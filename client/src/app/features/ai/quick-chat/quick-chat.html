@@ -292,6 +292,37 @@
                 }
               </div>
             }
+            @if (msg.entityProposal; as proposal) {
+              <div class="qc-edit-proposal qc-entity-proposal" [class.qc-edit-applied]="proposal.savedEntityId">
+                <div class="qc-edit-head">
+                  @if (proposal.entity.thumbnailUrl) {
+                    <img class="qc-entity-avatar" [src]="proxyUrl(proposal.entity.thumbnailUrl)" alt="" />
+                  } @else {
+                    <mat-icon class="qc-edit-icon">{{ entityProposalIcon(proposal) }}</mat-icon>
+                  }
+                  <span class="qc-edit-kind">{{ proposal.entity.name }}</span>
+                  @if (proposal.savedEntityId) {
+                    <span class="qc-edit-badge"><mat-icon>check</mat-icon> Saved</span>
+                  }
+                </div>
+                <p class="qc-edit-explanation">{{ entityProposalSummary(proposal) }}</p>
+                @if (proposal.entity.biography) {
+                  <p class="qc-entity-bio">{{ proposal.entity.biography }}</p>
+                }
+                <div class="qc-edit-actions">
+                  @if (proposal.savedEntityId) {
+                    <button mat-stroked-button (click)="openEntity(proposal.savedEntityId)">
+                      <mat-icon>open_in_new</mat-icon> Open entity
+                    </button>
+                  } @else {
+                    <button mat-flat-button class="qc-edit-apply" (click)="reviewEntityProposal($index)"
+                            matTooltip="Review in the entity form, then save">
+                      <mat-icon>fact_check</mat-icon> Review &amp; save
+                    </button>
+                  }
+                </div>
+              </div>
+            }
             @if (msg.linkSession; as link) {
               <div class="qc-link-session">
                 <div class="qc-link-head">

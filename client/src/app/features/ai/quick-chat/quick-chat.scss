@@ -793,6 +793,23 @@
   margin-top: 10px;
 }
 
+.qc-entity-avatar {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  object-fit: cover;
+}
+
+.qc-entity-bio {
+  margin: 0;
+  font-size: 0.84rem;
+  line-height: 1.4;
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
 .qc-edit-hint {
   margin: 6px 0 0;
   font-size: 0.76rem;

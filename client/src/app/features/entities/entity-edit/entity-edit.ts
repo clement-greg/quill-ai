@@ -218,6 +218,13 @@ export class EntityEditComponent {
     }
   }
 
+  /** Sets the profile picture without touching the rest of the draft. */
+  setProfilePhoto(url: string, thumbnailUrl: string): void {
+    const current = this.draft();
+    if (current) this.draft.set({ ...current, thumbnailUrl, originalUrl: url });
+    this.thumbnailPreview.set(this.proxyUrl(thumbnailUrl));
+  }
+
   openPhotoPickerDialog(): void {
     // Always fetch fresh photos from the server so deletions made in the
     // detail view are reflected without needing a full app reload.
@@ -229,12 +236,7 @@ export class EntityEditComponent {
           autoFocus: false,
         });
         dialogRef.afterClosed().subscribe((result: PhotoPickerResult | undefined) => {
-          if (!result) return;
-          const current = this.draft();
-          if (current) {
-            this.draft.set({ ...current, thumbnailUrl: result.thumbnailUrl, originalUrl: result.url });
-          }
-          this.thumbnailPreview.set(this.proxyUrl(result.thumbnailUrl));
+          if (result) this.setProfilePhoto(result.url, result.thumbnailUrl);
         });
       },
     });
@@ -247,11 +249,7 @@ export class EntityEditComponent {
       this.generatingImage.set(true);
       this.entityService.generateImage(result.prompt).subscribe({
         next: ({ url, thumbnailUrl }) => {
-          const current = this.draft();
-          if (current) {
-            this.draft.set({ ...current, thumbnailUrl, originalUrl: url });
-          }
-          this.thumbnailPreview.set(this.proxyUrl(thumbnailUrl));
+          this.setProfilePhoto(url, thumbnailUrl);
           this.generatingImage.set(false);
         },
         error: () => this.generatingImage.set(false),

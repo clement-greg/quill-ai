@@ -1,3 +1,5 @@
+import { Entity } from './entity.model';
+
 export interface ChatMessageHighlight {
   id: string;
   startOffset: number;
@@ -29,6 +31,32 @@ export interface ChapterEditProposal {
   newText?: string;
   explanation: string;
   applied?: boolean;
+}
+
+/** An image generated earlier in a chat, offered as a profile/gallery picture. */
+export interface ChatImage {
+  url: string;
+  thumbnailUrl: string;
+  prompt?: string;
+}
+
+/** A story-bible entity the assistant drafted from the conversation. It is
+ *  never saved by the assistant: the author reviews it in the entity form and
+ *  saves it themselves, at which point `savedEntityId` is set.
+ *  With `entityId` set it instead proposes pictures for that existing entity
+ *  (`entity` then carries only the proposed profile picture and gallery). */
+export interface EntityProposal {
+  entityId?: string;
+  seriesId: string;
+  seriesTitle?: string;
+  entity: Pick<Entity, 'name' | 'type'> &
+    Partial<Pick<Entity,
+      'title' | 'firstName' | 'lastName' | 'nickname' | 'aliases' | 'preferredReference' |
+      'biography' | 'personality' | 'gender' | 'race' | 'orientation' |
+      'thumbnailUrl' | 'originalUrl' | 'photos'>>;
+  /** Every picture generated in the chat, so the author can change the picks. */
+  chatImages?: ChatImage[];
+  savedEntityId?: string;
 }
 
 /** One unique plain-text match the "link references" tool found, e.g. "Mark"
@@ -64,6 +92,8 @@ export interface ChatSessionMessage {
   text: string;
   imageUrl?: string;
   thumbnailUrl?: string;
+  /** The prompt a generated image was made from, so the assistant can refer to it later. */
+  imagePrompt?: string;
   generatingImage?: boolean;
   highlights?: ChatMessageHighlight[];
   sources?: ChapterCitation[];
@@ -72,6 +102,8 @@ export interface ChatSessionMessage {
   editProposal?: ChapterEditProposal;
   /** An in-chat, step-through session for linking plain-text entity mentions. */
   linkSession?: EntityLinkSession;
+  /** A drafted new entity the author reviews in the entity form and saves. */
+  entityProposal?: EntityProposal;
   /** Marks an assistant message as a full chapter draft, enabling the
    * Insert / Replace chapter / Revise actions in the UI. */
   kind?: 'chapter-draft';
