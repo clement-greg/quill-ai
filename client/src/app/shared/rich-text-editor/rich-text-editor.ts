@@ -191,6 +191,9 @@ export class RichTextEditorComponent implements OnInit, AfterViewInit, OnDestroy
   grammarPopoverAbove = signal(false);
   grammarPopoverError = signal<GrammarError | null>(null);
   private grammarPopoverMarkEl: HTMLElement | null = null;
+  /** Character offset of the flagged text when the popover opened, used to
+   *  re-find it if the mark element is destroyed before Apply is clicked. */
+  private grammarPopoverTextOffset = -1;
   private grammarTimer: ReturnType<typeof setTimeout> | null = null;
   private grammarAbortController: AbortController | null = null;
   private grammarLastCheckedText = '';
@@ -2864,6 +2867,7 @@ export class RichTextEditorComponent implements OnInit, AfterViewInit, OnDestroy
     const suggestion = markEl.getAttribute('data-grammar-suggestion') ?? '';
     const message = markEl.getAttribute('data-grammar-message') ?? '';
     this.grammarPopoverMarkEl = markEl;
+    this.grammarPopoverTextOffset = this.editorRef ? this.textOffsetOf(this.editorRef.nativeElement, markEl) : -1;
     this.grammarPopoverError.set({ text: markEl.textContent ?? '', suggestion, message });
     const POPOVER_WIDTH = 280;
     const POPOVER_HEIGHT_EST = 130;
@@ -2880,21 +2884,80 @@ export class RichTextEditorComponent implements OnInit, AfterViewInit, OnDestroy
 
   applyGrammarSuggestion(): void {
     const error = this.grammarPopoverError();
-    const markEl = this.grammarPopoverMarkEl;
-    if (!error || !markEl || !markEl.parentNode) return;
-    const parent = markEl.parentNode!;
-    const textNode = document.createTextNode(error.suggestion);
-    parent.replaceChild(textNode, markEl);
-    parent.normalize();
-    if (this.editorRef) { this.editorContent = this.editorRef.nativeElement.innerHTML; this.scheduleEmit(); }
+    const editor = this.editorRef?.nativeElement;
+    if (!error || !editor) { this.dismissGrammarPopover(); return; }
+    const replaced = this.replaceGrammarTarget(editor, error, this.grammarPopoverMarkEl, this.grammarPopoverTextOffset);
+    if (replaced) { this.editorContent = editor.innerHTML; this.scheduleEmit(); }
     this.dismissGrammarPopover();
     this.scheduleGrammarCheck();
+  }
+
+  /** Replaces the flagged text with the suggestion. The mark captured when the
+   *  popover opened may have been destroyed since (a re-check, entity wrap or
+   *  smart-edit preview unwraps every grammar mark), so fall back to a
+   *  re-created mark for the same error, then to the occurrence of the raw text
+   *  nearest where the mark was. */
+  private replaceGrammarTarget(editor: HTMLElement, error: GrammarError, markEl: HTMLElement | null, nearOffset: number): boolean {
+    const replaceNode = (node: Node): void => {
+      const parent = node.parentNode!;
+      parent.replaceChild(document.createTextNode(error.suggestion), node);
+      parent.normalize();
+    };
+
+    if (markEl && markEl.isConnected && editor.contains(markEl)) { replaceNode(markEl); return true; }
+
+    const remarks = Array.from(editor.querySelectorAll<HTMLElement>('mark.grammar-error')).filter(m =>
+      m.textContent === error.text && m.getAttribute('data-grammar-suggestion') === error.suggestion,
+    );
+    if (remarks.length > 0) {
+      const nearest = remarks.reduce((best, m) =>
+        Math.abs(this.textOffsetOf(editor, m) - nearOffset) < Math.abs(this.textOffsetOf(editor, best) - nearOffset) ? m : best);
+      replaceNode(nearest);
+      return true;
+    }
+
+    if (!error.text || nearOffset < 0) return false;
+    const walker = document.createTreeWalker(editor, NodeFilter.SHOW_TEXT);
+    let best: { node: Text; idx: number; dist: number } | null = null;
+    let chars = 0;
+    let textNode: Text | null;
+    while ((textNode = walker.nextNode() as Text | null)) {
+      const content = textNode.textContent ?? '';
+      const inRef = !!textNode.parentElement?.closest('.entity-reference, .note-indicator');
+      for (let idx = inRef ? -1 : content.indexOf(error.text); idx !== -1; idx = content.indexOf(error.text, idx + 1)) {
+        const dist = Math.abs(chars + idx - nearOffset);
+        if (!best || dist < best.dist) best = { node: textNode, idx, dist };
+      }
+      chars += content.length;
+    }
+    // Only accept a nearby match; if the text moved far away it was edited out.
+    if (!best || best.dist > 200) return false;
+    const range = document.createRange();
+    range.setStart(best.node, best.idx);
+    range.setEnd(best.node, best.idx + error.text.length);
+    range.deleteContents();
+    range.insertNode(document.createTextNode(error.suggestion));
+    editor.normalize();
+    return true;
+  }
+
+  /** Character offset of an element's start within the editor's text nodes. */
+  private textOffsetOf(editor: HTMLElement, el: Node): number {
+    let chars = 0;
+    const walker = document.createTreeWalker(editor, NodeFilter.SHOW_TEXT);
+    let n: Text | null;
+    while ((n = walker.nextNode() as Text | null)) {
+      if (el.contains(n)) return chars;
+      chars += n.length;
+    }
+    return -1;
   }
 
   dismissGrammarPopover(): void {
     this.grammarPopoverVisible.set(false);
     this.grammarPopoverError.set(null);
     this.grammarPopoverMarkEl = null;
+    this.grammarPopoverTextOffset = -1;
   }
 
   // ── Entity reference helpers ─────────────────────────────────────────────
