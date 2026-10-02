@@ -12,6 +12,7 @@
       "PowerShell(npx jest --silent 2>&1)",
       "PowerShell(npx jest chunking --silent 2>&1)",
       "Bash(node -e ' *)",
+      "Bash(gh pr merge:*)",
       "Bash(npx ng *)",
       "Bash(xargs grep -l \"MCP\\\\|mcp\\\\|resolve-entity\")",
       "Bash(xargs cat)",
