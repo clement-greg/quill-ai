@@ -12,6 +12,7 @@ import { CdkDragDrop, DragDropModule, moveItemInArray } from '@angular/cdk/drag-
 import { BookNote } from '@shared/models/book-note.model';
 import { Entity, EntityReference } from '@shared/models/entity.model';
 import { EntityService } from '@app/features/entities/entity.service';
+import { disableSpellcheckOnEntityReferences } from '@app/shared/entity-references';
 import { v4 as uuidv4 } from 'uuid';
 
 @Component({
@@ -34,6 +35,8 @@ export class BookNotesComponent implements OnInit, OnDestroy {
   private entityService = inject(EntityService);
   private zone = inject(NgZone);
   private cdr = inject(ChangeDetectorRef);
+  // Observes the host so both the entry editor and the (conditional) edit editor are covered.
+  private stopEntitySpellcheckGuard = disableSpellcheckOnEntityReferences(inject(ElementRef<HTMLElement>).nativeElement);
 
   bookId = input.required<string>();
   seriesId = input.required<string>();
@@ -95,6 +98,7 @@ export class BookNotesComponent implements OnInit, OnDestroy {
   }
 
   ngOnDestroy(): void {
+    this.stopEntitySpellcheckGuard();
     this.pttActive.set(false);
     try { this.speechRecognition?.stop(); } catch { /* ok */ }
   }

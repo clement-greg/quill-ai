@@ -13,6 +13,7 @@ import { ChapterEditProposal, EntityLinkGroup } from '@shared/models/chat-sessio
 import { EntityService } from '@app/features/entities/entity.service';
 import { GrammarCheckService, GrammarError, SuggestedEntity } from './grammar-check.service';
 import { UserSettingsService } from '@app/core/services/user-settings.service';
+import { disableSpellcheckOnEntityReferences } from '@app/shared/entity-references';
 
 /** Minimal shape the editor needs to decorate/act on a Quill Editor suggestion.
  *  Structurally compatible with the review service's `ReviewSuggestion`. */
@@ -243,6 +244,7 @@ export class RichTextEditorComponent implements OnInit, AfterViewInit, OnDestroy
   private minimapDragging = false;
   private minimapRenderTimer: ReturnType<typeof setTimeout> | null = null;
   private minimapResizeObserver: ResizeObserver | null = null;
+  private stopEntitySpellcheckGuard: (() => void) | null = null;
 
   private _editorContent = '';
   get editorContent(): string { return this._editorContent; }
@@ -370,6 +372,7 @@ export class RichTextEditorComponent implements OnInit, AfterViewInit, OnDestroy
   ngAfterViewInit(): void {
     const content = this.initialContent();
     if (content) this.setContent(content);
+    this.stopEntitySpellcheckGuard = disableSpellcheckOnEntityReferences(this.editorRef.nativeElement);
     this.minimapResizeObserver = new ResizeObserver(() => this.scheduleMinimap());
     this.minimapResizeObserver.observe(this.editorRef.nativeElement);
     this.scheduleMinimap();
@@ -388,6 +391,7 @@ export class RichTextEditorComponent implements OnInit, AfterViewInit, OnDestroy
     if (this.photoRefPopupShowTimer) clearTimeout(this.photoRefPopupShowTimer);
     this.grammarAbortController?.abort();
     this.minimapResizeObserver?.disconnect();
+    this.stopEntitySpellcheckGuard?.();
     document.removeEventListener('selectionchange', this.onDocumentSelectionChange);
     if (this.resizeDrag) {
       document.removeEventListener('mousemove', this.resizeDrag.moveHandler);

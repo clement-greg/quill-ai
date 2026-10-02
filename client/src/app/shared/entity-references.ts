@@ -104,3 +104,28 @@ export function entityIdFromClick(event: MouseEvent): string | null {
   const target = (event.target as HTMLElement | null)?.closest('.qc-entity-ref') as HTMLElement | null;
   return target?.getAttribute('data-entity-id') ?? null;
 }
+
+/**
+ * Keeps the browser spell checker off `.entity-reference` spans inside `root`
+ * — tracked entity names (invented places, people, etc.) aren't misspellings.
+ * Covers spans already present and any added later (typed links, loaded
+ * content, rename syncs). Returns a disconnect function.
+ */
+export function disableSpellcheckOnEntityReferences(root: HTMLElement): () => void {
+  const mark = (scope: ParentNode) => {
+    if (scope instanceof HTMLElement && scope.classList.contains('entity-reference')) {
+      scope.spellcheck = false;
+    }
+    scope.querySelectorAll<HTMLElement>('.entity-reference:not([spellcheck])')
+      .forEach(span => { span.spellcheck = false; });
+  };
+  mark(root);
+  const observer = new MutationObserver(mutations => {
+    for (const m of mutations) {
+      if (m.type === 'attributes') { mark(m.target as HTMLElement); continue; }
+      m.addedNodes.forEach(node => { if (node instanceof HTMLElement) mark(node); });
+    }
+  });
+  observer.observe(root, { childList: true, subtree: true, attributes: true, attributeFilter: ['class'] });
+  return () => observer.disconnect();
+}
