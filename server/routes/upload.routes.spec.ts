@@ -519,6 +519,112 @@ describe('image generation', () => {
   });
 });
 
+describe('clothes swap', () => {
+  const realFetch = global.fetch;
+  let calls: { url: string; init: any }[];
+
+  function post(body: any) {
+    return request(app)
+      .post('/api/upload/clothes-swap')
+      .set('x-test-user', USER_A)
+      .send(body);
+  }
+
+  beforeEach(() => {
+    calls = [];
+    global.fetch = jest.fn(async (url: any, init: any) => {
+      calls.push({ url: String(url), init });
+      return new Response('{"prompt_id":"swap-1","seed":11,"queue_number":2}', { status: 200 });
+    }) as any;
+  });
+
+  afterAll(() => {
+    global.fetch = realFetch;
+  });
+
+  it('sends the stored bytes to /clothes-swap and defaults to one raw edit', async () => {
+    const res = await post({ url: 'https://blob.test/abc-123.jpg', prompt: '  a red raincoat  ' });
+
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual({ promptId: 'swap-1', seed: 11, queueNumber: 2, count: 1, tracked: false });
+
+    const target = new URL(calls[0].url);
+    expect(target.origin + target.pathname).toBe('https://receiver.test/clothes-swap');
+    expect(target.searchParams.get('prompt')).toBe('a red raincoat');
+    expect(target.searchParams.get('name')).toBe('abc-123.jpg');
+    expect(target.searchParams.get('batch_size')).toBe('1');
+    // The face paste-back is opt-in — it breaks any edit that moves the head.
+    expect(target.searchParams.get('restore_face')).toBe('0');
+    expect(Buffer.from(calls[0].init.body).toString()).toBe('stored-ciphertext');
+  });
+
+  it('passes the batch size and a face-restore opt-in through', async () => {
+    const res = await post({
+      url: 'https://blob.test/abc-123.jpg',
+      prompt: 'a red raincoat',
+      count: 4,
+      restoreFace: true,
+    });
+
+    expect(res.status).toBe(200);
+    expect(res.body.count).toBe(4);
+    const q = new URL(calls[0].url).searchParams;
+    expect(q.get('batch_size')).toBe('4');
+    expect(q.get('restore_face')).toBe('1');
+  });
+
+  it.each([0, 9, 1.5, 'lots'])('refuses an out-of-range image count (%s)', async (count) => {
+    const res = await post({ url: 'https://blob.test/abc-123.jpg', prompt: 'a hat', count });
+
+    expect(res.status).toBe(400);
+    expect(res.body.error).toMatch(/between 1 and 8/);
+    expect(calls).toHaveLength(0);
+  });
+
+  it('requires a prompt', async () => {
+    const res = await post({ url: 'https://blob.test/abc-123.jpg', prompt: '  ' });
+
+    expect(res.status).toBe(400);
+    expect(calls).toHaveLength(0);
+  });
+
+  it('refuses a video as the source photo', async () => {
+    const res = await post({ url: 'https://blob.test/clip.mov', prompt: 'a hat' });
+
+    expect(res.status).toBe(400);
+    expect(calls).toHaveLength(0);
+  });
+
+  it('tracks the job as images against the entity so the edits are collected', async () => {
+    const res = await post({
+      url: 'https://blob.test/abc-123.jpg',
+      prompt: 'a hat',
+      count: 2,
+      entityId: 'e-a',
+    });
+
+    expect(res.status).toBe(200);
+    expect(res.body.tracked).toBe(true);
+    expect(trackedJobs()).toEqual([
+      expect.objectContaining({
+        id: 'swap-1',
+        kind: 'images',
+        entityId: 'e-a',
+        requestedCount: 2,
+        startImage: 'abc-123.jpg',
+        owner: USER_A,
+      }),
+    ]);
+  });
+
+  it("will not queue onto someone else's entity", async () => {
+    const res = await post({ url: 'https://blob.test/abc-123.jpg', prompt: 'a hat', entityId: 'e-b' });
+
+    expect(res.status).toBe(404);
+    expect(calls).toHaveLength(0);
+  });
+});
+
 
 describe('generation queue', () => {
   const realFetch = global.fetch;

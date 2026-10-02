@@ -56,6 +56,11 @@ import {
   PhotoGenResult,
 } from './photo-gen-dialog';
 import {
+  ClothesSwapDialogComponent,
+  ClothesSwapDialogData,
+  ClothesSwapResult,
+} from './clothes-swap-dialog';
+import {
   MovePhotoDialogComponent,
   MovePhotoDialogData,
   MovePhotoDialogResult,
@@ -1063,6 +1068,29 @@ export class EntityDetailComponent implements OnDestroy {
       });
   }
 
+  /**
+   * Asks what to change about this photo's clothing, pose or background, then
+   * queues the edit. The edited copies are collected onto this entity, hidden.
+   */
+  clothesSwapFromMenuPhoto(): void {
+    const photo = this.photoMenuPhoto;
+    this.photoMenuPhoto = null;
+    if (!photo) return;
+
+    const data: ClothesSwapDialogData = {
+      thumbnailUrl: this.proxyUrl(photo.thumbnailUrl) || this.proxyUrl(photo.url) || '',
+      caption: photo.caption,
+    };
+
+    this.dialog
+      .open<ClothesSwapDialogComponent, ClothesSwapDialogData, ClothesSwapResult>(ClothesSwapDialogComponent, { data })
+      .afterClosed()
+      .subscribe(result => {
+        if (!result?.prompt) return;
+        this.queueClothesSwap(photo.url, result);
+      });
+  }
+
   // --- Generating from a frame of the video on show ------------------------
   // The gallery's own generation starts from a stored photo. A video has no one
   // photo to start from, so the user scrubs to the moment they want and that
@@ -1108,6 +1136,25 @@ export class EntityDetailComponent implements OnDestroy {
         .subscribe(result => {
           if (!this.finishWithFrame(frame, !!result?.prompt)) return;
           this.queueImages(frame.url, result!);
+        });
+    });
+  }
+
+  /** Asks for a clothes-swap edit of the frame currently on screen. */
+  clothesSwapFromCurrentFrame(): void {
+    this.withCurrentFrame(frame => {
+      const data: ClothesSwapDialogData = {
+        thumbnailUrl: frame.previewUrl,
+        caption: frame.caption,
+        hint: 'This frame is edited and the person kept. Describe the clothing, pose or background changes you want.',
+      };
+
+      this.dialog
+        .open<ClothesSwapDialogComponent, ClothesSwapDialogData, ClothesSwapResult>(ClothesSwapDialogComponent, { data })
+        .afterClosed()
+        .subscribe(result => {
+          if (!this.finishWithFrame(frame, !!result?.prompt)) return;
+          this.queueClothesSwap(frame.url, result!);
         });
     });
   }
@@ -1204,6 +1251,31 @@ export class EntityDetailComponent implements OnDestroy {
         // Offered rather than automatic: the job is queued on the far side before
         // the reply comes back, so retrying a timeout could queue the batch twice.
         toast.onAction().subscribe(() => this.queueImages(url, request));
+      },
+    });
+  }
+
+  /** Same failure handling as queueImages(). */
+  private queueClothesSwap(url: string, request: ClothesSwapResult): void {
+    const entityId = this.entity()?.id;
+    this.snackBar.open('Queueing clothes swap…', undefined, { duration: 2000 });
+    this.entityService.clothesSwap(url, request, entityId).subscribe({
+      next: job => {
+        this.snackBar.open(
+          `Clothes swap queued (${request.count} image${request.count === 1 ? '' : 's'})${
+            job.tracked ? ' — they will be added here, hidden, when they finish' : ''
+          }`,
+          'Dismiss',
+          { duration: 5000 }
+        );
+        if (job.tracked && entityId) this.pollGenerationJobs(entityId);
+      },
+      error: (err: unknown) => {
+        const { reason, retryable } = this.generationFailure(err);
+        const toast = this.snackBar.open(`Clothes swap failed: ${reason}`, retryable ? 'Retry' : 'Dismiss');
+        if (!retryable) return;
+        // Offered rather than automatic, for the same reason as queueImages().
+        toast.onAction().subscribe(() => this.queueClothesSwap(url, request));
       },
     });
   }
