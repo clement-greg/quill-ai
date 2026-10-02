@@ -635,6 +635,91 @@ router.post('/generate-images', async (req: Request, res: Response) => {
 });
 
 
+/**
+ * Edits per clothes-swap run. Each one is a full Flux.2 sampling pass at about a
+ * megapixel, all held in one batch on the GPU, so the ceiling is lower than the
+ * FaceID batch's.
+ */
+const DEFAULT_SWAP_COUNT = 1;
+const MAX_SWAP_COUNT = 8;
+
+/**
+ * POST /api/upload/clothes-swap  { url, prompt, count?, restoreFace? }
+ *   →  { promptId, seed, queueNumber, count, tracked }
+ *
+ * Queues an instruction edit of one stored photo on the receiver's
+ * /clothes-swap: the prompt says what to change — clothing, pose, background —
+ * and the person stays. The same relay as /generate-images; the edits come back
+ * through the collector like any other batch of stills.
+ *
+ * `restoreFace` (default true) pastes the original face back over each edit.
+ * It is only sent when false, so the receiver's own default otherwise stands.
+ */
+router.post('/clothes-swap', async (req: Request, res: Response) => {
+  const source = startFrameName(req.body?.url);
+  if (!source.ok) {
+    res.status(400).json({ error: source.error });
+    return;
+  }
+  const filename = source.filename;
+
+  const destination = await resolveTargetEntity(req);
+  if (!destination.ok) {
+    res.status(404).json({ error: destination.error });
+    return;
+  }
+  const prompt = typeof req.body?.prompt === 'string' ? req.body.prompt.trim() : '';
+
+  if (!prompt) {
+    res.status(400).json({ error: 'A prompt is required' });
+    return;
+  }
+  if (prompt.length > MAX_IMAGE_PROMPT_LENGTH) {
+    res.status(400).json({ error: `Prompt must be ${MAX_IMAGE_PROMPT_LENGTH} characters or fewer` });
+    return;
+  }
+
+  let count = DEFAULT_SWAP_COUNT;
+  if (!omitted(req.body?.count)) {
+    count = Number(req.body.count);
+    if (!Number.isInteger(count) || count < 1 || count > MAX_SWAP_COUNT) {
+      res.status(400).json({ error: `Number of images must be between 1 and ${MAX_SWAP_COUNT}` });
+      return;
+    }
+  }
+
+  const query: Record<string, string> = { prompt, name: filename, batch_size: String(count) };
+  if (req.body?.restoreFace === false) query['restore_face'] = '0';
+
+  const target = receiverUrl('/clothes-swap', query);
+  if (!target) {
+    res.status(503).json({ error: 'No image receiver configured (photoExportUrl)' });
+    return;
+  }
+
+  const photo = await readStoredPhoto(filename);
+  if (!photo.ok) {
+    res.status(photo.status).json({ error: photo.error });
+    return;
+  }
+
+  const result = await queueOnReceiver(target, photo.data, photo.contentType);
+  if (!result.ok) {
+    res.status(result.status).json({ error: result.error });
+    return;
+  }
+
+  await releaseFrameToJob(req.user!.email, filename);
+
+  const tracked = await trackQueuedJob(result.job.promptId, 'images', destination.entity, req, {
+    startImage: filename,
+    requestedCount: count,
+  });
+
+  res.json({ ...result.job, count, tracked });
+});
+
+
 /** Reading or cancelling a queue entry is a small call — no image bytes move. */
 const QUEUE_TIMEOUT_MS = 30_000;
 

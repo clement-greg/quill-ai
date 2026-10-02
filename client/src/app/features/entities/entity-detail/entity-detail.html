@@ -223,6 +223,10 @@
                   <mat-icon>auto_awesome</mat-icon>
                   <span>Generate images</span>
                 </button>
+                <button mat-menu-item (click)="clothesSwapFromMenuPhoto()">
+                  <mat-icon>checkroom</mat-icon>
+                  <span>Clothes swap</span>
+                </button>
               }
               <button mat-menu-item (click)="moveMenuPhotoToEntity()">
                 <mat-icon>drive_file_move</mat-icon>
@@ -582,6 +586,11 @@
                   (click)="generateImagesFromCurrentFrame()" aria-label="Generate photos from this frame">
             <mat-icon>auto_awesome</mat-icon>
             Photos from frame
+          </button>
+          <button mat-stroked-button class="lightbox-action-btn" [disabled]="capturingFrame()"
+                  (click)="clothesSwapFromCurrentFrame()" aria-label="Clothes swap from this frame">
+            <mat-icon>checkroom</mat-icon>
+            Clothes swap
           </button>
         }
         @if (photo.hidden) {

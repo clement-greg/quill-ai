@@ -48,6 +48,14 @@ export interface PhotoGenJob {
   tracked: boolean;
 }
 
+/** What a clothes-swap edit is asked for; see ClothesSwapResult. */
+export interface ClothesSwapRequest {
+  prompt: string;
+  count: number;
+  /** False saves the raw edit instead of pasting the original face back. */
+  restoreFace: boolean;
+}
+
 export interface ChapterAppearance {
   id: string;
   title: string;
@@ -189,6 +197,17 @@ export class EntityService {
   ): Observable<PhotoGenJob> {
     return this.http
       .post<PhotoGenJob>('/api/upload/generate-images', { url, ...request, entityId })
+      .pipe(timeout(GENERATION_REQUEST_TIMEOUT_MS));
+  }
+
+  /**
+   * Queues a clothes-swap edit of one stored photo on the external receiver —
+   * the prompt changes clothing, pose or background and the person stays.
+   * Relayed like generateImagesFromPhoto(). See POST /api/upload/clothes-swap.
+   */
+  clothesSwap(url: string, request: ClothesSwapRequest, entityId?: string): Observable<PhotoGenJob> {
+    return this.http
+      .post<PhotoGenJob>('/api/upload/clothes-swap', { url, ...request, entityId })
       .pipe(timeout(GENERATION_REQUEST_TIMEOUT_MS));
   }
 
