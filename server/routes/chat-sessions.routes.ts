@@ -16,10 +16,12 @@ import { ChapterCitation, ChatImage, EntityProposal } from '../../shared/models/
 import { BookNote } from '../../shared/models/book-note.model';
 import { Thought } from '../../shared/models/thought.model';
 import { Book } from '../../shared/models/book.model';
-import { Entity, EntityReference } from '../../shared/models/entity.model';
+import { Entity, EntityReference, isVideoUrl } from '../../shared/models/entity.model';
 import { TimelineEvent } from '../../shared/models/timeline-event.model';
 import { EntityRelationship } from '../../shared/models/entity-relationship.model';
+import sharp from 'sharp';
 import { generateImage } from '../services/image-generation';
+import { downloadBlob } from '../services/storage';
 import { buildChapterContextPrompt } from '../services/chapter-ai-context';
 import { buildChapterDraftingContext, generateChapterBeatSheet } from '../services/chapter-drafting-context';
 
@@ -111,6 +113,17 @@ const ENTITY_RESEARCH_GUIDANCE =
   'one entity), ask the author which one they mean and call it again. If it reports no match, tell the ' +
   'author you have no record of that entity. Do not invent biography, timeline, or relationship details ' +
   'that the tool did not return.';
+
+// Appended whenever the describe_entity tool is available (always, alongside research_entity).
+const ENTITY_DESCRIPTION_GUIDANCE =
+  '\n\nDESCRIBING ENTITIES: When the author asks you to describe, write a description of, or write a ' +
+  'character sketch / profile / portrait of a specific character, place, or thing (e.g. "write me a ' +
+  'description of Elara", "describe the Duke", "what does Mara look like?"), you MUST call describe_entity ' +
+  'rather than research_entity. It reads the entity\'s story-bible record AND looks at its profile picture, ' +
+  'then writes the description. Pass any length, tone, point of view, or focus the author asked for in ' +
+  '"instructions". Reply with the returned description as-is (no preamble, no follow-up questions) so the ' +
+  'author can insert it into their chapter. If it reports an ambiguous name or no match, handle it as you ' +
+  'would for research_entity.';
 
 // Appended whenever the propose_entity tool is available (quick chat).
 const ENTITY_CREATION_GUIDANCE =
@@ -1530,6 +1543,173 @@ async function buildEntityResearch(entityId: string, req: Request): Promise<Reco
 }
 
 /**
+ * Resolves a name/alias the model passed to exactly one entity, or returns the
+ * tool result explaining why it couldn't (missing name, no match, ambiguous).
+ */
+async function resolveSingleEntity(
+  rawName: string,
+  verb: string,
+  req: Request,
+): Promise<{ top: { id: string; name: string } } | { toolResult: unknown }> {
+  const entityName = rawName.trim();
+  if (!entityName) {
+    return { toolResult: { found: false, message: `No entity name was given. Ask the author which entity to ${verb}.` } };
+  }
+  const candidates = await resolveEntityCandidates(entityName, req);
+  // Require a strong (exact or whole-word) match so we don't pick the wrong entity.
+  const strong = candidates.filter(c => c.score >= 0.9);
+  if (strong.length === 0) {
+    return {
+      toolResult: { found: false, message: `No entity matching "${entityName}" was found. Tell the author you have no record of that entity.` },
+    };
+  }
+  const top = strong[0]!;
+  const contenders = strong.filter(c => c.score >= top.score - 0.001);
+  if (contenders.length > 1) {
+    return {
+      toolResult: {
+        found: false,
+        ambiguous: true,
+        candidates: contenders.map(c => c.name),
+        message: `"${entityName}" could refer to more than one entity. Ask the author which one they mean: ${contenders.map(c => c.name).join(', ')}.`,
+      },
+    };
+  }
+  return { top };
+}
+
+/** Longest edge, in pixels, of a profile picture sent to the model. */
+const MODEL_IMAGE_MAX_EDGE = 1024;
+
+/**
+ * Loads an entity's profile picture as a JPEG data URL sized for the model, or
+ * null when it has none (or only a video). Failures are logged and swallowed so
+ * a description can still be written from the record alone.
+ */
+async function loadEntityProfilePicture(entityId: string, req: Request): Promise<string | null> {
+  const { resource: entity } = await getContainer('entities').item(entityId, entityId).read<Entity>();
+  if (!entity || entity.owner !== req.user!.email) return null;
+  const url = [entity.originalUrl, entity.thumbnailUrl].find(u => u && !isVideoUrl(u));
+  const filename = url?.split(/[?#]/)[0].split('/').pop();
+  if (!filename) return null;
+  try {
+    const { data } = await downloadBlob(filename);
+    const jpeg = await sharp(data)
+      .rotate()
+      .resize(MODEL_IMAGE_MAX_EDGE, MODEL_IMAGE_MAX_EDGE, { fit: 'inside', withoutEnlargement: true })
+      .jpeg({ quality: 85 })
+      .toBuffer();
+    return `data:image/jpeg;base64,${jpeg.toString('base64')}`;
+  } catch (err) {
+    console.error('[describe_entity] failed to load profile picture for %s:', entityId, err);
+    return null;
+  }
+}
+
+const DESCRIBE_ENTITY_SYSTEM_PROMPT =
+  'You write descriptions of characters, places, and things for a novelist\'s story. You are given the ' +
+  'entity\'s story-bible record (JSON) and, when it has one, its profile picture. Write a rich, vivid ' +
+  'prose description, ready to drop into the author\'s manuscript or story bible.\n' +
+  '- Treat the picture as canon for appearance. Describe what it actually shows in concrete detail: for a ' +
+  'person — apparent age, build, face, eyes, hair, skin, expression, clothing, accessories, posture; for a ' +
+  'place — architecture, landscape, light, weather, scale; for a thing — shape, materials, colours, wear. ' +
+  'Draw mood and presence from it too.\n' +
+  '- Weave in everything the record provides (title, nickname, biography, personality, location, ' +
+  'relationships, timeline) so the description says who they are, not just how they look.\n' +
+  '- Do not invent backstory, events, relationships, or names the record does not state. Do not mention ' +
+  'the picture, the record, or the story bible — write as if describing them directly.\n' +
+  '- Unless the author\'s instructions say otherwise: two to four paragraphs, third person, present the ' +
+  'entity by name, no headings or bullet points.\n' +
+  'Return only the description.';
+
+/**
+ * Tool that writes a description of an entity from its story-bible record and
+ * profile picture. The description is generated by a dedicated vision call so
+ * the chat model gets finished prose back rather than having to see the image.
+ */
+function getDescribeEntityTool(req: Request): ChatTool {
+  return {
+    definition: {
+      type: 'function',
+      function: {
+        name: 'describe_entity',
+        description:
+          'Write a rich prose description of a character, place, or thing (entity) from the author\'s story ' +
+          'bible, using both its record (biography, personality, relationships, ...) and its profile picture ' +
+          'for physical appearance. Call this whenever the author asks you to describe an entity or write a ' +
+          'description, sketch, or profile of one. Returns the finished description.',
+        parameters: {
+          type: 'object',
+          properties: {
+            entityName: {
+              type: 'string',
+              description: 'The name, nickname, or alias of the entity to describe (e.g. "Elara", "the Duke").',
+            },
+            instructions: {
+              type: 'string',
+              description:
+                'Optional length, tone, point of view, or focus the author asked for (e.g. "one paragraph", ' +
+                '"first person, from Mara\'s POV", "focus on his clothing").',
+            },
+          },
+          required: ['entityName'],
+        },
+      },
+    },
+    pending: { researchingEntity: true },
+    execute: async args => {
+      const resolved = await resolveSingleEntity(String(args['entityName'] ?? ''), 'describe', req);
+      if ('toolResult' in resolved) return resolved;
+      const { top } = resolved;
+      const [record, picture] = await Promise.all([
+        buildEntityResearch(top.id, req),
+        loadEntityProfilePicture(top.id, req),
+      ]);
+      if (!record) {
+        return { toolResult: { found: false, message: `Could not load the record for ${top.name}.` } };
+      }
+      const instructions = String(args['instructions'] ?? '').trim();
+      const userText =
+        `Story-bible record:\n${JSON.stringify(record, null, 2)}\n\n` +
+        (picture ? 'Profile picture attached.' : 'No profile picture is available — describe from the record only.') +
+        (instructions ? `\n\nAuthor's instructions: ${instructions}` : '');
+      try {
+        const completion = await client.chat.completions.create({
+          model: config.foundry.midModel,
+          messages: [
+            { role: 'system', content: DESCRIBE_ENTITY_SYSTEM_PROMPT },
+            {
+              role: 'user',
+              content: [
+                { type: 'text', text: userText },
+                ...(picture ? [{ type: 'image_url' as const, image_url: { url: picture, detail: 'high' as const } }] : []),
+              ],
+            },
+          ],
+        });
+        const description = completion.choices[0]?.message?.content?.trim() ?? '';
+        console.log('[describe_entity] invoked — entity="%s" picture=%s', top.name, !!picture);
+        if (!description) {
+          return { toolResult: { found: true, message: `Could not write a description of ${top.name}. Tell the author.` } };
+        }
+        return { toolResult: { found: true, entityName: top.name, usedProfilePicture: !!picture, description } };
+      } catch (err) {
+        console.error('[describe_entity] description failed:', err);
+        const filtered = (err as { code?: string })?.code === 'content_filter';
+        return {
+          toolResult: {
+            found: true,
+            message: filtered
+              ? `The description of ${top.name} was blocked by the content filter. Tell the author.`
+              : `Writing the description of ${top.name} failed. Tell the author to try again.`,
+          },
+        };
+      }
+    },
+  };
+}
+
+/**
  * Tool that looks up an entity's full story-bible record (profile, timeline,
  * relationships) so the model can answer questions the story passages don't
  * cover. Resolves the name/alias to a single entity, surfacing ambiguity or a
@@ -1563,30 +1743,9 @@ function getResearchEntityTool(req: Request): ChatTool {
     },
     pending: { researchingEntity: true },
     execute: async args => {
-      const entityName = String(args['entityName'] ?? '').trim();
-      if (!entityName) {
-        return { toolResult: { found: false, message: 'No entity name was given. Ask the author which entity to research.' } };
-      }
-      const candidates = await resolveEntityCandidates(entityName, req);
-      // Require a strong (exact or whole-word) match so we don't research the wrong entity.
-      const strong = candidates.filter(c => c.score >= 0.9);
-      if (strong.length === 0) {
-        return {
-          toolResult: { found: false, message: `No entity matching "${entityName}" was found. Tell the author you have no record of that entity.` },
-        };
-      }
-      const top = strong[0]!;
-      const contenders = strong.filter(c => c.score >= top.score - 0.001);
-      if (contenders.length > 1) {
-        return {
-          toolResult: {
-            found: false,
-            ambiguous: true,
-            candidates: contenders.map(c => c.name),
-            message: `"${entityName}" could refer to more than one entity. Ask the author which one they mean: ${contenders.map(c => c.name).join(', ')}.`,
-          },
-        };
-      }
+      const resolved = await resolveSingleEntity(String(args['entityName'] ?? ''), 'research', req);
+      if ('toolResult' in resolved) return resolved;
+      const { top } = resolved;
       const record = await buildEntityResearch(top.id, req);
       if (!record) {
         return { toolResult: { found: false, message: `Could not load the record for ${top.name}.` } };
@@ -1759,6 +1918,7 @@ function quickChatTools(
 ): Record<string, ChatTool> {
   return {
     research_entity: getResearchEntityTool(req),
+    describe_entity: getDescribeEntityTool(req),
     search_chapter_text: getSearchChapterTextTool(scope, citations, req),
     create_chapter: {
       definition: {
@@ -2330,6 +2490,7 @@ function seriesChatTools(req: Request, scope: { seriesId?: string }, citations: 
   return {
     generate_image: generateImageTool(),
     research_entity: getResearchEntityTool(req),
+    describe_entity: getDescribeEntityTool(req),
     save_thought: getSaveThoughtTool(req),
     search_chapter_text: getSearchChapterTextTool(scope, citations, req),
   };
@@ -2584,7 +2745,7 @@ router.post('/:id/chat', async (req: Request, res: Response) => {
 
   await streamChatResponse(
     res,
-    systemPrompt + IMAGE_TOOL_GUIDANCE + ENTITY_RESEARCH_GUIDANCE + SEARCH_CHAPTER_TEXT_GUIDANCE + SAVE_THOUGHT_GUIDANCE,
+    systemPrompt + IMAGE_TOOL_GUIDANCE + ENTITY_RESEARCH_GUIDANCE + ENTITY_DESCRIPTION_GUIDANCE + SEARCH_CHAPTER_TEXT_GUIDANCE + SAVE_THOUGHT_GUIDANCE,
     messages,
     citations,
     seriesChatTools(req, { seriesId: session?.seriesId ?? undefined }, citations),
@@ -2734,7 +2895,7 @@ router.post('/quick-chat', async (req: Request, res: Response) => {
       }
     : { ...quickChatTools(req, {}, citations), ...entityTools };
   const guidance =
-    IMAGE_TOOL_GUIDANCE + ENTITY_RESEARCH_GUIDANCE + SEARCH_CHAPTER_TEXT_GUIDANCE + SAVE_THOUGHT_GUIDANCE +
+    IMAGE_TOOL_GUIDANCE + ENTITY_RESEARCH_GUIDANCE + ENTITY_DESCRIPTION_GUIDANCE + SEARCH_CHAPTER_TEXT_GUIDANCE + SAVE_THOUGHT_GUIDANCE +
     ENTITY_CREATION_GUIDANCE + chatImagesGuidance(chatImages) +
     (chapterContext?.chapterId ? LINK_REFERENCES_GUIDANCE + SMART_EDIT_GUIDANCE : '');
   await streamChatResponse(res, systemPrompt + guidance, messages, citations, tools);
