@@ -81,10 +81,11 @@ export const MAX_SWAP_COUNT = 8;
       </div>
 
       <div class="face">
-        <mat-slide-toggle [formControl]="restoreFace">Keep original face</mat-slide-toggle>
+        <mat-slide-toggle [formControl]="restoreFace">Paste original face back</mat-slide-toggle>
         <p class="face-hint">
-          Pastes the photo's own face back over each result. Turn off when changing
-          the pose — the face moves, and the paste would land where it used to be.
+          Lays the photo's own face over each result. Only for clothing or background
+          changes — with a new pose the face moves, and the paste is left floating
+          where the head used to be.
         </p>
       </div>
     </mat-dialog-content>
@@ -123,7 +124,7 @@ export class ClothesSwapDialogComponent {
   });
 
   readonly count = new FormControl(DEFAULT_SWAP_COUNT, { nonNullable: true });
-  readonly restoreFace = new FormControl(true, { nonNullable: true });
+  readonly restoreFace = new FormControl(false, { nonNullable: true });
 
   private readonly value = toSignal(this.prompt.valueChanges, { initialValue: '' });
   readonly length = () => this.value().length;

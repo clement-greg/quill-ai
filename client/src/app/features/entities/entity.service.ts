@@ -52,7 +52,7 @@ export interface PhotoGenJob {
 export interface ClothesSwapRequest {
   prompt: string;
   count: number;
-  /** False saves the raw edit instead of pasting the original face back. */
+  /** True pastes the original face back over each edit; false saves the raw edit. */
   restoreFace: boolean;
 }
 
