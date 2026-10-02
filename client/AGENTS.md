@@ -53,3 +53,10 @@ You are an expert in TypeScript, Angular, and scalable web application developme
 - Design services around a single responsibility
 - Use the `providedIn: 'root'` option for singleton services
 - Use the `inject()` function instead of constructor injection
+
+## Testing
+
+- All new code MUST include unit tests covering its behavior, including edge cases and error paths
+- When modifying existing code, add or update tests to cover the change
+- Place specs next to the code they test, named `*.spec.ts`
+- Run `npm test` (Vitest via `ng test`) and make sure all tests pass before considering a change complete
