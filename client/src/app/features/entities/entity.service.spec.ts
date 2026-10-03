@@ -23,7 +23,7 @@ describe('EntityService', () => {
     it('posts the photo, the request and the entity to /api/upload/clothes-swap', () => {
       let result: PhotoGenJob | undefined;
       service
-        .clothesSwap('https://blob.test/abc.jpg', { prompt: 'a hat', count: 2, restoreFace: false }, 'e-1')
+        .clothesSwap('https://blob.test/abc.jpg', { prompt: 'a hat', count: 2 }, 'e-1')
         .subscribe(r => (result = r));
 
       const req = httpMock.expectOne('/api/upload/clothes-swap');
@@ -32,7 +32,6 @@ describe('EntityService', () => {
         url: 'https://blob.test/abc.jpg',
         prompt: 'a hat',
         count: 2,
-        restoreFace: false,
         entityId: 'e-1',
       });
       req.flush(JOB);
@@ -42,7 +41,7 @@ describe('EntityService', () => {
     it('passes the server error through to the caller', () => {
       let status: number | undefined;
       service
-        .clothesSwap('https://blob.test/abc.jpg', { prompt: 'a hat', count: 1, restoreFace: true })
+        .clothesSwap('https://blob.test/abc.jpg', { prompt: 'a hat', count: 1 })
         .subscribe({ error: err => (status = err.status) });
 
       httpMock
