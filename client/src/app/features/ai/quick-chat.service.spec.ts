@@ -38,6 +38,7 @@ describe('QuickChatService', () => {
   let service: QuickChatService;
   let bridgeStub: Record<string, ReturnType<typeof vi.fn>>;
   let fetchStub: ReturnType<typeof vi.fn>;
+  let aiAssistantStub: Record<string, ReturnType<typeof vi.fn>>;
 
   beforeEach(() => {
     localStorage.clear();
@@ -47,14 +48,16 @@ describe('QuickChatService', () => {
       applyEntityTerm: vi.fn(),
       highlightEntityTerm: vi.fn(),
       clearEntityLinkHighlight: vi.fn(),
+      captureContext: vi.fn(() => null),
     };
     fetchStub = vi.fn(async () => new Response('{}', { status: 200 }));
+    aiAssistantStub = { loadSessions: vi.fn(async () => undefined), loadFolders: vi.fn(async () => undefined) };
 
     TestBed.configureTestingModule({
       providers: [
         { provide: Router, useValue: { navigate: vi.fn() } },
         { provide: EditorBridgeService, useValue: bridgeStub },
-        { provide: AiAssistantService, useValue: {} },
+        { provide: AiAssistantService, useValue: aiAssistantStub },
         { provide: ChapterSyncService, useValue: {} },
         { provide: EditorReviewService, useValue: {} },
         { provide: AuthFetchService, useValue: { fetch: fetchStub } },
@@ -76,10 +79,12 @@ describe('QuickChatService', () => {
       service.messages.set([assistantMessage()]);
       service.activeSessionId.set('sess-1');
       service.pinnedChapterId.set('ch-1');
+      service.attachedEntityId.set('ent-1');
       service.reset();
       expect(service.messages()).toEqual([]);
       expect(service.activeSessionId()).toBeNull();
       expect(service.pinnedChapterId()).toBeNull();
+      expect(service.attachedEntityId()).toBeNull();
     });
 
     it('remembers the active session id in localStorage', () => {
@@ -237,6 +242,124 @@ describe('QuickChatService', () => {
       await service.loadSession('sess-gone');
       expect(service.messages()).toEqual([]);
       expect(service.activeSessionId()).toBeNull();
+    });
+
+    it('restores the entity a saved session is attached to', async () => {
+      fetchStub.mockResolvedValue(
+        new Response(JSON.stringify({ messages: [], entityId: 'ent-7' }), { status: 200 }),
+      );
+      await service.loadSession('sess-9');
+      expect(service.attachedEntityId()).toBe('ent-7');
+    });
+
+    it('clears a stale entity when the loaded session is unattached', async () => {
+      service.attachedEntityId.set('ent-old');
+      fetchStub.mockResolvedValue(new Response(JSON.stringify({ messages: [] }), { status: 200 }));
+      await service.loadSession('sess-9');
+      expect(service.attachedEntityId()).toBeNull();
+    });
+  });
+
+  describe('entity-attached chats', () => {
+    const bodyOf = (call: unknown[]) => JSON.parse((call[1] as RequestInit).body as string);
+
+    it('attaches a session to an entity and refreshes the session list', async () => {
+      const ok = await service.setSessionEntity('sess-1', 'ent-1');
+
+      expect(ok).toBe(true);
+      expect(fetchStub).toHaveBeenCalledWith('/api/chat-sessions/sess-1', expect.objectContaining({ method: 'PUT' }));
+      expect(bodyOf(fetchStub.mock.calls[0])).toEqual({ entityId: 'ent-1' });
+      expect(aiAssistantStub['loadSessions']).toHaveBeenCalled();
+    });
+
+    it('updates the attachment of the active session only', async () => {
+      service.activeSessionId.set('sess-active');
+      await service.setSessionEntity('sess-other', 'ent-1');
+      expect(service.attachedEntityId()).toBeNull();
+
+      await service.setSessionEntity('sess-active', 'ent-1');
+      expect(service.attachedEntityId()).toBe('ent-1');
+
+      await service.setSessionEntity('sess-active', null);
+      expect(bodyOf(fetchStub.mock.calls[2])).toEqual({ entityId: null });
+      expect(service.attachedEntityId()).toBeNull();
+    });
+
+    it('reports failure and leaves state alone when the server refuses', async () => {
+      service.activeSessionId.set('sess-1');
+      fetchStub.mockResolvedValue(new Response('{}', { status: 400 }));
+
+      expect(await service.setSessionEntity('sess-1', 'ent-1')).toBe(false);
+      expect(service.attachedEntityId()).toBeNull();
+      expect(aiAssistantStub['loadSessions']).not.toHaveBeenCalled();
+    });
+
+    it('reports failure when the request throws', async () => {
+      fetchStub.mockRejectedValue(new Error('offline'));
+      expect(await service.setSessionEntity('sess-1', 'ent-1')).toBe(false);
+    });
+
+    it('starts a new chat attached to the entity in the Chats folder and opens the panel', async () => {
+      fetchStub.mockImplementation(async (url: string, init?: RequestInit) => {
+        if (url === '/api/chat-folders' && !init?.method) {
+          return new Response(JSON.stringify([{ id: 'folder-chats', name: 'Chats', seriesId: null }]), { status: 200 });
+        }
+        if (url === '/api/chat-sessions' && init?.method === 'POST') {
+          return new Response(JSON.stringify({ id: 'sess-new', messages: [], entityId: 'ent-1' }), { status: 200 });
+        }
+        return new Response('{}', { status: 200 });
+      });
+      service.messages.set([assistantMessage()]);
+
+      await service.startEntityChat('ent-1');
+
+      const createCall = fetchStub.mock.calls.find(c => c[0] === '/api/chat-sessions')!;
+      expect(bodyOf(createCall)).toEqual({ folderId: 'folder-chats', seriesId: null, entityId: 'ent-1' });
+      expect(service.messages()).toEqual([]);
+      expect(service.activeSessionId()).toBe('sess-new');
+      expect(service.attachedEntityId()).toBe('ent-1');
+      expect(service.minimized()).toBe(false);
+    });
+
+    it('still opens the panel when the chat cannot be created', async () => {
+      fetchStub.mockResolvedValue(new Response('{}', { status: 500 }));
+      await service.startEntityChat('ent-1');
+      expect(service.activeSessionId()).toBeNull();
+      expect(service.attachedEntityId()).toBeNull();
+      expect(service.minimized()).toBe(false);
+    });
+
+    it('grounds sent messages in the attached entity', async () => {
+      service.activeSessionId.set('sess-1');
+      service.attachedEntityId.set('ent-1');
+      fetchStub.mockResolvedValue(new Response('data: [DONE]\n\n', { status: 200 }));
+
+      await service.sendMessage('What does she want?');
+
+      const chatCall = fetchStub.mock.calls.find(c => c[0] === '/api/chat-sessions/quick-chat')!;
+      expect(bodyOf(chatCall).entityId).toBe('ent-1');
+    });
+
+    it('sends no entity for an unattached chat', async () => {
+      service.activeSessionId.set('sess-1');
+      fetchStub.mockResolvedValue(new Response('data: [DONE]\n\n', { status: 200 }));
+
+      await service.sendMessage('Hello');
+
+      const chatCall = fetchStub.mock.calls.find(c => c[0] === '/api/chat-sessions/quick-chat')!;
+      expect(bodyOf(chatCall)).not.toHaveProperty('entityId');
+    });
+
+    it('lists the chats attached to an entity', async () => {
+      fetchStub.mockResolvedValue(new Response(JSON.stringify([{ id: 's1', name: 'A' }]), { status: 200 }));
+      const chats = await service.getEntityChats('ent-1');
+      expect(fetchStub).toHaveBeenCalledWith('/api/chat-sessions/by-entity/ent-1', expect.anything());
+      expect(chats).toEqual([{ id: 's1', name: 'A' }]);
+    });
+
+    it('returns no chats when listing fails', async () => {
+      fetchStub.mockResolvedValue(new Response('nope', { status: 500 }));
+      expect(await service.getEntityChats('ent-1')).toEqual([]);
     });
   });
 });

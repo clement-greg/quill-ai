@@ -1542,6 +1542,38 @@ async function buildEntityResearch(entityId: string, req: Request): Promise<Reco
   return record;
 }
 
+/** True when the entity exists, isn't deleted, and belongs to the requester. */
+async function ownsEntity(entityId: string, req: Request): Promise<boolean> {
+  try {
+    const { resource } = await getContainer('entities').item(entityId, entityId).read<Entity>();
+    return !!resource && !resource.deleted && resource.owner === req.user!.email;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Prompt suffix for a chat attached to an entity: names the entity as the
+ * conversation's subject and inlines its story-bible record, so "what's her
+ * backstory?" works without the author restating who they mean. Empty when the
+ * entity can't be loaded (missing, deleted, or someone else's).
+ */
+async function buildAttachedEntityPrompt(entityId: string, req: Request): Promise<string> {
+  let record: Record<string, unknown> | null = null;
+  try {
+    record = await buildEntityResearch(entityId, req);
+  } catch (err) {
+    console.error('[quick-chat] could not load attached entity %s:', entityId, err);
+  }
+  if (!record) return '';
+  return (
+    `\n\nATTACHED ENTITY: This conversation is attached to the author's story-bible entry for ` +
+    `"${record['name']}". Unless the author clearly means someone or something else, treat questions ` +
+    `and pronouns ("she", "it", "this place") as referring to ${record['name']}. Their record:\n` +
+    JSON.stringify(record)
+  );
+}
+
 /**
  * Resolves a name/alias the model passed to exactly one entity, or returns the
  * tool result explaining why it couldn't (missing name, no match, ambiguous).
@@ -2509,7 +2541,7 @@ router.get('/', async (req: Request, res: Response) => {
     }
     const { resources } = await container.items
       .query({
-        query: `SELECT c.id, c.name, c.pinned, c.folderId, c.seriesId, c.chapterId, c.updatedAt FROM c
+        query: `SELECT c.id, c.name, c.pinned, c.folderId, c.seriesId, c.chapterId, c.entityId, c.updatedAt FROM c
                 WHERE c.owner = @owner
                   AND (NOT IS_DEFINED(c.deleted) OR c.deleted = false)
                   AND (NOT IS_DEFINED(c.archived) OR c.archived = false)${seriesFilter}
@@ -2547,6 +2579,10 @@ router.get('/archived', async (req: Request, res: Response) => {
 
 // POST / — create a new session
 router.post('/', async (req: Request, res: Response) => {
+  if (req.body.entityId && !(await ownsEntity(req.body.entityId, req))) {
+    res.status(400).json({ error: 'Entity not found' });
+    return;
+  }
   const now = new Date().toISOString();
   const session = {
     id: randomUUID(),
@@ -2556,6 +2592,7 @@ router.post('/', async (req: Request, res: Response) => {
     folderId: req.body.folderId ?? null,
     seriesId: req.body.seriesId ?? null,
     chapterId: req.body.chapterId ?? null,
+    entityId: req.body.entityId ?? null,
     messages: [],
     createdAt: now,
     updatedAt: now,
@@ -2578,7 +2615,7 @@ router.get('/by-chapter/:chapterId', async (req: Request, res: Response) => {
     const container = getContainer('chat-sessions');
     const { resources } = await container.items
       .query({
-        query: `SELECT c.id, c.name, c.pinned, c.folderId, c.seriesId, c.chapterId, c.updatedAt FROM c
+        query: `SELECT c.id, c.name, c.pinned, c.folderId, c.seriesId, c.chapterId, c.entityId, c.updatedAt FROM c
                 WHERE c.owner = @owner
                   AND c.chapterId = @chapterId
                   AND (NOT IS_DEFINED(c.deleted) OR c.deleted = false)
@@ -2593,6 +2630,32 @@ router.get('/by-chapter/:chapterId', async (req: Request, res: Response) => {
     res.json(resources);
   } catch (err) {
     console.error('Error listing chapter chat sessions:', err);
+    res.status(500).json({ error: 'Failed to list sessions' });
+  }
+});
+
+// GET /by-entity/:entityId — list sessions attached to a specific entity
+router.get('/by-entity/:entityId', async (req: Request, res: Response) => {
+  const entityId = req.params['entityId'] as string;
+  try {
+    const container = getContainer('chat-sessions');
+    const { resources } = await container.items
+      .query({
+        query: `SELECT c.id, c.name, c.pinned, c.folderId, c.seriesId, c.chapterId, c.entityId, c.updatedAt FROM c
+                WHERE c.owner = @owner
+                  AND c.entityId = @entityId
+                  AND (NOT IS_DEFINED(c.deleted) OR c.deleted = false)
+                  AND (NOT IS_DEFINED(c.archived) OR c.archived = false)
+                ORDER BY c.updatedAt DESC`,
+        parameters: [
+          { name: '@owner', value: req.user!.email },
+          { name: '@entityId', value: entityId },
+        ],
+      })
+      .fetchAll();
+    res.json(resources);
+  } catch (err) {
+    console.error('Error listing entity chat sessions:', err);
     res.status(500).json({ error: 'Failed to list sessions' });
   }
 });
@@ -2623,6 +2686,10 @@ router.put('/:id', async (req: Request, res: Response) => {
       res.status(404).json({ error: 'Session not found' });
       return;
     }
+    if (req.body.entityId && !(await ownsEntity(req.body.entityId, req))) {
+      res.status(400).json({ error: 'Entity not found' });
+      return;
+    }
     const updated = {
       ...resource,
       ...(req.body.name !== undefined && { name: req.body.name }),
@@ -2630,6 +2697,7 @@ router.put('/:id', async (req: Request, res: Response) => {
       ...(req.body.messages !== undefined && { messages: req.body.messages }),
       ...(req.body.folderId !== undefined && { folderId: req.body.folderId }),
       ...(req.body.chapterId !== undefined && { chapterId: req.body.chapterId }),
+      ...(req.body.entityId !== undefined && { entityId: req.body.entityId }),
       updatedAt: new Date().toISOString(),
     };
     await container.items.upsert(updated);
@@ -2766,6 +2834,7 @@ router.post('/quick-chat', async (req: Request, res: Response) => {
   const seriesIdHint = typeof req.body.seriesId === 'string' ? req.body.seriesId : undefined;
   const entityOptions = req.body.entityOptions as ProposeEntityContext['options'] | undefined;
   const chatImages = sanitizeChatImages(req.body.sessionImages);
+  const attachedEntityId = typeof req.body.entityId === 'string' ? req.body.entityId : undefined;
 
   if (!messages || !Array.isArray(messages)) {
     res.status(400).json({ error: 'messages array required' });
@@ -2872,6 +2941,10 @@ router.post('/quick-chat', async (req: Request, res: Response) => {
     }
   } else {
     ({ systemPrompt, citations } = await buildRagSystemPrompt(messages, {}, req));
+  }
+
+  if (attachedEntityId) {
+    systemPrompt += await buildAttachedEntityPrompt(attachedEntityId, req);
   }
 
   res.setHeader('Content-Type', 'text/event-stream');

@@ -127,6 +127,9 @@ export interface ChatSession {
   seriesId?: string | null;
   /** When set, this session is pinned to a specific chapter and appears in its notes panel. */
   chapterId?: string | null;
+  /** When set, this session is attached to a story-bible entity: it appears on that
+   *  entity's overview and the assistant is grounded in the entity's record. */
+  entityId?: string | null;
   messages: ChatSessionMessage[];
   owner?: string;
   deleted?: boolean;
@@ -141,6 +144,7 @@ export interface ChatSessionSummary {
   folderId?: string | null;
   seriesId?: string | null;
   chapterId?: string | null;
+  entityId?: string | null;
   updatedAt: string;
 }
 

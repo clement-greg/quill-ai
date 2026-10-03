@@ -318,6 +318,11 @@ export class QuickChatComponent {
     void this.quickChat.unpinFromChapter();
   }
 
+  openAttachedEntity(): void {
+    const entityId = this.quickChat.attachedEntityId();
+    if (entityId) void this.router.navigate(['/entities', entityId]);
+  }
+
   readonly ghostSuggestion = computed<GhostCompleteItem | null>(() => {
     const inputVal = this.input();
     if (!inputVal) return null;

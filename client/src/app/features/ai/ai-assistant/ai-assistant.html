@@ -543,6 +543,10 @@
   <div class="folder-context-menu session-context-menu"
        [style.left.px]="sessionContextMenu()!.x"
        [style.top.px]="sessionContextMenu()!.y">
+    <button class="folder-ctx-item" (mousedown)="attachSessionToEntity(sessionContextMenu()!.sessionId)">
+      <mat-icon>person_pin</mat-icon> Attach to entity…
+    </button>
+    <div class="folder-ctx-divider"></div>
     <button class="folder-ctx-item folder-ctx-danger"
             (mousedown)="deleteSessionFromPanel(sessionContextMenu()!.sessionId)">
       <mat-icon>delete</mat-icon> Delete
