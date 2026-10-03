@@ -541,11 +541,19 @@ function imageGenTarget(query: URLSearchParams): string | null {
 /**
  * POST /api/upload/generate-images
  *   { url, prompt, count?, negativePrompt?, width?, height?, steps?, cfg?, seed? }
- *   →  { promptId, seed, queueNumber, count }
+ *   →  { promptId, seed, queueNumber, count, tracked, jobs, error? }
  *
  * Queues a batch of stills on the external receiver, keeping the face from one
  * stored photo (IPAdapter FaceID) and following the prompt for everything else.
  * The same relay as /generate-video, addressed at the receiver's /faceid.
+ *
+ * Each image is its own ComfyUI job with a batch size of 1. One job with a large
+ * batch_size holds every latent in VRAM at once and runs the GPU out of memory;
+ * separate jobs run one after another and only ever need room for one image.
+ * The top-level promptId/seed/queueNumber are the first job's, and `count` is
+ * how many were actually queued — if the receiver fails partway, the jobs it
+ * already accepted are reported with `error` rather than failing the request,
+ * since retrying would queue those again.
  */
 router.post('/generate-images', async (req: Request, res: Response) => {
   const source = startFrameName(req.body?.url);
@@ -589,7 +597,7 @@ router.post('/generate-images', async (req: Request, res: Response) => {
     }
   }
 
-  const query = new URLSearchParams({ prompt, name: filename, batch_size: String(count) });
+  const query = new URLSearchParams({ prompt, name: filename, batch_size: '1' });
   // Sent only when it has something in it — an empty one would replace the
   // workflow's own negative prompt with nothing.
   if (negativePrompt) query.set('negative_prompt', negativePrompt);
@@ -606,8 +614,7 @@ router.post('/generate-images', async (req: Request, res: Response) => {
     query.set(spec.param, String(value));
   }
 
-  const target = imageGenTarget(query);
-  if (!target) {
+  if (!imageGenTarget(query)) {
     res.status(503).json({ error: 'No image receiver configured (photoExportUrl)' });
     return;
   }
@@ -618,20 +625,47 @@ router.post('/generate-images', async (req: Request, res: Response) => {
     return;
   }
 
-  const result = await queueOnReceiver(target, photo.data, photo.contentType);
-  if (!result.ok) {
-    res.status(result.status).json({ error: result.error });
+  // A fixed seed would make every job draw the same image, so each one after the
+  // first steps it on by one — still reproducible, but no longer identical.
+  const seedSpec = IMAGE_GEN_NUMBERS['seed'];
+  const baseSeed = query.has('seed') ? Number(query.get('seed')) : null;
+
+  const jobs: { promptId: string | null; seed: number | null; queueNumber: number | null; tracked: boolean }[] = [];
+  let failure: { status: number; error: string } | null = null;
+
+  for (let i = 0; i < count; i++) {
+    if (baseSeed !== null) {
+      query.set('seed', String((baseSeed + i) % (seedSpec.max + 1)));
+    }
+    const result = await queueOnReceiver(imageGenTarget(query)!, photo.data, photo.contentType);
+    if (!result.ok) {
+      failure = { status: result.status, error: result.error };
+      break;
+    }
+    const tracked = await trackQueuedJob(result.job.promptId, 'images', destination.entity, req, {
+      startImage: filename,
+      requestedCount: 1,
+    });
+    jobs.push({ ...result.job, tracked });
+  }
+
+  if (jobs.length === 0) {
+    res.status(failure!.status).json({ error: failure!.error });
     return;
   }
 
   await releaseFrameToJob(req.user!.email, filename);
 
-  const tracked = await trackQueuedJob(result.job.promptId, 'images', destination.entity, req, {
-    startImage: filename,
-    requestedCount: count,
+  const { promptId, seed, queueNumber } = jobs[0];
+  res.json({
+    promptId,
+    seed,
+    queueNumber,
+    count: jobs.length,
+    tracked: jobs.some(j => j.tracked),
+    jobs,
+    ...(failure && { error: failure.error }),
   });
-
-  res.json({ ...result.job, count, tracked });
 });
 
 

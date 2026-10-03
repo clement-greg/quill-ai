@@ -1236,12 +1236,14 @@ export class EntityDetailComponent implements OnDestroy {
     this.snackBar.open('Queueing images…', undefined, { duration: 2000 });
     this.entityService.generateImagesFromPhoto(url, request, entityId).subscribe({
       next: job => {
+        const queued = job.error
+          ? `${job.count} of ${request.count} images queued — the rest failed: ${job.error}`
+          : `${job.count} image${job.count === 1 ? '' : 's'} queued`;
         this.snackBar.open(
-          `${request.count} image${request.count === 1 ? '' : 's'} queued${
-            job.tracked ? ' — they will be added here when they finish' : ''
-          }`,
+          `${queued}${job.tracked ? ' — they will be added here when they finish' : ''}`,
           'Dismiss',
-          { duration: 5000 }
+          // A partial failure stays up until dismissed, like any other failure.
+          job.error ? undefined : { duration: 5000 }
         );
         if (job.tracked && entityId) this.pollGenerationJobs(entityId);
       },
