@@ -103,6 +103,18 @@ describe('GenerationQueueComponent — new generation', () => {
     expect(entityService['clothesSwap']).toHaveBeenCalledWith('https://blob.test/frame.png', request, 'e-1');
   });
 
+  it('says how many were queued when the receiver failed partway', () => {
+    entityService['clothesSwap'] = vi.fn(() => of({ ...JOB, count: 2, error: 'out of memory' }));
+    dialogResult = source({ kind: 'clothes-swap', request: { prompt: 'a red coat', count: 4 } });
+
+    create().newGeneration();
+
+    expect(snackBar.open).toHaveBeenLastCalledWith(
+      expect.stringMatching(/Clothes swap \(4 images\): only 2 queued for Janet.*The rest failed: out of memory/),
+      'Dismiss'
+    );
+  });
+
   it('says so, and queues nothing, when the image will not upload', () => {
     entityService['uploadFrame'] = vi.fn(() =>
       throwError(() => new HttpErrorResponse({ status: 400, error: { error: 'A frame must be an image' } }))

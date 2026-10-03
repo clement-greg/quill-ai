@@ -1264,12 +1264,14 @@ export class EntityDetailComponent implements OnDestroy {
     this.snackBar.open('Queueing clothes swap…', undefined, { duration: 2000 });
     this.entityService.clothesSwap(url, request, entityId).subscribe({
       next: job => {
+        const queued = job.error
+          ? `Clothes swap: ${job.count} of ${request.count} images queued — the rest failed: ${job.error}`
+          : `Clothes swap queued (${job.count} image${job.count === 1 ? '' : 's'})`;
         this.snackBar.open(
-          `Clothes swap queued (${request.count} image${request.count === 1 ? '' : 's'})${
-            job.tracked ? ' — they will be added here, hidden, when they finish' : ''
-          }`,
+          `${queued}${job.tracked ? ' — they will be added here, hidden, when they finish' : ''}`,
           'Dismiss',
-          { duration: 5000 }
+          // A partial failure stays up until dismissed, like any other failure.
+          job.error ? undefined : { duration: 5000 }
         );
         if (job.tracked && entityId) this.pollGenerationJobs(entityId);
       },
