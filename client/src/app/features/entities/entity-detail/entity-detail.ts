@@ -45,6 +45,7 @@ import {
   TimelineEventDialogResult,
 } from './timeline-event-dialog';
 import { TimelineMapComponent } from './timeline-map';
+import { EntityChatsComponent } from './entity-chats';
 import {
   VideoGenDialogComponent,
   VideoGenDialogData,
@@ -109,6 +110,7 @@ interface BookGroup {
     FictionalLocationMapComponent,
     VideoPlayer,
     LazyRenderDirective,
+    EntityChatsComponent,
   ],
   templateUrl: './entity-detail.html',
   styleUrl: './entity-detail.scss',

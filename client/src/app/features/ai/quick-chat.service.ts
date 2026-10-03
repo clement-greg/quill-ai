@@ -44,6 +44,8 @@ export class QuickChatService {
   readonly activeSessionId = signal<string | null>(null);
   /** The chapter this session is pinned to, if any. */
   readonly pinnedChapterId = signal<string | null>(null);
+  /** The entity this session is attached to, if any; answers are grounded in it. */
+  readonly attachedEntityId = signal<string | null>(null);
 
   private abortController: AbortController | null = null;
   /** Cached ID of the global "Chats" folder so we don't re-query on every message. */
@@ -91,6 +93,7 @@ export class QuickChatService {
     this.messages.set([]);
     this.activeSessionId.set(null);
     this.pinnedChapterId.set(null);
+    this.attachedEntityId.set(null);
   }
 
   /** Loads a saved chat session into the panel. Subsequent messages are
@@ -104,6 +107,7 @@ export class QuickChatService {
         this.messages.set(session.messages);
         this.activeSessionId.set(id);
         this.pinnedChapterId.set(session.chapterId ?? null);
+        this.attachedEntityId.set(session.entityId ?? null);
         if (expand) this.minimized.set(false);
       }
     } catch {
@@ -152,6 +156,8 @@ export class QuickChatService {
         body: JSON.stringify({
           messages: apiMessages,
           ...(chapterContext ? { chapterContext } : {}),
+          // Grounds the answer in the entity this chat is attached to.
+          ...(this.attachedEntityId() ? { entityId: this.attachedEntityId() } : {}),
           // Lets a drafted entity land in the series in view and use the
           // author's own gender/race/orientation choices.
           seriesId: this.seriesContext.currentSeriesId(),
@@ -462,6 +468,58 @@ export class QuickChatService {
   async getLinkedChats(chapterId: string): Promise<ChatSessionSummary[]> {
     try {
       const res = await this.authFetch(`/api/chat-sessions/by-chapter/${chapterId}`);
+      if (res.ok) return await res.json() as ChatSessionSummary[];
+    } catch {
+      // Best-effort
+    }
+    return [];
+  }
+
+  /** Attaches any session to an entity, or detaches it with `null`. Resolves
+   *  true when saved. The session keeps its folder, so detaching returns it there. */
+  async setSessionEntity(sessionId: string, entityId: string | null): Promise<boolean> {
+    try {
+      const res = await this.authFetch(`/api/chat-sessions/${sessionId}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ entityId }),
+      });
+      if (!res.ok) return false;
+      if (this.activeSessionId() === sessionId) this.attachedEntityId.set(entityId);
+      void this.aiAssistant.loadSessions();
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  /** Creates a new session attached to an entity, opens the panel, and focuses it. */
+  async startEntityChat(entityId: string): Promise<void> {
+    this.reset();
+    try {
+      const folderId = await this.getOrCreateChatsFolder();
+      const res = await this.authFetch('/api/chat-sessions', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ folderId, seriesId: null, entityId }),
+      });
+      if (res.ok) {
+        const session = await res.json() as ChatSession;
+        this.activeSessionId.set(session.id);
+        this.attachedEntityId.set(entityId);
+        void this.aiAssistant.loadFolders();
+        void this.aiAssistant.loadSessions();
+      }
+    } catch {
+      // Best-effort
+    }
+    this.minimized.set(false);
+  }
+
+  /** Returns sessions attached to the given entity. */
+  async getEntityChats(entityId: string): Promise<ChatSessionSummary[]> {
+    try {
+      const res = await this.authFetch(`/api/chat-sessions/by-entity/${entityId}`);
       if (res.ok) return await res.json() as ChatSessionSummary[];
     } catch {
       // Best-effort

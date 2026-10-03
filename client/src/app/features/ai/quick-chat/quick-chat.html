@@ -48,6 +48,12 @@
             <mat-icon>push_pin</mat-icon>
           </button>
         }
+        @if (quickChat.attachedEntityId()) {
+          <button mat-icon-button class="qc-pinned-btn" (click)="openAttachedEntity()"
+                  matTooltip="Attached to an entity — open it" aria-label="Open the entity this chat is attached to">
+            <mat-icon>person_pin</mat-icon>
+          </button>
+        }
 @if (allHighlights().length > 0) {
           <button mat-icon-button class="qc-highlights-btn"
                   [class.qc-highlights-active]="showHighlightsSummary()"

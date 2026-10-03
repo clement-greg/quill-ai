@@ -20,6 +20,11 @@ import { EntityService } from '@app/features/entities/entity.service';
 import { ChapterCitation, ChatFolder, ChatMessageHighlight, ChatSessionMessage, ChatSessionSummary, FolderFile, FolderNote } from '@shared/models';
 import { RichTextEditorComponent } from '@app/shared/rich-text-editor/rich-text-editor';
 import { EntityPickerDialogComponent, EntityPickerData } from '@app/features/entities/entity-edit/entity-picker-dialog';
+import {
+  EntityPickerDialogComponent as AttachEntityDialogComponent,
+  EntityPickerDialogData as AttachEntityDialogData,
+} from '@app/features/entities/entity-picker/entity-picker-dialog';
+import { EntityPick } from '@app/features/entities/entity-picker/entity-picker';
 import { FolderLocationPickerDialogComponent, FolderLocation, FolderLocationPickerData } from './folder-location-picker-dialog';
 
 type SidebarItem = { kind: 'folder'; folder: ChatFolder; depth: number; trackId: string };
@@ -383,6 +388,20 @@ export class AiAssistantComponent implements OnInit, AfterViewChecked, OnDestroy
     this.fileContextMenu.set(null);
     this.noteContextMenu.set(null);
     this.sessionContextMenu.set({ x: event.clientX, y: event.clientY, sessionId: session.id });
+  }
+
+  /** Moves a chat onto an entity: it leaves the folder view and appears on the
+   *  entity's overview, where Ask Quill answers are grounded in that entity. */
+  async attachSessionToEntity(sessionId: string): Promise<void> {
+    this.sessionContextMenu.set(null);
+    const ref = this.dialog.open(AttachEntityDialogComponent, {
+      data: { title: 'Attach chat to entity' } satisfies AttachEntityDialogData,
+      autoFocus: false,
+    });
+    const pick: EntityPick | undefined = await firstValueFrom(ref.afterClosed());
+    if (!pick) return;
+    const ok = await this.quickChat.setSessionEntity(sessionId, pick.id);
+    this.showImageToast(ok ? `Chat attached to ${pick.name}.` : 'Could not attach chat.');
   }
 
   async deleteSessionFromPanel(sessionId: string): Promise<void> {
