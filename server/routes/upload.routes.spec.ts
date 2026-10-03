@@ -415,19 +415,50 @@ describe('image generation', () => {
     global.fetch = realFetch;
   });
 
-  it('sends the stored bytes to /faceid and defaults to three images', async () => {
+  it('sends the stored bytes to /faceid as three single-image jobs by default', async () => {
     const res = await post({ url: 'https://blob.test/abc-123.jpg', prompt: '  in dress uniform  ' });
 
     expect(res.status).toBe(200);
-    expect(res.body).toEqual({ promptId: 'job-9', seed: 7, queueNumber: 1, count: 3, tracked: false });
+    expect(res.body).toEqual(
+      expect.objectContaining({ promptId: 'job-9', seed: 7, queueNumber: 1, count: 3, tracked: false })
+    );
+    expect(res.body.jobs).toHaveLength(3);
+    expect(res.body.error).toBeUndefined();
 
-    const target = new URL(calls[0].url);
-    expect(target.origin + target.pathname).toBe('https://receiver.test/faceid');
-    expect(target.searchParams.get('prompt')).toBe('in dress uniform');
-    expect(target.searchParams.get('name')).toBe('abc-123.jpg');
-    expect(target.searchParams.get('batch_size')).toBe('3');
-    // Sent exactly as stored — decrypting is the receiver's job.
-    expect(Buffer.from(calls[0].init.body).toString()).toBe('stored-ciphertext');
+    // One job per image — a single job with a large batch runs the GPU out of memory.
+    expect(calls).toHaveLength(3);
+    for (const call of calls) {
+      const target = new URL(call.url);
+      expect(target.origin + target.pathname).toBe('https://receiver.test/faceid');
+      expect(target.searchParams.get('prompt')).toBe('in dress uniform');
+      expect(target.searchParams.get('name')).toBe('abc-123.jpg');
+      expect(target.searchParams.get('batch_size')).toBe('1');
+      // Sent exactly as stored — decrypting is the receiver's job.
+      expect(Buffer.from(call.init.body).toString()).toBe('stored-ciphertext');
+    }
+  });
+
+  it('steps a fixed seed on per job so the images differ', async () => {
+    await post({ url: 'https://blob.test/abc-123.jpg', prompt: 'portrait', count: 3, seed: 4294967294 });
+
+    expect(calls.map(c => new URL(c.url).searchParams.get('seed'))).toEqual(['4294967294', '4294967295', '0']);
+  });
+
+  it('reports the jobs already queued when the receiver fails partway', async () => {
+    let n = 0;
+    global.fetch = jest.fn(async () =>
+      ++n <= 2
+        ? new Response(JOB, { status: 200 })
+        : new Response('{"error":"out of memory"}', { status: 500 })
+    ) as any;
+
+    const res = await post({ url: 'https://blob.test/abc-123.jpg', prompt: 'portrait', count: 5 });
+
+    expect(res.status).toBe(200);
+    expect(res.body.count).toBe(2);
+    expect(res.body.error).toMatch(/out of memory/);
+    // Stops at the first failure rather than hammering a struggling receiver.
+    expect(global.fetch).toHaveBeenCalledTimes(3);
   });
 
   it(`passes the advanced settings through under the receiver's own names`, async () => {
@@ -446,8 +477,9 @@ describe('image generation', () => {
     expect(res.status).toBe(200);
     expect(res.body.count).toBe(6);
 
+    expect(calls).toHaveLength(6);
     const q = new URL(calls[0].url).searchParams;
-    expect(q.get('batch_size')).toBe('6');
+    expect(q.get('batch_size')).toBe('1');
     expect(q.get('negative_prompt')).toBe('blurry, watermark');
     expect(q.get('width')).toBe('768');
     expect(q.get('height')).toBe('1024');
@@ -829,6 +861,11 @@ describe('job tracking', () => {
   });
 
   it('records an image job with the number of stills asked for', async () => {
+    let n = 0;
+    (global.fetch as jest.Mock).mockImplementation(
+      async () => new Response(JSON.stringify({ prompt_id: `job-img-${++n}` }), { status: 200 })
+    );
+
     const res = await request(app)
       .post('/api/upload/generate-images')
       .set('x-test-user', USER_A)
@@ -836,8 +873,10 @@ describe('job tracking', () => {
 
     expect(res.status).toBe(200);
     expect(res.body.tracked).toBe(true);
+    // One tracked job per image, each collected on its own.
+    expect(trackedJobs().map(j => j.id).sort()).toEqual(['job-img-1', 'job-img-2', 'job-img-3', 'job-img-4']);
     expect(trackedJobs()[0]).toEqual(
-      expect.objectContaining({ kind: 'images', requestedCount: 4, entityId: 'e-a' })
+      expect.objectContaining({ kind: 'images', requestedCount: 1, entityId: 'e-a' })
     );
   });
 

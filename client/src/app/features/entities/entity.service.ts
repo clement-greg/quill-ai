@@ -42,10 +42,15 @@ export interface PhotoGenJob {
   promptId: string | null;
   seed: number | null;
   queueNumber: number | null;
-  /** Images the run was queued for. */
+  /**
+   * Images actually queued. Each is its own ComfyUI job, so this can be fewer
+   * than asked for when the receiver failed partway — see `error`.
+   */
   count: number;
-  /** See VideoGenJob.tracked. */
+  /** See VideoGenJob.tracked. True when any of the jobs is being collected. */
   tracked: boolean;
+  /** Why the remaining images were not queued, when some were. */
+  error?: string;
 }
 
 export interface ChapterAppearance {
