@@ -3,3 +3,4 @@ dist/
 _private/
 .claude/auth.json
 .playwright-mcp/
+.DS_Store
