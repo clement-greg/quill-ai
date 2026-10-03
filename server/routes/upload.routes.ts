@@ -539,13 +539,7 @@ function imageGenTarget(query: URLSearchParams): string | null {
 }
 
 /**
- * POST /api/upload/generate-images
- *   { url, prompt, count?, negativePrompt?, width?, height?, steps?, cfg?, seed? }
- *   →  { promptId, seed, queueNumber, count, tracked, jobs, error? }
- *
- * Queues a batch of stills on the external receiver, keeping the face from one
- * stored photo (IPAdapter FaceID) and following the prompt for everything else.
- * The same relay as /generate-video, addressed at the receiver's /faceid.
+ * Queues `count` single-image jobs on the receiver and answers the request.
  *
  * Each image is its own ComfyUI job with a batch size of 1. One job with a large
  * batch_size holds every latent in VRAM at once and runs the GPU out of memory;
@@ -554,6 +548,64 @@ function imageGenTarget(query: URLSearchParams): string | null {
  * how many were actually queued — if the receiver fails partway, the jobs it
  * already accepted are reported with `error` rather than failing the request,
  * since retrying would queue those again.
+ */
+async function queueEachImage(
+  req: Request,
+  res: Response,
+  opts: {
+    count: number;
+    filename: string;
+    photo: { data: Buffer; contentType: string };
+    entity: Entity | null;
+    /** The receiver url for the i-th job, already carrying batch_size=1. */
+    target: (i: number) => string;
+  }
+): Promise<void> {
+  const jobs: { promptId: string | null; seed: number | null; queueNumber: number | null; tracked: boolean }[] = [];
+  let failure: { status: number; error: string } | null = null;
+
+  for (let i = 0; i < opts.count; i++) {
+    const result = await queueOnReceiver(opts.target(i), opts.photo.data, opts.photo.contentType);
+    if (!result.ok) {
+      failure = { status: result.status, error: result.error };
+      break;
+    }
+    const tracked = await trackQueuedJob(result.job.promptId, 'images', opts.entity, req, {
+      startImage: opts.filename,
+      requestedCount: 1,
+    });
+    jobs.push({ ...result.job, tracked });
+  }
+
+  if (jobs.length === 0) {
+    res.status(failure!.status).json({ error: failure!.error });
+    return;
+  }
+
+  await releaseFrameToJob(req.user!.email, opts.filename);
+
+  const { promptId, seed, queueNumber } = jobs[0];
+  res.json({
+    promptId,
+    seed,
+    queueNumber,
+    count: jobs.length,
+    tracked: jobs.some(j => j.tracked),
+    jobs,
+    ...(failure && { error: failure.error }),
+  });
+}
+
+/**
+ * POST /api/upload/generate-images
+ *   { url, prompt, count?, negativePrompt?, width?, height?, steps?, cfg?, seed? }
+ *   →  { promptId, seed, queueNumber, count, tracked, jobs, error? }
+ *
+ * Queues a batch of stills on the external receiver, keeping the face from one
+ * stored photo (IPAdapter FaceID) and following the prompt for everything else.
+ * The same relay as /generate-video, addressed at the receiver's /faceid.
+ *
+ * Each image is its own job; see queueEachImage().
  */
 router.post('/generate-images', async (req: Request, res: Response) => {
   const source = startFrameName(req.body?.url);
@@ -630,61 +682,35 @@ router.post('/generate-images', async (req: Request, res: Response) => {
   const seedSpec = IMAGE_GEN_NUMBERS['seed'];
   const baseSeed = query.has('seed') ? Number(query.get('seed')) : null;
 
-  const jobs: { promptId: string | null; seed: number | null; queueNumber: number | null; tracked: boolean }[] = [];
-  let failure: { status: number; error: string } | null = null;
-
-  for (let i = 0; i < count; i++) {
-    if (baseSeed !== null) {
-      query.set('seed', String((baseSeed + i) % (seedSpec.max + 1)));
-    }
-    const result = await queueOnReceiver(imageGenTarget(query)!, photo.data, photo.contentType);
-    if (!result.ok) {
-      failure = { status: result.status, error: result.error };
-      break;
-    }
-    const tracked = await trackQueuedJob(result.job.promptId, 'images', destination.entity, req, {
-      startImage: filename,
-      requestedCount: 1,
-    });
-    jobs.push({ ...result.job, tracked });
-  }
-
-  if (jobs.length === 0) {
-    res.status(failure!.status).json({ error: failure!.error });
-    return;
-  }
-
-  await releaseFrameToJob(req.user!.email, filename);
-
-  const { promptId, seed, queueNumber } = jobs[0];
-  res.json({
-    promptId,
-    seed,
-    queueNumber,
-    count: jobs.length,
-    tracked: jobs.some(j => j.tracked),
-    jobs,
-    ...(failure && { error: failure.error }),
+  await queueEachImage(req, res, {
+    count,
+    filename,
+    photo,
+    entity: destination.entity,
+    target: i => {
+      if (baseSeed !== null) query.set('seed', String((baseSeed + i) % (seedSpec.max + 1)));
+      return imageGenTarget(query)!;
+    },
   });
 });
 
 
 /**
  * Edits per clothes-swap run. Each one is a full Flux.2 sampling pass at about a
- * megapixel, all held in one batch on the GPU, so the ceiling is lower than the
- * FaceID batch's.
+ * megapixel, queued as its own job so only one is on the GPU at a time.
  */
 const DEFAULT_SWAP_COUNT = 1;
 const MAX_SWAP_COUNT = 8;
 
 /**
  * POST /api/upload/clothes-swap  { url, prompt, count? }
- *   →  { promptId, seed, queueNumber, count, tracked }
+ *   →  { promptId, seed, queueNumber, count, tracked, jobs, error? }
  *
  * Queues an instruction edit of one stored photo on the receiver's
  * /clothes-swap: the prompt says what to change — clothing, pose, background —
  * and the person stays. The same relay as /generate-images; the edits come back
- * through the collector like any other batch of stills.
+ * through the collector like any other batch of stills. Each edit is its own
+ * job; see queueEachImage().
  */
 router.post('/clothes-swap', async (req: Request, res: Response) => {
   const source = startFrameName(req.body?.url);
@@ -719,7 +745,7 @@ router.post('/clothes-swap', async (req: Request, res: Response) => {
     }
   }
 
-  const target = receiverUrl('/clothes-swap', { prompt, name: filename, batch_size: String(count) });
+  const target = receiverUrl('/clothes-swap', { prompt, name: filename, batch_size: '1' });
   if (!target) {
     res.status(503).json({ error: 'No image receiver configured (photoExportUrl)' });
     return;
@@ -731,20 +757,13 @@ router.post('/clothes-swap', async (req: Request, res: Response) => {
     return;
   }
 
-  const result = await queueOnReceiver(target, photo.data, photo.contentType);
-  if (!result.ok) {
-    res.status(result.status).json({ error: result.error });
-    return;
-  }
-
-  await releaseFrameToJob(req.user!.email, filename);
-
-  const tracked = await trackQueuedJob(result.job.promptId, 'images', destination.entity, req, {
-    startImage: filename,
-    requestedCount: count,
+  await queueEachImage(req, res, {
+    count,
+    filename,
+    photo,
+    entity: destination.entity,
+    target: () => target,
   });
-
-  res.json({ ...result.job, count, tracked });
 });
 
 

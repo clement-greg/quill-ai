@@ -578,7 +578,10 @@ describe('clothes swap', () => {
     const res = await post({ url: 'https://blob.test/abc-123.jpg', prompt: '  a red raincoat  ' });
 
     expect(res.status).toBe(200);
-    expect(res.body).toEqual({ promptId: 'swap-1', seed: 11, queueNumber: 2, count: 1, tracked: false });
+    expect(res.body).toEqual(
+      expect.objectContaining({ promptId: 'swap-1', seed: 11, queueNumber: 2, count: 1, tracked: false })
+    );
+    expect(calls).toHaveLength(1);
 
     const target = new URL(calls[0].url);
     expect(target.origin + target.pathname).toBe('https://receiver.test/clothes-swap');
@@ -588,7 +591,7 @@ describe('clothes swap', () => {
     expect(Buffer.from(calls[0].init.body).toString()).toBe('stored-ciphertext');
   });
 
-  it('passes the batch size through, and nothing about the face', async () => {
+  it('queues one single-image job per edit, and nothing about the face', async () => {
     const res = await post({
       url: 'https://blob.test/abc-123.jpg',
       prompt: 'a red raincoat',
@@ -598,9 +601,29 @@ describe('clothes swap', () => {
 
     expect(res.status).toBe(200);
     expect(res.body.count).toBe(4);
-    const q = new URL(calls[0].url).searchParams;
-    expect(q.get('batch_size')).toBe('4');
-    expect(q.has('restore_face')).toBe(false);
+    // One job per edit — a single job with a large batch runs the GPU out of memory.
+    expect(calls).toHaveLength(4);
+    for (const call of calls) {
+      const q = new URL(call.url).searchParams;
+      expect(q.get('batch_size')).toBe('1');
+      expect(q.has('restore_face')).toBe(false);
+    }
+  });
+
+  it('reports the edits already queued when the receiver fails partway', async () => {
+    let n = 0;
+    global.fetch = jest.fn(async () =>
+      ++n === 1
+        ? new Response('{"prompt_id":"swap-1"}', { status: 200 })
+        : new Response('{"error":"out of memory"}', { status: 500 })
+    ) as any;
+
+    const res = await post({ url: 'https://blob.test/abc-123.jpg', prompt: 'a hat', count: 3 });
+
+    expect(res.status).toBe(200);
+    expect(res.body.count).toBe(1);
+    expect(res.body.error).toMatch(/out of memory/);
+    expect(global.fetch).toHaveBeenCalledTimes(2);
   });
 
   it.each([0, 9, 1.5, 'lots'])('refuses an out-of-range image count (%s)', async (count) => {
@@ -626,6 +649,11 @@ describe('clothes swap', () => {
   });
 
   it('tracks the job as images against the entity so the edits are collected', async () => {
+    let n = 0;
+    global.fetch = jest.fn(
+      async () => new Response(JSON.stringify({ prompt_id: `swap-${++n}` }), { status: 200 })
+    ) as any;
+
     const res = await post({
       url: 'https://blob.test/abc-123.jpg',
       prompt: 'a hat',
@@ -635,16 +663,19 @@ describe('clothes swap', () => {
 
     expect(res.status).toBe(200);
     expect(res.body.tracked).toBe(true);
-    expect(trackedJobs()).toEqual([
-      expect.objectContaining({
-        id: 'swap-1',
-        kind: 'images',
-        entityId: 'e-a',
-        requestedCount: 2,
-        startImage: 'abc-123.jpg',
-        owner: USER_A,
-      }),
-    ]);
+    // One tracked job per edit, each collected on its own.
+    expect(trackedJobs()).toEqual(
+      ['swap-1', 'swap-2'].map(id =>
+        expect.objectContaining({
+          id,
+          kind: 'images',
+          entityId: 'e-a',
+          requestedCount: 1,
+          startImage: 'abc-123.jpg',
+          owner: USER_A,
+        })
+      )
+    );
   });
 
   it("will not queue onto someone else's entity", async () => {

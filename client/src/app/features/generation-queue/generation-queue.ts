@@ -194,11 +194,17 @@ export class GenerationQueueComponent implements OnInit, OnDestroy {
     this.snackBar.open('Queueing…', undefined, { duration: 2000 });
     call.subscribe({
       next: job => {
-        this.snackBar.open(
-          `${what} queued for ${source.entity.name}${job.tracked ? ' — added there, hidden, when finished' : ''}`,
-          'Dismiss',
-          { duration: 5000 },
-        );
+        const finished = job.tracked ? ' — added there, hidden, when finished' : '';
+        // Each image is its own job, so the receiver can take some and fail the rest.
+        const partial = 'error' in job && job.error ? job : null;
+        if (partial) {
+          this.snackBar.open(
+            `${what}: only ${partial.count} queued for ${source.entity.name}${finished}. The rest failed: ${partial.error}`,
+            'Dismiss',
+          );
+        } else {
+          this.snackBar.open(`${what} queued for ${source.entity.name}${finished}`, 'Dismiss', { duration: 5000 });
+        }
         this.load();
       },
       error: (err: unknown) => {
