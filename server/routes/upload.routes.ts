@@ -644,17 +644,13 @@ const DEFAULT_SWAP_COUNT = 1;
 const MAX_SWAP_COUNT = 8;
 
 /**
- * POST /api/upload/clothes-swap  { url, prompt, count?, restoreFace? }
+ * POST /api/upload/clothes-swap  { url, prompt, count? }
  *   →  { promptId, seed, queueNumber, count, tracked }
  *
  * Queues an instruction edit of one stored photo on the receiver's
  * /clothes-swap: the prompt says what to change — clothing, pose, background —
  * and the person stays. The same relay as /generate-images; the edits come back
  * through the collector like any other batch of stills.
- *
- * `restoreFace` (default false) pastes the original face back over each edit.
- * Only safe for clothing and background changes — with a new pose the face
- * has moved, and the paste leaves the old one floating where the head was.
  */
 router.post('/clothes-swap', async (req: Request, res: Response) => {
   const source = startFrameName(req.body?.url);
@@ -689,14 +685,7 @@ router.post('/clothes-swap', async (req: Request, res: Response) => {
     }
   }
 
-  const query: Record<string, string> = {
-    prompt,
-    name: filename,
-    batch_size: String(count),
-    restore_face: req.body?.restoreFace === true ? '1' : '0',
-  };
-
-  const target = receiverUrl('/clothes-swap', query);
+  const target = receiverUrl('/clothes-swap', { prompt, name: filename, batch_size: String(count) });
   if (!target) {
     res.status(503).json({ error: 'No image receiver configured (photoExportUrl)' });
     return;

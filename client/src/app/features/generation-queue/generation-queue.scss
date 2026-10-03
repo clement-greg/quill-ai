@@ -23,6 +23,12 @@
   font-weight: 600;
 }
 
+.button-spinner {
+  display: inline-block;
+  margin-right: 8px;
+  vertical-align: middle;
+}
+
 .loading {
   display: flex;
   flex-direction: column;

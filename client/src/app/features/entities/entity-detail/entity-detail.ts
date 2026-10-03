@@ -13,7 +13,7 @@ import {
 } from '@angular/core';
 import { Router } from '@angular/router';
 import { HttpErrorResponse } from '@angular/common/http';
-import { forkJoin, from, of, TimeoutError } from 'rxjs';
+import { forkJoin, from, of } from 'rxjs';
 import { concatMap, map, catchError } from 'rxjs/operators';
 import { MatButtonModule } from '@angular/material/button';
 import { MatIconModule } from '@angular/material/icon';
@@ -60,6 +60,7 @@ import {
   ClothesSwapDialogData,
   ClothesSwapResult,
 } from './clothes-swap-dialog';
+import { generationFailure } from '../generation-failure';
 import {
   MovePhotoDialogComponent,
   MovePhotoDialogData,
@@ -1245,7 +1246,7 @@ export class EntityDetailComponent implements OnDestroy {
         if (job.tracked && entityId) this.pollGenerationJobs(entityId);
       },
       error: (err: unknown) => {
-        const { reason, retryable } = this.generationFailure(err);
+        const { reason, retryable } = generationFailure(err);
         const toast = this.snackBar.open(`Images failed: ${reason}`, retryable ? 'Retry' : 'Dismiss');
         if (!retryable) return;
         // Offered rather than automatic: the job is queued on the far side before
@@ -1271,7 +1272,7 @@ export class EntityDetailComponent implements OnDestroy {
         if (job.tracked && entityId) this.pollGenerationJobs(entityId);
       },
       error: (err: unknown) => {
-        const { reason, retryable } = this.generationFailure(err);
+        const { reason, retryable } = generationFailure(err);
         const toast = this.snackBar.open(`Clothes swap failed: ${reason}`, retryable ? 'Retry' : 'Dismiss');
         if (!retryable) return;
         // Offered rather than automatic, for the same reason as queueImages().
@@ -1298,7 +1299,7 @@ export class EntityDetailComponent implements OnDestroy {
         if (job.tracked && entityId) this.pollGenerationJobs(entityId);
       },
       error: (err: unknown) => {
-        const { reason, retryable } = this.generationFailure(err);
+        const { reason, retryable } = generationFailure(err);
         const toast = this.snackBar.open(
           `Video failed: ${reason}`,
           retryable ? 'Retry' : 'Dismiss'
@@ -1310,36 +1311,6 @@ export class EntityDetailComponent implements OnDestroy {
         toast.onAction().subscribe(() => this.queueVideo(url, prompt, durationSeconds));
       },
     });
-  }
-
-  /**
-   * What to tell the user, and whether sending the same job again is worth
-   * offering. The server names the cause in `{ error }` for everything it
-   * recognises — including the receiver's own message, so a stopped ComfyUI or
-   * an offline tunnel says so here rather than reading as a generic failure.
-   */
-  private generationFailure(err: unknown): { reason: string; retryable: boolean } {
-    if (err instanceof TimeoutError) {
-      return { reason: 'the request took too long and was given up on', retryable: true };
-    }
-    if (!(err instanceof HttpErrorResponse)) {
-      return { reason: 'something went wrong sending the request', retryable: true };
-    }
-    // Status 0 never reached our own server — the phone lost its connection, or
-    // the dev server is down. There is no body to read a reason from.
-    if (err.status === 0) {
-      return { reason: 'no connection to Quill — check your network', retryable: true };
-    }
-
-    const reason = typeof err.error?.error === 'string' && err.error.error.trim()
-      ? err.error.error.trim()
-      : `server returned ${err.status}`;
-
-    // 4xx is this request being wrong (bad prompt, bad photo) — sending the
-    // identical job again would fail the same way. 5xx is the far side or the
-    // link between, which is exactly what is expected to be flaky.
-    const retryable = err.status >= 500 || err.status === 429;
-    return { reason, retryable };
   }
 
   private advanceLightboxAfterRemoval(removedIndex: number): void {

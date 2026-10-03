@@ -542,7 +542,7 @@ describe('clothes swap', () => {
     global.fetch = realFetch;
   });
 
-  it('sends the stored bytes to /clothes-swap and defaults to one raw edit', async () => {
+  it('sends the stored bytes to /clothes-swap and defaults to one image', async () => {
     const res = await post({ url: 'https://blob.test/abc-123.jpg', prompt: '  a red raincoat  ' });
 
     expect(res.status).toBe(200);
@@ -553,12 +553,10 @@ describe('clothes swap', () => {
     expect(target.searchParams.get('prompt')).toBe('a red raincoat');
     expect(target.searchParams.get('name')).toBe('abc-123.jpg');
     expect(target.searchParams.get('batch_size')).toBe('1');
-    // The face paste-back is opt-in — it breaks any edit that moves the head.
-    expect(target.searchParams.get('restore_face')).toBe('0');
     expect(Buffer.from(calls[0].init.body).toString()).toBe('stored-ciphertext');
   });
 
-  it('passes the batch size and a face-restore opt-in through', async () => {
+  it('passes the batch size through, and nothing about the face', async () => {
     const res = await post({
       url: 'https://blob.test/abc-123.jpg',
       prompt: 'a red raincoat',
@@ -570,7 +568,7 @@ describe('clothes swap', () => {
     expect(res.body.count).toBe(4);
     const q = new URL(calls[0].url).searchParams;
     expect(q.get('batch_size')).toBe('4');
-    expect(q.get('restore_face')).toBe('1');
+    expect(q.has('restore_face')).toBe(false);
   });
 
   it.each([0, 9, 1.5, 'lots'])('refuses an out-of-range image count (%s)', async (count) => {

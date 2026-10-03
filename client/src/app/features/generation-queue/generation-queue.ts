@@ -20,6 +20,10 @@ import { ConfirmDialogComponent } from '@app/shared/confirm-dialog/confirm-dialo
 import { GenerationQueueService } from './generation-queue.service';
 import { GenerationJob, GenerationQueueStatus } from '@shared/models/generation-queue.model';
 import { TrackedGenerationJob } from '@shared/models/generation-job.model';
+import { Observable } from 'rxjs';
+import { EntityService, PhotoGenJob, VideoGenJob } from '@app/features/entities/entity.service';
+import { generationFailure } from '@app/features/entities/generation-failure';
+import { NewGenerationDialogComponent, NewGenerationResult } from './new-generation-dialog';
 
 /** How often the queue is re-read while the screen is open and visible. */
 const POLL_INTERVAL_MS = 10_000;
@@ -43,6 +47,7 @@ export class GenerationQueueComponent implements OnInit, OnDestroy {
   private headerService = inject(HeaderService);
   private snackBar = inject(MatSnackBar);
   private dialog = inject(MatDialog);
+  private entityService = inject(EntityService);
 
   status = signal<GenerationQueueStatus | null>(null);
   /** Quill's own record of the jobs it queued, and where each one ended up. */
@@ -53,6 +58,8 @@ export class GenerationQueueComponent implements OnInit, OnDestroy {
   error = signal<string | null>(null);
   /** Prompt ids with a cancel in flight, so their buttons can spin and lock. */
   cancelling = signal<Set<string>>(new Set());
+  /** True while a new generation's image uploads, so the button can't start a second. */
+  starting = signal(false);
 
   private timer: ReturnType<typeof setInterval> | null = null;
 
@@ -119,6 +126,85 @@ export class GenerationQueueComponent implements OnInit, OnDestroy {
       error: (err) => {
         this.error.set(err?.error?.error ?? 'Could not read the generation queue.');
         this.loading.set(false);
+      },
+    });
+  }
+
+  // --- Starting a generation from here --------------------------------------
+  // The gallery starts from a photo it already has, on the entity it belongs to.
+  // Here the dialog collects both, alongside the generator's own inputs — the
+  // gallery dialogs' form components, so the options match.
+
+  /** Asks for an image, a generator, its inputs and an entity, then queues the job. */
+  newGeneration(): void {
+    if (this.starting()) return;
+    this.dialog
+      .open<NewGenerationDialogComponent, void, NewGenerationResult>(NewGenerationDialogComponent)
+      .afterClosed()
+      .subscribe(source => {
+        if (source) this.uploadSource(source);
+      });
+  }
+
+  /**
+   * Stores the image as a scratch frame — the path a frame captured from a video
+   * takes — so the server lets go of it as soon as the job is accepted.
+   */
+  private uploadSource(source: NewGenerationResult): void {
+    this.starting.set(true);
+    this.entityService.uploadFrame(source.file).subscribe({
+      next: ({ url }) => {
+        this.starting.set(false);
+        this.queue(source, url);
+      },
+      error: (err: unknown) => {
+        this.starting.set(false);
+        const { reason } = generationFailure(err);
+        this.snackBar.open(`Could not use that image: ${reason}`, 'Dismiss', { duration: 6000 });
+      },
+    });
+  }
+
+  /**
+   * Sends the job. Failure handling matches the gallery's: the receiver comes
+   * and goes, so a retry is offered — never automatic, since a timed-out request
+   * may already have queued the job on the far side.
+   */
+  private queue(source: NewGenerationResult, url: string): void {
+    const entityId = source.entity.id;
+    let call: Observable<VideoGenJob | PhotoGenJob>;
+    let what: string;
+    switch (source.kind) {
+      case 'video': {
+        const { prompt, durationSeconds } = source.request;
+        call = this.entityService.generateVideo(url, prompt, durationSeconds, entityId);
+        what = `${durationSeconds.toFixed(1)}s video`;
+        break;
+      }
+      case 'images':
+        call = this.entityService.generateImagesFromPhoto(url, source.request, entityId);
+        what = `${source.request.count} image${source.request.count === 1 ? '' : 's'}`;
+        break;
+      case 'clothes-swap':
+        call = this.entityService.clothesSwap(url, source.request, entityId);
+        what = `Clothes swap (${source.request.count} image${source.request.count === 1 ? '' : 's'})`;
+        break;
+    }
+
+    this.snackBar.open('Queueing…', undefined, { duration: 2000 });
+    call.subscribe({
+      next: job => {
+        this.snackBar.open(
+          `${what} queued for ${source.entity.name}${job.tracked ? ' — added there, hidden, when finished' : ''}`,
+          'Dismiss',
+          { duration: 5000 },
+        );
+        this.load();
+      },
+      error: (err: unknown) => {
+        const { reason, retryable } = generationFailure(err);
+        const toast = this.snackBar.open(`${what} failed: ${reason}`, retryable ? 'Retry' : 'Dismiss');
+        if (retryable) toast.onAction().subscribe(() => this.queue(source, url));
       },
     });
   }

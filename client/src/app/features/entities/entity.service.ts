@@ -52,8 +52,6 @@ export interface PhotoGenJob {
 export interface ClothesSwapRequest {
   prompt: string;
   count: number;
-  /** True pastes the original face back over each edit; false saves the raw edit. */
-  restoreFace: boolean;
 }
 
 export interface ChapterAppearance {
