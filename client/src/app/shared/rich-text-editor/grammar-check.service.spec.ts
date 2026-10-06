@@ -47,6 +47,37 @@ describe('GrammarCheckService', () => {
     });
   });
 
+  describe('mentionsOutsideEntityReferences', () => {
+    function html(markup: string): HTMLElement {
+      const div = document.createElement('div');
+      div.innerHTML = markup;
+      return div;
+    }
+
+    it('is false when the name only appears inside an entity-reference span', () => {
+      const editor = html('<span class="entity-reference">Mark</span> said hi.');
+      expect(service.mentionsOutsideEntityReferences(editor, 'mark')).toBe(false);
+    });
+
+    it('is true when the name appears as plain text', () => {
+      expect(service.mentionsOutsideEntityReferences(html('Mark said hi.'), 'mark')).toBe(true);
+    });
+
+    it('is true when the name appears both linked and unlinked', () => {
+      const editor = html('<span class="entity-reference">Mark</span> met Mark.');
+      expect(service.mentionsOutsideEntityReferences(editor, 'mark')).toBe(true);
+    });
+
+    it('matches whole words only', () => {
+      expect(service.mentionsOutsideEntityReferences(html('Marked and Landmark.'), 'mark')).toBe(false);
+    });
+
+    it('does not treat a linked multi-word name as an unlinked mention', () => {
+      const editor = html('<span class="entity-reference">Mark Amherst</span> left.');
+      expect(service.mentionsOutsideEntityReferences(editor, 'mark amherst')).toBe(false);
+    });
+  });
+
   describe('check', () => {
     it('posts the text and known entity names', async () => {
       await service.check('The cat sat.', ['Mark']);
