@@ -574,8 +574,8 @@ describe('clothes swap', () => {
     global.fetch = realFetch;
   });
 
-  it('sends the stored bytes to /clothes-swap and defaults to one image', async () => {
-    const res = await post({ url: 'https://blob.test/abc-123.jpg', prompt: '  a red raincoat  ' });
+  it('sends the stored bytes to /clothes-swap', async () => {
+    const res = await post({ url: 'https://blob.test/abc-123.jpg', prompt: '  a red raincoat  ', count: 1 });
 
     expect(res.status).toBe(200);
     expect(res.body).toEqual(
@@ -589,6 +589,14 @@ describe('clothes swap', () => {
     expect(target.searchParams.get('name')).toBe('abc-123.jpg');
     expect(target.searchParams.get('batch_size')).toBe('1');
     expect(Buffer.from(calls[0].init.body).toString()).toBe('stored-ciphertext');
+  });
+
+  it('defaults to eight images when no count is given', async () => {
+    const res = await post({ url: 'https://blob.test/abc-123.jpg', prompt: 'a red raincoat' });
+
+    expect(res.status).toBe(200);
+    expect(res.body.count).toBe(8);
+    expect(calls).toHaveLength(8);
   });
 
   it('queues one single-image job per edit, and nothing about the face', async () => {

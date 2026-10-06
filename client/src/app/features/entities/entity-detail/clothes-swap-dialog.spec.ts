@@ -10,9 +10,10 @@ describe('ClothesSwapFormComponent', () => {
     return fixture.componentInstance;
   }
 
-  it('defaults to one image and starts invalid', () => {
+  it('defaults to eight images and starts invalid', () => {
     const form = create();
-    expect(form.count.value).toBe(DEFAULT_SWAP_COUNT);
+    expect(DEFAULT_SWAP_COUNT).toBe(8);
+    expect(form.count.value).toBe(8);
     expect(form.invalid()).toBe(true);
     expect(form.result()).toBeNull();
   });

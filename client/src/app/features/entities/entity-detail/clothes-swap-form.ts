@@ -17,7 +17,7 @@ export interface ClothesSwapResult {
 export const MAX_SWAP_PROMPT_LENGTH = 2000;
 
 /** Edits per run. The server's ceiling is 8 — each is a full pass on one GPU. */
-export const DEFAULT_SWAP_COUNT = 1;
+export const DEFAULT_SWAP_COUNT = 8;
 export const MIN_SWAP_COUNT = 1;
 export const MAX_SWAP_COUNT = 8;
 

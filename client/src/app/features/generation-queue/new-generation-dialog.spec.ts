@@ -120,7 +120,7 @@ describe('NewGenerationDialogComponent', () => {
     fixture.componentInstance.confirm();
 
     expect(close).toHaveBeenCalledWith(
-      expect.objectContaining({ kind: 'clothes-swap', request: { prompt: 'a red coat', count: 1 } })
+      expect.objectContaining({ kind: 'clothes-swap', request: { prompt: 'a red coat', count: 8 } })
     );
   });
 
