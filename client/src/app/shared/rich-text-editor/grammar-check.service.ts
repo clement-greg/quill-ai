@@ -45,6 +45,17 @@ export class GrammarCheckService {
     }
   }
 
+  /** True when `lowerName` appears as a whole word in the editor outside any
+   *  already-linked `.entity-reference` span, so a name that only occurs inside
+   *  entity links isn't suggested as a new entity. */
+  mentionsOutsideEntityReferences(editorEl: HTMLElement, lowerName: string): boolean {
+    const clone = editorEl.cloneNode(true) as HTMLElement;
+    clone.querySelectorAll('.entity-reference').forEach(el => el.replaceWith(' '));
+    const text = (clone.textContent ?? '').toLowerCase();
+    const escaped = lowerName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    return new RegExp(`(?<![\\p{L}\\p{N}])${escaped}(?![\\p{L}\\p{N}])`, 'u').test(text);
+  }
+
   /**
    * Extracts visible text from the editor, returning only the last 2
    * complete sentences (ending in . ! or ?) for grammar / entity checking.

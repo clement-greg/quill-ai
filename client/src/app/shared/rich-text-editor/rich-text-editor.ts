@@ -2744,7 +2744,8 @@ export class RichTextEditorComponent implements OnInit, AfterViewInit, OnDestroy
         );
         const newCards = suggestedEntities.filter(s => {
           const lower = s.name.toLowerCase();
-          return !this.suggestedEntityNames.has(lower) && !knownLower.has(lower);
+          return !this.suggestedEntityNames.has(lower) && !knownLower.has(lower)
+            && this.grammarService.mentionsOutsideEntityReferences(editor, lower);
         });
         if (newCards.length > 0) {
           this.pendingSuggestions.update(prev => this.dedupePartialSuggestions([...prev, ...newCards]));
