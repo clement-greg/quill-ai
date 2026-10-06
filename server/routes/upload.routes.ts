@@ -699,7 +699,7 @@ router.post('/generate-images', async (req: Request, res: Response) => {
  * Edits per clothes-swap run. Each one is a full Flux.2 sampling pass at about a
  * megapixel, queued as its own job so only one is on the GPU at a time.
  */
-const DEFAULT_SWAP_COUNT = 1;
+const DEFAULT_SWAP_COUNT = 8;
 const MAX_SWAP_COUNT = 8;
 
 /**
