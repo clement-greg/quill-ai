@@ -13,14 +13,15 @@
   </div>
 
   @if (trackedJobs().length > 0) {
-    <section class="tracked">
+    <section class="tracked" animate.leave="tracked--leaving">
       <h2 class="section-title">Your generations</h2>
       <p class="section-note">
         Finished assets are added to the entity they were started from, hidden.
       </p>
       <div class="tracked-list">
         @for (job of awaitingCollection().concat(finishedJobs()); track job.id) {
-          <div class="tracked-card" [class.tracked-card--done]="job.state === 'collected'">
+          <div class="tracked-card" [class.tracked-card--done]="job.state === 'collected'"
+               animate.leave="tracked-card--leaving">
             <mat-icon class="tracked-icon" [class.tracked-icon--error]="job.state === 'failed' || job.state === 'gone'">
               {{ trackedStateIcon(job) }}
             </mat-icon>

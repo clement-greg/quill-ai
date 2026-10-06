@@ -8,6 +8,7 @@ import { HeaderService } from '@app/core/services/header.service';
 import { EntityService } from '@app/features/entities/entity.service';
 import { GenerationQueueComponent } from './generation-queue';
 import { GenerationQueueService } from './generation-queue.service';
+import { TrackedGenerationJob } from '@shared/models/generation-job.model';
 import { NewGenerationDialogComponent, NewGenerationRequest, NewGenerationResult } from './new-generation-dialog';
 
 const JOB = { promptId: 'p-1', seed: 1, queueNumber: 0, frames: null, count: 1, tracked: true };
@@ -164,5 +165,106 @@ describe('GenerationQueueComponent — new generation', () => {
     component.starting.set(true);
     component.newGeneration();
     expect(opened).toHaveLength(0);
+  });
+});
+
+describe('GenerationQueueComponent — dismissing a finished job', () => {
+  let tracked: TrackedGenerationJob[];
+  let dismiss$: Subject<void>;
+  let snackBar: { open: ReturnType<typeof vi.fn> };
+  let queueService: Record<string, ReturnType<typeof vi.fn>>;
+
+  const job = (id: string, state: TrackedGenerationJob['state']): TrackedGenerationJob => ({
+    id,
+    kind: 'images',
+    entityId: 'e-1',
+    entityName: 'Janet',
+    state,
+    requestedCount: 1,
+    queuedAt: '2026-10-06T12:00:00Z',
+    attempts: 1,
+  } as TrackedGenerationJob);
+
+  function render() {
+    TestBed.configureTestingModule({
+      imports: [GenerationQueueComponent],
+      providers: [
+        provideRouter([]),
+        { provide: MatDialog, useValue: { open: vi.fn() } },
+        { provide: MatSnackBar, useValue: snackBar },
+        { provide: EntityService, useValue: {} },
+        { provide: GenerationQueueService, useValue: queueService },
+        { provide: HeaderService, useValue: { setPage: vi.fn() } },
+      ],
+    });
+    const fixture = TestBed.createComponent(GenerationQueueComponent);
+    fixture.detectChanges();
+    // The poll would re-read the list mid-test; one read on init is all these need.
+    fixture.componentInstance.ngOnDestroy();
+    return fixture;
+  }
+
+  const cards = (el: HTMLElement) => Array.from(el.querySelectorAll<HTMLElement>('.tracked-card'));
+  const dismissButton = (card: HTMLElement) =>
+    card.querySelector<HTMLButtonElement>('[aria-label="Dismiss this job"]')!;
+
+  beforeEach(() => {
+    tracked = [job('a', 'collected'), job('b', 'failed')];
+    dismiss$ = new Subject<void>();
+    snackBar = { open: vi.fn() };
+    queueService = {
+      getTrackedJobs: vi.fn(() => of({ jobs: tracked })),
+      // Offline receiver: keeps the queue half of the screen out of these tests.
+      getStatus: vi.fn(() => throwError(() => new HttpErrorResponse({ status: 503 }))),
+      dismissTrackedJob: vi.fn(() => dismiss$),
+    };
+  });
+
+  // The leave animations themselves can't run here: Angular only enables
+  // animate.leave where the DOM has getAnimations(), which jsdom lacks. These
+  // pin down when a card leaves, which is what decides when it animates.
+  it('removes the card only once the server lets go of the job', () => {
+    const fixture = render();
+    const el: HTMLElement = fixture.nativeElement;
+    const [first] = cards(el);
+
+    dismissButton(first).click();
+    fixture.detectChanges();
+    // Nothing moves until the server agrees — a failed dismiss must leave it be.
+    expect(first.isConnected).toBe(true);
+    expect(queueService['dismissTrackedJob']).toHaveBeenCalledWith('a');
+
+    dismiss$.next();
+    dismiss$.complete();
+    fixture.detectChanges();
+    expect(first.isConnected).toBe(false);
+    expect(cards(el).map(c => c.textContent)).toEqual([expect.stringContaining('Failed')]);
+  });
+
+  it('keeps the card when the dismiss fails', () => {
+    const fixture = render();
+    const el: HTMLElement = fixture.nativeElement;
+    const [first] = cards(el);
+
+    dismissButton(first).click();
+    dismiss$.error(new HttpErrorResponse({ status: 500 }));
+    fixture.detectChanges();
+
+    expect(first.isConnected).toBe(true);
+    expect(cards(el)).toHaveLength(2);
+    expect(snackBar.open).toHaveBeenCalledWith('Could not dismiss that job.', undefined, { duration: 3000 });
+  });
+
+  it('takes the whole section away when the last job is dismissed', () => {
+    tracked = [job('a', 'collected')];
+    const fixture = render();
+    const el: HTMLElement = fixture.nativeElement;
+    expect(el.querySelector('section.tracked')).not.toBeNull();
+
+    dismissButton(cards(el)[0]).click();
+    dismiss$.next();
+    dismiss$.complete();
+    fixture.detectChanges();
+    expect(el.querySelector('section.tracked')).toBeNull();
   });
 });
