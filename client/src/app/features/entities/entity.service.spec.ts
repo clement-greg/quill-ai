@@ -38,7 +38,46 @@ describe('EntityService', () => {
       expect(result).toEqual(JOB);
     });
 
-    it('passes the server error through to the caller', () => {
+    it('retries a 502 twice, then passes the server error through to the caller', () => {
+      vi.useFakeTimers();
+      try {
+        let status: number | undefined;
+        service
+          .clothesSwap('https://blob.test/abc.jpg', { prompt: 'a hat', count: 1 })
+          .subscribe({ error: err => (status = err.status) });
+
+        for (let attempt = 0; attempt < 3; attempt++) {
+          if (attempt > 0) vi.advanceTimersByTime(1_500);
+          httpMock
+            .expectOne('/api/upload/clothes-swap')
+            .flush({ error: 'Receiver returned 404' }, { status: 502, statusText: 'Bad Gateway' });
+        }
+        expect(status).toBe(502);
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it('succeeds when a retry after a 502 gets through', () => {
+      vi.useFakeTimers();
+      try {
+        let result: PhotoGenJob | undefined;
+        service
+          .clothesSwap('https://blob.test/abc.jpg', { prompt: 'a hat', count: 2 })
+          .subscribe(r => (result = r));
+
+        httpMock
+          .expectOne('/api/upload/clothes-swap')
+          .flush(null, { status: 502, statusText: 'Bad Gateway' });
+        vi.advanceTimersByTime(1_500);
+        httpMock.expectOne('/api/upload/clothes-swap').flush(JOB);
+        expect(result).toEqual(JOB);
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it('does not retry other failures', () => {
       let status: number | undefined;
       service
         .clothesSwap('https://blob.test/abc.jpg', { prompt: 'a hat', count: 1 })
@@ -46,8 +85,8 @@ describe('EntityService', () => {
 
       httpMock
         .expectOne('/api/upload/clothes-swap')
-        .flush({ error: 'Receiver returned 404' }, { status: 502, statusText: 'Bad Gateway' });
-      expect(status).toBe(502);
+        .flush({ error: 'Receiver offline' }, { status: 504, statusText: 'Gateway Timeout' });
+      expect(status).toBe(504);
     });
   });
 });

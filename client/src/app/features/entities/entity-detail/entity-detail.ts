@@ -61,7 +61,7 @@ import {
   ClothesSwapDialogData,
   ClothesSwapResult,
 } from './clothes-swap-dialog';
-import { generationFailure } from '../generation-failure';
+import { reportGenerationFailure } from '../generation-failure';
 import {
   MovePhotoDialogComponent,
   MovePhotoDialogData,
@@ -1249,14 +1249,10 @@ export class EntityDetailComponent implements OnDestroy {
         );
         if (job.tracked && entityId) this.pollGenerationJobs(entityId);
       },
-      error: (err: unknown) => {
-        const { reason, retryable } = generationFailure(err);
-        const toast = this.snackBar.open(`Images failed: ${reason}`, retryable ? 'Retry' : 'Dismiss');
-        if (!retryable) return;
-        // Offered rather than automatic: the job is queued on the far side before
-        // the reply comes back, so retrying a timeout could queue the batch twice.
-        toast.onAction().subscribe(() => this.queueImages(url, request));
-      },
+      error: (err: unknown) =>
+        reportGenerationFailure(this.snackBar, 'Images', err, request.prompt, () =>
+          this.queueImages(url, request)
+        ),
     });
   }
 
@@ -1277,20 +1273,17 @@ export class EntityDetailComponent implements OnDestroy {
         );
         if (job.tracked && entityId) this.pollGenerationJobs(entityId);
       },
-      error: (err: unknown) => {
-        const { reason, retryable } = generationFailure(err);
-        const toast = this.snackBar.open(`Clothes swap failed: ${reason}`, retryable ? 'Retry' : 'Dismiss');
-        if (!retryable) return;
-        // Offered rather than automatic, for the same reason as queueImages().
-        toast.onAction().subscribe(() => this.queueClothesSwap(url, request));
-      },
+      error: (err: unknown) =>
+        reportGenerationFailure(this.snackBar, 'Clothes swap', err, request.prompt, () =>
+          this.queueClothesSwap(url, request)
+        ),
     });
   }
 
   private queueVideo(url: string, prompt: string, durationSeconds: number): void {
     // The generator runs on a machine that comes and goes, so a failure here is
-    // ordinary rather than exceptional: the toast stays until dismissed and
-    // offers to send the same job again.
+    // ordinary rather than exceptional: a 502 is retried by the service, and
+    // what still fails gets a toast that offers to send the same job again.
     const entityId = this.entity()?.id;
     this.snackBar.open('Queueing video…', undefined, { duration: 2000 });
     this.entityService.generateVideo(url, prompt, durationSeconds, entityId).subscribe({
@@ -1304,18 +1297,10 @@ export class EntityDetailComponent implements OnDestroy {
         );
         if (job.tracked && entityId) this.pollGenerationJobs(entityId);
       },
-      error: (err: unknown) => {
-        const { reason, retryable } = generationFailure(err);
-        const toast = this.snackBar.open(
-          `Video failed: ${reason}`,
-          retryable ? 'Retry' : 'Dismiss'
-        );
-        if (!retryable) return;
-        // Retrying is offered rather than done automatically: the job is queued
-        // on the far side before the reply comes back, so an automatic retry
-        // after a timeout could queue the same clip twice.
-        toast.onAction().subscribe(() => this.queueVideo(url, prompt, durationSeconds));
-      },
+      error: (err: unknown) =>
+        reportGenerationFailure(this.snackBar, 'Video', err, prompt, () =>
+          this.queueVideo(url, prompt, durationSeconds)
+        ),
     });
   }
 
