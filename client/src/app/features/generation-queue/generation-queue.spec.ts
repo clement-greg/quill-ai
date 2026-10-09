@@ -3,7 +3,7 @@ import { HttpErrorResponse } from '@angular/common/http';
 import { MatDialog } from '@angular/material/dialog';
 import { MatSnackBar } from '@angular/material/snack-bar';
 import { provideRouter } from '@angular/router';
-import { of, Subject, throwError } from 'rxjs';
+import { NEVER, of, Subject, throwError } from 'rxjs';
 import { HeaderService } from '@app/core/services/header.service';
 import { EntityService } from '@app/features/entities/entity.service';
 import { GenerationQueueComponent } from './generation-queue';
@@ -63,7 +63,9 @@ describe('GenerationQueueComponent — new generation', () => {
     };
     queueService = {
       getTrackedJobs: vi.fn(() => of({ jobs: [] })),
-      getStatus: vi.fn(() => of(null)),
+      // Never answers, so the screen stays loading if change detection runs
+      // while a test awaits the failure toast.
+      getStatus: vi.fn(() => NEVER),
     };
   });
 
@@ -132,7 +134,7 @@ describe('GenerationQueueComponent — new generation', () => {
     );
   });
 
-  it('offers a retry when the receiver is unreachable, and retries on request', () => {
+  it('offers a retry when the receiver is unreachable, and retries on request', async () => {
     const action = new Subject<void>();
     snackBar.open = vi.fn(() => ({ onAction: () => action }));
     entityService['clothesSwap'] = vi.fn(() =>
@@ -142,14 +144,18 @@ describe('GenerationQueueComponent — new generation', () => {
 
     create().newGeneration();
 
-    expect(snackBar.open).toHaveBeenLastCalledWith('Clothes swap (1 image) failed: Receiver offline', 'Retry');
+    await vi.waitFor(() =>
+      expect(snackBar.open).toHaveBeenLastCalledWith(
+        expect.stringMatching(/^Clothes swap \(1 image\) failed: Receiver offline/), 'Retry'
+      )
+    );
     action.next();
     expect(entityService['clothesSwap']).toHaveBeenCalledTimes(2);
     // The image is already stored; a retry sends the same one again.
     expect(entityService['uploadFrame']).toHaveBeenCalledTimes(1);
   });
 
-  it('does not offer a retry for a request the server rejected', () => {
+  it('does not offer a retry for a request the server rejected', async () => {
     entityService['generateImagesFromPhoto'] = vi.fn(() =>
       throwError(() => new HttpErrorResponse({ status: 400, error: { error: 'A prompt is required' } }))
     );
@@ -157,7 +163,11 @@ describe('GenerationQueueComponent — new generation', () => {
 
     create().newGeneration();
 
-    expect(snackBar.open).toHaveBeenLastCalledWith('1 image failed: A prompt is required', 'Dismiss');
+    await vi.waitFor(() =>
+      expect(snackBar.open).toHaveBeenLastCalledWith(
+        expect.stringMatching(/^1 image failed: A prompt is required/), 'Dismiss'
+      )
+    );
   });
 
   it('will not start a second generation while an image is uploading', () => {

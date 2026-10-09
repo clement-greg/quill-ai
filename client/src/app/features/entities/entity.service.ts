@@ -11,6 +11,26 @@ import { TrackedGenerationJob } from '@shared/models/generation-job.model';
  */
 const GENERATION_REQUEST_TIMEOUT_MS = 75_000;
 
+/** Extra attempts a receiver request gets after a 502 before the failure is reported. */
+const GENERATION_BAD_GATEWAY_RETRIES = 2;
+const GENERATION_RETRY_DELAY_MS = 1_500;
+
+/**
+ * Re-sends a receiver request that came back 502. The tunnel to the receiver
+ * drops requests now and then and a second try usually gets through. Only 502
+ * is retried: a timeout may already have queued the job on the far side, and
+ * anything else is either the request being wrong or a reason worth showing.
+ */
+function retryBadGateway<T>() {
+  return retry<T>({
+    count: GENERATION_BAD_GATEWAY_RETRIES,
+    delay: (err: unknown) =>
+      err instanceof HttpErrorResponse && err.status === 502
+        ? timer(GENERATION_RETRY_DELAY_MS)
+        : throwError(() => err),
+  });
+}
+
 /** The queued ComfyUI job the receiver reports back for an image-to-video request. */
 export interface VideoGenJob {
   promptId: string | null;
@@ -183,7 +203,8 @@ export class EntityService {
         // The server gives the receiver 60s and then answers, so anything past
         // this is the request itself hanging. Without it a stalled connection
         // leaves the UI waiting with no toast either way.
-        timeout(GENERATION_REQUEST_TIMEOUT_MS)
+        timeout(GENERATION_REQUEST_TIMEOUT_MS),
+        retryBadGateway()
       );
   }
 
@@ -200,7 +221,7 @@ export class EntityService {
   ): Observable<PhotoGenJob> {
     return this.http
       .post<PhotoGenJob>('/api/upload/generate-images', { url, ...request, entityId })
-      .pipe(timeout(GENERATION_REQUEST_TIMEOUT_MS));
+      .pipe(timeout(GENERATION_REQUEST_TIMEOUT_MS), retryBadGateway());
   }
 
   /**
@@ -211,7 +232,7 @@ export class EntityService {
   clothesSwap(url: string, request: ClothesSwapRequest, entityId?: string): Observable<PhotoGenJob> {
     return this.http
       .post<PhotoGenJob>('/api/upload/clothes-swap', { url, ...request, entityId })
-      .pipe(timeout(GENERATION_REQUEST_TIMEOUT_MS));
+      .pipe(timeout(GENERATION_REQUEST_TIMEOUT_MS), retryBadGateway());
   }
 
   /**

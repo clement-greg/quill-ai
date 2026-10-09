@@ -1,4 +1,5 @@
 import { HttpErrorResponse } from '@angular/common/http';
+import { MatSnackBar } from '@angular/material/snack-bar';
 import { TimeoutError } from 'rxjs';
 
 /**
@@ -30,4 +31,41 @@ export function generationFailure(err: unknown): { reason: string; retryable: bo
   // link between, which is exactly what is expected to be flaky.
   const retryable = err.status >= 500 || err.status === 429;
   return { reason, retryable };
+}
+
+/**
+ * Tells the user a generation request failed and copies its prompt to the
+ * clipboard, so a long prompt is not lost if they need to send it some other
+ * way. By the time this runs the request has already been retried after any
+ * 502, so the toast stays until dismissed and offers `retry` when sending the
+ * same job again could help.
+ */
+export function reportGenerationFailure(
+  snackBar: MatSnackBar,
+  what: string,
+  err: unknown,
+  prompt: string,
+  retry: () => void,
+): void {
+  const { reason, retryable } = generationFailure(err);
+  void copyToClipboard(prompt).then(copied => {
+    const note = copied ? ' (prompt copied to clipboard)' : '';
+    const toast = snackBar.open(`${what} failed: ${reason}${note}`, retryable ? 'Retry' : 'Dismiss');
+    if (retryable) toast.onAction().subscribe(retry);
+  });
+}
+
+/**
+ * Whether the text made it onto the clipboard. Browsers may refuse a write
+ * that does not follow a tap — Safari in particular — which is no reason to
+ * hold up the failure toast.
+ */
+async function copyToClipboard(text: string): Promise<boolean> {
+  if (!text || !navigator.clipboard?.writeText) return false;
+  try {
+    await navigator.clipboard.writeText(text);
+    return true;
+  } catch {
+    return false;
+  }
 }

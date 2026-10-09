@@ -22,7 +22,7 @@ import { GenerationJob, GenerationQueueStatus } from '@shared/models/generation-
 import { TrackedGenerationJob } from '@shared/models/generation-job.model';
 import { Observable } from 'rxjs';
 import { EntityService, PhotoGenJob, VideoGenJob } from '@app/features/entities/entity.service';
-import { generationFailure } from '@app/features/entities/generation-failure';
+import { generationFailure, reportGenerationFailure } from '@app/features/entities/generation-failure';
 import { NewGenerationDialogComponent, NewGenerationResult } from './new-generation-dialog';
 
 /** How often the queue is re-read while the screen is open and visible. */
@@ -167,8 +167,9 @@ export class GenerationQueueComponent implements OnInit, OnDestroy {
 
   /**
    * Sends the job. Failure handling matches the gallery's: the receiver comes
-   * and goes, so a retry is offered — never automatic, since a timed-out request
-   * may already have queued the job on the far side.
+   * and goes, so a 502 is retried automatically and anything that still fails
+   * offers a Retry — never automatic for a timeout, since that request may
+   * already have queued the job on the far side.
    */
   private queue(source: NewGenerationResult, url: string): void {
     const entityId = source.entity.id;
@@ -207,11 +208,10 @@ export class GenerationQueueComponent implements OnInit, OnDestroy {
         }
         this.load();
       },
-      error: (err: unknown) => {
-        const { reason, retryable } = generationFailure(err);
-        const toast = this.snackBar.open(`${what} failed: ${reason}`, retryable ? 'Retry' : 'Dismiss');
-        if (retryable) toast.onAction().subscribe(() => this.queue(source, url));
-      },
+      error: (err: unknown) =>
+        reportGenerationFailure(this.snackBar, what, err, source.request.prompt, () =>
+          this.queue(source, url)
+        ),
     });
   }
 
