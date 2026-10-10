@@ -1,6 +1,7 @@
 import { ChangeDetectionStrategy, Component, inject, viewChild } from '@angular/core';
 import { MatButtonModule } from '@angular/material/button';
 import { MatDialogModule, MatDialogRef, MAT_DIALOG_DATA } from '@angular/material/dialog';
+import { SourceThumbnailComponent } from './source-thumbnail';
 import { ClothesSwapFormComponent, ClothesSwapResult } from './clothes-swap-form';
 
 export {
@@ -27,12 +28,12 @@ export interface ClothesSwapDialogData {
 @Component({
   selector: 'app-clothes-swap-dialog',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [MatButtonModule, MatDialogModule, ClothesSwapFormComponent],
+  imports: [MatButtonModule, MatDialogModule, SourceThumbnailComponent, ClothesSwapFormComponent],
   template: `
     <h2 mat-dialog-title>Clothes swap</h2>
     <mat-dialog-content>
       <div class="still">
-        <img [src]="data.thumbnailUrl" [alt]="data.caption || 'Photo to edit'" />
+        <app-source-thumbnail [src]="data.thumbnailUrl" [alt]="data.caption || 'Photo to edit'" />
         <p class="still-hint">{{ data.hint || 'This person is kept. Describe the clothing, pose or background changes you want.' }}</p>
       </div>
       <app-clothes-swap-form />
@@ -45,7 +46,6 @@ export interface ClothesSwapDialogData {
   styles: [`
     mat-dialog-content { width: min(460px, 90vw); box-sizing: border-box; }
     .still { display: flex; gap: 12px; align-items: center; margin: 4px 0 16px; }
-    .still img { width: 88px; height: 88px; object-fit: cover; border-radius: 8px; flex: 0 0 auto; }
     .still-hint { margin: 0; font-size: 0.8rem; opacity: 0.75; }
   `],
 })
