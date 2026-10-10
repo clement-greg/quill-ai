@@ -12,7 +12,9 @@ function localDateStr(d = new Date()): string {
 /** Client-side cache for the "Your Writing" summary, invalidated on chapter save or day change. */
 @Injectable({ providedIn: 'root' })
 export class WritingStatsCacheService {
-  private readonly storageKey = 'writing-stats-summary-cache';
+  // Bump the suffix whenever the server's stats calculation changes, so a
+  // summary computed by the old logic isn't shown for the rest of the day.
+  private readonly storageKey = 'writing-stats-summary-cache-v2';
 
   get<T>(): T | null {
     const raw = localStorage.getItem(this.storageKey);
