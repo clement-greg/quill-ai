@@ -1,6 +1,7 @@
 import { ChangeDetectionStrategy, Component, inject, viewChild } from '@angular/core';
 import { MatButtonModule } from '@angular/material/button';
 import { MatDialogModule, MatDialogRef, MAT_DIALOG_DATA } from '@angular/material/dialog';
+import { SourceThumbnailComponent } from './source-thumbnail';
 import { VideoGenFormComponent, VideoGenResult } from './video-gen-form';
 
 export {
@@ -28,12 +29,12 @@ export interface VideoGenDialogData {
 @Component({
   selector: 'app-video-gen-dialog',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [MatButtonModule, MatDialogModule, VideoGenFormComponent],
+  imports: [MatButtonModule, MatDialogModule, SourceThumbnailComponent, VideoGenFormComponent],
   template: `
     <h2 mat-dialog-title>Generate video</h2>
     <mat-dialog-content>
       <div class="still">
-        <img [src]="data.thumbnailUrl" [alt]="data.caption || 'Starting frame'" />
+        <app-source-thumbnail [src]="data.thumbnailUrl" [alt]="data.caption || 'Starting frame'" />
         <p class="still-hint">{{ data.hint || 'This photo is the first frame. Describe the motion you want.' }}</p>
       </div>
       <app-video-gen-form />
@@ -46,7 +47,6 @@ export interface VideoGenDialogData {
   styles: [`
     mat-dialog-content { width: min(460px, 90vw); box-sizing: border-box; }
     .still { display: flex; gap: 12px; align-items: center; margin: 4px 0 16px; }
-    .still img { width: 88px; height: 88px; object-fit: cover; border-radius: 8px; flex: 0 0 auto; }
     .still-hint { margin: 0; font-size: 0.8rem; opacity: 0.75; }
   `],
 })

@@ -1,6 +1,7 @@
 import { ChangeDetectionStrategy, Component, inject, viewChild } from '@angular/core';
 import { MatButtonModule } from '@angular/material/button';
 import { MatDialogModule, MatDialogRef, MAT_DIALOG_DATA } from '@angular/material/dialog';
+import { SourceThumbnailComponent } from './source-thumbnail';
 import { PhotoGenFormComponent, PhotoGenResult } from './photo-gen-form';
 
 export {
@@ -27,12 +28,12 @@ export interface PhotoGenDialogData {
 @Component({
   selector: 'app-photo-gen-dialog',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [MatButtonModule, MatDialogModule, PhotoGenFormComponent],
+  imports: [MatButtonModule, MatDialogModule, SourceThumbnailComponent, PhotoGenFormComponent],
   template: `
     <h2 mat-dialog-title>Generate images</h2>
     <mat-dialog-content>
       <div class="still">
-        <img [src]="data.thumbnailUrl" [alt]="data.caption || 'Reference photo'" />
+        <app-source-thumbnail [src]="data.thumbnailUrl" [alt]="data.caption || 'Reference photo'" />
         <p class="still-hint">{{ data.hint || "This photo's face is kept. Describe the images you want." }}</p>
       </div>
       <app-photo-gen-form />
@@ -45,7 +46,6 @@ export interface PhotoGenDialogData {
   styles: [`
     mat-dialog-content { width: min(460px, 90vw); box-sizing: border-box; }
     .still { display: flex; gap: 12px; align-items: center; margin: 4px 0 16px; }
-    .still img { width: 88px; height: 88px; object-fit: cover; border-radius: 8px; flex: 0 0 auto; }
     .still-hint { margin: 0; font-size: 0.8rem; opacity: 0.75; }
   `],
 })
