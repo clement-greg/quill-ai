@@ -13,7 +13,7 @@ import {
 } from '@angular/core';
 import { Router } from '@angular/router';
 import { HttpErrorResponse } from '@angular/common/http';
-import { forkJoin, from, of } from 'rxjs';
+import { forkJoin, from, Observable, of, timer } from 'rxjs';
 import { concatMap, map, catchError } from 'rxjs/operators';
 import { MatButtonModule } from '@angular/material/button';
 import { MatIconModule } from '@angular/material/icon';
@@ -86,6 +86,9 @@ interface CapturedFrame {
 /** How often an entity re-checks the jobs it is waiting on. */
 const GENERATION_POLL_MS = 15_000;
 
+/** How long a deleted or hidden photo takes to leave the lightbox; matches `lightbox-exit` in the stylesheet. */
+const LIGHTBOX_EXIT_MS = 220;
+
 interface BookGroup {
   bookTitle: string;
   bookId: string;
@@ -153,6 +156,14 @@ export class EntityDetailComponent implements OnDestroy {
   lightboxIndex = signal(0);
   lightboxKey = signal(0);
   slideDir = signal<'next' | 'prev'>('next');
+  /**
+   * True while the photo on show is leaving the lightbox after a delete or
+   * hide: it plays its exit animation and the action buttons stay disabled so a
+   * second press can't land on whatever slides in next.
+   */
+  removingPhoto = signal(false);
+  /** False until the image on show has loaded, so a slow one gets a spinner. */
+  lightboxMediaLoaded = signal(false);
   showAllPhotos = signal(false);
   photoUploading = signal(false);
   photoGenerating = signal(false);
@@ -482,9 +493,7 @@ export class EntityDetailComponent implements OnDestroy {
   }
 
   openLightbox(index: number): void {
-    this.lightboxIndex.set(index);
-    this.lightboxKey.update(k => k + 1);
-    this.slideDir.set('next');
+    this.showLightboxPhoto(index, 'next');
     this.lightboxOpen.set(true);
   }
 
@@ -494,16 +503,12 @@ export class EntityDetailComponent implements OnDestroy {
 
   nextPhoto(): void {
     const total = this.visiblePhotos().length;
-    this.slideDir.set('next');
-    this.lightboxIndex.set((this.lightboxIndex() + 1) % total);
-    this.lightboxKey.update(k => k + 1);
+    this.showLightboxPhoto((this.lightboxIndex() + 1) % total, 'next');
   }
 
   prevPhoto(): void {
     const total = this.visiblePhotos().length;
-    this.slideDir.set('prev');
-    this.lightboxIndex.set((this.lightboxIndex() - 1 + total) % total);
-    this.lightboxKey.update(k => k + 1);
+    this.showLightboxPhoto((this.lightboxIndex() - 1 + total) % total, 'prev');
   }
 
   /**
@@ -735,12 +740,14 @@ export class EntityDetailComponent implements OnDestroy {
     const entityId = this.entity()?.id;
     const actualIdx = this.lightboxActualIndex();
     if (!entityId || actualIdx < 0) return;
-    this.entityService.setPhotosHidden(entityId, [actualIdx], true).subscribe({
-      next: (updated) => {
-        this.entity.set(updated);
-        this.advanceLightboxAfterRemoval(this.lightboxIndex());
-      },
-    });
+    const request = () => this.entityService.setPhotosHidden(entityId, [actualIdx], true);
+    // With hidden photos on show, hiding leaves the photo where it is — nothing
+    // to animate away.
+    if (this.settingsService.showHiddenPhotos()) {
+      request().subscribe({ next: (updated) => this.entity.set(updated) });
+      return;
+    }
+    this.removeFromLightbox(request, 'Hide failed');
   }
 
   lightboxUnhide(): void {
@@ -756,10 +763,26 @@ export class EntityDetailComponent implements OnDestroy {
     const entityId = this.entity()?.id;
     const actualIdx = this.lightboxActualIndex();
     if (!entityId || actualIdx < 0) return;
-    this.entityService.removePhoto(entityId, actualIdx).subscribe({
-      next: (updated) => {
+    this.removeFromLightbox(() => this.entityService.removePhoto(entityId, actualIdx), 'Delete failed');
+  }
+
+  /**
+   * Plays the photo on show out of the lightbox while `request()` takes it off
+   * the server, then slides in whatever took its place. The swap waits for
+   * both, so the exit always finishes and a fast response doesn't cut it short.
+   */
+  private removeFromLightbox(request: () => Observable<Entity>, failure: string): void {
+    if (this.removingPhoto()) return;
+    this.removingPhoto.set(true);
+    forkJoin([request(), timer(LIGHTBOX_EXIT_MS)]).subscribe({
+      next: ([updated]) => {
+        this.removingPhoto.set(false);
         this.entity.set(updated);
         this.advanceLightboxAfterRemoval(this.lightboxIndex());
+      },
+      error: () => {
+        this.removingPhoto.set(false);
+        this.snackBar.open(failure, undefined, { duration: 4000 });
       },
     });
   }
@@ -1310,7 +1333,14 @@ export class EntityDetailComponent implements OnDestroy {
       this.closeLightbox();
       return;
     }
-    this.lightboxIndex.set(Math.min(removedIndex, newCount - 1));
+    this.showLightboxPhoto(Math.min(removedIndex, newCount - 1), 'next');
+  }
+
+  private showLightboxPhoto(index: number, dir: 'next' | 'prev'): void {
+    this.lightboxIndex.set(index);
+    this.slideDir.set(dir);
+    this.lightboxMediaLoaded.set(false);
+    this.lightboxKey.update(k => k + 1);
   }
 
   openChapter(id: string): void {

@@ -543,13 +543,19 @@
       }
 
       @for (_ of [lightboxKey()]; track _) {
-        <div class="lightbox-image-wrap" [class]="'lightbox-image-wrap slide-' + slideDir()">
+        <div [class]="'lightbox-image-wrap slide-' + slideDir()" [class.removing]="removingPhoto()">
           @if (isVideo(photo.url)) {
             <app-video-player class="lightbox-image" [src]="proxyUrl(photo.url)" [loop]="true"
                               (contextmenu)="onPhotoCardContextMenu($event, photo)"
                               [ariaLabel]="photo.caption || 'Video'"></app-video-player>
           } @else {
+            @if (!lightboxMediaLoaded()) {
+              <mat-spinner class="lightbox-spinner" diameter="48" aria-label="Loading photo"></mat-spinner>
+            }
             <img [src]="proxyUrl(photo.url)" [alt]="photo.caption || 'Photo'" class="lightbox-image"
+                 [class.loading]="!lightboxMediaLoaded()"
+                 (load)="lightboxMediaLoaded.set(true)"
+                 (error)="lightboxMediaLoaded.set(true)"
                  (pointerdown)="onPhotoCardPointerDown($event, photo)"
                  (pointermove)="onPhotoCardPointerMove($event)"
                  (pointerup)="cancelPhotoCardPress()"
@@ -597,17 +603,17 @@
           </button>
         }
         @if (photo.hidden) {
-          <button mat-stroked-button class="lightbox-action-btn" (click)="lightboxUnhide()" aria-label="Unhide photo">
+          <button mat-stroked-button class="lightbox-action-btn" [disabled]="removingPhoto()" (click)="lightboxUnhide()" aria-label="Unhide photo">
             <mat-icon>visibility</mat-icon>
             Unhide
           </button>
         } @else {
-          <button mat-stroked-button class="lightbox-action-btn" (click)="lightboxHide()" aria-label="Hide photo">
+          <button mat-stroked-button class="lightbox-action-btn" [disabled]="removingPhoto()" (click)="lightboxHide()" aria-label="Hide photo">
             <mat-icon>visibility_off</mat-icon>
             Hide
           </button>
         }
-        <button mat-stroked-button class="lightbox-action-btn lightbox-action-delete" (click)="lightboxDelete()" aria-label="Delete photo">
+        <button mat-stroked-button class="lightbox-action-btn lightbox-action-delete" [disabled]="removingPhoto()" (click)="lightboxDelete()" aria-label="Delete photo">
           <mat-icon>delete</mat-icon>
           Delete
         </button>
