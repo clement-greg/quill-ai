@@ -9,6 +9,7 @@ import { MatSlideToggleModule } from '@angular/material/slide-toggle';
 import { MatSnackBar } from '@angular/material/snack-bar';
 import { UserSettingsService, GhostCompleteItem, DEFAULT_GENDER_OPTIONS, DEFAULT_RACE_OPTIONS, DEFAULT_ORIENTATION_OPTIONS } from '@app/core/services/user-settings.service';
 import { HeaderService } from '@app/core/services/header.service';
+import { AppUpdateService } from '@app/core/services/app-update.service';
 import { ContentFilterService } from './content-filter.service';
 
 export interface ColorThemeOption {
@@ -53,6 +54,7 @@ export class UserSettingsComponent {
   private snackBar = inject(MatSnackBar);
   private headerService = inject(HeaderService);
   private contentFilterService = inject(ContentFilterService);
+  private appUpdateService = inject(AppUpdateService);
 
   @ViewChild('avatarFileInput') avatarFileInput!: ElementRef<HTMLInputElement>;
   @ViewChild('avatarVideoInput') avatarVideoInput!: ElementRef<HTMLInputElement>;
@@ -334,6 +336,16 @@ export class UserSettingsComponent {
 
   removeContentFilterTerm(term: string): void {
     this.contentFilterService.removeTerm(term);
+  }
+
+  // ── App Updates ────────────────────
+  /** Set until the page reloads, so the button can't be pressed twice. */
+  readonly updatingApp = signal(false);
+
+  updateApp(): void {
+    if (this.updatingApp()) return;
+    this.updatingApp.set(true);
+    void this.appUpdateService.forceUpdate();
   }
 
 }

@@ -358,4 +358,20 @@
     </div>
   </section>
 
+  <!-- App Updates Section -->
+  <section class="settings-section">
+    <div class="section-header">
+      <h3>App Updates</h3>
+      <p class="section-desc">
+        The app keeps an offline copy of itself, which can lag behind the latest release,
+        especially when it's added to your home screen. Updating clears that copy and
+        reloads the newest version from the server.
+      </p>
+    </div>
+    <button mat-flat-button [disabled]="updatingApp()" (click)="updateApp()">
+      <mat-icon>system_update</mat-icon>
+      {{ updatingApp() ? 'Updating…' : 'Update now' }}
+    </button>
+  </section>
+
 </div>
