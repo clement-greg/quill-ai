@@ -2,6 +2,8 @@ import { Router, Request, Response, NextFunction } from 'express';
 import multer from 'multer';
 import path from 'path';
 import { v4 as uuidv4 } from 'uuid';
+import sharp from 'sharp';
+import { decrypt } from '../services/crypto';
 import { deleteBlob, downloadBlobRaw, uploadFileToBlob } from '../services/storage';
 import { getContainer } from '../services/cosmos';
 import { readOwnedItem } from '../middleware/owner-guard';
@@ -219,15 +221,74 @@ function framesForSeconds(seconds: number): number {
 }
 
 /**
+ * The pixel area of the receiver workflow's own frame (480x832, the WanImageToVideo
+ * node in workflow_i2v.json). Wan's 14B models are tuned for roughly this many
+ * pixels, so a resized frame keeps the area and changes only the shape.
+ */
+const VIDEO_PIXEL_BUDGET = 480 * 832;
+
+/**
+ * The widest and tallest shape asked for. Past these, a panorama or a phone
+ * screenshot would make a strip too thin for Wan to animate sensibly, so the
+ * extreme ends are still cropped, just far less than before.
+ */
+const MAX_VIDEO_ASPECT = 21 / 9;
+const MIN_VIDEO_ASPECT = 9 / 21;
+
+/**
+ * A video frame the same shape as the photo, at the workflow's pixel budget,
+ * with both sides snapped to the multiple of 16 Wan's VAE requires.
+ *
+ * WanImageToVideo scales the start image to fill its frame and center-crops the
+ * rest. With the workflow's fixed 480x832 portrait frame, a landscape photo lost
+ * its sides and a tall one its top, and Wan invented whatever was cut off (a
+ * face, typically). Matching the frame to the photo leaves nothing to crop.
+ */
+export function videoSizeForImage(imageWidth: number, imageHeight: number): { width: number; height: number } {
+  const aspect = Math.min(MAX_VIDEO_ASPECT, Math.max(MIN_VIDEO_ASPECT, imageWidth / imageHeight));
+  const snap = (n: number) => Math.max(16, Math.round(n / 16) * 16);
+  const height = Math.sqrt(VIDEO_PIXEL_BUDGET / aspect);
+  return { width: snap(height * aspect), height: snap(height) };
+}
+
+/**
+ * The upright size of the stored photo, or null when it cannot be read. Phone
+ * photos are often stored sideways with an EXIF orientation that ComfyUI's
+ * LoadImage applies, so orientations 5-8 (the quarter turns) swap the sides.
+ */
+async function storedPhotoSize(raw: Buffer): Promise<{ width: number; height: number } | null> {
+  try {
+    const meta = await sharp(decrypt(raw)).metadata();
+    if (!meta.width || !meta.height) return null;
+    const turned = (meta.orientation ?? 1) >= 5;
+    return turned ? { width: meta.height, height: meta.width } : { width: meta.width, height: meta.height };
+  } catch (err) {
+    console.error('Could not measure the start frame; using the workflow size:', err);
+    return null;
+  }
+}
+
+/**
  * The receiver's image-to-video endpoint — `photoExportUrl` in config. It takes
  * the raw image bytes as the POST body with the prompt and start-frame name in
  * the query string, and answers with the queued ComfyUI job.
  */
-function videoGenTarget(filename: string, prompt: string, frames: number | null): string | null {
+function videoGenTarget(
+  filename: string,
+  prompt: string,
+  frames: number | null,
+  size: { width: number; height: number } | null
+): string | null {
   const query: Record<string, string> = { prompt, name: filename };
   // Omitted entirely when no duration was asked for, so the workflow's own
   // default length stands rather than this route inventing one.
   if (frames !== null) query['length'] = String(frames);
+  // Likewise the frame size: a photo that could not be measured gets the
+  // workflow's own, which is how every job was sized before.
+  if (size) {
+    query['width'] = String(size.width);
+    query['height'] = String(size.height);
+  }
   return receiverUrl('/generate', query);
 }
 
@@ -473,8 +534,8 @@ router.post('/generate-video', async (req: Request, res: Response) => {
     frames = framesForSeconds(seconds);
   }
 
-  const target = videoGenTarget(filename, prompt, frames);
-  if (!target) {
+  // Checked before storage is touched, so a missing receiver costs no download.
+  if (!videoGenTarget(filename, prompt, frames, null)) {
     res.status(503).json({ error: 'No video receiver configured (photoExportUrl)' });
     return;
   }
@@ -484,6 +545,10 @@ router.post('/generate-video', async (req: Request, res: Response) => {
     res.status(photo.status).json({ error: photo.error });
     return;
   }
+
+  const imageSize = await storedPhotoSize(photo.data);
+  const size = imageSize && videoSizeForImage(imageSize.width, imageSize.height);
+  const target = videoGenTarget(filename, prompt, frames, size)!;
 
   const result = await queueOnReceiver(target, photo.data, photo.contentType);
   if (!result.ok) {
