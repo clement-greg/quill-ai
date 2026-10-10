@@ -933,8 +933,24 @@
   align-items: center;
   justify-content: center;
 
+  // The spinner sits over the image's spot rather than beside it.
+  position: relative;
+
   &.slide-next { animation: slide-in-right 0.2s ease; }
   &.slide-prev { animation: slide-in-left 0.2s ease; }
+  // Holds its end state until the next photo replaces it. Duration matches
+  // LIGHTBOX_EXIT_MS in the component.
+  &.removing { animation: lightbox-exit 0.22s ease-in forwards; }
+}
+
+// Only fades in after a beat, so an image that's already cached never flashes it.
+.lightbox-spinner {
+  position: absolute;
+  opacity: 0;
+  animation: lightbox-spinner-in 0.2s ease 0.15s forwards;
+
+  --mdc-circular-progress-active-indicator-color: #fff;
+  --mat-progress-spinner-active-indicator-color: #fff;
 }
 
 .lightbox-image {
@@ -942,6 +958,8 @@
   max-height: 100%;
   object-fit: contain;
   border-radius: 4px;
+
+  &.loading { opacity: 0; }
 }
 
 app-video-player.lightbox-image {
@@ -1030,6 +1048,15 @@ app-video-player.lightbox-image {
 @keyframes slide-in-left {
   from { opacity: 0; transform: translateX(-32px); }
   to   { opacity: 1; transform: translateX(0); }
+}
+
+@keyframes lightbox-exit {
+  from { opacity: 1; transform: scale(1); }
+  to   { opacity: 0; transform: scale(0.85) translateY(24px); }
+}
+
+@keyframes lightbox-spinner-in {
+  to { opacity: 1; }
 }
 
 // Shown while the server is waiting on a generation job for this entity; the
