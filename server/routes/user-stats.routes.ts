@@ -4,6 +4,9 @@ import { withOwnerFilter } from '../middleware/owner-guard';
 
 const router = Router();
 
+/** Version snapshots share their container with fact-check reports; see cosmos.ts. */
+const VERSION_DOC_TYPE = 'version';
+
 function stripHtml(html: string): string {
   return html
     .replace(/<[^>]*>/g, ' ')
@@ -56,21 +59,19 @@ router.get('/writing', async (req: Request, res: Response): Promise<void> => {
     since.setDate(since.getDate() - days);
     const sinceIso = since.toISOString();
 
-    // Fetch an extra 60-day baseline window before the stats window so the first
-    // in-window version of each chapter is diffed against real prior content
-    // rather than an empty string. This prevents inflated "added" counts.
-    const BASELINE_DAYS = 60;
-    const baseSince = new Date();
-    baseSince.setDate(baseSince.getDate() - days - BASELINE_DAYS);
-    const baseSinceIso = baseSince.toISOString();
-
     const versionsContainer = getContainer('chapter-versions');
 
     // Cross-partition query. ORDER BY omitted to avoid needing a composite index.
+    // The container also holds fact-check reports, so filter on docType.
     const { resources } = await versionsContainer.items
       .query(withOwnerFilter(req, {
-        query: `SELECT c.chapterId, c.savedAt, c.content FROM c WHERE c.savedAt >= @since`,
-        parameters: [{ name: '@since', value: baseSinceIso }],
+        query:
+          'SELECT c.chapterId, c.savedAt, c.content FROM c WHERE c.savedAt >= @since ' +
+          'AND (NOT IS_DEFINED(c.docType) OR c.docType = @docType)',
+        parameters: [
+          { name: '@since', value: sinceIso },
+          { name: '@docType', value: VERSION_DOC_TYPE },
+        ],
       }))
       .fetchAll();
 
@@ -86,6 +87,62 @@ router.get('/writing', async (req: Request, res: Response): Promise<void> => {
       if (!byChapter.has(v.chapterId)) byChapter.set(v.chapterId, []);
       byChapter.get(v.chapterId)!.push(v);
     }
+
+    function proxyImageUrl(azureUrl: string | undefined): string | null {
+      if (!azureUrl) return null;
+      const filename = azureUrl.split('/').pop();
+      return filename ? `/api/image/${filename}` : null;
+    }
+
+    // Fetch chapter metadata in parallel (chapters partition key = /id → efficient point reads)
+    const chaptersContainer = getContainer('chapters');
+    const chapterIds = [...byChapter.keys()];
+
+    interface ChapterMeta { title: string; thumbnailUrl: string | null; createdAt?: string }
+    const chapterMetaMap = new Map<string, ChapterMeta>();
+
+    // The last version saved before the window, per chapter: what the first
+    // in-window version is diffed against. null when the chapter has none.
+    const baselineMap = new Map<string, string | null>();
+
+    await Promise.all(
+      chapterIds.map(async (id) => {
+        try {
+          const { resource } = await chaptersContainer.item(id, id).read<{
+            id: string;
+            title?: string;
+            imageThumbnailUrl?: string;
+            imageUrl?: string;
+            createdAt?: string;
+          }>();
+          chapterMetaMap.set(id, {
+            title: resource?.title?.trim() || 'Untitled Chapter',
+            thumbnailUrl: proxyImageUrl(resource?.imageThumbnailUrl ?? resource?.imageUrl),
+            createdAt: resource?.createdAt,
+          });
+        } catch {
+          chapterMetaMap.set(id, { title: 'Untitled Chapter', thumbnailUrl: null });
+        }
+      }),
+    );
+
+    await Promise.all(
+      chapterIds.map(async (id) => {
+        const { resources: prior } = await versionsContainer.items
+          .query(withOwnerFilter(req, {
+            query:
+              'SELECT TOP 1 c.content FROM c WHERE c.chapterId = @chapterId AND c.savedAt < @since ' +
+              'AND (NOT IS_DEFINED(c.docType) OR c.docType = @docType) ORDER BY c.savedAt DESC',
+            parameters: [
+              { name: '@chapterId', value: id },
+              { name: '@since', value: sinceIso },
+              { name: '@docType', value: VERSION_DOC_TYPE },
+            ],
+          }), { partitionKey: id })
+          .fetchAll();
+        baselineMap.set(id, prior.length > 0 ? (prior[0].content ?? '') : null);
+      }),
+    );
 
     interface DayBucket { added: number; deleted: number }
     const dailyMap = new Map<string, DayBucket>();
@@ -109,14 +166,21 @@ router.get('/writing', async (req: Request, res: Response): Promise<void> => {
     const chapterTotals = new Map<string, ChapterTotals>();
 
     for (const [chapterId, versions] of byChapter.entries()) {
-      let prevTokens: string[] = [];
+      const baseline = baselineMap.get(chapterId) ?? null;
+      const createdAt = chapterMetaMap.get(chapterId)?.createdAt;
+      // With no earlier version to compare against, a chapter that already
+      // existed before the window (or predates createdAt tracking) has unknown
+      // prior content. Its first in-window version only establishes the
+      // baseline; counting it against an empty string would report the whole
+      // chapter as words written that day.
+      const firstIsBaselineOnly = baseline === null && (!createdAt || createdAt < sinceIso);
+
+      let prevTokens: string[] = baseline === null ? [] : tokenize(baseline);
       let chapAdded = 0, chapDeleted = 0, lastSaved = '';
-      for (const version of versions) {
+      versions.forEach((version, i) => {
         const currTokens = tokenize(version.content);
-        const { added, removed } = wordDiff(prevTokens, currTokens);
-        // Only count stats for versions inside the requested stats window;
-        // baseline versions (in the earlier 60-day buffer) only advance prevTokens.
-        if (version.savedAt >= sinceIso) {
+        if (!(i === 0 && firstIsBaselineOnly)) {
+          const { added, removed } = wordDiff(prevTokens, currTokens);
           const date = toLocalDateStr(version.savedAt, tz);
           const b = bucket(date);
           b.added += added;
@@ -129,41 +193,9 @@ router.get('/writing', async (req: Request, res: Response): Promise<void> => {
           lastSaved = date;
         }
         prevTokens = currTokens;
-      }
+      });
       chapterTotals.set(chapterId, { added: chapAdded, deleted: chapDeleted, lastSaved });
     }
-
-    function proxyImageUrl(azureUrl: string | undefined): string | null {
-      if (!azureUrl) return null;
-      const filename = azureUrl.split('/').pop();
-      return filename ? `/api/image/${filename}` : null;
-    }
-
-    // Fetch chapter metadata in parallel (chapters partition key = /id → efficient point reads)
-    const chaptersContainer = getContainer('chapters');
-    const chapterIds = [...chapterTotals.keys()];
-
-    interface ChapterMeta { title: string; thumbnailUrl: string | null }
-    const chapterMetaMap = new Map<string, ChapterMeta>();
-
-    await Promise.all(
-      chapterIds.map(async (id) => {
-        try {
-          const { resource } = await chaptersContainer.item(id, id).read<{
-            id: string;
-            title?: string;
-            imageThumbnailUrl?: string;
-            imageUrl?: string;
-          }>();
-          chapterMetaMap.set(id, {
-            title: resource?.title?.trim() || 'Untitled Chapter',
-            thumbnailUrl: proxyImageUrl(resource?.imageThumbnailUrl ?? resource?.imageUrl),
-          });
-        } catch {
-          chapterMetaMap.set(id, { title: 'Untitled Chapter', thumbnailUrl: null });
-        }
-      })
-    );
 
     const metaFor = (id: string): ChapterMeta =>
       chapterMetaMap.get(id) ?? { title: 'Untitled Chapter', thumbnailUrl: null };
