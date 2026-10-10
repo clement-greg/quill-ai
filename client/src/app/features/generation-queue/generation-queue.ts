@@ -20,7 +20,8 @@ import { ConfirmDialogComponent } from '@app/shared/confirm-dialog/confirm-dialo
 import { GenerationQueueService } from './generation-queue.service';
 import { GenerationJob, GenerationQueueStatus } from '@shared/models/generation-queue.model';
 import { TrackedGenerationJob } from '@shared/models/generation-job.model';
-import { Observable } from 'rxjs';
+import { Observable, forkJoin, of } from 'rxjs';
+import { catchError, map } from 'rxjs/operators';
 import { EntityService, PhotoGenJob, VideoGenJob } from '@app/features/entities/entity.service';
 import { generationFailure, reportGenerationFailure } from '@app/features/entities/generation-failure';
 import { NewGenerationDialogComponent, NewGenerationResult } from './new-generation-dialog';
@@ -67,15 +68,23 @@ export class GenerationQueueComponent implements OnInit, OnDestroy {
   readonly counts = computed(() => this.status()?.counts ?? { running: 0, pending: 0, total: 0 });
   readonly isIdle = computed(() => !!this.status() && this.jobs().length === 0);
 
-  /** Jobs whose assets have not landed yet — what the collector is working on. */
+  /** True while "Clear finished" is dismissing jobs, so it can't be clicked twice. */
+  clearing = signal(false);
+
+  /**
+   * Generated, waiting to be attached. Jobs still generating are left out: the
+   * live queue below already shows them.
+   */
   readonly awaitingCollection = computed(() =>
-    this.trackedJobs().filter(j => j.state === 'pending' || j.state === 'stored')
+    this.trackedJobs().filter(j => j.state === 'stored')
   );
 
   /** Jobs that have finished, one way or another. */
   readonly finishedJobs = computed(() =>
     this.trackedJobs().filter(j => j.state !== 'pending' && j.state !== 'stored')
   );
+
+  readonly visibleTracked = computed(() => [...this.awaitingCollection(), ...this.finishedJobs()]);
 
   ngOnInit(): void {
     this.headerService.setPage('Generation Queue');
@@ -258,6 +267,31 @@ export class GenerationQueueComponent implements OnInit, OnDestroy {
     this.queueService.dismissTrackedJob(job.id).subscribe({
       next: () => this.trackedJobs.update(jobs => jobs.filter(j => j.id !== job.id)),
       error: () => this.snackBar.open('Could not dismiss that job.', undefined, { duration: 3000 }),
+    });
+  }
+
+  /**
+   * Dismisses every finished job at once. Each is its own request, so one that
+   * fails stays on screen while the rest go.
+   */
+  clearFinished(): void {
+    const finished = this.finishedJobs();
+    if (this.clearing() || finished.length === 0) return;
+    this.clearing.set(true);
+    forkJoin(
+      finished.map(job =>
+        this.queueService.dismissTrackedJob(job.id).pipe(
+          map(() => job.id),
+          catchError(() => of(null)),
+        ),
+      ),
+    ).subscribe(ids => {
+      this.clearing.set(false);
+      const cleared = new Set(ids.filter((id): id is string => id !== null));
+      this.trackedJobs.update(jobs => jobs.filter(j => !cleared.has(j.id)));
+      if (cleared.size < finished.length) {
+        this.snackBar.open('Could not clear some jobs.', undefined, { duration: 3000 });
+      }
     });
   }
 

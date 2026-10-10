@@ -12,14 +12,28 @@
     </button>
   </div>
 
-  @if (trackedJobs().length > 0) {
+  <!-- Jobs still generating are left to the live queue below; this section is
+       for where they ended up. -->
+  @if (visibleTracked().length > 0) {
     <section class="tracked" animate.leave="tracked--leaving">
-      <h2 class="section-title">Your generations</h2>
+      <div class="section-head">
+        <h2 class="section-title">Your generations</h2>
+        @if (finishedJobs().length > 1) {
+          <button mat-button class="clear-finished" (click)="clearFinished()" [disabled]="clearing()">
+            @if (clearing()) {
+              <mat-spinner diameter="16" class="button-spinner"></mat-spinner>
+            } @else {
+              <mat-icon>clear_all</mat-icon>
+            }
+            Clear finished
+          </button>
+        }
+      </div>
       <p class="section-note">
         Finished assets are added to the entity they were started from, hidden.
       </p>
       <div class="tracked-list">
-        @for (job of awaitingCollection().concat(finishedJobs()); track job.id) {
+        @for (job of visibleTracked(); track job.id) {
           <div class="tracked-card" [class.tracked-card--done]="job.state === 'collected'"
                animate.leave="tracked-card--leaving">
             <mat-icon class="tracked-icon" [class.tracked-icon--error]="job.state === 'failed' || job.state === 'gone'">
