@@ -277,4 +277,56 @@ describe('GenerationQueueComponent — dismissing a finished job', () => {
     fixture.detectChanges();
     expect(el.querySelector('section.tracked')).toBeNull();
   });
+
+  it('leaves jobs still generating to the live queue', () => {
+    tracked = [job('a', 'pending'), job('b', 'stored'), job('c', 'collected')];
+    const el: HTMLElement = render().nativeElement;
+    const text = cards(el).map(c => c.textContent);
+    expect(text).toHaveLength(2);
+    expect(text[0]).toContain('Attaching');
+    expect(text[1]).toContain('Added to Janet');
+  });
+
+  it('hides the section when every tracked job is still generating', () => {
+    tracked = [job('a', 'pending')];
+    const el: HTMLElement = render().nativeElement;
+    expect(el.querySelector('section.tracked')).toBeNull();
+  });
+
+  const clearButton = (el: HTMLElement) => el.querySelector<HTMLButtonElement>('button.clear-finished');
+
+  it('clears every finished job in one click, leaving ones still attaching', () => {
+    tracked = [job('a', 'collected'), job('b', 'failed'), job('c', 'stored')];
+    queueService['dismissTrackedJob'] = vi.fn(() => of(undefined));
+    const fixture = render();
+    const el: HTMLElement = fixture.nativeElement;
+
+    clearButton(el)!.click();
+    fixture.detectChanges();
+
+    expect(queueService['dismissTrackedJob'].mock.calls.map(c => c[0])).toEqual(['a', 'b']);
+    expect(cards(el).map(c => c.textContent)).toEqual([expect.stringContaining('Attaching')]);
+    expect(snackBar.open).not.toHaveBeenCalled();
+  });
+
+  it('keeps the jobs that could not be cleared and says so', () => {
+    tracked = [job('a', 'collected'), job('b', 'failed')];
+    queueService['dismissTrackedJob'] = vi.fn((id: string) =>
+      id === 'a' ? of(undefined) : throwError(() => new HttpErrorResponse({ status: 500 })),
+    );
+    const fixture = render();
+    const el: HTMLElement = fixture.nativeElement;
+
+    clearButton(el)!.click();
+    fixture.detectChanges();
+
+    expect(cards(el).map(c => c.textContent)).toEqual([expect.stringContaining('Failed')]);
+    expect(snackBar.open).toHaveBeenCalledWith('Could not clear some jobs.', undefined, { duration: 3000 });
+  });
+
+  it('offers no clear button for a single finished job', () => {
+    tracked = [job('a', 'collected'), job('b', 'pending')];
+    const el: HTMLElement = render().nativeElement;
+    expect(clearButton(el)).toBeNull();
+  });
 });
