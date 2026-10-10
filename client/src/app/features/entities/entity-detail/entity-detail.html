@@ -624,11 +624,10 @@
         <button mat-stroked-button class="lightbox-action-btn lightbox-action-delete" [disabled]="removingPhoto()" (click)="lightboxDelete()" aria-label="Delete photo">
           @if (deletingPhoto()) {
             <mat-spinner class="lightbox-action-spinner" diameter="18"></mat-spinner>
-            Deleting…
           } @else {
             <mat-icon>delete</mat-icon>
-            Delete
           }
+          {{ deletingPhoto() ? 'Deleting…' : 'Delete' }}
         </button>
       </div>
 
