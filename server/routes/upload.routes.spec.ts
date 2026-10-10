@@ -24,6 +24,10 @@ jest.mock('../services/storage', () => ({
   }),
 }));
 
+// The video route decrypts its copy of the photo only to measure it. Here the
+// "ciphertext" is the plain bytes, so a test can hand it a real image.
+jest.mock('../services/crypto', () => ({ decrypt: (data: Buffer) => data }));
+
 // The generate routes look the target entity up, and track the job they queue.
 // A fake Cosmos stands in for both, so the relay can be tested without a
 // database — the collector itself is exercised in generation-collector.spec.ts.
@@ -33,7 +37,7 @@ jest.mock('../services/cosmos', () => {
   return { getContainer: fake.getContainer, __fake: fake };
 });
 
-import uploadRoutes from './upload.routes';
+import uploadRoutes, { videoSizeForImage } from './upload.routes';
 import { makeTestApp, USER_A, USER_B } from '../testing/test-app';
 import { FakeCosmos } from '../testing/fake-cosmos';
 
@@ -170,6 +174,67 @@ describe('video generation', () => {
     expect(calls[0].init.headers['Content-Type']).toBe('image/jpeg');
     // Sent exactly as stored — decrypting is the receiver's job.
     expect(Buffer.from(calls[0].init.body).toString()).toBe('stored-ciphertext');
+  });
+
+  describe('frame size', () => {
+    /** Has the storage mock return a real photo of this size for the next read. */
+    async function storedPhoto(width: number, height: number, orientation?: number) {
+      let image = sharp({ create: { width, height, channels: 3, background: '#c05028' } }).jpeg();
+      if (orientation) image = image.withMetadata({ orientation });
+      const raw = await image.toBuffer();
+      require('../services/storage').downloadBlobRaw.mockImplementationOnce(async () => ({
+        raw,
+        contentType: 'image/jpeg',
+      }));
+    }
+
+    function sentSize() {
+      const params = new URL(calls[0].url).searchParams;
+      return { width: params.get('width'), height: params.get('height') };
+    }
+
+    it('asks for a landscape video for a landscape photo, so nothing is cropped', async () => {
+      await storedPhoto(1600, 900);
+
+      const res = await post({ url: 'https://blob.test/abc-123.jpg', prompt: 'pan left' });
+
+      expect(res.status).toBe(200);
+      expect(sentSize()).toEqual({ width: '848', height: '480' });
+    });
+
+    it('measures a phone photo the way it is shown, not the way it is stored', async () => {
+      // Stored 1600x900 but tagged "rotate 90°" — it is really a portrait photo.
+      await storedPhoto(1600, 900, 6);
+
+      await post({ url: 'https://blob.test/abc-123.jpg', prompt: 'pan left' });
+
+      expect(sentSize()).toEqual({ width: '480', height: '848' });
+    });
+
+    it('leaves the size to the workflow when the photo cannot be read as an image', async () => {
+      const res = await post({ url: 'https://blob.test/abc-123.jpg', prompt: 'pan left' });
+
+      expect(res.status).toBe(200);
+      expect(sentSize()).toEqual({ width: null, height: null });
+    });
+
+    it.each([
+      ['the workflow portrait', 480, 832, 480, 832],
+      ['square', 1000, 1000, 624, 624],
+      ['16:9', 1920, 1080, 848, 480],
+      ['4:3', 4032, 3024, 736, 544],
+      ['3:4', 3024, 4032, 544, 736],
+      ['a panorama, clamped to 21:9', 8000, 1000, 960, 416],
+      ['a tall strip, clamped to 9:21', 500, 5000, 416, 960],
+    ])('sizes %s at the same pixel budget', (_shape, w, h, width, height) => {
+      const size = videoSizeForImage(w, h);
+
+      expect(size).toEqual({ width, height });
+      expect(size.width % 16).toBe(0);
+      expect(size.height % 16).toBe(0);
+      // Within 5% of 480x832, so a job costs about what it always did.
+      expect(Math.abs(size.width * size.height - 480 * 832) / (480 * 832)).toBeLessThan(0.05);
+    });
   });
 
   it.each([
