@@ -3,8 +3,8 @@
   "configurations": [
     {
       "name": "quill-dev",
-      "runtimeExecutable": "npm",
-      "runtimeArgs": ["run", "dev"],
+      "runtimeExecutable": "env",
+      "runtimeArgs": ["-u", "PORT", "npm", "run", "dev"],
       "port": 6258
     }
   ]
