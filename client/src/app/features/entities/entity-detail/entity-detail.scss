@@ -938,9 +938,40 @@
 
   &.slide-next { animation: slide-in-right 0.2s ease; }
   &.slide-prev { animation: slide-in-left 0.2s ease; }
+  // While the server is removing the photo it dims under the working overlay.
+  &.working .lightbox-image {
+    filter: grayscale(0.6) brightness(0.45);
+    transition: filter 0.15s ease;
+  }
   // Holds its end state until the next photo replaces it. Duration matches
   // LIGHTBOX_EXIT_MS in the component.
-  &.removing { animation: lightbox-exit 0.22s ease-in forwards; }
+  &.removing { animation: lightbox-exit 0.4s cubic-bezier(0.4, 0, 1, 1) forwards; }
+}
+
+.lightbox-working {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  color: #fff;
+  font-size: 1rem;
+  font-weight: 500;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.8);
+
+  --mdc-circular-progress-active-indicator-color: #fff;
+  --mat-progress-spinner-active-indicator-color: #fff;
+}
+
+.lightbox-action-spinner {
+  display: inline-block;
+  margin-right: 8px;
+  vertical-align: middle;
+
+  --mdc-circular-progress-active-indicator-color: currentColor;
+  --mat-progress-spinner-active-indicator-color: currentColor;
 }
 
 // Only fades in after a beat, so an image that's already cached never flashes it.
@@ -1050,9 +1081,11 @@ app-video-player.lightbox-image {
   to   { opacity: 1; transform: translateX(0); }
 }
 
+// Starts from the dimmed working look so the hand-off is seamless, then the
+// photo drops away and shrinks out.
 @keyframes lightbox-exit {
-  from { opacity: 1; transform: scale(1); }
-  to   { opacity: 0; transform: scale(0.85) translateY(24px); }
+  from { opacity: 1; transform: scale(1); filter: grayscale(0.6) brightness(0.45); }
+  to   { opacity: 0; transform: scale(0.6) translateY(80px) rotate(-4deg); filter: grayscale(0.6) brightness(0.45); }
 }
 
 @keyframes lightbox-spinner-in {

@@ -65,10 +65,12 @@ describe('EntityDetailComponent lightbox removal', () => {
     const keyBefore = cmp.lightboxKey();
 
     cmp.lightboxDelete();
-    expect(cmp.removingPhoto()).toBe(true);
+    expect(cmp.removalState()).toBe('exiting');
     expect(cmp.currentLightboxPhoto()?.url).toBe('b');
 
-    vi.advanceTimersByTime(220);
+    vi.advanceTimersByTime(399);
+    expect(cmp.currentLightboxPhoto()?.url).toBe('b');
+    vi.advanceTimersByTime(1);
     expect(cmp.removingPhoto()).toBe(false);
     expect(cmp.currentLightboxPhoto()?.url).toBe('c');
     expect(cmp.lightboxKey()).toBe(keyBefore + 1);
@@ -76,18 +78,25 @@ describe('EntityDetailComponent lightbox removal', () => {
     expect(cmp.lightboxMediaLoaded()).toBe(false);
   });
 
-  it('keeps the exit state until a slow server answers', () => {
+  it('shows the working state for as long as a slow server takes, then exits', () => {
     const response = new Subject<Entity>();
     removePhoto.mockReturnValue(response);
     const cmp = openOn(['a', 'b'], 0);
 
     cmp.lightboxDelete();
-    vi.advanceTimersByTime(1000);
-    expect(cmp.removingPhoto()).toBe(true);
+    expect(cmp.removalState()).toBe('working');
+    expect(cmp.removalLabel()).toBe('Deleting…');
+    expect(cmp.deletingPhoto()).toBe(true);
+    vi.advanceTimersByTime(5000);
+    expect(cmp.removalState()).toBe('working');
 
     response.next(entityWith(['b']));
     response.complete();
-    expect(cmp.removingPhoto()).toBe(false);
+    expect(cmp.removalState()).toBe('exiting');
+    expect(cmp.currentLightboxPhoto()?.url).toBe('a');
+
+    vi.advanceTimersByTime(400);
+    expect(cmp.removalState()).toBe('idle');
     expect(cmp.currentLightboxPhoto()?.url).toBe('b');
   });
 
@@ -105,7 +114,7 @@ describe('EntityDetailComponent lightbox removal', () => {
     const cmp = openOn(['a'], 0);
 
     cmp.lightboxDelete();
-    vi.advanceTimersByTime(220);
+    vi.advanceTimersByTime(400);
     expect(cmp.lightboxOpen()).toBe(false);
   });
 
@@ -116,9 +125,19 @@ describe('EntityDetailComponent lightbox removal', () => {
 
     cmp.lightboxDelete();
     response.error(new Error('boom'));
-    expect(cmp.removingPhoto()).toBe(false);
+    expect(cmp.removalState()).toBe('idle');
     expect(cmp.currentLightboxPhoto()?.url).toBe('a');
     expect(snackOpen).toHaveBeenCalledWith('Delete failed', undefined, { duration: 4000 });
+  });
+
+  it('labels a hide as hiding and leaves the Delete button alone', () => {
+    setPhotosHidden.mockReturnValue(new Subject<Entity>());
+    const cmp = openOn(['a', 'b'], 0);
+
+    cmp.lightboxHide();
+    expect(cmp.removalState()).toBe('working');
+    expect(cmp.removalLabel()).toBe('Hiding…');
+    expect(cmp.deletingPhoto()).toBe(false);
   });
 
   it('animates a hide away when hidden photos are not shown', () => {
@@ -126,9 +145,9 @@ describe('EntityDetailComponent lightbox removal', () => {
     const cmp = openOn(['a', 'b'], 0);
 
     cmp.lightboxHide();
-    expect(cmp.removingPhoto()).toBe(true);
-    vi.advanceTimersByTime(220);
-    expect(cmp.removingPhoto()).toBe(false);
+    expect(cmp.removalState()).toBe('exiting');
+    vi.advanceTimersByTime(400);
+    expect(cmp.removalState()).toBe('idle');
   });
 
   it('hides in place without an exit when hidden photos are shown', () => {

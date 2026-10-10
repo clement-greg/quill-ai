@@ -87,7 +87,7 @@ interface CapturedFrame {
 const GENERATION_POLL_MS = 15_000;
 
 /** How long a deleted or hidden photo takes to leave the lightbox; matches `lightbox-exit` in the stylesheet. */
-const LIGHTBOX_EXIT_MS = 220;
+const LIGHTBOX_EXIT_MS = 400;
 
 interface BookGroup {
   bookTitle: string;
@@ -157,11 +157,19 @@ export class EntityDetailComponent implements OnDestroy {
   lightboxKey = signal(0);
   slideDir = signal<'next' | 'prev'>('next');
   /**
-   * True while the photo on show is leaving the lightbox after a delete or
-   * hide: it plays its exit animation and the action buttons stay disabled so a
-   * second press can't land on whatever slides in next.
+   * Where the photo on show is in leaving the lightbox after a delete or hide:
+   * `working` while the server takes it off (the photo dims under a spinner),
+   * then `exiting` while it animates away before the next one slides in.
    */
-  removingPhoto = signal(false);
+  removalState = signal<'idle' | 'working' | 'exiting'>('idle');
+  /** Whether the removal under way is a delete or a hide. */
+  private removalKind = signal<'delete' | 'hide'>('delete');
+  /** What the working overlay says. */
+  readonly removalLabel = computed(() => (this.removalKind() === 'delete' ? 'Deleting…' : 'Hiding…'));
+  /** Keeps the action buttons disabled so a second press can't land on whatever slides in next. */
+  readonly removingPhoto = computed(() => this.removalState() !== 'idle');
+  /** Turns the Delete button itself into a "Deleting…" spinner. */
+  readonly deletingPhoto = computed(() => this.removingPhoto() && this.removalKind() === 'delete');
   /** False until the image on show has loaded, so a slow one gets a spinner. */
   lightboxMediaLoaded = signal(false);
   showAllPhotos = signal(false);
@@ -747,7 +755,7 @@ export class EntityDetailComponent implements OnDestroy {
       request().subscribe({ next: (updated) => this.entity.set(updated) });
       return;
     }
-    this.removeFromLightbox(request, 'Hide failed');
+    this.removeFromLightbox(request, 'hide', 'Hide failed');
   }
 
   lightboxUnhide(): void {
@@ -763,25 +771,32 @@ export class EntityDetailComponent implements OnDestroy {
     const entityId = this.entity()?.id;
     const actualIdx = this.lightboxActualIndex();
     if (!entityId || actualIdx < 0) return;
-    this.removeFromLightbox(() => this.entityService.removePhoto(entityId, actualIdx), 'Delete failed');
+    this.removeFromLightbox(() => this.entityService.removePhoto(entityId, actualIdx), 'delete', 'Delete failed');
   }
 
   /**
-   * Plays the photo on show out of the lightbox while `request()` takes it off
-   * the server, then slides in whatever took its place. The swap waits for
-   * both, so the exit always finishes and a fast response doesn't cut it short.
+   * Takes the photo on show out of the lightbox in two visible steps: while
+   * `request()` is with the server the photo dims under a `working` spinner,
+   * and once it succeeds the photo plays its exit before whatever took its
+   * place slides in. On failure the photo comes back as it was.
    */
-  private removeFromLightbox(request: () => Observable<Entity>, failure: string): void {
+  private removeFromLightbox(request: () => Observable<Entity>, kind: 'delete' | 'hide', failure: string): void {
     if (this.removingPhoto()) return;
-    this.removingPhoto.set(true);
-    forkJoin([request(), timer(LIGHTBOX_EXIT_MS)]).subscribe({
-      next: ([updated]) => {
-        this.removingPhoto.set(false);
+    this.removalKind.set(kind);
+    this.removalState.set('working');
+    request().pipe(
+      concatMap(updated => {
+        this.removalState.set('exiting');
+        return timer(LIGHTBOX_EXIT_MS).pipe(map(() => updated));
+      })
+    ).subscribe({
+      next: (updated) => {
+        this.removalState.set('idle');
         this.entity.set(updated);
         this.advanceLightboxAfterRemoval(this.lightboxIndex());
       },
       error: () => {
-        this.removingPhoto.set(false);
+        this.removalState.set('idle');
         this.snackBar.open(failure, undefined, { duration: 4000 });
       },
     });
