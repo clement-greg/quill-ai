@@ -1,7 +1,7 @@
 {
   "name": "quill-ai-desktop",
   "productName": "Quill AI",
-  "version": "1.0.1",
+  "version": "1.0.3",
   "description": "Quill AI desktop app",
   "author": "Greg Clement",
   "private": true,
@@ -29,6 +29,7 @@
       "google-sign-in.js",
       "context-menu.js",
       "app-menu.js",
+      "spelling.js",
       "offline.html",
       "package.json"
     ],
@@ -66,5 +67,9 @@
   "devDependencies": {
     "electron": "^38.8.6",
     "electron-builder": "^26.15.3"
+  },
+  "dependencies": {
+    "dictionary-en": "^4.0.0",
+    "nspell": "^2.1.5"
   }
 }
