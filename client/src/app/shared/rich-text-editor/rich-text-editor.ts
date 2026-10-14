@@ -19,6 +19,7 @@ import {
 } from './minimap-overlays';
 import { UserSettingsService } from '@app/core/services/user-settings.service';
 import { disableSpellcheckOnEntityReferences } from '@app/shared/entity-references';
+import { AI_BLOCK_SELECTOR, clearAiMarkOnEmptyBlocks } from './ai-authorship';
 
 /** Minimal shape the editor needs to decorate/act on a Quill Editor suggestion.
  *  Structurally compatible with the review service's `ReviewSuggestion`. */
@@ -1561,7 +1562,7 @@ export class RichTextEditorComponent implements OnInit, AfterViewInit, OnDestroy
         if (selClear && selClear.rangeCount > 0) {
           const nc = selClear.getRangeAt(0).startContainer;
           const inSpan = (nc.nodeType === Node.ELEMENT_NODE ? nc as Element : (nc as Text).parentElement)
-            ?.closest('[data-ai-generated]');
+            ?.closest('span[data-ai-generated]');
           if (inSpan !== ejectedSpan) this.lastEjectedSpan = null;
         }
       }
@@ -1592,7 +1593,7 @@ export class RichTextEditorComponent implements OnInit, AfterViewInit, OnDestroy
           // At this point the space has already been inserted; offset - 2 is the char before it.
           const charBefore = (textSp.textContent ?? '')[rSp.startOffset - 2] ?? '';
           if (/[.!?]/.test(charBefore)) {
-            const aiSpSp = textSp.parentElement?.closest<HTMLElement>('[data-ai-generated]');
+            const aiSpSp = textSp.parentElement?.closest<HTMLElement>('span[data-ai-generated]');
             if (aiSpSp) {
               this.lastEjectedSpan = aiSpSp;
               this.lastEjectedSpanTextLength = aiSpSp.textContent?.length ?? 0;
@@ -1895,6 +1896,31 @@ export class RichTextEditorComponent implements OnInit, AfterViewInit, OnDestroy
           if (this.editorRef) { this.editorContent = this.editorRef.nativeElement.innerHTML; this.scheduleEmit(); }
           return;
         }
+      }
+    }
+
+    // Enter in an AI-marked paragraph: the browser copies the block's
+    // data-ai-generated attribute onto the new paragraph. Once it has split the
+    // block, drop the mark from whichever side is empty so new typing reads as
+    // the author's own.
+    if (event.key === 'Enter' && !event.shiftKey && this.autocompleteItems().length === 0 && this.editorRef) {
+      const selB = window.getSelection();
+      const nodeB = selB && selB.rangeCount > 0 ? selB.getRangeAt(0).startContainer : null;
+      const aiBlock = (nodeB?.nodeType === Node.ELEMENT_NODE ? nodeB as Element : nodeB?.parentElement)
+        ?.closest<HTMLElement>(AI_BLOCK_SELECTOR);
+      if (aiBlock && this.editorRef.nativeElement.contains(aiBlock)) {
+        setTimeout(() => {
+          const el = this.editorRef?.nativeElement;
+          if (!el) return;
+          const sel = window.getSelection();
+          const cur = sel && sel.rangeCount > 0 ? sel.getRangeAt(0).startContainer : null;
+          const curBlock = (cur?.nodeType === Node.ELEMENT_NODE ? cur as Element : cur?.parentElement)
+            ?.closest<HTMLElement>(AI_BLOCK_SELECTOR) ?? null;
+          if (clearAiMarkOnEmptyBlocks([aiBlock, curBlock, curBlock?.previousElementSibling ?? null])) {
+            this.editorContent = el.innerHTML;
+            this.scheduleMinimap();
+          }
+        }, 0);
       }
     }
 
@@ -2703,7 +2729,7 @@ export class RichTextEditorComponent implements OnInit, AfterViewInit, OnDestroy
     const aiSpan = (node.nodeType === Node.ELEMENT_NODE
       ? node as Element
       : (node as Text).parentElement)
-      ?.closest<HTMLElement>('[data-ai-generated]');
+      ?.closest<HTMLElement>('span[data-ai-generated]');
     if (!aiSpan) return false;
 
     // Extract everything from the cursor to the end of the span.

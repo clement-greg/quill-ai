@@ -249,11 +249,21 @@ describe('wheelDeltaToPixels', () => {
       expect(minimapAuthorship(t)).toBe('ai');
     });
 
-    it('treats unmarked text, unknown values and non-span markers as human', () => {
+    it('reads AI and edited-AI paragraphs', () => {
+      expect(minimapAuthorship(textIn('<p data-ai-generated="true">a</p>', 'p'))).toBe('ai');
+      expect(minimapAuthorship(textIn('<p data-ai-generated="modified">a</p>', 'p'))).toBe('edited');
+    });
+
+    it('lets an inner span override its paragraph', () => {
+      const t = textIn('<p data-ai-generated="modified"><span data-ai-generated="true">a</span></p>', 'span');
+      expect(minimapAuthorship(t)).toBe('ai');
+    });
+
+    it('treats unmarked text, unknown values and other marked elements as human', () => {
       expect(minimapAuthorship(textIn('<p>a</p>', 'p'))).toBe('human');
       expect(minimapAuthorship(textIn('<span data-ai-generated="other">a</span>', 'span'))).toBe('human');
-      // The editor only colours spans, so a marked <p> reads as human too.
-      expect(minimapAuthorship(textIn('<p data-ai-generated="true">a</p>', 'p'))).toBe('human');
+      // styles.css only colours spans and paragraphs.
+      expect(minimapAuthorship(textIn('<div data-ai-generated="true">a</div>', 'div'))).toBe('human');
     });
 
     it('treats a detached text node as human', () => {
