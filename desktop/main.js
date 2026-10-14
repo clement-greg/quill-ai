@@ -12,6 +12,7 @@ const path = require('path');
 const fs = require('fs');
 const http = require('http');
 const { signInWithGoogle } = require('./google-sign-in');
+const { attachContextMenu } = require('./context-menu');
 
 const { quill } = require('./package.json');
 
@@ -86,6 +87,8 @@ function createWindow() {
       preload: path.join(__dirname, 'preload.js'),
     },
   });
+
+  attachContextMenu(mainWindow.webContents, { isDev: !app.isPackaged });
 
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
     if (url.startsWith(ORIGIN)) return { action: 'allow' };
