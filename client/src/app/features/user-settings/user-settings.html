@@ -108,6 +108,19 @@
         [style.font-family]="fontFamilyPreviewValue()">
         <p>The lantern cast long shadows across the stone floor as she pushed open the door. Outside, the wind had picked up — carrying with it the smell of rain and something older, something she couldn't name.</p>
       </div>
+
+      @if (isDesktopApp) {
+        <div class="editor-pref-row">
+          <div class="editor-pref-label-group">
+            <span class="editor-pref-label">Hide top bar</span>
+            <span class="editor-pref-sublabel">Use the app menus for navigation instead of the bar across the top of the window.</span>
+          </div>
+          <mat-slide-toggle
+            [checked]="hideDesktopToolbar()"
+            (change)="setHideDesktopToolbar($event.checked)">
+          </mat-slide-toggle>
+        </div>
+      }
     </div>
   </section>
 

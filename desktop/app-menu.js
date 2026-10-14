@@ -4,7 +4,8 @@
 //   Page    — the current page's actions (the explorer's top section)
 //   Library — the Series → Book → Chapter tree
 //
-// plus the platform's usual app/File/Edit/View/Window menus. The client owns
+// plus the platform's usual app/File/Edit/View/Window menus, with File also
+// listing chapters that have unsaved drafts (the toolbar's drafts button). The client owns
 // the content and sends it as a model (client/src/app/core/desktop); clicks go
 // back to it as commands, since only the client can navigate or run actions.
 
@@ -16,6 +17,7 @@ const EMPTY_MODEL = Object.freeze({
   signedIn: false,
   navigation: [],
   pageActions: [],
+  drafts: [],
   library: { loaded: false, series: [] },
 });
 
@@ -32,6 +34,7 @@ function sanitizeModel(raw) {
     signedIn: raw.signedIn === true,
     navigation: list(raw.navigation).map(item).filter((i) => i.id && i.label),
     pageActions: list(raw.pageActions).map(item).filter((i) => i.id && i.label),
+    drafts: list(raw.drafts).map(item).filter((i) => i.id),
     library: {
       loaded: raw.library?.loaded === true,
       series: list(raw.library?.series)
@@ -118,6 +121,16 @@ function buildAppMenuTemplate(model, handlers, { platform = process.platform, is
     click: () => send({ type: 'navigate', id: 'settings' }),
   };
   const signOut = { label: 'Sign Out', enabled: signedIn, click: () => send({ type: 'sign-out' }) };
+  const unsavedDrafts = {
+    label: model.drafts.length ? `Unsaved Drafts (${model.drafts.length})` : 'Unsaved Drafts',
+    enabled: signedIn,
+    submenu: model.drafts.length
+      ? model.drafts.map((draft) => ({
+          label: labelFor(draft.label, platform),
+          click: () => send({ type: 'open', kind: 'chapter', id: draft.id }),
+        }))
+      : [{ label: 'No unsaved drafts', enabled: false }],
+  };
 
   const appMenu = {
     label: appName,
@@ -139,8 +152,8 @@ function buildAppMenuTemplate(model, handlers, { platform = process.platform, is
   const fileMenu = {
     label: 'File',
     submenu: isMac
-      ? [signOut, { type: 'separator' }, { role: 'close' }]
-      : [settings, { type: 'separator' }, signOut, { type: 'separator' }, { role: 'quit', label: 'Exit' }],
+      ? [unsavedDrafts, { type: 'separator' }, signOut, { type: 'separator' }, { role: 'close' }]
+      : [unsavedDrafts, { type: 'separator' }, settings, { type: 'separator' }, signOut, { type: 'separator' }, { role: 'quit', label: 'Exit' }],
   };
 
   const viewMenu = {

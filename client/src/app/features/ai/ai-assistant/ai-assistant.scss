@@ -1299,7 +1299,7 @@ mark.chat-highlight:hover {
 @media (min-width: 1800px) {
   /* Sit below the toolbar rather than covering it */
   .ai-panel {
-    top: 64px;
+    top: var(--toolbar-height);
     box-shadow: -2px 0 12px rgba(0, 0, 0, 0.1);
     border-left: 1px solid var(--mat-sys-outline-variant);
   }

@@ -42,6 +42,8 @@ export interface DesktopMenuModel {
   navigation: DesktopMenuItem[];
   /** The current page's actions (the explorer's top section). */
   pageActions: DesktopMenuItem[];
+  /** Chapters with unsaved local drafts (the toolbar's drafts menu), id = chapter id. */
+  drafts: DesktopMenuItem[];
   library: {
     loaded: boolean;
     series: DesktopLibrarySeries[];

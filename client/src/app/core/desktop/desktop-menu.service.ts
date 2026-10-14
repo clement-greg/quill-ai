@@ -3,12 +3,14 @@ import { AuthService } from '@app/core/auth/auth.service';
 import { AppNavigationService } from '@app/core/services/app-navigation.service';
 import { ExplorerService } from '@app/core/services/explorer.service';
 import { HeaderService } from '@app/core/services/header.service';
+import { UnsavedDraftsService } from '@app/features/chapters/chapter-edit/unsaved-drafts.service';
 import { DesktopMenuCommand, DesktopMenuModel, getQuillDesktop } from './quill-desktop';
 
 /**
  * Mirrors the explorer drawer into the desktop app's native menu bar: the same
  * destinations (Go), the current page's actions (Page) and the
- * Series → Book → Chapter tree (Library). The menus themselves are built by the
+ * Series → Book → Chapter tree (Library), plus the toolbar's unsaved drafts
+ * (File). The menus themselves are built by the
  * Electron main process (desktop/app-menu.js); this service supplies their
  * content and carries out the clicks. Does nothing in a normal browser.
  */
@@ -18,6 +20,7 @@ export class DesktopMenuService {
   private readonly explorer = inject(ExplorerService);
   private readonly header = inject(HeaderService);
   private readonly navigation = inject(AppNavigationService);
+  private readonly unsavedDrafts = inject(UnsavedDraftsService);
   private readonly destroyRef = inject(DestroyRef);
   private readonly injector = inject(Injector);
 
@@ -32,6 +35,7 @@ export class DesktopMenuService {
         .filter(item => item.id !== 'settings') // the app menu has its own Settings entry
         .map(({ id, label }) => ({ id, label })),
       pageActions: signedIn ? this.header.menuActions().map((a, i) => ({ id: String(i), label: a.label })) : [],
+      drafts: signedIn ? this.unsavedDrafts.chapters().map(c => ({ id: c.id, label: c.title })) : [],
       library: {
         loaded: signedIn && this.explorer.libraryLoaded(),
         series: signedIn

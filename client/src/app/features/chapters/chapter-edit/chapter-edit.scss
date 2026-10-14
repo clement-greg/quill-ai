@@ -6,8 +6,7 @@
 .page {
     display: flex;
     flex-direction: column;
-    height: calc(100vh - 64px - 20px);
-    height: calc(100dvh - 64px - 20px); /* iOS Safari: use dynamic viewport height */
+    height: calc(100dvh - var(--toolbar-height) - 20px); /* iOS Safari: dynamic viewport */
     overflow: hidden;
     padding: 20px;
     padding-bottom: 0;
