@@ -10,6 +10,7 @@ import {
   minimapHitTest,
   minimapIssueColor,
   truncateForTooltip,
+  wheelDeltaToPixels,
 } from './minimap-overlays';
 
 function fakeCtx() {
@@ -207,5 +208,25 @@ describe('minimap overlays', () => {
       mergeMinimapBands(input);
       expect(input[0]).toEqual({ y: 10, h: 2, active: false });
     });
+  });
+});
+
+describe('wheelDeltaToPixels', () => {
+  it('passes pixel deltas (trackpad swipes) through unchanged', () => {
+    expect(wheelDeltaToPixels(42, 0, 20, 600)).toBe(42);
+    expect(wheelDeltaToPixels(-17.5, 0, 20, 600)).toBe(-17.5);
+  });
+
+  it('scales line deltas by the line height', () => {
+    expect(wheelDeltaToPixels(3, 1, 24, 600)).toBe(72);
+    expect(wheelDeltaToPixels(-1, 1, 24, 600)).toBe(-24);
+  });
+
+  it('scales page deltas by the page height', () => {
+    expect(wheelDeltaToPixels(1, 2, 24, 600)).toBe(600);
+  });
+
+  it('treats an unknown mode as pixels', () => {
+    expect(wheelDeltaToPixels(10, 7, 24, 600)).toBe(10);
   });
 });

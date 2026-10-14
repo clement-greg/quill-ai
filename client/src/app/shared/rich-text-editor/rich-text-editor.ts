@@ -15,7 +15,7 @@ import { GrammarCheckService, GrammarError, SuggestedEntity } from './grammar-ch
 import {
   MINIMAP_ISSUE_SELECTOR, MINIMAP_MENTION_RGB, MINIMAP_NOTE_COLOR, MINIMAP_SEARCH_ACTIVE_COLOR, MINIMAP_SEARCH_COLOR,
   MINIMAP_SQUIGGLE_MIN_WIDTH, MinimapHit, MinimapTooltipContent, describeMinimapHit,
-  drawMinimapSquiggle, mergeMinimapBands, minimapHitTest, minimapIssueColor, truncateForTooltip,
+  drawMinimapSquiggle, mergeMinimapBands, minimapHitTest, minimapIssueColor, truncateForTooltip, wheelDeltaToPixels,
 } from './minimap-overlays';
 import { UserSettingsService } from '@app/core/services/user-settings.service';
 import { disableSpellcheckOnEntityReferences } from '@app/shared/entity-references';
@@ -3387,6 +3387,17 @@ export class RichTextEditorComponent implements OnInit, AfterViewInit, OnDestroy
   }
 
   onMinimapMouseLeave(): void {
+    this.minimapTooltip.set(null);
+  }
+
+  /** Trackpad swipes / mouse wheel over the minimap scroll the editor beside it. */
+  onMinimapWheel(event: WheelEvent): void {
+    const editor = this.editorRef?.nativeElement;
+    if (!editor) return;
+    event.preventDefault();
+    const lineHeight = parseFloat(getComputedStyle(editor).lineHeight) || 20;
+    editor.scrollTop += wheelDeltaToPixels(event.deltaY, event.deltaMode, lineHeight, editor.clientHeight);
+    // The line under the pointer changes as the document moves.
     this.minimapTooltip.set(null);
   }
 
