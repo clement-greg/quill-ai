@@ -13,9 +13,9 @@ import { ChapterEditProposal, EntityLinkGroup } from '@shared/models/chat-sessio
 import { EntityService } from '@app/features/entities/entity.service';
 import { GrammarCheckService, GrammarError, SuggestedEntity } from './grammar-check.service';
 import {
-  MINIMAP_ISSUE_SELECTOR, MINIMAP_MENTION_RGB, MINIMAP_NOTE_COLOR, MINIMAP_SEARCH_ACTIVE_COLOR, MINIMAP_SEARCH_COLOR,
+  MINIMAP_AUTHORSHIP_COLORS, MINIMAP_ISSUE_SELECTOR, MINIMAP_MENTION_RGB, MINIMAP_NOTE_COLOR, MINIMAP_SEARCH_ACTIVE_COLOR, MINIMAP_SEARCH_COLOR,
   MINIMAP_SQUIGGLE_MIN_WIDTH, MinimapHit, MinimapTooltipContent, describeMinimapHit,
-  drawMinimapSquiggle, mergeMinimapBands, minimapHitTest, minimapIssueColor, truncateForTooltip, wheelDeltaToPixels,
+  drawMinimapSquiggle, groupByAuthorship, mergeMinimapBands, minimapHitTest, minimapIssueColor, truncateForTooltip, wheelDeltaToPixels,
 } from './minimap-overlays';
 import { UserSettingsService } from '@app/core/services/user-settings.service';
 import { disableSpellcheckOnEntityReferences } from '@app/shared/entity-references';
@@ -3644,7 +3644,6 @@ export class RichTextEditorComponent implements OnInit, AfterViewInit, OnDestroy
       const indent = isHeading ? 2 : 4;
       const maxLineW = W - indent * 2;
       const opacity = isHeading ? 0.78 : 0.55;
-      ctx.fillStyle = `rgba(${tr},${tg},${tb},${opacity})`;
 
       // Use the browser's actual line layout via Range.getClientRects().
       // This gives exact Y positions and text widths for every wrapped line.
@@ -3693,6 +3692,19 @@ export class RichTextEditorComponent implements OnInit, AfterViewInit, OnDestroy
         }
       }
 
+      // AI / edited-AI segments of this row, recoloured over the neutral bars
+      // to match the editor's text colours.
+      const authoredRects: { rect: DOMRect; color: string }[] = [];
+      for (const run of groupByAuthorship(row.textNodes)) {
+        if (run.authorship === 'human') continue;
+        const runRange = document.createRange();
+        runRange.setStart(run.first, 0);
+        runRange.setEnd(run.last, run.last.textContent?.length ?? 0);
+        for (const rect of Array.from(runRange.getClientRects())) {
+          if (rect.width >= 1 && rect.height >= 2) authoredRects.push({ rect, color: MINIMAP_AUTHORSHIP_COLORS[run.authorship] });
+        }
+      }
+
       for (const line of lineGroups) {
         // Map viewport Y → document-absolute Y → minimap Y
         const lineDocTop = offsetTop + (line.top - blockRect.top);
@@ -3716,7 +3728,18 @@ export class RichTextEditorComponent implements OnInit, AfterViewInit, OnDestroy
         // distinguishable and gaps between paragraphs are clearly visible.
         const miniH = Math.max(1.5, Math.min(line.height * scale * 0.5, 3.5));
 
+        ctx.fillStyle = `rgba(${tr},${tg},${tb},${opacity})`;
         ctx.fillRect(lineX, miniY, lineW, miniH);
+        for (const { rect, color } of authoredRects) {
+          if (Math.abs(rect.top - line.top) >= mergeTol) continue;
+          // Same x mapping as the bar, clamped to it so the amplified first-line
+          // indent can't push a segment off the bar's start.
+          const segX0 = Math.max(lineX, indent + ((rect.left - blockLeft) / blockWidth) * maxLineW);
+          const segX1 = Math.min(lineX + lineW, indent + ((rect.right - blockLeft) / blockWidth) * maxLineW);
+          if (segX1 - segX0 < 0.5) continue;
+          ctx.fillStyle = color;
+          ctx.fillRect(segX0, miniY, segX1 - segX0, miniH);
+        }
         this.minimapLines.push({ miniY: miniY + miniH / 2, docTop: lineDocTop, textNodes: row.textNodes });
       }
     }

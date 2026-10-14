@@ -131,8 +131,9 @@ export function describeMinimapHit(
 }
 
 /** Highlight for the lines mentioning the hovered entity; distinct from the
- *  teal viewport/caret and the warm issue, note and search colours. */
-export const MINIMAP_MENTION_RGB = '142, 68, 230';
+ *  teal viewport/caret, the purple/amber authorship colours and the warm
+ *  issue, note and search colours. */
+export const MINIMAP_MENTION_RGB = '30, 136, 229';
 
 /** One horizontal band on the minimap, in CSS px. */
 export interface MinimapBand {
@@ -166,4 +167,45 @@ export function wheelDeltaToPixels(deltaY: number, deltaMode: number, lineHeight
   if (deltaMode === 1) return deltaY * lineHeight;
   if (deltaMode === 2) return deltaY * pageHeight;
   return deltaY;
+}
+
+/** Who wrote a piece of text, as marked by `span[data-ai-generated]`. */
+export type MinimapAuthorship = 'human' | 'ai' | 'edited';
+
+/** Bar colours for AI and edited-AI text; these mirror the editor's text
+ *  colours for `span[data-ai-generated]` in styles.css. Human text keeps the
+ *  minimap's neutral bar colour. */
+export const MINIMAP_AUTHORSHIP_COLORS: Record<Exclude<MinimapAuthorship, 'human'>, string> = {
+  ai: 'rgba(125, 105, 177, 0.95)',
+  edited: 'rgba(236, 173, 99, 0.95)',
+};
+
+/** Authorship of a text node from its nearest `span[data-ai-generated]`
+ *  ("true" → AI, "modified" → edited AI). Only spans are considered, matching
+ *  which elements the editor actually colours. */
+export function minimapAuthorship(node: Text): MinimapAuthorship {
+  const value = node.parentElement?.closest('span[data-ai-generated]')?.getAttribute('data-ai-generated');
+  if (value === 'true') return 'ai';
+  if (value === 'modified') return 'edited';
+  return 'human';
+}
+
+/** A run of consecutive text nodes sharing one authorship. */
+export interface MinimapAuthorshipRun {
+  authorship: MinimapAuthorship;
+  first: Text;
+  last: Text;
+}
+
+/** Groups consecutive non-empty text nodes into runs of the same authorship. */
+export function groupByAuthorship(nodes: readonly Text[]): MinimapAuthorshipRun[] {
+  const runs: MinimapAuthorshipRun[] = [];
+  for (const node of nodes) {
+    if (!node.textContent) continue;
+    const authorship = minimapAuthorship(node);
+    const last = runs[runs.length - 1];
+    if (last && last.authorship === authorship) last.last = node;
+    else runs.push({ authorship, first: node, last: node });
+  }
+  return runs;
 }
