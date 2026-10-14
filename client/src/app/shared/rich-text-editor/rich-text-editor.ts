@@ -20,6 +20,7 @@ import {
 import { UserSettingsService } from '@app/core/services/user-settings.service';
 import { disableSpellcheckOnEntityReferences } from '@app/shared/entity-references';
 import { AI_BLOCK_SELECTOR, clearAiMarkOnEmptyBlocks } from './ai-authorship';
+import { cleanEditorHtml } from './editor-html-clean';
 
 /** Minimal shape the editor needs to decorate/act on a Quill Editor suggestion.
  *  Structurally compatible with the review service's `ReviewSuggestion`. */
@@ -268,27 +269,7 @@ export class RichTextEditorComponent implements OnInit, AfterViewInit, OnDestroy
   private _editorContent = '';
   get editorContent(): string { return this._editorContent; }
   set editorContent(value: string) {
-    const needsClean = value.includes('grammar-error') || value.includes('ai-insertion-marker') || value.includes('<font');
-    if (needsClean) {
-      const div = document.createElement('div');
-      div.innerHTML = value;
-      div.querySelectorAll('mark.grammar-error').forEach(mark => {
-        const parent = mark.parentNode!;
-        while (mark.firstChild) parent.insertBefore(mark.firstChild, mark);
-        parent.removeChild(mark);
-      });
-      div.querySelectorAll('.ai-insertion-marker').forEach(el => el.remove());
-      // Chrome sometimes wraps new-paragraph content in <font color="..."> when
-      // breaking out of a styled inline span.  Unwrap them so content is clean.
-      div.querySelectorAll('font').forEach(font => {
-        const parent = font.parentNode!;
-        while (font.firstChild) parent.insertBefore(font.firstChild, font);
-        parent.removeChild(font);
-      });
-      this._editorContent = div.innerHTML;
-    } else {
-      this._editorContent = value;
-    }
+    this._editorContent = cleanEditorHtml(value);
   }
 
   private emitTimer: ReturnType<typeof setTimeout> | null = null;
@@ -424,7 +405,9 @@ export class RichTextEditorComponent implements OnInit, AfterViewInit, OnDestroy
     this.contentInitialized = true;
     this.editorContent = html;
     if (this.editorRef) {
-      this.editorRef.nativeElement.innerHTML = html;
+      // Display the cleaned HTML so transient marks saved by older builds
+      // (e.g. find-in-page highlights) don't reappear on load.
+      this.editorRef.nativeElement.innerHTML = this.editorContent;
       this.wordCount.set(this.countWords(this.editorRef.nativeElement.textContent ?? ''));
     }
     setTimeout(() => this.scheduleMinimap());
