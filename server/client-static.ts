@@ -24,6 +24,22 @@ const NOT_BUILT_MESSAGE =
   'In development, open the Angular dev server at http://localhost:6258 (npm run dev),\n' +
   'or build the client with `npm run build` to serve it from this port.\n';
 
+/**
+ * Angular's build names its JS, CSS and fonts with a content hash
+ * (main-XWFOQL5H.js, media/material-symbols-outlined-HKY7TYOV.woff2), so a
+ * changed file always gets a new URL and these can be cached forever. Without
+ * this every page load revalidated the ~4 MB icon font with the server.
+ */
+const HASHED_ASSET = /-[A-Z0-9]{8}\.(js|css|woff2?|ttf|otf)$/;
+const IMMUTABLE = 'public, max-age=31536000, immutable';
+/** index.html names the current hashed files, so it must always be fresh. */
+const NO_CACHE = 'no-cache';
+
+function setCacheHeaders(res: Response, filePath: string): void {
+  if (HASHED_ASSET.test(filePath)) res.setHeader('Cache-Control', IMMUTABLE);
+  else if (path.basename(filePath) === 'index.html') res.setHeader('Cache-Control', NO_CACHE);
+}
+
 /** Serves the Angular build, falling back to index.html for client-side routes. */
 export function clientRoutes(clientDir: string | null): Router {
   const router = Router();
@@ -33,8 +49,9 @@ export function clientRoutes(clientDir: string | null): Router {
     });
     return router;
   }
-  router.use(express.static(clientDir));
+  router.use(express.static(clientDir, { setHeaders: setCacheHeaders }));
   router.get('*path', (_req: Request, res: Response) => {
+    res.setHeader('Cache-Control', NO_CACHE);
     res.sendFile(path.join(clientDir, 'index.html'));
   });
   return router;

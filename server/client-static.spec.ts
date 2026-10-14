@@ -23,6 +23,9 @@ describe('client-static', () => {
     fs.mkdirSync(dir, { recursive: true });
     fs.writeFileSync(path.join(dir, 'index.html'), '<app-root></app-root>');
     fs.writeFileSync(path.join(dir, 'main.js'), 'console.log(1)');
+    fs.writeFileSync(path.join(dir, 'main-XWFOQL5H.js'), 'console.log(2)');
+    fs.mkdirSync(path.join(dir, 'media'));
+    fs.writeFileSync(path.join(dir, 'media', 'icons-HKY7TYOV.woff2'), 'font');
     return dir;
   }
 
@@ -58,6 +61,27 @@ describe('client-static', () => {
       const route = await request(app).get('/chapters/abc/edit');
       expect(route.status).toBe(200);
       expect(route.text).toContain('<app-root>');
+    });
+
+    it('caches content-hashed assets forever', async () => {
+      const app = express().use(clientRoutes(writeBuild()));
+
+      for (const url of ['/main-XWFOQL5H.js', '/media/icons-HKY7TYOV.woff2']) {
+        const res = await request(app).get(url);
+        expect(res.status).toBe(200);
+        expect(res.headers['cache-control']).toBe('public, max-age=31536000, immutable');
+      }
+    });
+
+    it('never caches index.html or unhashed files without revalidating', async () => {
+      const app = express().use(clientRoutes(writeBuild()));
+
+      for (const url of ['/', '/index.html', '/chapters/abc/edit']) {
+        const res = await request(app).get(url);
+        expect(res.headers['cache-control']).toBe('no-cache');
+      }
+      const unhashed = await request(app).get('/main.js');
+      expect(unhashed.headers['cache-control']).not.toContain('immutable');
     });
 
     it('explains how to get the app when the client has not been built', async () => {
