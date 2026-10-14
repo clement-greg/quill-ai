@@ -52,7 +52,7 @@ describe('user-settings routes', () => {
     expect(asA.body.displayName).toBe('Alice');
   });
 
-  it('PUT / replaces the full settings document (fields omitted on save are dropped)', async () => {
+  it('PUT / merges into the stored document (fields omitted on save are kept)', async () => {
     await request(app)
       .put('/api/user-settings')
       .set('x-test-user', USER_A)
@@ -64,6 +64,65 @@ describe('user-settings routes', () => {
 
     const res = await request(app).get('/api/user-settings').set('x-test-user', USER_A);
     expect(res.body.displayName).toBe('Alice Two');
-    expect(res.body.darkMode).toBeUndefined();
+    expect(res.body.darkMode).toBe(true);
+  });
+
+  it('PUT / persists the grammar, entity-detection and auto-save toggles across reloads', async () => {
+    const put = await request(app)
+      .put('/api/user-settings')
+      .set('x-test-user', USER_A)
+      .send({ grammarCheckEnabled: false, entityDetectionEnabled: false, autoSaveEnabled: true });
+    expect(put.status).toBe(200);
+
+    const res = await request(app).get('/api/user-settings').set('x-test-user', USER_A);
+    expect(res.body.grammarCheckEnabled).toBe(false);
+    expect(res.body.entityDetectionEnabled).toBe(false);
+    expect(res.body.autoSaveEnabled).toBe(true);
+  });
+
+  it('PUT / preserves pinHash when the client does not send it', async () => {
+    fake.container('user-settings').seed({ id: `sub-${USER_A}`, email: USER_A, pinHash: 'hash-123' });
+
+    // Mirrors the web client's saveToServer payload, which never includes pinHash
+    await request(app)
+      .put('/api/user-settings')
+      .set('x-test-user', USER_A)
+      .send({ displayName: 'Alice', colorTheme: 'dark', autoSaveEnabled: true });
+
+    expect(fake.container('user-settings').get(`sub-${USER_A}`)?.pinHash).toBe('hash-123');
+  });
+
+  it.each([
+    ['grammarCheckEnabled', 'false'],
+    ['entityDetectionEnabled', 1],
+    ['autoSaveEnabled', null],
+    ['darkMode', 'yes'],
+    ['displayName', 42],
+    ['genderOptions', ['ok', 7]],
+    ['ghostCompleteItems', [{ id: 'x', label: 'y' }]],
+  ])('PUT / rejects an invalid %s with 400 and leaves stored settings untouched', async (field, value) => {
+    await request(app).put('/api/user-settings').set('x-test-user', USER_A).send({ displayName: 'Alice' });
+
+    const res = await request(app)
+      .put('/api/user-settings')
+      .set('x-test-user', USER_A)
+      .send({ displayName: 'Changed', [field]: value });
+    expect(res.status).toBe(400);
+    expect(res.body.error).toContain(field);
+
+    const get = await request(app).get('/api/user-settings').set('x-test-user', USER_A);
+    expect(get.body.displayName).toBe('Alice');
+  });
+
+  it('PUT / ignores fields outside the whitelist', async () => {
+    await request(app)
+      .put('/api/user-settings')
+      .set('x-test-user', USER_A)
+      .send({ displayName: 'Alice', isAdmin: true, id: 'someone-else', email: 'spoof@example.com' });
+
+    const stored = fake.container('user-settings').get(`sub-${USER_A}`);
+    expect(stored?.isAdmin).toBeUndefined();
+    expect(stored?.email).toBe(USER_A);
+    expect(fake.container('user-settings').get('someone-else')).toBeUndefined();
   });
 });
