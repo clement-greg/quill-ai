@@ -70,6 +70,8 @@ export class UserSettingsComponent {
   readonly grammarCheckEnabled = this.settingsService.grammarCheckEnabled;
   readonly entityDetectionEnabled = this.settingsService.entityDetectionEnabled;
   readonly autoSaveEnabled = this.settingsService.autoSaveEnabled;
+  readonly isDesktopApp = this.settingsService.isDesktopApp;
+  readonly hideDesktopToolbar = this.settingsService.hideDesktopToolbar;
 
   readonly fontSizePreviewValue = computed(() => ({
     xs:     '0.75rem',
@@ -239,6 +241,10 @@ export class UserSettingsComponent {
 
   setEditorFontFamily(value: string): void {
     this.settingsService.setEditorFontFamily(value);
+  }
+
+  setHideDesktopToolbar(value: boolean): void {
+    this.settingsService.setHideDesktopToolbar(value);
   }
 
   setGrammarCheckEnabled(value: boolean): void {

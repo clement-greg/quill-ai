@@ -17,6 +17,7 @@ const model = sanitizeModel({
     { id: 'extra', label: 'Tenth Item' },
   ],
   pageActions: [{ id: '0', label: 'Edit Chapter' }, { id: '1', label: 'Export' }],
+  drafts: [{ id: 'c2', label: 'A Storm' }],
   library: {
     loaded: true,
     series: [
@@ -59,7 +60,22 @@ test('macOS menu bar mirrors the explorer: Go, Page and Library beside the stand
 test('Windows has no app menu; Settings, Sign Out and Exit live in File', () => {
   const { template, menu } = build(model, { platform: 'win32' });
   assert.equal(template[0].label, 'File');
-  assert.deepEqual(labels(menu('File').submenu), ['Settings', 'separator', 'Sign Out', 'separator', 'Exit']);
+  assert.deepEqual(labels(menu('File').submenu), ['Unsaved Drafts (1)', 'separator', 'Settings', 'separator', 'Sign Out', 'separator', 'Exit']);
+});
+
+test('File lists unsaved drafts with a count and opens the chapter', () => {
+  const { menu, sent } = build();
+  const file = menu('File').submenu;
+  assert.deepEqual(labels(file), ['Unsaved Drafts (1)', 'separator', 'Sign Out', 'separator', 'close']);
+  assert.deepEqual(labels(file[0].submenu), ['A Storm']);
+  file[0].submenu[0].click();
+  assert.deepEqual(sent, [{ type: 'open', kind: 'chapter', id: 'c2' }]);
+});
+
+test('File says so when there are no unsaved drafts', () => {
+  const drafts = build({ ...model, drafts: [] }).menu('File').submenu[0];
+  assert.equal(drafts.label, 'Unsaved Drafts');
+  assert.deepEqual(drafts.submenu, [{ label: 'No unsaved drafts', enabled: false }]);
 });
 
 test('Settings sits in the macOS app menu with Cmd+,', () => {
@@ -165,6 +181,7 @@ test('signed out: app commands are disabled and the library asks you to sign in'
   const { menu, item } = build(sanitizeModel({ ...model, signedIn: false }));
   assert.equal(item(menu('Quill AI').submenu, 'Settings…').enabled, false);
   assert.equal(item(menu('File').submenu, 'Sign Out').enabled, false);
+  assert.equal(item(menu('File').submenu, 'Unsaved Drafts (1)').enabled, false);
   assert.equal(item(menu('View').submenu, 'Explorer').enabled, false);
   assert.equal(item(menu('Go').submenu, 'Home').enabled, false);
   assert.ok(menu('Go').submenu.filter((i) => i.accelerator?.match(/\+\d$/)).every((i) => i.enabled === false));
@@ -193,6 +210,7 @@ test('sanitizeModel turns malformed input into an empty, signed-out menu', () =>
     signedIn: false,
     navigation: [],
     pageActions: [],
+    drafts: [],
     library: { loaded: false, series: [{ id: 's', title: '', books: [] }] },
   });
 });
@@ -201,6 +219,7 @@ test('sanitizeModel drops entries without an id or label', () => {
   const m = sanitizeModel({
     signedIn: true,
     navigation: [{ id: 'a', label: 'A' }, { id: '', label: 'B' }, { id: 'c' }],
+    drafts: [{ id: 'd', label: '' }, { label: 'No id' }],
     library: {
       loaded: true,
       series: [
@@ -210,5 +229,7 @@ test('sanitizeModel drops entries without an id or label', () => {
     },
   });
   assert.deepEqual(m.navigation, [{ id: 'a', label: 'A' }]);
+  // An untitled chapter still has a draft worth listing; labelFor shows it as Untitled.
+  assert.deepEqual(m.drafts, [{ id: 'd', label: '' }]);
   assert.deepEqual(m.library.series, [{ id: 's', title: 'S', books: [{ id: 'b', title: 'B', chapters: [{ id: 'c', title: 'C' }] }] }]);
 });

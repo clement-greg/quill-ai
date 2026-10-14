@@ -5,6 +5,8 @@ import { AuthService, GoogleUser } from '@app/core/auth/auth.service';
 import { AppNavItem, AppNavigationService } from '@app/core/services/app-navigation.service';
 import { ExplorerService } from '@app/core/services/explorer.service';
 import { HeaderMenuAction, HeaderService } from '@app/core/services/header.service';
+import { UnsavedDraftsService } from '@app/features/chapters/chapter-edit/unsaved-drafts.service';
+import { Chapter } from '@shared/models/chapter.model';
 import { DesktopMenuService } from './desktop-menu.service';
 import { DesktopMenuCommand, DesktopMenuModel } from './quill-desktop';
 
@@ -13,6 +15,7 @@ const user: GoogleUser = { email: 'a@b.c', name: 'A', picture: '', idToken: 't' 
 describe('DesktopMenuService', () => {
   let currentUser: ReturnType<typeof signal<GoogleUser | null>>;
   let menuActions: ReturnType<typeof signal<HeaderMenuAction[]>>;
+  let draftChapters: ReturnType<typeof signal<Chapter[]>>;
   let explorer: {
     series: ReturnType<typeof signal<{ id: string; title: string }[]>>;
     libraryLoaded: ReturnType<typeof signal<boolean>>;
@@ -38,6 +41,7 @@ describe('DesktopMenuService', () => {
   beforeEach(() => {
     currentUser = signal<GoogleUser | null>(user);
     menuActions = signal<HeaderMenuAction[]>([]);
+    draftChapters = signal<Chapter[]>([{ id: 'c1', title: 'The Spice' } as Chapter]);
     explorer = {
       series: signal([{ id: 's1', title: 'Dune Saga' }]),
       libraryLoaded: signal(true),
@@ -67,6 +71,7 @@ describe('DesktopMenuService', () => {
         { provide: HeaderService, useValue: { menuActions } },
         { provide: ExplorerService, useValue: explorer },
         { provide: AppNavigationService, useValue: navigation },
+        { provide: UnsavedDraftsService, useValue: { chapters: draftChapters } },
       ],
     });
   });
@@ -91,7 +96,7 @@ describe('DesktopMenuService', () => {
   }
 
   describe('model', () => {
-    it('mirrors the explorer: destinations, page actions and the library tree', () => {
+    it('mirrors the explorer: destinations, page actions, unsaved drafts and the library tree', () => {
       menuActions.set([{ icon: 'edit', label: 'Rename', action: vi.fn() }]);
       const service = TestBed.inject(DesktopMenuService);
 
@@ -102,6 +107,7 @@ describe('DesktopMenuService', () => {
           { id: 'writing-stats', label: 'Writing Stats' },
         ],
         pageActions: [{ id: '0', label: 'Rename' }],
+        drafts: [{ id: 'c1', label: 'The Spice' }],
         library: {
           loaded: true,
           series: [{ id: 's1', title: 'Dune Saga', books: [{ id: 'b1', title: 'Dune', chapters: [{ id: 'c1', title: 'The Spice' }] }] }],
@@ -114,13 +120,14 @@ describe('DesktopMenuService', () => {
       expect(ids).not.toContain('settings');
     });
 
-    it('hides page actions and the library when signed out', () => {
+    it('hides page actions, drafts and the library when signed out', () => {
       menuActions.set([{ icon: 'edit', label: 'Rename', action: vi.fn() }]);
       currentUser.set(null);
       const model = TestBed.inject(DesktopMenuService).model();
 
       expect(model.signedIn).toBe(false);
       expect(model.pageActions).toEqual([]);
+      expect(model.drafts).toEqual([]);
       expect(model.library).toEqual({ loaded: false, series: [] });
     });
   });

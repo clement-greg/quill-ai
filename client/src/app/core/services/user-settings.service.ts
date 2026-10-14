@@ -2,6 +2,9 @@ import { Injectable, signal, computed, inject } from '@angular/core';
 import { DOCUMENT } from '@angular/common';
 import { HttpClient } from '@angular/common/http';
 import { firstValueFrom } from 'rxjs';
+import { getQuillDesktop } from '@app/core/desktop/quill-desktop';
+
+const HIDE_DESKTOP_TOOLBAR_KEY = 'quill_hide_desktop_toolbar';
 
 export const DEFAULT_GENDER_OPTIONS = [
   'Female', 'Male', 'Non-binary', 'Genderfluid', 'Agender', 'Other',
@@ -67,6 +70,7 @@ export class UserSettingsService {
   private _raceOptions = signal<string[]>(DEFAULT_RACE_OPTIONS);
   private _orientationOptions = signal<string[]>(DEFAULT_ORIENTATION_OPTIONS);
   private _showHiddenPhotos = signal<boolean>(false);
+  private _hideDesktopToolbar = signal<boolean>(localStorage.getItem(HIDE_DESKTOP_TOOLBAR_KEY) === 'true');
   private _settingsLoaded = signal(false);
   /** True when the active theme is a dark variant (for backward compat). */
   readonly darkMode = computed(() =>
@@ -87,6 +91,12 @@ export class UserSettingsService {
   readonly orientationOptions = this._orientationOptions.asReadonly();
   readonly showHiddenPhotos = this._showHiddenPhotos.asReadonly();
   readonly settingsLoaded = this._settingsLoaded.asReadonly();
+  /** True inside the Electron desktop app, whose native menus duplicate the top bar. */
+  readonly isDesktopApp = !!getQuillDesktop();
+  /** The user's choice, stored per device since it only applies to the desktop app. */
+  readonly hideDesktopToolbar = this._hideDesktopToolbar.asReadonly();
+  /** Whether the top bar is actually hidden — never in a browser, where it is the only navigation. */
+  readonly toolbarHidden = computed(() => this.isDesktopApp && this._hideDesktopToolbar());
 
   /** Loads all settings from the server. Call after authentication. */
   async loadFromServer(): Promise<void> {
@@ -240,6 +250,11 @@ export class UserSettingsService {
   setOrientationOptions(values: string[]): void {
     this._orientationOptions.set(values);
     this.saveToServer();
+  }
+
+  setHideDesktopToolbar(value: boolean): void {
+    this._hideDesktopToolbar.set(value);
+    localStorage.setItem(HIDE_DESKTOP_TOOLBAR_KEY, String(value));
   }
 
   setShowHiddenPhotos(value: boolean): void {

@@ -184,5 +184,42 @@ describe('UserSettingsService', () => {
     expect(service.darkMode()).toBe(false);
     expect(service.ghostCompleteItems()).toEqual([]);
   });
-});
 
+  // ── Desktop top bar ────────────────────────────────────────────────────────
+
+  describe('desktop top bar', () => {
+    const win = window as Window & { quillDesktop?: unknown };
+
+    afterEach(() => {
+      delete win.quillDesktop;
+      localStorage.clear();
+    });
+
+    function freshService(): UserSettingsService {
+      TestBed.resetTestingModule();
+      TestBed.configureTestingModule({
+        providers: [provideHttpClient(), provideHttpClientTesting()],
+      });
+      http = TestBed.inject(HttpTestingController);
+      return TestBed.inject(UserSettingsService);
+    }
+
+    it('never hides the top bar in a browser', () => {
+      localStorage.setItem('quill_hide_desktop_toolbar', 'true');
+      const svc = freshService();
+      expect(svc.isDesktopApp).toBe(false);
+      expect(svc.toolbarHidden()).toBe(false);
+    });
+
+    it('hides the top bar in the desktop app and remembers it locally without a server save', () => {
+      win.quillDesktop = { signInWithGoogle: () => Promise.resolve('') };
+      const svc = freshService();
+      expect(svc.toolbarHidden()).toBe(false);
+
+      svc.setHideDesktopToolbar(true);
+      expect(svc.toolbarHidden()).toBe(true);
+      expect(localStorage.getItem('quill_hide_desktop_toolbar')).toBe('true');
+      expect(freshService().toolbarHidden()).toBe(true);
+    });
+  });
+});

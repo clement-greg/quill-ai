@@ -1,5 +1,21 @@
 /* You can add global styles to this file, and also import other style files */
 
+/* Height of the app's top bar, for layouts that fill the space below it.
+   The breakpoint must match mat-toolbar's own (599px), not our 768px layout one —
+   between 600px and 768px the toolbar is still 64px tall. Zero when the user hides
+   the bar in the desktop app. */
+:root {
+  --toolbar-height: 64px;
+}
+@media (max-width: 599px) {
+  :root {
+    --toolbar-height: 56px;
+  }
+}
+body.app-toolbar-hidden {
+  --toolbar-height: 0px;
+}
+
 /* Sticky filter input inside mat-select panels (rendered outside component scope) */
 .select-filter {
   padding: 8px 12px 4px;

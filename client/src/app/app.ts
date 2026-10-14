@@ -112,6 +112,11 @@ export class App implements OnInit, OnDestroy {
     }
   });
 
+  /** Lets layout offsets (via --toolbar-height in styles.css) collapse when the top bar is hidden. */
+  private toolbarHiddenEffect = effect(() => {
+    document.body.classList.toggle('app-toolbar-hidden', this.settings.toolbarHidden());
+  });
+
   private editorFontEffect = effect(() => {
     const sizeMap: Record<string, string> = {
       xs:     '0.75rem',
