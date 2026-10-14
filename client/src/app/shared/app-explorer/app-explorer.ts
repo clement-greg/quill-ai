@@ -5,10 +5,8 @@ import { MatIconModule } from '@angular/material/icon';
 import { MatDividerModule } from '@angular/material/divider';
 import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
 import { ExplorerService } from '@app/core/services/explorer.service';
-import { AiAssistantService } from '@app/features/ai/ai-assistant.service';
-import { AuthService } from '@app/core/auth/auth.service';
 import { HeaderService } from '@app/core/services/header.service';
-import { SeriesContextService } from '@app/core/services/series-context.service';
+import { AppNavItem, AppNavigationService } from '@app/core/services/app-navigation.service';
 
 export type ViewMode = 'list' | 'tiles' | 'large';
 
@@ -28,9 +26,7 @@ interface ExplorerAction {
 export class AppExplorerComponent {
   readonly explorer = inject(ExplorerService);
   readonly header = inject(HeaderService);
-  private readonly aiAssistant = inject(AiAssistantService);
-  private readonly auth = inject(AuthService);
-  private readonly seriesContext = inject(SeriesContextService);
+  private readonly navigation = inject(AppNavigationService);
   private readonly router = inject(Router);
 
   readonly viewMode = signal<ViewMode>(
@@ -55,31 +51,15 @@ export class AppExplorerComponent {
     ),
   );
 
-  /** Primary navigation entries. */
-  readonly primaryActions = computed<ExplorerAction[]>(() =>
-    this.byQuery([
-      { icon: 'smart_toy', label: 'Resource Manager', run: () => this.openResourceManager() },
-      { icon: 'lightbulb', label: 'Thoughts', run: () => this.navigateTo(['/thoughts']) },
-      { icon: 'people', label: 'Entities', run: () => this.navigateTo(['/entities']) },
-      { icon: 'account_tree', label: 'Relationships', run: () => this.navigateToRelationships() },
-      { icon: 'map', label: 'Maps', run: () => this.navigateTo(['/maps']) },
-      { icon: 'photo_library', label: 'Photo Gallery', run: () => this.navigateTo(['/gallery']) },
-      { icon: 'archive', label: 'Archived Items', run: () => this.navigateTo(['/archived']) },
-      { icon: 'queue', label: 'Generation Queue', run: () => this.navigateTo(['/generation-queue']) },
-    ]),
-  );
+  /** Primary navigation entries (shared with the desktop app's menu bar). */
+  readonly primaryActions = computed<ExplorerAction[]>(() => this.byQuery(this.navigation.primary.map(this.toAction)));
 
   /** Secondary entries (stats, settings). */
-  readonly secondaryActions = computed<ExplorerAction[]>(() =>
-    this.byQuery([
-      { icon: 'bar_chart', label: 'Writing Stats', run: () => this.navigateTo(['/writing-stats']) },
-      { icon: 'settings', label: 'Settings', run: () => this.navigateTo(['/settings']) },
-    ]),
-  );
+  readonly secondaryActions = computed<ExplorerAction[]>(() => this.byQuery(this.navigation.secondary.map(this.toAction)));
 
   /** Account entries shown at the foot of the panel. */
   readonly accountActions = computed<ExplorerAction[]>(() =>
-    this.byQuery([{ icon: 'logout', label: 'Sign out', run: () => this.signOut() }]),
+    this.byQuery([{ icon: 'logout', label: 'Sign out', run: () => this.navigation.signOut() }]),
   );
 
   /** True when any action menu has a visible entry (used to gate dividers). */
@@ -97,6 +77,13 @@ export class AppExplorerComponent {
     return actions.filter(a => a.label.toLowerCase().includes(q));
   }
 
+  /** Wraps a shared destination so choosing it also dismisses the explorer. */
+  private readonly toAction = (item: AppNavItem): ExplorerAction => ({
+    icon: item.icon,
+    label: item.label,
+    run: () => this.closeThen(item.run),
+  });
+
   /** Runs an action and then dismisses the explorer. */
   private closeThen(fn: () => void): void {
     fn();
@@ -105,15 +92,6 @@ export class AppExplorerComponent {
 
   navigateTo(commands: any[]): void {
     this.closeThen(() => this.router.navigate(commands));
-  }
-
-  openResourceManager(): void {
-    this.closeThen(() => this.aiAssistant.togglePanel());
-  }
-
-  navigateToRelationships(): void {
-    const id = this.seriesContext.currentSeriesId();
-    this.navigateTo(id ? ['/series', id, 'relationships'] : ['/relationships']);
   }
 
   runAction(action: () => void): void {
@@ -125,11 +103,5 @@ export class AppExplorerComponent {
     if (!azureUrl) return null;
     const filename = azureUrl.split('/').pop();
     return filename ? `/api/image/${filename}` : null;
-  }
-
-  signOut(): void {
-    this.explorer.reset();
-    this.auth.signOut();
-    this.router.navigate(['/login']);
   }
 }

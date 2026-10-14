@@ -28,6 +28,7 @@
       "preload.js",
       "google-sign-in.js",
       "context-menu.js",
+      "app-menu.js",
       "offline.html",
       "package.json"
     ],
