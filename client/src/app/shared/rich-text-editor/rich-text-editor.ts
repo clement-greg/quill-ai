@@ -13,9 +13,9 @@ import { ChapterEditProposal, EntityLinkGroup } from '@shared/models/chat-sessio
 import { EntityService } from '@app/features/entities/entity.service';
 import { GrammarCheckService, GrammarError, SuggestedEntity } from './grammar-check.service';
 import {
-  MINIMAP_ISSUE_SELECTOR, MINIMAP_NOTE_COLOR, MINIMAP_SEARCH_ACTIVE_COLOR, MINIMAP_SEARCH_COLOR,
+  MINIMAP_ISSUE_SELECTOR, MINIMAP_MENTION_RGB, MINIMAP_NOTE_COLOR, MINIMAP_SEARCH_ACTIVE_COLOR, MINIMAP_SEARCH_COLOR,
   MINIMAP_SQUIGGLE_MIN_WIDTH, MinimapHit, MinimapTooltipContent, describeMinimapHit,
-  drawMinimapSquiggle, minimapHitTest, minimapIssueColor, truncateForTooltip,
+  drawMinimapSquiggle, mergeMinimapBands, minimapHitTest, minimapIssueColor, truncateForTooltip,
 } from './minimap-overlays';
 import { UserSettingsService } from '@app/core/services/user-settings.service';
 import { disableSpellcheckOnEntityReferences } from '@app/shared/entity-references';
@@ -259,6 +259,8 @@ export class RichTextEditorComponent implements OnInit, AfterViewInit, OnDestroy
   private minimapLines: { miniY: number; docTop: number; textNodes: Text[] }[] = [];
   /** Hit under the mouse at mousedown; activated on the following click. */
   private minimapPendingHit: MinimapHit | null = null;
+  /** Entity whose mentions the minimap lights up (e.g. while hovered in the facepile). */
+  private minimapEntityId: string | null = null;
   readonly minimapTooltip = signal<(MinimapTooltipContent & { top: number }) | null>(null);
   private stopEntitySpellcheckGuard: (() => void) | null = null;
 
@@ -688,6 +690,7 @@ export class RichTextEditorComponent implements OnInit, AfterViewInit, OnDestroy
       target.classList.add('entity-seek-active');
       target.scrollIntoView({ behavior: 'smooth', block: 'center' });
     }
+    this.scheduleMinimap();
     return spans.length;
   }
 
@@ -695,6 +698,14 @@ export class RichTextEditorComponent implements OnInit, AfterViewInit, OnDestroy
   clearEntitySeekHighlight(): void {
     this.editorRef?.nativeElement.querySelectorAll('.entity-seek-active')
       .forEach(el => el.classList.remove('entity-seek-active'));
+    this.scheduleMinimap();
+  }
+
+  /** Lights up every minimap line that mentions the entity; null clears it. */
+  setMinimapEntityHighlight(entityId: string | null): void {
+    if (this.minimapEntityId === entityId) return;
+    this.minimapEntityId = entityId;
+    this.scheduleMinimap();
   }
 
   /** Strip entity-quote spans before persisting (chapter-specific concern). */
@@ -3722,6 +3733,29 @@ export class RichTextEditorComponent implements OnInit, AfterViewInit, OnDestroy
     const barH = (r: DOMRect): number => Math.max(1.5, Math.min(r.height * scale * 0.5, 3.5));
     const visibleRects = (el: Element): DOMRect[] =>
       Array.from(el.getClientRects()).filter(r => r.width >= 1 && r.height >= 1);
+
+    // Mentions of the highlighted entity: a tinted band across each line, a tick
+    // at each mention, and a stronger band on the one the seek bar is on.
+    if (this.minimapEntityId) {
+      const bands: { y: number; h: number; active: boolean }[] = [];
+      ctx.fillStyle = `rgba(${MINIMAP_MENTION_RGB},0.95)`;
+      for (const ref of Array.from(editor.querySelectorAll<HTMLElement>('.entity-reference[data-id]'))) {
+        if (ref.getAttribute('data-id') !== this.minimapEntityId) continue;
+        const active = ref.classList.contains('entity-seek-active');
+        for (const r of visibleRects(ref)) {
+          const y = toMiniY(r);
+          if (y < 0 || y > H) continue;
+          const h = barH(r);
+          bands.push({ y, h, active });
+          const x = 4 + Math.max(0, Math.min(1, (r.left - contentLeft) / contentW)) * issueMaxW;
+          ctx.fillRect(Math.min(x, W - 7), y - 1, Math.max(3, (r.width / contentW) * issueMaxW), h + 2);
+        }
+      }
+      for (const b of mergeMinimapBands(bands)) {
+        ctx.fillStyle = `rgba(${MINIMAP_MENTION_RGB},${b.active ? 0.4 : 0.2})`;
+        ctx.fillRect(0, b.y - 2, W, b.h + 4);
+      }
+    }
 
     // Notes: amber gutter marks on the left edge.
     ctx.fillStyle = MINIMAP_NOTE_COLOR;

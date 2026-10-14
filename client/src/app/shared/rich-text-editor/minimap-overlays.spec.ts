@@ -5,6 +5,7 @@ import {
   MINIMAP_SQUIGGLE_MIN_WIDTH,
   MinimapHit,
   describeMinimapHit,
+  mergeMinimapBands,
   drawMinimapSquiggle,
   minimapHitTest,
   minimapIssueColor,
@@ -176,6 +177,35 @@ describe('minimap overlays', () => {
       expect(describeMinimapHit({ kind: 'note', el }, none)).toEqual({
         title: 'Note', text: '“the dunes”', color: MINIMAP_NOTE_COLOR, clickable: true,
       });
+    });
+  });
+
+  describe('mergeMinimapBands', () => {
+    it('returns an empty list for no bands', () => {
+      expect(mergeMinimapBands([])).toEqual([]);
+    });
+
+    it('merges bands on the same line, spanning both and keeping active', () => {
+      expect(mergeMinimapBands([
+        { y: 10, h: 2, active: false },
+        { y: 11, h: 3, active: true },
+      ])).toEqual([{ y: 10, h: 4, active: true }]);
+    });
+
+    it('keeps separate lines apart and sorts by y', () => {
+      expect(mergeMinimapBands([
+        { y: 30, h: 2, active: false },
+        { y: 10, h: 2, active: false },
+      ])).toEqual([
+        { y: 10, h: 2, active: false },
+        { y: 30, h: 2, active: false },
+      ]);
+    });
+
+    it('does not mutate its input', () => {
+      const input = [{ y: 10, h: 2, active: false }, { y: 10.5, h: 2, active: true }];
+      mergeMinimapBands(input);
+      expect(input[0]).toEqual({ y: 10, h: 2, active: false });
     });
   });
 });
