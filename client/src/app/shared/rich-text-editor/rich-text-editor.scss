@@ -169,6 +169,35 @@
   pointer-events: none;
 }
 
+.rte-minimap-tooltip {
+  position: absolute;
+  right: 88px; /* just left of the 80px minimap */
+  transform: translateY(-50%);
+  z-index: 6;
+  max-width: 320px;
+  padding: 6px 10px;
+  border-radius: 6px;
+  border-left: 3px solid var(--mat-sys-outline, #79747e);
+  background: var(--mat-sys-inverse-surface, #313033);
+  color: var(--mat-sys-inverse-on-surface, #f4eff4);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+  font-size: 0.78rem;
+  line-height: 1.4;
+  pointer-events: none;
+}
+
+.rte-minimap-tooltip-title {
+  font-weight: 600;
+  margin-bottom: 2px;
+  text-transform: capitalize;
+}
+
+.rte-minimap-tooltip-hint {
+  margin-top: 4px;
+  font-size: 0.7rem;
+  opacity: 0.75;
+}
+
 /* ── Image resize overlay ────────────────────────────── */
 .rte-image-resize-overlay {
   position: fixed;
@@ -611,6 +640,10 @@
 
 /* ── Mobile: hide minimap, show native scrollbar ────── */
 @media (max-width: 768px) {
+  .rte-minimap-tooltip {
+    display: none;
+  }
+
   .rte-minimap {
     display: none;
   }

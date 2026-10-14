@@ -12,6 +12,11 @@ import { Entity, EntityReference, isVideoUrl } from '@shared/models/entity.model
 import { ChapterEditProposal, EntityLinkGroup } from '@shared/models/chat-session.model';
 import { EntityService } from '@app/features/entities/entity.service';
 import { GrammarCheckService, GrammarError, SuggestedEntity } from './grammar-check.service';
+import {
+  MINIMAP_ISSUE_SELECTOR, MINIMAP_NOTE_COLOR, MINIMAP_SEARCH_ACTIVE_COLOR, MINIMAP_SEARCH_COLOR,
+  MINIMAP_SQUIGGLE_MIN_WIDTH, MinimapHit, MinimapTooltipContent, describeMinimapHit,
+  drawMinimapSquiggle, minimapHitTest, minimapIssueColor, truncateForTooltip,
+} from './minimap-overlays';
 import { UserSettingsService } from '@app/core/services/user-settings.service';
 import { disableSpellcheckOnEntityReferences } from '@app/shared/entity-references';
 
@@ -181,6 +186,7 @@ export class RichTextEditorComponent implements OnInit, AfterViewInit, OnDestroy
     const editorEl = this.editorRef?.nativeElement;
     if (editorEl?.contains(range.commonAncestorContainer)) {
       this.externalInsertRange = range.cloneRange();
+      this.scheduleMinimap();
     }
   };
 
@@ -247,6 +253,13 @@ export class RichTextEditorComponent implements OnInit, AfterViewInit, OnDestroy
   private minimapDragging = false;
   private minimapRenderTimer: ReturnType<typeof setTimeout> | null = null;
   private minimapResizeObserver: ResizeObserver | null = null;
+  /** Clickable squiggles and note markers from the last render. */
+  private minimapHits: MinimapHit[] = [];
+  /** Rendered text lines from the last render, for the hover tooltip. */
+  private minimapLines: { miniY: number; docTop: number; textNodes: Text[] }[] = [];
+  /** Hit under the mouse at mousedown; activated on the following click. */
+  private minimapPendingHit: MinimapHit | null = null;
+  readonly minimapTooltip = signal<(MinimapTooltipContent & { top: number }) | null>(null);
   private stopEntitySpellcheckGuard: (() => void) | null = null;
 
   private _editorContent = '';
@@ -562,6 +575,7 @@ export class RichTextEditorComponent implements OnInit, AfterViewInit, OnDestroy
     }
     if (this.editorRef) this.editorContent = this.editorRef.nativeElement.innerHTML;
     this.scheduleEmit();
+    this.scheduleMinimap();
     return selectedText;
   }
 
@@ -644,6 +658,7 @@ export class RichTextEditorComponent implements OnInit, AfterViewInit, OnDestroy
     parent.removeChild(span);
     this.editorContent = editor.innerHTML;
     this.scheduleEmit();
+    this.scheduleMinimap();
   }
 
   scrollToNoteSpan(noteId: string): void {
@@ -746,6 +761,7 @@ export class RichTextEditorComponent implements OnInit, AfterViewInit, OnDestroy
       return false; // range crosses element boundaries
     }
     this.reviewSuggestions.set(s.id, s);
+    this.scheduleMinimap();
     return true;
   }
 
@@ -756,6 +772,7 @@ export class RichTextEditorComponent implements OnInit, AfterViewInit, OnDestroy
     const span = this.editorRef?.nativeElement
       .querySelector<HTMLElement>(`.quill-suggestion-mark[data-suggestion-id="${id}"]`);
     if (span) this.unwrapElement(span);
+    this.scheduleMinimap();
   }
 
   /** Applies a suggestion's replacement and removes its decoration. Falls back
@@ -805,6 +822,7 @@ export class RichTextEditorComponent implements OnInit, AfterViewInit, OnDestroy
     this.editorRef?.nativeElement
       .querySelectorAll<HTMLElement>('.quill-suggestion-mark')
       .forEach(span => this.unwrapElement(span));
+    this.scheduleMinimap();
   }
 
   /** Visually emphasizes a decoration in place, without scrolling (hover sync). */
@@ -1131,6 +1149,7 @@ export class RichTextEditorComponent implements OnInit, AfterViewInit, OnDestroy
 
     this.searchMarks = marks;
     this.searchActive = marks.length > 0;
+    this.scheduleMinimap();
     return marks.length;
   }
 
@@ -1147,6 +1166,7 @@ export class RichTextEditorComponent implements OnInit, AfterViewInit, OnDestroy
     this.editorContent = editor.innerHTML;
     this.searchMarks = [];
     this.searchActive = false;
+    this.scheduleMinimap();
   }
 
   /** Activate the nth match (0-based) and scroll it into view. */
@@ -1154,6 +1174,7 @@ export class RichTextEditorComponent implements OnInit, AfterViewInit, OnDestroy
     this.searchMarks.forEach((m, i) => m.classList.toggle('search-match-active', i === index));
     const active = this.searchMarks[index];
     if (active) active.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    this.scheduleMinimap();
   }
 
   /** Returns the bounding rect of the current selection, or null. */
@@ -2830,10 +2851,12 @@ export class RichTextEditorComponent implements OnInit, AfterViewInit, OnDestroy
       parent.removeChild(mark);
     });
     editor.normalize();
+    this.scheduleMinimap();
   }
 
   private applyGrammarMarks(errors: GrammarError[]): void {
     for (const error of errors) this.markFirstOccurrence(error);
+    this.scheduleMinimap();
   }
 
   private markFirstOccurrence(error: GrammarError): void {
@@ -3336,13 +3359,99 @@ export class RichTextEditorComponent implements OnInit, AfterViewInit, OnDestroy
 
   onMinimapMouseDown(event: MouseEvent): void {
     event.preventDefault();
+    // A press on a squiggle or note marker opens it on click instead of scrolling.
+    this.minimapPendingHit = minimapHitTest(this.minimapHits, event.offsetX, event.offsetY);
+    if (this.minimapPendingHit) return;
+    this.minimapTooltip.set(null);
     this.minimapDragging = true;
     this.minimapScrollTo(event.offsetY);
   }
 
   onMinimapMouseMove(event: MouseEvent): void {
-    if (!this.minimapDragging) return;
-    this.minimapScrollTo(event.offsetY);
+    if (this.minimapDragging) {
+      this.minimapScrollTo(event.offsetY);
+      return;
+    }
+    this.updateMinimapTooltip(event.offsetX, event.offsetY);
+  }
+
+  onMinimapMouseLeave(): void {
+    this.minimapTooltip.set(null);
+  }
+
+  /** Click on a squiggle or note marker: scroll it into view and open it. */
+  onMinimapClick(event: MouseEvent): void {
+    const hit = this.minimapPendingHit;
+    this.minimapPendingHit = null;
+    if (!hit || !hit.el.isConnected) return;
+    this.minimapTooltip.set(null);
+    if (hit.kind === 'note') {
+      const noteId = hit.el.getAttribute('data-note-id');
+      if (noteId) this.scrollToNoteSpan(noteId);
+      return;
+    }
+    // Instant scroll so the popover anchors to the mark's final position.
+    hit.el.scrollIntoView({ behavior: 'auto', block: 'center' });
+    if (hit.kind === 'grammar') {
+      this.showGrammarPopover(event, hit.el);
+    } else {
+      const data = this.reviewSuggestions.get(hit.el.getAttribute('data-suggestion-id') ?? '');
+      if (data) this.showReviewPopover(hit.el, data);
+    }
+    this.renderMinimap();
+  }
+
+  private updateMinimapTooltip(x: number, y: number): void {
+    const H = this.editorRef?.nativeElement.clientHeight ?? 0;
+    // Keep the tooltip's centre far enough from the edges that it stays inside the editor.
+    const top = Math.max(28, Math.min(y, H - 28));
+    const hit = minimapHitTest(this.minimapHits, x, y);
+    if (hit) {
+      this.minimapTooltip.set({ ...describeMinimapHit(hit, id => this.reviewSuggestions.get(id)), top });
+      return;
+    }
+    const text = this.minimapLineTextAt(y);
+    this.minimapTooltip.set(text ? { text: truncateForTooltip(text, 240), top } : null);
+  }
+
+  /** Text of the rendered line nearest minimap y (within a few px), or ''. */
+  private minimapLineTextAt(y: number): string {
+    const editor = this.editorRef?.nativeElement;
+    if (!editor || this.minimapLines.length === 0) return '';
+    let line = this.minimapLines[0];
+    for (const l of this.minimapLines) if (Math.abs(l.miniY - y) < Math.abs(line.miniY - y)) line = l;
+    if (Math.abs(line.miniY - y) > 6) return '';
+
+    // Characters lay out top-to-bottom in DOM order, so binary-search the
+    // first and last characters whose box sits on this line.
+    const chars: { node: Text; offset: number }[] = [];
+    for (const node of line.textNodes) {
+      for (let i = 0; i < (node.textContent ?? '').length; i++) chars.push({ node, offset: i });
+    }
+    if (chars.length === 0) return '';
+    const viewportTop = line.docTop - editor.scrollTop + editor.getBoundingClientRect().top;
+    const tol = (parseFloat(getComputedStyle(editor).lineHeight) || 20) * 0.4;
+    const range = document.createRange();
+    const charTop = (i: number): number => {
+      range.setStart(chars[i].node, chars[i].offset);
+      range.setEnd(chars[i].node, chars[i].offset + 1);
+      return range.getClientRects()[0]?.top ?? range.getBoundingClientRect().top;
+    };
+    const firstAtOrAfter = (limit: number): number => {
+      let lo = 0, hi = chars.length;
+      while (lo < hi) {
+        const mid = (lo + hi) >> 1;
+        if (charTop(mid) < limit) lo = mid + 1; else hi = mid;
+      }
+      return lo;
+    };
+    const start = firstAtOrAfter(viewportTop - tol);
+    const end = firstAtOrAfter(viewportTop + tol);
+    if (end <= start) return '';
+    range.setStart(chars[start].node, chars[start].offset);
+    const last = chars[end - 1];
+    range.setEnd(last.node, last.offset + 1);
+    return range.toString();
   }
 
   private minimapScrollTo(minimapY: number): void {
@@ -3389,6 +3498,8 @@ export class RichTextEditorComponent implements OnInit, AfterViewInit, OnDestroy
     const totalH = editor.scrollHeight;
     if (totalH <= 0) return;
     const scale = H / totalH;
+    this.minimapHits = [];
+    this.minimapLines = [];
 
     // Background: read from the minimap container so the browser resolves light-dark() and
     // CSS variables before we hand the value to canvas, which cannot parse them itself.
@@ -3584,6 +3695,7 @@ export class RichTextEditorComponent implements OnInit, AfterViewInit, OnDestroy
         const miniH = Math.max(1.5, Math.min(line.height * scale * 0.5, 3.5));
 
         ctx.fillRect(lineX, miniY, lineW, miniH);
+        this.minimapLines.push({ miniY: miniY + miniH / 2, docTop: lineDocTop, textNodes: row.textNodes });
       }
     }
 
@@ -3601,6 +3713,54 @@ export class RichTextEditorComponent implements OnInit, AfterViewInit, OnDestroy
       }
     }
 
+    // Overlays: x maps through the editor's content box, which is what block rows span.
+    const edStyle = getComputedStyle(editor);
+    const contentLeft = editorRect.left + editor.clientLeft + (parseFloat(edStyle.paddingLeft) || 0);
+    const contentW = (editor.clientWidth - (parseFloat(edStyle.paddingLeft) || 0) - (parseFloat(edStyle.paddingRight) || 0)) || 1;
+    const issueMaxW = W - 8;
+    const toMiniY = (r: DOMRect): number => (r.top - editorRect.top + editor.scrollTop) * scale;
+    const barH = (r: DOMRect): number => Math.max(1.5, Math.min(r.height * scale * 0.5, 3.5));
+    const visibleRects = (el: Element): DOMRect[] =>
+      Array.from(el.getClientRects()).filter(r => r.width >= 1 && r.height >= 1);
+
+    // Notes: amber gutter marks on the left edge.
+    ctx.fillStyle = MINIMAP_NOTE_COLOR;
+    for (const note of Array.from(editor.querySelectorAll<HTMLElement>('.note-indicator[data-note-id]'))) {
+      const rects = visibleRects(note);
+      if (rects.length === 0) continue;
+      const y0 = toMiniY(rects[0]);
+      const y1 = toMiniY(rects[rects.length - 1]) + barH(rects[rects.length - 1]);
+      if (y1 < 0 || y0 > H) continue;
+      ctx.fillRect(0, y0 - 1, 3, Math.max(4, y1 - y0 + 2));
+      this.minimapHits.push({ kind: 'note', el: note, x0: 0, x1: 10, y0: y0 - 4, y1: Math.max(y1, y0 + 4) + 4 });
+    }
+
+    // Squiggles under lines holding grammar errors or Quill Editor suggestions.
+    for (const mark of Array.from(editor.querySelectorAll<HTMLElement>(MINIMAP_ISSUE_SELECTOR))) {
+      const color = minimapIssueColor(mark);
+      const kind = mark.matches('mark.grammar-error') ? 'grammar' : 'suggestion';
+      for (const r of visibleRects(mark)) {
+        const miniY = toMiniY(r);
+        if (miniY < 0 || miniY > H) continue;
+        const x = Math.min(4 + Math.max(0, (r.left - contentLeft) / contentW) * issueMaxW, W - 4 - MINIMAP_SQUIGGLE_MIN_WIDTH);
+        const w = Math.max(MINIMAP_SQUIGGLE_MIN_WIDTH, (r.width / contentW) * issueMaxW);
+        const y = miniY + barH(r) + 3;
+        drawMinimapSquiggle(ctx, x, y, w, color);
+        this.minimapHits.push({ kind, el: mark, x0: x - 3, x1: x + w + 3, y0: y - 5, y1: y + 3 });
+      }
+    }
+
+    // Search matches: ticks on the right edge, the active match larger and brighter.
+    for (const match of Array.from(editor.querySelectorAll<HTMLElement>('mark[data-search-match]'))) {
+      const r = visibleRects(match)[0];
+      if (!r) continue;
+      const miniY = toMiniY(r);
+      if (miniY < 0 || miniY > H) continue;
+      const active = match.classList.contains('search-match-active');
+      ctx.fillStyle = active ? MINIMAP_SEARCH_ACTIVE_COLOR : MINIMAP_SEARCH_COLOR;
+      ctx.fillRect(W - (active ? 8 : 6), miniY - (active ? 1 : 0), active ? 8 : 6, active ? 4 : 2.5);
+    }
+
     // Viewport indicator — probe --mat-sys-primary via a temporary element so the browser
     // resolves light-dark() before we pass the colour to canvas.
     const primaryProbe = document.createElement('span');
@@ -3616,6 +3776,38 @@ export class RichTextEditorComponent implements OnInit, AfterViewInit, OnDestroy
     ctx.strokeStyle = `rgba(${pr},${pg},${pb},0.65)`;
     ctx.lineWidth = 1;
     ctx.strokeRect(0.5, vpTop + 0.5, W - 1, vpH - 1);
+
+    // Caret: a line across the minimap at the cursor's position, with a tick at its column.
+    const caret = this.minimapCaretRect(editor);
+    if (caret) {
+      const cy = toMiniY(caret) + barH(caret) / 2;
+      if (cy >= 0 && cy <= H) {
+        const focused = document.activeElement === editor;
+        ctx.fillStyle = `rgba(${pr},${pg},${pb},${focused ? 0.55 : 0.3})`;
+        ctx.fillRect(0, cy - 0.5, W, 1);
+        const cx = 4 + Math.max(0, Math.min(1, (caret.left - contentLeft) / contentW)) * issueMaxW;
+        ctx.fillStyle = `rgba(${pr},${pg},${pb},${focused ? 1 : 0.5})`;
+        ctx.fillRect(Math.min(cx, W - 2) - 1, cy - 2.5, 2, 5);
+      }
+    }
+  }
+
+  /** Viewport rect of the caret (selection focus) when it sits in the editor, else null. */
+  private minimapCaretRect(editor: HTMLElement): DOMRect | null {
+    const sel = window.getSelection();
+    if (!sel || sel.rangeCount === 0 || !sel.focusNode || !editor.contains(sel.focusNode)) return null;
+    const range = document.createRange();
+    range.setStart(sel.focusNode, sel.focusOffset);
+    range.collapse(true);
+    const rect = range.getClientRects()[0];
+    if (rect && rect.height > 0) return rect;
+    // Collapsed ranges in empty blocks have no client rects — use the block instead.
+    const el = sel.focusNode.nodeType === Node.ELEMENT_NODE
+      ? (sel.focusNode as HTMLElement).childNodes[sel.focusOffset] ?? sel.focusNode
+      : sel.focusNode.parentElement;
+    if (!(el instanceof HTMLElement) || el === editor) return null;
+    const r = el.getBoundingClientRect();
+    return r.height > 0 ? r : null;
   }
 
   private minimapParseRgb(color: string): [number, number, number] {
