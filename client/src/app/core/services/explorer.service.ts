@@ -28,7 +28,9 @@ export class ExplorerService {
   // Top-level series list (loaded once on first open)
   readonly series = signal<Series[]>([]);
   readonly seriesLoading = signal(false);
-  private seriesLoaded = false;
+  private readonly seriesLoaded = signal(false);
+  /** True once the tree has loaded since the last reset. */
+  readonly libraryLoaded = this.seriesLoaded.asReadonly();
 
   // Expanded node ids
   readonly expandedSeries = signal<Set<string>>(new Set());
@@ -55,7 +57,7 @@ export class ExplorerService {
 
   open(): void {
     this.isOpen.set(true);
-    this.loadSeries();
+    this.loadLibrary();
   }
 
   close(): void {
@@ -75,9 +77,10 @@ export class ExplorerService {
    * bulk requests on first open, grouping books/chapters into the caches by
    * parent id. Loading everything up front is what lets the filter reach nodes
    * that haven't been manually expanded. Subsequent opens reuse the caches.
+   * Public so the desktop app's Library menu can fill without opening the panel.
    */
-  private loadSeries(): void {
-    if (this.seriesLoaded || this.seriesLoading()) return;
+  loadLibrary(): void {
+    if (this.seriesLoaded() || this.seriesLoading()) return;
     this.seriesLoading.set(true);
     forkJoin({
       series: this.seriesService.getAll(),
@@ -115,11 +118,18 @@ export class ExplorerService {
         }
         this.chaptersByBook.set(chaptersByBook);
 
-        this.seriesLoaded = true;
+        this.seriesLoaded.set(true);
         this.seriesLoading.set(false);
       },
       error: () => this.seriesLoading.set(false),
     });
+  }
+
+  /** Discards the cached tree and fetches it again (picks up new books and chapters). */
+  refreshLibrary(): void {
+    if (this.seriesLoading()) return;
+    this.seriesLoaded.set(false);
+    this.loadLibrary();
   }
 
   toggleSeries(seriesId: string): void {
@@ -282,7 +292,7 @@ export class ExplorerService {
   reset(): void {
     this.isOpen.set(false);
     this.series.set([]);
-    this.seriesLoaded = false;
+    this.seriesLoaded.set(false);
     this.seriesLoading.set(false);
     this.expandedSeries.set(new Set());
     this.expandedBooks.set(new Set());

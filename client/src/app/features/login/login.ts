@@ -4,6 +4,7 @@ import { Router } from '@angular/router';
 import { MatCardModule } from '@angular/material/card';
 import { AuthService } from '@app/core/auth/auth.service';
 import { environment } from '../../../environments/environment';
+import { getQuillDesktop } from '@app/core/desktop/quill-desktop';
 
 /** Lines the robot cycles through while the user is on the login page. */
 const ROBOT_MESSAGES = [
@@ -28,11 +29,6 @@ const ROBOT_MESSAGES = [
   'Sign in before the muse wanders off again!',
   'The best time to write was yesterday. The second best is now.',
 ] as const;
-
-/** Bridge exposed by the Electron preload script (electron/preload.js). */
-interface QuillDesktop {
-  signInWithGoogle(): Promise<string>;
-}
 
 /**
  * Where to hand a Google credential when this page was opened in the system
@@ -78,9 +74,7 @@ export class LoginComponent implements AfterViewInit {
   private readonly ngZone = inject(NgZone);
   private readonly destroyRef = inject(DestroyRef);
 
-  protected readonly desktop = isPlatformBrowser(this.platformId)
-    ? (window as Window & { quillDesktop?: QuillDesktop }).quillDesktop ?? null
-    : null;
+  protected readonly desktop = isPlatformBrowser(this.platformId) ? getQuillDesktop() : null;
   protected readonly handoff = this.readDesktopHandoff();
   protected readonly desktopSigningIn = signal(false);
   protected readonly desktopError = signal('');

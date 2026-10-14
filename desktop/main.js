@@ -13,6 +13,7 @@ const fs = require('fs');
 const http = require('http');
 const { signInWithGoogle } = require('./google-sign-in');
 const { attachContextMenu } = require('./context-menu');
+const { buildAppMenuTemplate, sanitizeModel, EMPTY_MODEL } = require('./app-menu');
 
 const { quill } = require('./package.json');
 
@@ -26,6 +27,7 @@ const ORIGIN = new URL(APP_URL).origin;
 
 let server = null;
 let mainWindow = null;
+let menuModel = EMPTY_MODEL;
 
 function startServer() {
   const entry = path.join(ROOT, 'dist', 'server', 'index.js');
@@ -112,7 +114,12 @@ function createWindow() {
   });
 
   mainWindow.once('ready-to-show', () => mainWindow.show());
-  mainWindow.on('closed', () => (mainWindow = null));
+  mainWindow.on('closed', () => {
+    mainWindow = null;
+    // The macOS menu outlives the window; don't leave it offering a stale library.
+    menuModel = EMPTY_MODEL;
+    updateAppMenu();
+  });
   mainWindow.loadURL(APP_URL);
 }
 
@@ -136,10 +143,35 @@ ipcMain.handle('google-sign-in', async () => {
   return credential;
 });
 
+function sendMenuCommand(command) {
+  mainWindow?.webContents.send('menu-command', command);
+}
+
+function updateAppMenu() {
+  const history = () => mainWindow?.webContents.navigationHistory;
+  const template = buildAppMenuTemplate(
+    menuModel,
+    {
+      send: sendMenuCommand,
+      goBack: () => history()?.canGoBack() && history().goBack(),
+      goForward: () => history()?.canGoForward() && history().goForward(),
+    },
+    { platform: process.platform, isDev: !app.isPackaged, appName: app.getName() },
+  );
+  Menu.setApplicationMenu(Menu.buildFromTemplate(template));
+}
+
+// The client describes what the menus should show (see app-menu.js). Only the
+// app's own window, on the app's own origin, may change them.
+ipcMain.on('menu-model', (event, model) => {
+  if (!mainWindow || event.sender !== mainWindow.webContents) return;
+  if (!event.senderFrame?.url.startsWith(ORIGIN)) return;
+  menuModel = sanitizeModel(model);
+  updateAppMenu();
+});
+
 app.whenReady().then(async () => {
-  if (process.platform === 'darwin') Menu.setApplicationMenu(Menu.buildFromTemplate([
-    { role: 'appMenu' }, { role: 'editMenu' }, { role: 'viewMenu' }, { role: 'windowMenu' },
-  ]));
+  updateAppMenu();
 
   // The PWA service worker would keep serving the previous build after a
   // rebuild, and buys nothing when the server is local, so start clean.

@@ -82,6 +82,41 @@ describe('ExplorerService', () => {
     });
   });
 
+  describe('loadLibrary / refreshLibrary', () => {
+    it('loads the tree without opening the panel', () => {
+      service.loadLibrary();
+      expect(service.isOpen()).toBe(false);
+      expect(service.libraryLoaded()).toBe(true);
+      expect(service.series().map(s => s.id)).toEqual(['s-dune', 's-culture']);
+    });
+
+    it('reports not loaded before the first load and after a failed one', () => {
+      expect(service.libraryLoaded()).toBe(false);
+      seriesStub.getAll.mockReturnValue(throwError(() => new Error('offline')));
+      service.loadLibrary();
+      expect(service.libraryLoaded()).toBe(false);
+    });
+
+    it('refresh fetches the tree again and picks up new chapters', () => {
+      service.loadLibrary();
+      chapterStub.getAll.mockReturnValue(of([...chapters, { id: 'c-new', title: 'New', bookId: 'b-dune', sortOrder: 3 }]));
+
+      service.refreshLibrary();
+
+      expect(seriesStub.getAll).toHaveBeenCalledTimes(2);
+      expect(service.chaptersFor('b-dune').map(c => c.id)).toEqual(['c-spice', 'c-storm', 'c-new']);
+      expect(service.libraryLoaded()).toBe(true);
+    });
+
+    it('reset marks the library unloaded so the next load fetches again', () => {
+      service.loadLibrary();
+      service.reset();
+      expect(service.libraryLoaded()).toBe(false);
+      service.loadLibrary();
+      expect(seriesStub.getAll).toHaveBeenCalledTimes(2);
+    });
+  });
+
   describe('filtering', () => {
     beforeEach(() => service.open());
 

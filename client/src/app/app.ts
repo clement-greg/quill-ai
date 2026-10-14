@@ -12,6 +12,7 @@ import { AiAssistantComponent } from '@app/features/ai/ai-assistant/ai-assistant
 import { AiAssistantService } from '@app/features/ai/ai-assistant.service';
 import { UserSettingsService } from '@app/core/services/user-settings.service';
 import { ExplorerService } from '@app/core/services/explorer.service';
+import { DesktopMenuService } from '@app/core/desktop/desktop-menu.service';
 import { BreadcrumbDropdownComponent } from '@app/shared/breadcrumb-dropdown/breadcrumb-dropdown';
 import { AppExplorerComponent } from '@app/shared/app-explorer/app-explorer';
 import { QuickChatComponent } from '@app/features/ai/quick-chat/quick-chat';
@@ -36,6 +37,7 @@ export class App implements OnInit, OnDestroy {
   private router = inject(Router);
   private quickChat = inject(QuickChatService);
   settings = inject(UserSettingsService);
+  private desktopMenu = inject(DesktopMenuService);
   readonly isResizing = signal(false);
 
   /** Global shortcut: Ctrl/Cmd+I toggles the quick-launch "Ask Quill" chat. */
@@ -155,6 +157,7 @@ export class App implements OnInit, OnDestroy {
 
   ngOnInit(): void {
     this.updateCheck.start();
+    this.desktopMenu.start();
   }
 
   ngOnDestroy(): void {
