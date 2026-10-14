@@ -129,3 +129,33 @@ export function describeMinimapHit(
   }
   return { title: 'Note', text: quoted, color: MINIMAP_NOTE_COLOR, clickable: true };
 }
+
+/** Highlight for the lines mentioning the hovered entity; distinct from the
+ *  teal viewport/caret and the warm issue, note and search colours. */
+export const MINIMAP_MENTION_RGB = '142, 68, 230';
+
+/** One horizontal band on the minimap, in CSS px. */
+export interface MinimapBand {
+  y: number;
+  h: number;
+  active: boolean;
+}
+
+/** Merges bands on the same minimap line (tops within `tol` px) so several
+ *  mentions on one line don't stack their translucent fills. The merged band
+ *  spans all of them and is active if any of them is. Output is sorted by y. */
+export function mergeMinimapBands(bands: readonly MinimapBand[], tol = 1.5): MinimapBand[] {
+  const sorted = [...bands].sort((a, b) => a.y - b.y);
+  const out: MinimapBand[] = [];
+  for (const b of sorted) {
+    const last = out[out.length - 1];
+    if (last && b.y - last.y <= tol) {
+      const bottom = Math.max(last.y + last.h, b.y + b.h);
+      last.h = bottom - last.y;
+      last.active ||= b.active;
+    } else {
+      out.push({ ...b });
+    }
+  }
+  return out;
+}

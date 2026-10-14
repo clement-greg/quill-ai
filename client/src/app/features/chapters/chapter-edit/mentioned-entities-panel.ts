@@ -8,8 +8,8 @@ import { RichTextEditorComponent } from '@app/shared/rich-text-editor/rich-text-
  * stack of overlapping avatars (plus a "+N" overflow badge); hovering or
  * focusing the panel fans the avatars out horizontally. Hovering an avatar
  * shows a seeker bar to step through that entity's mentions in the editor
- * (scroll + highlight); clicking an avatar emits entitySelected so the host
- * can open its details.
+ * (scroll + highlight) and lights up their lines on the editor minimap;
+ * clicking an avatar emits entitySelected so the host can open its details.
  */
 @Component({
   selector: 'app-mentioned-entities-panel',
@@ -265,6 +265,7 @@ export class MentionedEntitiesPanelComponent {
   setActive(entity: Entity): void {
     if (this.activeEntity()?.id === entity.id) return;
     this.editor()?.clearEntitySeekHighlight();
+    this.editor()?.setMinimapEntityHighlight(entity.id);
     this.activeEntity.set(entity);
     this.seekIndex.set(-1);
     this.seekCount.set(this.editor()?.countEntityReferences(entity.id) ?? 0);
@@ -275,6 +276,7 @@ export class MentionedEntitiesPanelComponent {
     this.activeEntity.set(null);
     this.seekIndex.set(-1);
     this.editor()?.clearEntitySeekHighlight();
+    this.editor()?.setMinimapEntityHighlight(null);
   }
 
   seek(direction: 1 | -1): void {
