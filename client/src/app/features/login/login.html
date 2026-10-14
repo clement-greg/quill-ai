@@ -28,9 +28,24 @@
           role="img"
           aria-label="Quill AI robot assistant"
         ></lottie-player>
-        <p>Please sign in with your Google account to access the app.</p>
+        @if (handoff) {
+          <p>Sign in with Google to continue in the Quill AI desktop app.</p>
+        } @else {
+          <p>Please sign in with your Google account to access the app.</p>
+        }
       </div>
-      <div #googleBtn class="google-btn-wrapper"></div>
+      @if (desktop) {
+        <div class="google-btn-wrapper desktop-sign-in">
+          <button type="button" class="desktop-google-btn" [disabled]="desktopSigningIn()" (click)="signInWithDesktop()">
+            <img src="https://www.gstatic.com/firebasejs/ui/2.0.0/images/auth/google.svg" alt="" width="18" height="18" />
+            <span>{{ desktopSigningIn() ? 'Finish signing in in your browser…' : 'Sign in with Google' }}</span>
+          </button>
+          @if (desktopError()) {
+            <p class="desktop-error" role="alert">{{ desktopError() }}</p>
+          }
+        </div>
+      }
+      <div #googleBtn class="google-btn-wrapper" [hidden]="desktop"></div>
     </mat-card-content>
   </mat-card>
 </div>

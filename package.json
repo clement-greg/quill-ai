@@ -15,7 +15,9 @@
     "test:watch": "jest --watch",
     "test:e2e": "npx playwright test",
     "test:e2e:ui": "npx playwright test --ui",
-    "auth:login": "node scripts/auth-login.js"
+    "auth:login": "node scripts/auth-login.js",
+    "desktop": "npm run build && cd desktop && npm start",
+    "desktop:dev": "cd desktop && QUILL_URL=http://localhost:6258 npm start"
   },
   "jest": {
     "testEnvironment": "node",

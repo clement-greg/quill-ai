@@ -1,0 +1,68 @@
+{
+  "name": "quill-ai-desktop",
+  "productName": "Quill AI",
+  "version": "1.0.0",
+  "description": "Quill AI desktop app",
+  "author": "Greg Clement",
+  "private": true,
+  "main": "main.js",
+  "quill": {
+    "hostedUrl": "https://quill-ai-gjgegbgrgjdmdzbv.westus-01.azurewebsites.net"
+  },
+  "scripts": {
+    "start": "electron .",
+    "test": "node --test",
+    "dist:mac": "electron-builder --mac",
+    "dist:win": "electron-builder --win",
+    "dist": "electron-builder --mac --win"
+  },
+  "build": {
+    "appId": "com.quillai.desktop",
+    "productName": "Quill AI",
+    "directories": {
+      "output": "release",
+      "buildResources": "build"
+    },
+    "files": [
+      "main.js",
+      "preload.js",
+      "google-sign-in.js",
+      "offline.html",
+      "package.json"
+    ],
+    "artifactName": "Quill-AI-${version}-${os}-${arch}.${ext}",
+    "mac": {
+      "target": [
+        {
+          "target": "dmg",
+          "arch": [
+            "universal"
+          ]
+        }
+      ],
+      "category": "public.app-category.productivity",
+      "identity": "-",
+      "hardenedRuntime": false
+    },
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ]
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "shortcutName": "Quill AI"
+    }
+  },
+  "devDependencies": {
+    "electron": "^38.8.6",
+    "electron-builder": "^26.15.3"
+  }
+}

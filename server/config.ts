@@ -73,7 +73,9 @@ export const FOUNDRY_CHAT_TIER_DEFAULTS = {
 } as const;
 
 function loadConfig(): AppConfig {
-  const localPath = path.join(__dirname, '..', '_private', 'config.json');
+  // QUILL_CONFIG_PATH lets a host that runs the compiled server (the Electron
+  // shell) point at the config file, since dist/server has no _private sibling.
+  const localPath = process.env['QUILL_CONFIG_PATH'] || path.join(__dirname, '..', '_private', 'config.json');
   if (fs.existsSync(localPath)) {
     const local = JSON.parse(fs.readFileSync(localPath, 'utf-8')) as AppConfig;
     local.foundry.apiVersion ||= FOUNDRY_API_VERSION_DEFAULT;
