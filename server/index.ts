@@ -1,5 +1,4 @@
 import express, { Request, Response } from 'express';
-import path from 'path';
 import { HelloResponse } from '../shared/models';
 import { initDatabase } from './services/cosmos';
 import { startGenerationCollector } from './services/generation-collector';
@@ -38,6 +37,7 @@ import chapterEditorReviewRoutes from './routes/chapter-editor-review.routes';
 import thoughtsRoutes from './routes/thoughts.routes';
 import appSettingsRoutes from './routes/app-settings.routes';
 import diagnosticsRoutes from './routes/diagnostics.routes';
+import { clientRoutes, findClientDir } from './client-static';
 
 const app = express();
 const PORT = process.env['PORT'] || 3200;
@@ -109,13 +109,8 @@ app.use('/api/thoughts', thoughtsRoutes);
 app.use('/api/app-settings', appSettingsRoutes);
 app.use('/api/diagnostics', diagnosticsRoutes);
 
-// Serve Angular static files
-app.use(express.static(path.join(__dirname, '../../client/dist/client/browser')));
-
-// Fallback to Angular index.html for client-side routing
-app.get('*path', (_req: Request, res: Response) => {
-  res.sendFile(path.join(__dirname, '../../client/dist/client/browser/index.html'));
-});
+// Serve the Angular build, with index.html as the fallback for client-side routes
+app.use(clientRoutes(findClientDir(__dirname)));
 
 initDatabase()
   .then(() => {
