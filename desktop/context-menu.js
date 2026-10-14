@@ -6,6 +6,7 @@
 // call preventDefault, and Electron doesn't raise `context-menu` for those.
 
 const { Menu, clipboard } = require('electron');
+const spelling = require('./spelling');
 
 /**
  * Builds the menu template for a `context-menu` event. Pure apart from the
@@ -49,11 +50,22 @@ function buildContextMenuTemplate(params, webContents, { isDev = false } = {}) {
   return sections.flatMap((section, i) => (i === 0 ? section : [{ type: 'separator' }, ...section]));
 }
 
+/** Fills in suggestions the OS spellchecker left empty (see spelling.js). */
+async function withSuggestions(params, suggest) {
+  if (!params.isEditable || !params.misspelledWord || params.dictionarySuggestions?.length) return params;
+  try {
+    return { ...params, dictionarySuggestions: await suggest(params.misspelledWord) };
+  } catch (err) {
+    console.error('[context-menu] fallback spelling suggestions failed:', err);
+    return params;
+  }
+}
+
 function attachContextMenu(webContents, options) {
-  webContents.on('context-menu', (_event, params) => {
-    const template = buildContextMenuTemplate(params, webContents, options);
+  webContents.on('context-menu', async (_event, params) => {
+    const template = buildContextMenuTemplate(await withSuggestions(params, spelling.suggest), webContents, options);
     if (template.length) Menu.buildFromTemplate(template).popup();
   });
 }
 
-module.exports = { attachContextMenu, buildContextMenuTemplate };
+module.exports = { attachContextMenu, buildContextMenuTemplate, withSuggestions };
