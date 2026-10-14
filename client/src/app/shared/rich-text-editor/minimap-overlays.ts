@@ -159,3 +159,11 @@ export function mergeMinimapBands(bands: readonly MinimapBand[], tol = 1.5): Min
   }
   return out;
 }
+
+/** Converts a wheel event's vertical delta to pixels. `deltaMode` is 0 for
+ *  pixels (trackpads), 1 for lines and 2 for pages (some mouse wheels). */
+export function wheelDeltaToPixels(deltaY: number, deltaMode: number, lineHeight: number, pageHeight: number): number {
+  if (deltaMode === 1) return deltaY * lineHeight;
+  if (deltaMode === 2) return deltaY * pageHeight;
+  return deltaY;
+}

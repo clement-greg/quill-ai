@@ -28,6 +28,7 @@
     (mousedown)="onMinimapMouseDown($event)"
     (mousemove)="onMinimapMouseMove($event)"
     (mouseleave)="onMinimapMouseLeave()"
+    (wheel)="onMinimapWheel($event)"
     (click)="onMinimapClick($event)">
     <canvas #minimapCanvas class="rte-minimap-canvas"></canvas>
   </div>
