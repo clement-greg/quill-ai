@@ -7,6 +7,7 @@ import { MatFormFieldModule } from '@angular/material/form-field';
 import { MatButtonToggleModule } from '@angular/material/button-toggle';
 import { MatSlideToggleModule } from '@angular/material/slide-toggle';
 import { MatSnackBar } from '@angular/material/snack-bar';
+import { ActivatedRoute, Router } from '@angular/router';
 import { UserSettingsService, GhostCompleteItem, DEFAULT_GENDER_OPTIONS, DEFAULT_RACE_OPTIONS, DEFAULT_ORIENTATION_OPTIONS } from '@app/core/services/user-settings.service';
 import { HeaderService } from '@app/core/services/header.service';
 import { AppUpdateService } from '@app/core/services/app-update.service';
@@ -35,6 +36,16 @@ export const COLOR_THEMES: ColorThemeOption[] = [
   { id: 'minimalist',  label: 'Minimalist', primaryColor: '#E0E0E0', surfaceColor: '#FFFFFF' },
 ];
 
+export type SettingsTabId = 'profile' | 'appearance' | 'writing' | 'characters' | 'advanced';
+
+export const SETTINGS_TABS: { id: SettingsTabId; label: string; icon: string }[] = [
+  { id: 'profile',    label: 'Profile',    icon: 'person' },
+  { id: 'appearance', label: 'Appearance', icon: 'palette' },
+  { id: 'writing',    label: 'Writing',    icon: 'edit_note' },
+  { id: 'characters', label: 'Characters', icon: 'groups' },
+  { id: 'advanced',   label: 'Advanced',   icon: 'tune' },
+];
+
 @Component({
   selector: 'app-user-settings',
   imports: [
@@ -55,9 +66,14 @@ export class UserSettingsComponent {
   private headerService = inject(HeaderService);
   private contentFilterService = inject(ContentFilterService);
   private appUpdateService = inject(AppUpdateService);
+  private router = inject(Router);
+  private route = inject(ActivatedRoute);
 
   @ViewChild('avatarFileInput') avatarFileInput!: ElementRef<HTMLInputElement>;
   @ViewChild('avatarVideoInput') avatarVideoInput!: ElementRef<HTMLInputElement>;
+
+  readonly tabs = SETTINGS_TABS;
+  readonly activeTab = signal<SettingsTabId>(this.tabFromUrl());
 
   readonly items = this.settingsService.ghostCompleteItems;
   readonly colorTheme = this.settingsService.colorTheme;
@@ -99,6 +115,22 @@ export class UserSettingsComponent {
       }
     });
     this.contentFilterService.loadFromServer();
+  }
+
+  /** Keeps the tab in ?tab= so a refresh or shared link lands on the same section. */
+  selectTab(id: SettingsTabId): void {
+    this.activeTab.set(id);
+    this.router.navigate([], {
+      relativeTo: this.route,
+      queryParams: { tab: id === 'profile' ? null : id },
+      queryParamsHandling: 'merge',
+      replaceUrl: true,
+    });
+  }
+
+  private tabFromUrl(): SettingsTabId {
+    const tab = this.route.snapshot.queryParamMap.get('tab');
+    return SETTINGS_TABS.find(t => t.id === tab)?.id ?? 'profile';
   }
 
   onDisplayNameInput(): void {

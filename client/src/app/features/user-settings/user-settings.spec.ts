@@ -1,5 +1,6 @@
 import { TestBed } from '@angular/core/testing';
 import { MatSnackBar } from '@angular/material/snack-bar';
+import { provideRouter } from '@angular/router';
 import { UserSettingsService } from '@app/core/services/user-settings.service';
 import { HeaderService } from '@app/core/services/header.service';
 import { AppUpdateService } from '@app/core/services/app-update.service';
@@ -18,6 +19,7 @@ describe('UserSettingsComponent app update', () => {
     forceUpdate = vi.fn().mockResolvedValue(undefined);
     TestBed.configureTestingModule({
       providers: [
+        provideRouter([]),
         { provide: UserSettingsService, useValue: stubService<UserSettingsService>() },
         { provide: HeaderService, useValue: stubService<HeaderService>() },
         { provide: ContentFilterService, useValue: stubService<ContentFilterService>() },
