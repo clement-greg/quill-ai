@@ -5,10 +5,104 @@
 }
 
 .settings-page {
-  max-width: 700px;
+  max-width: 940px;
   margin: 0 auto;
   padding: 24px 16px;
   box-sizing: border-box;
+}
+
+/* ── Tab layout ──────────────────────────────────── */
+.settings-layout {
+  display: grid;
+  grid-template-columns: 200px minmax(0, 1fr);
+  gap: 32px;
+  align-items: start;
+}
+
+.settings-nav {
+  position: sticky;
+  top: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.settings-nav-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 14px;
+  border: none;
+  border-radius: 24px;
+  background: transparent;
+  color: var(--mat-sys-on-surface-variant, #555);
+  font: inherit;
+  font-size: 0.9rem;
+  font-weight: 500;
+  text-align: left;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background-color 0.15s, color 0.15s;
+
+  mat-icon {
+    font-size: 20px;
+    width: 20px;
+    height: 20px;
+  }
+
+  &:hover {
+    background: var(--mat-sys-surface-container-high, #ececec);
+    color: var(--mat-sys-on-surface, #1c1b1f);
+  }
+
+  &:focus-visible {
+    outline: 2px solid var(--mat-sys-primary, #4A86C8);
+    outline-offset: 2px;
+  }
+
+  &.active {
+    background: var(--mat-sys-secondary-container, #dce6f5);
+    color: var(--mat-sys-on-secondary-container, #1c1b1f);
+  }
+}
+
+.settings-content > .settings-section:last-child {
+  margin-bottom: 0;
+}
+
+@media (max-width: 767px) {
+  .settings-layout {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 16px;
+  }
+
+  // Horizontal, scrollable pill row on narrow screens
+  .settings-nav {
+    position: static;
+    flex-direction: row;
+    overflow-x: auto;
+    margin: 0 -16px;
+    padding: 0 16px 4px;
+    scrollbar-width: none;
+
+    &::-webkit-scrollbar {
+      display: none;
+    }
+  }
+
+  .settings-nav-item {
+    flex-shrink: 0;
+    padding: 8px 14px;
+    border: 1px solid var(--mat-sys-outline-variant, #ddd);
+
+    &.active {
+      border-color: transparent;
+    }
+  }
+
+  .settings-section {
+    padding: 20px 16px;
+  }
 }
 
 /* ── Profile section ─────────────────────────────── */

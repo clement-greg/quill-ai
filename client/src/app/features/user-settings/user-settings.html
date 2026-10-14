@@ -1,390 +1,413 @@
 <div class="settings-page">
-  <h2>Settings Page</h2>
+  <h2>Settings</h2>
 
-  <!-- Profile Section -->
-  <section class="settings-section">
-    <div class="section-header">
-      <h3>Profile</h3>
-      <p class="section-desc">Your name and avatar appear on notes and saved versions.</p>
-    </div>
-    <div class="profile-row">
-      <div class="profile-avatar-wrap">
-        @if (avatarUrl()) {
-          <img class="profile-avatar" [src]="avatarUrl()" alt="Profile picture" />
-          <button mat-icon-button class="profile-avatar-remove" (click)="removeAvatar()" title="Remove photo">
-            <mat-icon>close</mat-icon>
-          </button>
-        } @else {
-          <div class="profile-avatar-placeholder">
-            <mat-icon>person</mat-icon>
-          </div>
-        }
-        <button mat-stroked-button class="profile-avatar-upload-btn" (click)="triggerAvatarUpload()">
-          <mat-icon>upload</mat-icon>
-          {{ avatarUrl() ? 'Change photo' : 'Upload photo' }}
-        </button>
-        <input #avatarFileInput type="file" accept="image/*" class="hidden-file-input"
-          (change)="onAvatarFileChange($event)" />
-      </div>
-      <div class="profile-video-wrap">
-        @if (avatarVideoUrl()) {
-          <video class="profile-video" [src]="proxyUrl(avatarVideoUrl())" muted autoplay loop playsinline></video>
-          <button mat-icon-button class="profile-avatar-remove" (click)="removeVideo()" title="Remove video">
-            <mat-icon>close</mat-icon>
-          </button>
-        } @else {
-          <div class="profile-avatar-placeholder">
-            <mat-icon>movie</mat-icon>
-          </div>
-        }
-        <button mat-stroked-button class="profile-avatar-upload-btn"
-          [disabled]="uploadingVideo()" (click)="triggerVideoUpload()">
-          <mat-icon>videocam</mat-icon>
-          {{ uploadingVideo() ? 'Uploading…' : (avatarVideoUrl() ? 'Change video' : 'Upload video') }}
-        </button>
-        <p class="profile-video-hint">Shown in AI chat instead of your photo. Loops with a 10-second pause.</p>
-        <input #avatarVideoInput type="file" accept="video/*" class="hidden-file-input"
-          (change)="onAvatarVideoChange($event)" />
-      </div>
-      <div class="profile-name-wrap">
-        <mat-form-field appearance="outline" class="profile-name-field">
-          <mat-label>Display name</mat-label>
-          <input matInput placeholder="Your name" [value]="displayNameDraft()"
-            (input)="displayNameDraft.set($any($event.target).value); onDisplayNameInput()" />
-        </mat-form-field>
-        <button mat-flat-button (click)="saveProfile()">Save</button>
-      </div>
-    </div>
-  </section>
-
-  <!-- Appearance Section -->
-  <section class="settings-section">
-    <div class="section-header">
-      <h3>Appearance</h3>
-      <p class="section-desc">Choose a color theme for the app.</p>
-    </div>
-    <div class="theme-grid">
-      @for (theme of colorThemes; track theme.id) {
-        <button class="theme-card"
-                [class.selected]="colorTheme() === theme.id"
-                (click)="selectTheme(theme.id)"
-                [title]="theme.label">
-          <div class="theme-preview" [style.background-color]="theme.surfaceColor">
-            <div class="theme-preview-dot" [style.background-color]="theme.primaryColor"></div>
-          </div>
-          <span class="theme-card-label">{{ theme.label }}</span>
-          @if (colorTheme() === theme.id) {
-            <mat-icon class="theme-card-check">check_circle</mat-icon>
-          }
+  <div class="settings-layout">
+    <nav class="settings-nav" role="tablist" aria-label="Settings sections">
+      @for (tab of tabs; track tab.id) {
+        <button class="settings-nav-item" role="tab" type="button"
+          [class.active]="activeTab() === tab.id"
+          [attr.aria-selected]="activeTab() === tab.id"
+          (click)="selectTab(tab.id)">
+          <mat-icon>{{ tab.icon }}</mat-icon>
+          <span>{{ tab.label }}</span>
         </button>
       }
-    </div>
+    </nav>
 
-    <div class="editor-prefs">
-      <div class="editor-pref-row">
-        <span class="editor-pref-label">Reading size</span>
-        <mat-button-toggle-group [value]="editorFontSize()"
-          (change)="setEditorFontSize($event.value)"
-          hideSingleSelectionIndicator>
-          <mat-button-toggle value="xs">XS</mat-button-toggle>
-          <mat-button-toggle value="small">S</mat-button-toggle>
-          <mat-button-toggle value="normal">M</mat-button-toggle>
-          <mat-button-toggle value="large">L</mat-button-toggle>
-          <mat-button-toggle value="xl">XL</mat-button-toggle>
-        </mat-button-toggle-group>
-      </div>
-      <div class="editor-pref-row">
-        <span class="editor-pref-label">Font style</span>
-        <mat-button-toggle-group [value]="editorFontFamily()"
-          (change)="setEditorFontFamily($event.value)"
-          hideSingleSelectionIndicator>
-          <mat-button-toggle value="serif" class="font-preview-serif">Serif</mat-button-toggle>
-          <mat-button-toggle value="sans-serif" class="font-preview-sans">Sans-serif</mat-button-toggle>
-        </mat-button-toggle-group>
-      </div>
+    <div class="settings-content" role="tabpanel">
+      @switch (activeTab()) {
+        @case ('profile') {
+          <!-- Profile Section -->
+          <section class="settings-section">
+            <div class="section-header">
+              <h3>Profile</h3>
+              <p class="section-desc">Your name and avatar appear on notes and saved versions.</p>
+            </div>
+            <div class="profile-row">
+              <div class="profile-avatar-wrap">
+                @if (avatarUrl()) {
+                  <img class="profile-avatar" [src]="avatarUrl()" alt="Profile picture" />
+                  <button mat-icon-button class="profile-avatar-remove" (click)="removeAvatar()" title="Remove photo">
+                    <mat-icon>close</mat-icon>
+                  </button>
+                } @else {
+                  <div class="profile-avatar-placeholder">
+                    <mat-icon>person</mat-icon>
+                  </div>
+                }
+                <button mat-stroked-button class="profile-avatar-upload-btn" (click)="triggerAvatarUpload()">
+                  <mat-icon>upload</mat-icon>
+                  {{ avatarUrl() ? 'Change photo' : 'Upload photo' }}
+                </button>
+                <input #avatarFileInput type="file" accept="image/*" class="hidden-file-input"
+                  (change)="onAvatarFileChange($event)" />
+              </div>
+              <div class="profile-video-wrap">
+                @if (avatarVideoUrl()) {
+                  <video class="profile-video" [src]="proxyUrl(avatarVideoUrl())" muted autoplay loop playsinline></video>
+                  <button mat-icon-button class="profile-avatar-remove" (click)="removeVideo()" title="Remove video">
+                    <mat-icon>close</mat-icon>
+                  </button>
+                } @else {
+                  <div class="profile-avatar-placeholder">
+                    <mat-icon>movie</mat-icon>
+                  </div>
+                }
+                <button mat-stroked-button class="profile-avatar-upload-btn"
+                  [disabled]="uploadingVideo()" (click)="triggerVideoUpload()">
+                  <mat-icon>videocam</mat-icon>
+                  {{ uploadingVideo() ? 'Uploading…' : (avatarVideoUrl() ? 'Change video' : 'Upload video') }}
+                </button>
+                <p class="profile-video-hint">Shown in AI chat instead of your photo. Loops with a 10-second pause.</p>
+                <input #avatarVideoInput type="file" accept="video/*" class="hidden-file-input"
+                  (change)="onAvatarVideoChange($event)" />
+              </div>
+              <div class="profile-name-wrap">
+                <mat-form-field appearance="outline" class="profile-name-field">
+                  <mat-label>Display name</mat-label>
+                  <input matInput placeholder="Your name" [value]="displayNameDraft()"
+                    (input)="displayNameDraft.set($any($event.target).value); onDisplayNameInput()" />
+                </mat-form-field>
+                <button mat-flat-button (click)="saveProfile()">Save</button>
+              </div>
+            </div>
+          </section>
+        }
+        @case ('appearance') {
+          <!-- Appearance Section -->
+          <section class="settings-section">
+            <div class="section-header">
+              <h3>Appearance</h3>
+              <p class="section-desc">Choose a color theme for the app.</p>
+            </div>
+            <div class="theme-grid">
+              @for (theme of colorThemes; track theme.id) {
+                <button class="theme-card"
+                        [class.selected]="colorTheme() === theme.id"
+                        (click)="selectTheme(theme.id)"
+                        [title]="theme.label">
+                  <div class="theme-preview" [style.background-color]="theme.surfaceColor">
+                    <div class="theme-preview-dot" [style.background-color]="theme.primaryColor"></div>
+                  </div>
+                  <span class="theme-card-label">{{ theme.label }}</span>
+                  @if (colorTheme() === theme.id) {
+                    <mat-icon class="theme-card-check">check_circle</mat-icon>
+                  }
+                </button>
+              }
+            </div>
 
-      <div class="editor-font-preview"
-        [style.font-size]="fontSizePreviewValue()"
-        [style.font-family]="fontFamilyPreviewValue()">
-        <p>The lantern cast long shadows across the stone floor as she pushed open the door. Outside, the wind had picked up — carrying with it the smell of rain and something older, something she couldn't name.</p>
-      </div>
+            <div class="editor-prefs">
+              <div class="editor-pref-row">
+                <span class="editor-pref-label">Reading size</span>
+                <mat-button-toggle-group [value]="editorFontSize()"
+                  (change)="setEditorFontSize($event.value)"
+                  hideSingleSelectionIndicator>
+                  <mat-button-toggle value="xs">XS</mat-button-toggle>
+                  <mat-button-toggle value="small">S</mat-button-toggle>
+                  <mat-button-toggle value="normal">M</mat-button-toggle>
+                  <mat-button-toggle value="large">L</mat-button-toggle>
+                  <mat-button-toggle value="xl">XL</mat-button-toggle>
+                </mat-button-toggle-group>
+              </div>
+              <div class="editor-pref-row">
+                <span class="editor-pref-label">Font style</span>
+                <mat-button-toggle-group [value]="editorFontFamily()"
+                  (change)="setEditorFontFamily($event.value)"
+                  hideSingleSelectionIndicator>
+                  <mat-button-toggle value="serif" class="font-preview-serif">Serif</mat-button-toggle>
+                  <mat-button-toggle value="sans-serif" class="font-preview-sans">Sans-serif</mat-button-toggle>
+                </mat-button-toggle-group>
+              </div>
 
-      @if (isDesktopApp) {
-        <div class="editor-pref-row">
-          <div class="editor-pref-label-group">
-            <span class="editor-pref-label">Hide top bar</span>
-            <span class="editor-pref-sublabel">Use the app menus for navigation instead of the bar across the top of the window.</span>
-          </div>
-          <mat-slide-toggle
-            [checked]="hideDesktopToolbar()"
-            (change)="setHideDesktopToolbar($event.checked)">
-          </mat-slide-toggle>
-        </div>
+              <div class="editor-font-preview"
+                [style.font-size]="fontSizePreviewValue()"
+                [style.font-family]="fontFamilyPreviewValue()">
+                <p>The lantern cast long shadows across the stone floor as she pushed open the door. Outside, the wind had picked up — carrying with it the smell of rain and something older, something she couldn't name.</p>
+              </div>
+
+              @if (isDesktopApp) {
+                <div class="editor-pref-row">
+                  <div class="editor-pref-label-group">
+                    <span class="editor-pref-label">Hide top bar</span>
+                    <span class="editor-pref-sublabel">Use the app menus for navigation instead of the bar across the top of the window.</span>
+                  </div>
+                  <mat-slide-toggle
+                    [checked]="hideDesktopToolbar()"
+                    (change)="setHideDesktopToolbar($event.checked)">
+                  </mat-slide-toggle>
+                </div>
+              }
+            </div>
+          </section>
+        }
+        @case ('writing') {
+          <!-- Writing Assistance Section -->
+          <section class="settings-section">
+            <div class="section-header">
+              <h3>Writing Assistance</h3>
+              <p class="section-desc">AI-powered tools that run while you write.</p>
+            </div>
+            <div class="editor-pref-row">
+              <span class="editor-pref-label">AI grammar check</span>
+              <mat-slide-toggle
+                [checked]="grammarCheckEnabled()"
+                (change)="setGrammarCheckEnabled($event.checked)">
+              </mat-slide-toggle>
+            </div>
+            <div class="editor-pref-row">
+              <span class="editor-pref-label">AI entity detection</span>
+              <mat-slide-toggle
+                [checked]="entityDetectionEnabled()"
+                (change)="setEntityDetectionEnabled($event.checked)">
+              </mat-slide-toggle>
+            </div>
+            <div class="editor-pref-row">
+              <div class="editor-pref-label-group">
+                <span class="editor-pref-label">Auto-save chapter</span>
+                <span class="editor-pref-sublabel">Automatically saves the working draft to the server every 2 minutes, creating a version history entry.</span>
+              </div>
+              <mat-slide-toggle
+                [checked]="autoSaveEnabled()"
+                (change)="setAutoSaveEnabled($event.checked)">
+              </mat-slide-toggle>
+            </div>
+          </section>
+
+          <!-- Ghost Complete Section -->
+          <section class="settings-section">
+            <div class="section-header">
+              <h3>Ghost Complete Items</h3>
+              <p class="section-desc">
+                These prompts appear as suggestions when you open the AI Insert panel (Ctrl+.).
+                Click any suggestion to instantly fill in the prompt.
+              </p>
+            </div>
+
+            <!-- Existing items -->
+            @if (items().length === 0) {
+            <p class="empty-state">No ghost complete items yet. Add one below to get started.</p>
+            }
+
+            <div class="items-list">
+              @for (item of items(); track item.id) {
+              <div class="ghost-item-card">
+                @if (editingId() === item.id) {
+                <!-- Edit mode -->
+                <div class="ghost-item-edit">
+                  <mat-form-field appearance="outline" class="edit-field">
+                    <mat-label>Label</mat-label>
+                    <input matInput [value]="editLabel()" (input)="editLabel.set($any($event.target).value)" />
+                  </mat-form-field>
+                  <mat-form-field appearance="outline" class="edit-field edit-field-prompt">
+                    <mat-label>Prompt</mat-label>
+                    <textarea matInput rows="2" [value]="editPrompt()" (input)="editPrompt.set($any($event.target).value)"></textarea>
+                  </mat-form-field>
+                  <div class="edit-actions">
+                    <button mat-flat-button (click)="saveEdit()">Save</button>
+                    <button mat-button (click)="cancelEdit()">Cancel</button>
+                  </div>
+                </div>
+                } @else {
+                <!-- View mode -->
+                <div class="ghost-item-view">
+                  <div class="ghost-item-info">
+                    <span class="ghost-item-label">{{ item.label }}</span>
+                    <span class="ghost-item-prompt">{{ item.prompt }}</span>
+                  </div>
+                  <div class="ghost-item-actions">
+                    <button mat-icon-button (click)="startEdit(item)" title="Edit">
+                      <mat-icon>edit</mat-icon>
+                    </button>
+                    <button mat-icon-button (click)="removeItem(item.id)" title="Delete">
+                      <mat-icon>delete</mat-icon>
+                    </button>
+                  </div>
+                </div>
+                }
+              </div>
+              }
+            </div>
+
+            <!-- Add new item -->
+            <div class="add-item-form">
+              <h4>Add New Item</h4>
+              <mat-form-field appearance="outline" class="add-field">
+                <mat-label>Label</mat-label>
+                <input matInput placeholder="e.g. Describe setting" [value]="newLabel()" (input)="newLabel.set($any($event.target).value)" />
+              </mat-form-field>
+              <mat-form-field appearance="outline" class="add-field add-field-prompt">
+                <mat-label>Prompt</mat-label>
+                <textarea matInput rows="2" placeholder="e.g. Write a vivid description of the current setting" [value]="newPrompt()" (input)="newPrompt.set($any($event.target).value)"></textarea>
+              </mat-form-field>
+              <button mat-flat-button (click)="addItem()">
+                <mat-icon>add</mat-icon>
+                Add
+              </button>
+            </div>
+          </section>
+        }
+        @case ('characters') {
+          <!-- Character Attributes Section -->
+          <section class="settings-section">
+            <div class="section-header">
+              <h3>Character Attributes</h3>
+              <p class="section-desc">
+                Customize the dropdown options available when editing a character's gender and race / ethnicity.
+              </p>
+            </div>
+
+            <div class="attribute-options-grid">
+
+              <!-- Gender options -->
+              <div class="attribute-options-col">
+                <div class="attribute-options-header">
+                  <h4>Gender</h4>
+                  <button mat-button (click)="resetGenderOptions()" title="Restore defaults">
+                    <mat-icon>restart_alt</mat-icon> Restore defaults
+                  </button>
+                </div>
+                <div class="attribute-chips">
+                  @for (opt of genderOptions(); track opt) {
+                    <div class="attribute-chip">
+                      <span>{{ opt }}</span>
+                      <button mat-icon-button (click)="removeGenderOption(opt)" title="Remove">
+                        <mat-icon>close</mat-icon>
+                      </button>
+                    </div>
+                  }
+                </div>
+                <div class="attribute-add-row">
+                  <mat-form-field appearance="outline" class="attribute-add-field">
+                    <mat-label>New option</mat-label>
+                    <input matInput [value]="newGenderOption()"
+                      (input)="newGenderOption.set($any($event.target).value)"
+                      (keyup.enter)="addGenderOption()" />
+                  </mat-form-field>
+                  <button mat-flat-button (click)="addGenderOption()">
+                    <mat-icon>add</mat-icon> Add
+                  </button>
+                </div>
+              </div>
+
+              <!-- Race / Ethnicity options -->
+              <div class="attribute-options-col">
+                <div class="attribute-options-header">
+                  <h4>Race / Ethnicity</h4>
+                  <button mat-button (click)="resetRaceOptions()" title="Restore defaults">
+                    <mat-icon>restart_alt</mat-icon> Restore defaults
+                  </button>
+                </div>
+                <div class="attribute-chips">
+                  @for (opt of raceOptions(); track opt) {
+                    <div class="attribute-chip">
+                      <span>{{ opt }}</span>
+                      <button mat-icon-button (click)="removeRaceOption(opt)" title="Remove">
+                        <mat-icon>close</mat-icon>
+                      </button>
+                    </div>
+                  }
+                </div>
+                <div class="attribute-add-row">
+                  <mat-form-field appearance="outline" class="attribute-add-field">
+                    <mat-label>New option</mat-label>
+                    <input matInput [value]="newRaceOption()"
+                      (input)="newRaceOption.set($any($event.target).value)"
+                      (keyup.enter)="addRaceOption()" />
+                  </mat-form-field>
+                  <button mat-flat-button (click)="addRaceOption()">
+                    <mat-icon>add</mat-icon> Add
+                  </button>
+                </div>
+              </div>
+
+              <!-- Sexual Orientation options -->
+              <div class="attribute-options-col">
+                <div class="attribute-options-header">
+                  <h4>Sexual Orientation</h4>
+                  <button mat-button (click)="resetOrientationOptions()" title="Restore defaults">
+                    <mat-icon>restart_alt</mat-icon> Restore defaults
+                  </button>
+                </div>
+                <div class="attribute-chips">
+                  @for (opt of orientationOptions(); track opt) {
+                    <div class="attribute-chip">
+                      <span>{{ opt }}</span>
+                      <button mat-icon-button (click)="removeOrientationOption(opt)" title="Remove">
+                        <mat-icon>close</mat-icon>
+                      </button>
+                    </div>
+                  }
+                </div>
+                <div class="attribute-add-row">
+                  <mat-form-field appearance="outline" class="attribute-add-field">
+                    <mat-label>New option</mat-label>
+                    <input matInput [value]="newOrientationOption()"
+                      (input)="newOrientationOption.set($any($event.target).value)"
+                      (keyup.enter)="addOrientationOption()" />
+                  </mat-form-field>
+                  <button mat-flat-button (click)="addOrientationOption()">
+                    <mat-icon>add</mat-icon> Add
+                  </button>
+                </div>
+              </div>
+
+            </div>
+          </section>
+        }
+        @case ('advanced') {
+          <!-- Content Moderation Section -->
+          <section class="settings-section">
+            <div class="section-header">
+              <h3>Content Moderation</h3>
+              <p class="section-desc">
+                Words or phrases redacted from text before it's sent to the AI, so that in-fiction
+                language doesn't trip the content filter and block summarization or embedding.
+              </p>
+            </div>
+
+            <div class="attribute-options-col">
+              <div class="attribute-chips">
+                @for (term of contentFilterTerms(); track term) {
+                  <div class="attribute-chip">
+                    <span>{{ term }}</span>
+                    <button mat-icon-button (click)="removeContentFilterTerm(term)" title="Remove">
+                      <mat-icon>close</mat-icon>
+                    </button>
+                  </div>
+                }
+              </div>
+              <div class="attribute-add-row">
+                <mat-form-field appearance="outline" class="attribute-add-field">
+                  <mat-label>New term</mat-label>
+                  <input matInput [value]="newContentFilterTerm()"
+                    (input)="newContentFilterTerm.set($any($event.target).value)"
+                    (keyup.enter)="addContentFilterTerm()" />
+                </mat-form-field>
+                <button mat-flat-button (click)="addContentFilterTerm()">
+                  <mat-icon>add</mat-icon> Add
+                </button>
+              </div>
+            </div>
+          </section>
+
+          <!-- App Updates Section -->
+          <section class="settings-section">
+            <div class="section-header">
+              <h3>App Updates</h3>
+              <p class="section-desc">
+                The app keeps an offline copy of itself, which can lag behind the latest release,
+                especially when it's added to your home screen. Updating clears that copy and
+                reloads the newest version from the server.
+              </p>
+            </div>
+            <button mat-flat-button [disabled]="updatingApp()" (click)="updateApp()">
+              <mat-icon>system_update</mat-icon>
+              {{ updatingApp() ? 'Updating…' : 'Update now' }}
+            </button>
+          </section>
+        }
       }
     </div>
-  </section>
-
-  <!-- Writing Assistance Section -->
-  <section class="settings-section">
-    <div class="section-header">
-      <h3>Writing Assistance</h3>
-      <p class="section-desc">AI-powered tools that run while you write.</p>
-    </div>
-    <div class="editor-pref-row">
-      <span class="editor-pref-label">AI grammar check</span>
-      <mat-slide-toggle
-        [checked]="grammarCheckEnabled()"
-        (change)="setGrammarCheckEnabled($event.checked)">
-      </mat-slide-toggle>
-    </div>
-    <div class="editor-pref-row">
-      <span class="editor-pref-label">AI entity detection</span>
-      <mat-slide-toggle
-        [checked]="entityDetectionEnabled()"
-        (change)="setEntityDetectionEnabled($event.checked)">
-      </mat-slide-toggle>
-    </div>
-    <div class="editor-pref-row">
-      <div class="editor-pref-label-group">
-        <span class="editor-pref-label">Auto-save chapter</span>
-        <span class="editor-pref-sublabel">Automatically saves the working draft to the server every 2 minutes, creating a version history entry.</span>
-      </div>
-      <mat-slide-toggle
-        [checked]="autoSaveEnabled()"
-        (change)="setAutoSaveEnabled($event.checked)">
-      </mat-slide-toggle>
-    </div>
-  </section>
-
-  <!-- Ghost Complete Section -->
-  <section class="settings-section">
-    <div class="section-header">
-      <h3>Ghost Complete Items</h3>
-      <p class="section-desc">
-        These prompts appear as suggestions when you open the AI Insert panel (Ctrl+.).
-        Click any suggestion to instantly fill in the prompt.
-      </p>
-    </div>
-
-    <!-- Existing items -->
-    @if (items().length === 0) {
-    <p class="empty-state">No ghost complete items yet. Add one below to get started.</p>
-    }
-
-    <div class="items-list">
-      @for (item of items(); track item.id) {
-      <div class="ghost-item-card">
-        @if (editingId() === item.id) {
-        <!-- Edit mode -->
-        <div class="ghost-item-edit">
-          <mat-form-field appearance="outline" class="edit-field">
-            <mat-label>Label</mat-label>
-            <input matInput [value]="editLabel()" (input)="editLabel.set($any($event.target).value)" />
-          </mat-form-field>
-          <mat-form-field appearance="outline" class="edit-field edit-field-prompt">
-            <mat-label>Prompt</mat-label>
-            <textarea matInput rows="2" [value]="editPrompt()" (input)="editPrompt.set($any($event.target).value)"></textarea>
-          </mat-form-field>
-          <div class="edit-actions">
-            <button mat-flat-button (click)="saveEdit()">Save</button>
-            <button mat-button (click)="cancelEdit()">Cancel</button>
-          </div>
-        </div>
-        } @else {
-        <!-- View mode -->
-        <div class="ghost-item-view">
-          <div class="ghost-item-info">
-            <span class="ghost-item-label">{{ item.label }}</span>
-            <span class="ghost-item-prompt">{{ item.prompt }}</span>
-          </div>
-          <div class="ghost-item-actions">
-            <button mat-icon-button (click)="startEdit(item)" title="Edit">
-              <mat-icon>edit</mat-icon>
-            </button>
-            <button mat-icon-button (click)="removeItem(item.id)" title="Delete">
-              <mat-icon>delete</mat-icon>
-            </button>
-          </div>
-        </div>
-        }
-      </div>
-      }
-    </div>
-
-    <!-- Add new item -->
-    <div class="add-item-form">
-      <h4>Add New Item</h4>
-      <mat-form-field appearance="outline" class="add-field">
-        <mat-label>Label</mat-label>
-        <input matInput placeholder="e.g. Describe setting" [value]="newLabel()" (input)="newLabel.set($any($event.target).value)" />
-      </mat-form-field>
-      <mat-form-field appearance="outline" class="add-field add-field-prompt">
-        <mat-label>Prompt</mat-label>
-        <textarea matInput rows="2" placeholder="e.g. Write a vivid description of the current setting" [value]="newPrompt()" (input)="newPrompt.set($any($event.target).value)"></textarea>
-      </mat-form-field>
-      <button mat-flat-button (click)="addItem()">
-        <mat-icon>add</mat-icon>
-        Add
-      </button>
-    </div>
-  </section>
-
-  <!-- Character Attributes Section -->
-  <section class="settings-section">
-    <div class="section-header">
-      <h3>Character Attributes</h3>
-      <p class="section-desc">
-        Customize the dropdown options available when editing a character's gender and race / ethnicity.
-      </p>
-    </div>
-
-    <div class="attribute-options-grid">
-
-      <!-- Gender options -->
-      <div class="attribute-options-col">
-        <div class="attribute-options-header">
-          <h4>Gender</h4>
-          <button mat-button (click)="resetGenderOptions()" title="Restore defaults">
-            <mat-icon>restart_alt</mat-icon> Restore defaults
-          </button>
-        </div>
-        <div class="attribute-chips">
-          @for (opt of genderOptions(); track opt) {
-            <div class="attribute-chip">
-              <span>{{ opt }}</span>
-              <button mat-icon-button (click)="removeGenderOption(opt)" title="Remove">
-                <mat-icon>close</mat-icon>
-              </button>
-            </div>
-          }
-        </div>
-        <div class="attribute-add-row">
-          <mat-form-field appearance="outline" class="attribute-add-field">
-            <mat-label>New option</mat-label>
-            <input matInput [value]="newGenderOption()"
-              (input)="newGenderOption.set($any($event.target).value)"
-              (keyup.enter)="addGenderOption()" />
-          </mat-form-field>
-          <button mat-flat-button (click)="addGenderOption()">
-            <mat-icon>add</mat-icon> Add
-          </button>
-        </div>
-      </div>
-
-      <!-- Race / Ethnicity options -->
-      <div class="attribute-options-col">
-        <div class="attribute-options-header">
-          <h4>Race / Ethnicity</h4>
-          <button mat-button (click)="resetRaceOptions()" title="Restore defaults">
-            <mat-icon>restart_alt</mat-icon> Restore defaults
-          </button>
-        </div>
-        <div class="attribute-chips">
-          @for (opt of raceOptions(); track opt) {
-            <div class="attribute-chip">
-              <span>{{ opt }}</span>
-              <button mat-icon-button (click)="removeRaceOption(opt)" title="Remove">
-                <mat-icon>close</mat-icon>
-              </button>
-            </div>
-          }
-        </div>
-        <div class="attribute-add-row">
-          <mat-form-field appearance="outline" class="attribute-add-field">
-            <mat-label>New option</mat-label>
-            <input matInput [value]="newRaceOption()"
-              (input)="newRaceOption.set($any($event.target).value)"
-              (keyup.enter)="addRaceOption()" />
-          </mat-form-field>
-          <button mat-flat-button (click)="addRaceOption()">
-            <mat-icon>add</mat-icon> Add
-          </button>
-        </div>
-      </div>
-
-      <!-- Sexual Orientation options -->
-      <div class="attribute-options-col">
-        <div class="attribute-options-header">
-          <h4>Sexual Orientation</h4>
-          <button mat-button (click)="resetOrientationOptions()" title="Restore defaults">
-            <mat-icon>restart_alt</mat-icon> Restore defaults
-          </button>
-        </div>
-        <div class="attribute-chips">
-          @for (opt of orientationOptions(); track opt) {
-            <div class="attribute-chip">
-              <span>{{ opt }}</span>
-              <button mat-icon-button (click)="removeOrientationOption(opt)" title="Remove">
-                <mat-icon>close</mat-icon>
-              </button>
-            </div>
-          }
-        </div>
-        <div class="attribute-add-row">
-          <mat-form-field appearance="outline" class="attribute-add-field">
-            <mat-label>New option</mat-label>
-            <input matInput [value]="newOrientationOption()"
-              (input)="newOrientationOption.set($any($event.target).value)"
-              (keyup.enter)="addOrientationOption()" />
-          </mat-form-field>
-          <button mat-flat-button (click)="addOrientationOption()">
-            <mat-icon>add</mat-icon> Add
-          </button>
-        </div>
-      </div>
-
-    </div>
-  </section>
-
-  <!-- Content Moderation Section -->
-  <section class="settings-section">
-    <div class="section-header">
-      <h3>Content Moderation</h3>
-      <p class="section-desc">
-        Words or phrases redacted from text before it's sent to the AI, so that in-fiction
-        language doesn't trip the content filter and block summarization or embedding.
-      </p>
-    </div>
-
-    <div class="attribute-options-col">
-      <div class="attribute-chips">
-        @for (term of contentFilterTerms(); track term) {
-          <div class="attribute-chip">
-            <span>{{ term }}</span>
-            <button mat-icon-button (click)="removeContentFilterTerm(term)" title="Remove">
-              <mat-icon>close</mat-icon>
-            </button>
-          </div>
-        }
-      </div>
-      <div class="attribute-add-row">
-        <mat-form-field appearance="outline" class="attribute-add-field">
-          <mat-label>New term</mat-label>
-          <input matInput [value]="newContentFilterTerm()"
-            (input)="newContentFilterTerm.set($any($event.target).value)"
-            (keyup.enter)="addContentFilterTerm()" />
-        </mat-form-field>
-        <button mat-flat-button (click)="addContentFilterTerm()">
-          <mat-icon>add</mat-icon> Add
-        </button>
-      </div>
-    </div>
-  </section>
-
-  <!-- App Updates Section -->
-  <section class="settings-section">
-    <div class="section-header">
-      <h3>App Updates</h3>
-      <p class="section-desc">
-        The app keeps an offline copy of itself, which can lag behind the latest release,
-        especially when it's added to your home screen. Updating clears that copy and
-        reloads the newest version from the server.
-      </p>
-    </div>
-    <button mat-flat-button [disabled]="updatingApp()" (click)="updateApp()">
-      <mat-icon>system_update</mat-icon>
-      {{ updatingApp() ? 'Updating…' : 'Update now' }}
-    </button>
-  </section>
-
+  </div>
 </div>
