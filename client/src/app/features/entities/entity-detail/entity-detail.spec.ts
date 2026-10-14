@@ -162,3 +162,96 @@ describe('EntityDetailComponent lightbox removal', () => {
     expect(cmp.currentLightboxPhoto()?.url).toBe('a');
   });
 });
+
+describe('EntityDetailComponent lightbox keyboard', () => {
+  beforeEach(() => {
+    TestBed.configureTestingModule({
+      providers: [
+        { provide: EntityService, useValue: stubService<EntityService>() },
+        { provide: TimelineEventService, useValue: stubService<TimelineEventService>() },
+        { provide: EntityRelationshipService, useValue: stubService<EntityRelationshipService>() },
+        { provide: MapService, useValue: stubService<MapService>() },
+        { provide: MatDialog, useValue: stubService<MatDialog>() },
+        { provide: MatSnackBar, useValue: { open: vi.fn() } },
+        { provide: UserSettingsService, useValue: stubService<UserSettingsService>({ showHiddenPhotos: signal(false) }) },
+      ],
+    });
+  });
+
+  function openOn(urls: string[], index: number) {
+    const fixture = TestBed.createComponent(EntityDetailComponent);
+    fixture.componentRef.setInput('entityId', 'e1');
+    const cmp = fixture.componentInstance;
+    cmp.entity.set(entityWith(urls));
+    cmp.openLightbox(index);
+    return cmp;
+  }
+
+  function press(key: string, target: EventTarget = document.body): KeyboardEvent {
+    const event = new KeyboardEvent('keydown', { key, bubbles: true, cancelable: true });
+    target.dispatchEvent(event);
+    return event;
+  }
+
+  it('pages with the arrow keys without the lightbox having focus', () => {
+    const cmp = openOn(['a', 'b', 'c'], 1);
+
+    const right = press('ArrowRight');
+    expect(cmp.currentLightboxPhoto()?.url).toBe('c');
+    expect(right.defaultPrevented).toBe(true);
+
+    press('ArrowLeft');
+    press('ArrowLeft');
+    expect(cmp.currentLightboxPhoto()?.url).toBe('a');
+  });
+
+  it('wraps around at either end', () => {
+    const cmp = openOn(['a', 'b'], 0);
+
+    press('ArrowLeft');
+    expect(cmp.currentLightboxPhoto()?.url).toBe('b');
+    press('ArrowRight');
+    expect(cmp.currentLightboxPhoto()?.url).toBe('a');
+  });
+
+  it('closes on Escape', () => {
+    const cmp = openOn(['a', 'b'], 0);
+
+    press('Escape');
+    expect(cmp.lightboxOpen()).toBe(false);
+  });
+
+  it('does nothing while the lightbox is closed', () => {
+    const cmp = openOn(['a', 'b'], 0);
+    cmp.closeLightbox();
+
+    const event = press('ArrowRight');
+    expect(cmp.lightboxIndex()).toBe(0);
+    expect(event.defaultPrevented).toBe(false);
+  });
+
+  it('leaves keys typed into another element alone', () => {
+    const cmp = openOn(['a', 'b'], 0);
+    const input = document.createElement('input');
+    document.body.appendChild(input);
+
+    const event = press('ArrowRight', input);
+    expect(cmp.currentLightboxPhoto()?.url).toBe('a');
+    expect(event.defaultPrevented).toBe(false);
+    input.remove();
+  });
+
+  it('leaves arrow keys to the video player controls', () => {
+    const cmp = openOn(['a', 'b'], 0);
+    const content = document.createElement('div');
+    content.className = 'lightbox-content';
+    const controls = document.createElement('div');
+    controls.setAttribute('data-vp-controls', '');
+    content.appendChild(controls);
+    document.body.appendChild(content);
+
+    press('ArrowRight', controls);
+    expect(cmp.currentLightboxPhoto()?.url).toBe('a');
+    content.remove();
+  });
+});
