@@ -169,22 +169,21 @@ export function wheelDeltaToPixels(deltaY: number, deltaMode: number, lineHeight
   return deltaY;
 }
 
-/** Who wrote a piece of text, as marked by `span[data-ai-generated]`. */
+/** Who wrote a piece of text, as marked by `data-ai-generated` on a span or paragraph. */
 export type MinimapAuthorship = 'human' | 'ai' | 'edited';
 
 /** Bar colours for AI and edited-AI text; these mirror the editor's text
- *  colours for `span[data-ai-generated]` in styles.css. Human text keeps the
+ *  colours for `[data-ai-generated]` in styles.css. Human text keeps the
  *  minimap's neutral bar colour. */
 export const MINIMAP_AUTHORSHIP_COLORS: Record<Exclude<MinimapAuthorship, 'human'>, string> = {
   ai: 'rgba(125, 105, 177, 0.95)',
   edited: 'rgba(236, 173, 99, 0.95)',
 };
 
-/** Authorship of a text node from its nearest `span[data-ai-generated]`
- *  ("true" → AI, "modified" → edited AI). Only spans are considered, matching
- *  which elements the editor actually colours. */
+/** Authorship of a text node from its nearest AI-marked span or paragraph
+ *  ("true" → AI, "modified" → edited AI), matching what styles.css colours. */
 export function minimapAuthorship(node: Text): MinimapAuthorship {
-  const value = node.parentElement?.closest('span[data-ai-generated]')?.getAttribute('data-ai-generated');
+  const value = node.parentElement?.closest(':is(span, p)[data-ai-generated]')?.getAttribute('data-ai-generated');
   if (value === 'true') return 'ai';
   if (value === 'modified') return 'edited';
   return 'human';

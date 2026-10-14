@@ -135,10 +135,13 @@ body.resizing-col, body.resizing-col * {
   color: orange;
 }
 
-span[data-ai-generated="true"] {
+/* AI-written text: inline spans from AI inserts, or whole paragraphs from
+   "Replace chapter" with an AI draft. Mirrored by the editor minimap
+   (shared/rich-text-editor/minimap-overlays.ts). */
+:is(span, p)[data-ai-generated="true"] {
   color: #7D69B1;
 }
 
-span[data-ai-generated="modified"] {
+:is(span, p)[data-ai-generated="modified"] {
   color: #ECAD63;
 }
