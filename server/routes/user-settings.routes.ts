@@ -17,7 +17,51 @@ interface UserSettings {
   genderOptions?: string[];
   raceOptions?: string[];
   orientationOptions?: string[];
+  grammarCheckEnabled?: boolean;
+  entityDetectionEnabled?: boolean;
+  autoSaveEnabled?: boolean;
   pinHash?: string;
+}
+
+type SettingsField = Exclude<keyof UserSettings, 'id' | 'email'>;
+
+const isString = (v: unknown) => typeof v === 'string';
+const isBoolean = (v: unknown) => typeof v === 'boolean';
+const isStringArray = (v: unknown) => Array.isArray(v) && v.every(isString);
+const isGhostCompleteItems = (v: unknown) =>
+  Array.isArray(v) &&
+  v.every(item => item && isString(item.id) && isString(item.label) && isString(item.prompt));
+
+// Fields a client may write, each with its type check. Fields absent from the
+// request body keep their stored value, so a partial PUT never wipes data
+// (e.g. pinHash, which the web client never sends).
+const FIELD_VALIDATORS: Record<SettingsField, (v: unknown) => boolean> = {
+  displayName: isString,
+  avatarUrl: isString,
+  avatarVideoUrl: isString,
+  darkMode: isBoolean,
+  colorTheme: isString,
+  editorFontSize: isString,
+  editorFontFamily: isString,
+  ghostCompleteItems: isGhostCompleteItems,
+  genderOptions: isStringArray,
+  raceOptions: isStringArray,
+  orientationOptions: isStringArray,
+  grammarCheckEnabled: isBoolean,
+  entityDetectionEnabled: isBoolean,
+  autoSaveEnabled: isBoolean,
+  pinHash: isString,
+};
+
+async function readSettings(sub: string): Promise<UserSettings | undefined> {
+  const container = getContainer('user-settings');
+  try {
+    const { resource } = await container.item(sub, sub).read<UserSettings>();
+    return resource;
+  } catch (err: any) {
+    if (err.code === 404) return undefined;
+    throw err;
+  }
 }
 
 // GET /api/user-settings
@@ -46,24 +90,28 @@ router.get('/', async (req: Request, res: Response): Promise<void> => {
 router.put('/', async (req: Request, res: Response): Promise<void> => {
   try {
     const user = req.user!;
-    const container = getContainer('user-settings');
+    const body = req.body && typeof req.body === 'object' ? req.body : {};
+
+    const updates: Partial<UserSettings> = {};
+    const invalid: string[] = [];
+    for (const [field, isValid] of Object.entries(FIELD_VALIDATORS) as [SettingsField, (v: unknown) => boolean][]) {
+      if (body[field] === undefined) continue;
+      if (isValid(body[field])) (updates as Record<string, unknown>)[field] = body[field];
+      else invalid.push(field);
+    }
+    if (invalid.length) {
+      res.status(400).json({ error: `Invalid settings fields: ${invalid.join(', ')}` });
+      return;
+    }
+
+    const existing = await readSettings(user.sub);
     const settings: UserSettings = {
+      ...existing,
+      ...updates,
       id: user.sub,
       email: user.email,
-      displayName: req.body.displayName,
-      avatarUrl: req.body.avatarUrl,
-      avatarVideoUrl: req.body.avatarVideoUrl,
-      darkMode: req.body.darkMode,
-      colorTheme: req.body.colorTheme,
-      editorFontSize: req.body.editorFontSize,
-      editorFontFamily: req.body.editorFontFamily,
-      ghostCompleteItems: req.body.ghostCompleteItems,
-      genderOptions: req.body.genderOptions,
-      raceOptions: req.body.raceOptions,
-      orientationOptions: req.body.orientationOptions,
-      pinHash: req.body.pinHash,
     };
-    await container.items.upsert(settings);
+    await getContainer('user-settings').items.upsert(settings);
     const { id: _id, ...result } = settings;
     res.json(result);
   } catch (err) {
