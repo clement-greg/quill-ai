@@ -117,6 +117,7 @@ interface BookGroup {
   ],
   templateUrl: './entity-detail.html',
   styleUrl: './entity-detail.scss',
+  host: { '(document:keydown)': 'onLightboxKey($event)' },
 })
 export class EntityDetailComponent implements OnDestroy {
   entityId = input.required<string>();
@@ -530,11 +531,22 @@ export class EntityDetailComponent implements OnDestroy {
       ?.closest('[data-vp-controls], [data-vp-scrub]') != null;
   }
 
+  /**
+   * Listens on the document so the arrow keys page the lightbox without the
+   * user first clicking into it. Keys typed into something else — a dialog
+   * opened over the lightbox, a text field — are left alone.
+   */
   onLightboxKey(event: KeyboardEvent): void {
+    if (!this.lightboxOpen()) return;
+    const target = event.target as HTMLElement | null;
+    const inLightbox = target?.closest('.lightbox-content') != null;
+    if (!inLightbox && target !== document.body && target !== document.documentElement) return;
     if (event.key !== 'Escape' && this.isFromVideoPlayer(event)) return;
     if (event.key === 'ArrowRight') this.nextPhoto();
     else if (event.key === 'ArrowLeft') this.prevPhoto();
     else if (event.key === 'Escape') this.closeLightbox();
+    else return;
+    event.preventDefault();
   }
 
   private _swipeStartX = 0;
