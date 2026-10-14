@@ -5,8 +5,10 @@ import {
   MINIMAP_SQUIGGLE_MIN_WIDTH,
   MinimapHit,
   describeMinimapHit,
+  groupByAuthorship,
   mergeMinimapBands,
   drawMinimapSquiggle,
+  minimapAuthorship,
   minimapHitTest,
   minimapIssueColor,
   truncateForTooltip,
@@ -228,5 +230,60 @@ describe('wheelDeltaToPixels', () => {
 
   it('treats an unknown mode as pixels', () => {
     expect(wheelDeltaToPixels(10, 7, 24, 600)).toBe(10);
+  });
+
+  describe('minimapAuthorship', () => {
+    const textIn = (html: string, selector: string): Text => {
+      const d = document.createElement('div');
+      d.innerHTML = html;
+      return d.querySelector(selector)!.firstChild as Text;
+    };
+
+    it('reads AI and edited-AI spans', () => {
+      expect(minimapAuthorship(textIn('<span data-ai-generated="true">a</span>', 'span'))).toBe('ai');
+      expect(minimapAuthorship(textIn('<span data-ai-generated="modified">a</span>', 'span'))).toBe('edited');
+    });
+
+    it('inherits authorship through nested inline elements', () => {
+      const t = textIn('<span data-ai-generated="true"><span class="entity-reference">Hector</span></span>', '.entity-reference');
+      expect(minimapAuthorship(t)).toBe('ai');
+    });
+
+    it('treats unmarked text, unknown values and non-span markers as human', () => {
+      expect(minimapAuthorship(textIn('<p>a</p>', 'p'))).toBe('human');
+      expect(minimapAuthorship(textIn('<span data-ai-generated="other">a</span>', 'span'))).toBe('human');
+      // The editor only colours spans, so a marked <p> reads as human too.
+      expect(minimapAuthorship(textIn('<p data-ai-generated="true">a</p>', 'p'))).toBe('human');
+    });
+
+    it('treats a detached text node as human', () => {
+      expect(minimapAuthorship(document.createTextNode('x'))).toBe('human');
+    });
+  });
+
+  describe('groupByAuthorship', () => {
+    it('groups consecutive text nodes by authorship and skips empty ones', () => {
+      const d = document.createElement('div');
+      d.innerHTML =
+        'Human one <span data-ai-generated="true">AI one <b>AI two</b></span>' +
+        '<span data-ai-generated="modified">edited</span> human again';
+      d.insertBefore(document.createTextNode(''), d.firstChild);
+      const walker = document.createTreeWalker(d, NodeFilter.SHOW_TEXT);
+      const nodes: Text[] = [];
+      let n: Node | null;
+      while ((n = walker.nextNode())) nodes.push(n as Text);
+
+      const runs = groupByAuthorship(nodes).map(r => [r.authorship, r.first.textContent, r.last.textContent]);
+      expect(runs).toEqual([
+        ['human', 'Human one ', 'Human one '],
+        ['ai', 'AI one ', 'AI two'],
+        ['edited', 'edited', 'edited'],
+        ['human', ' human again', ' human again'],
+      ]);
+    });
+
+    it('returns no runs for no text', () => {
+      expect(groupByAuthorship([])).toEqual([]);
+    });
   });
 });
