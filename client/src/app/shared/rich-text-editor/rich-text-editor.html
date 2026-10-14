@@ -26,9 +26,23 @@
   <!-- VS Code-style minimap -->
   <div class="rte-minimap"
     (mousedown)="onMinimapMouseDown($event)"
-    (mousemove)="onMinimapMouseMove($event)">
+    (mousemove)="onMinimapMouseMove($event)"
+    (mouseleave)="onMinimapMouseLeave()"
+    (click)="onMinimapClick($event)">
     <canvas #minimapCanvas class="rte-minimap-canvas"></canvas>
   </div>
+  @if (minimapTooltip(); as tip) {
+    <div class="rte-minimap-tooltip" role="tooltip" [style.top.px]="tip.top"
+      [style.border-left-color]="tip.color ?? null">
+      @if (tip.title) {
+        <div class="rte-minimap-tooltip-title">{{ tip.title }}</div>
+      }
+      <div class="rte-minimap-tooltip-text">{{ tip.text }}</div>
+      @if (tip.clickable) {
+        <div class="rte-minimap-tooltip-hint">Click to open</div>
+      }
+    </div>
+  }
 
   <!-- Image resize overlay -->
   @if (imageOverlayRect()) {
