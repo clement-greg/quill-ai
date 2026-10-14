@@ -29,6 +29,20 @@ const ROBOT_MESSAGES = [
   'The best time to write was yesterday. The second best is now.',
 ] as const;
 
+/** Bridge exposed by the Electron preload script (electron/preload.js). */
+interface QuillDesktop {
+  signInWithGoogle(): Promise<string>;
+}
+
+/**
+ * Where to hand a Google credential when this page was opened in the system
+ * browser by the desktop app, which can't run Google Sign-In itself.
+ */
+interface DesktopHandoff {
+  port: string;
+  state: string;
+}
+
 declare const google: {
   accounts: {
     id: {
@@ -64,6 +78,13 @@ export class LoginComponent implements AfterViewInit {
   private readonly ngZone = inject(NgZone);
   private readonly destroyRef = inject(DestroyRef);
 
+  protected readonly desktop = isPlatformBrowser(this.platformId)
+    ? (window as Window & { quillDesktop?: QuillDesktop }).quillDesktop ?? null
+    : null;
+  protected readonly handoff = this.readDesktopHandoff();
+  protected readonly desktopSigningIn = signal(false);
+  protected readonly desktopError = signal('');
+
   private messageIndex = 0;
   private speechTimer: ReturnType<typeof setTimeout> | null = null;
   private reversePlaybackHandle: number | null = null;
@@ -82,11 +103,19 @@ export class LoginComponent implements AfterViewInit {
       if (this.reversePlaybackHandle !== null) cancelAnimationFrame(this.reversePlaybackHandle);
     });
 
+    // Google blocks sign-in inside Electron, so the desktop app signs in through
+    // the system browser instead of rendering the GSI button here.
+    if (this.desktop) return;
+
     const waitForGoogle = () => {
       if (typeof google !== 'undefined') {
         google.accounts.id.initialize({
           client_id: environment.googleClientId,
           callback: (response: { credential: string }) => {
+            if (this.handoff) {
+              this.postToDesktop(this.handoff, response.credential);
+              return;
+            }
             this.ngZone.run(async () => {
               await this.auth.handleCredentialResponse(response.credential);
               this.router.navigate(['/series']);
@@ -106,6 +135,48 @@ export class LoginComponent implements AfterViewInit {
       }
     };
     waitForGoogle();
+  }
+
+  protected async signInWithDesktop(): Promise<void> {
+    if (!this.desktop) return;
+    this.desktopSigningIn.set(true);
+    this.desktopError.set('');
+    try {
+      const credential = await this.desktop.signInWithGoogle();
+      await this.auth.handleCredentialResponse(credential);
+      this.router.navigate(['/series']);
+    } catch {
+      this.desktopError.set('Sign-in didn\'t finish. Try again.');
+    } finally {
+      this.desktopSigningIn.set(false);
+    }
+  }
+
+  private readDesktopHandoff(): DesktopHandoff | null {
+    if (!isPlatformBrowser(this.platformId)) return null;
+    const params = new URLSearchParams(location.search);
+    const port = params.get('desktopPort');
+    const state = params.get('desktopState');
+    return port && /^\d+$/.test(port) && state ? { port, state } : null;
+  }
+
+  /**
+   * Hands the credential to the desktop app's loopback listener. A form POST
+   * (rather than fetch) keeps the token out of the URL and needs no CORS.
+   */
+  private postToDesktop(handoff: DesktopHandoff, credential: string): void {
+    const form = document.createElement('form');
+    form.method = 'POST';
+    form.action = `http://127.0.0.1:${handoff.port}/callback`;
+    for (const [name, value] of [['credential', credential], ['state', handoff.state]]) {
+      const input = document.createElement('input');
+      input.type = 'hidden';
+      input.name = name;
+      input.value = value;
+      form.appendChild(input);
+    }
+    document.body.appendChild(form);
+    form.submit();
   }
 
   /** Plays the background video forward, then reverse, forever, to keep a seamless loop. */

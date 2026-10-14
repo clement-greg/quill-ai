@@ -125,6 +125,41 @@ npm run build
 
 Compiles the TypeScript server and builds the Angular client. The Express server then serves the compiled Angular app as static files.
 
+### Desktop app (Electron)
+
+The `desktop/` package wraps Quill AI in a native window. Install its dependencies once:
+
+```bash
+cd desktop && npm install
+```
+
+From the repo, it runs against a local server:
+
+```bash
+npm run desktop       # build server + client, start the compiled server on :3200 with _private/config.json, open the window
+npm run desktop:dev   # wrap the `npm run dev` client on :6258 instead
+```
+
+`QUILL_URL` points the window anywhere else. Google Sign-In only works on origins registered on the OAuth client, so keep the local port at 3200 (or register the new origin) when overriding `QUILL_PORT`.
+
+Google blocks sign-in inside embedded browsers, so the desktop app signs in through the system browser: it opens `/login` there, and that page posts the Google credential back to a one-shot listener on `127.0.0.1` (see `desktop/google-sign-in.js`).
+
+#### Installers
+
+Installed builds contain no server and no secrets — they open the hosted site (`quill.hostedUrl` in `desktop/package.json`), so they pick up new features as soon as the site is deployed.
+
+```bash
+cd desktop
+npm run dist:mac   # release/Quill-AI-<version>-mac-universal.dmg
+npm run dist:win   # release/Quill-AI-<version>-win-x64.exe
+```
+
+Building the Windows installer on an Apple Silicon Mac needs Rosetta (`softwareupdate --install-rosetta`). The **Build Desktop Installers** GitHub workflow builds both on native runners whenever `desktop/` changes (or on demand) and attaches them as run artifacts.
+
+The installers are unsigned (the Mac app is ad-hoc signed):
+- **macOS** — the first launch is blocked; open **System Settings → Privacy & Security** and click **Open Anyway**.
+- **Windows** — SmartScreen warns about an unrecognized app; click **More info → Run anyway**.
+
 ---
 
 ## Deployment
