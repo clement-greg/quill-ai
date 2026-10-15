@@ -1,6 +1,7 @@
 import { Router, Request, Response } from 'express';
 import { AzureOpenAI } from 'openai';
 import config from '../config';
+import { modelFor } from '../services/ai-models';
 import { getContainer } from '../services/cosmos';
 import { Entity } from '../../shared/models/entity.model';
 import { buildChapterContextPrompt } from '../services/chapter-ai-context';
@@ -57,7 +58,7 @@ router.post('/general', async (req: Request, res: Response) => {
 
   try {
     const stream = await client.chat.completions.create({
-      model: config.foundry.midModel,
+      model: await modelFor(req.user, 'editorInsert'),
       messages: [
         { role: 'system', content: systemPrompt },
         ...messages,
@@ -176,7 +177,7 @@ router.post('/:chapterId', async (req: Request, res: Response) => {
 
   try {
     const stream = await client.chat.completions.create({
-      model: config.foundry.midModel,
+      model: await modelFor(req.user, 'editorInsert'),
       messages: [
         { role: 'system', content: systemPrompt },
         ...messages,

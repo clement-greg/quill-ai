@@ -350,6 +350,16 @@ describe('QuickChatService', () => {
       expect(bodyOf(chatCall)).not.toHaveProperty('entityId');
     });
 
+    it('sends the chat model, Luna by default', async () => {
+      service.activeSessionId.set('sess-1');
+      fetchStub.mockResolvedValue(new Response('data: [DONE]\n\n', { status: 200 }));
+
+      await service.sendMessage('Hello');
+
+      const chatCall = fetchStub.mock.calls.find(c => c[0] === '/api/chat-sessions/quick-chat')!;
+      expect(bodyOf(chatCall).model).toBe('luna');
+    });
+
     it('lists the chats attached to an entity', async () => {
       fetchStub.mockResolvedValue(new Response(JSON.stringify([{ id: 's1', name: 'A' }]), { status: 200 }));
       const chats = await service.getEntityChats('ent-1');

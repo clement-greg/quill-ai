@@ -2,6 +2,7 @@ import { Router, Request, Response } from 'express';
 import { AzureOpenAI } from 'openai';
 import { randomUUID } from 'crypto';
 import config from '../config';
+import { modelFor } from '../services/ai-models';
 import { buildChapterContext } from '../services/chapter-drafting-context';
 import {
   EditorReviewBlock,
@@ -167,7 +168,7 @@ router.post('/', async (req: Request, res: Response) => {
     }
 
     const stream = await client.chat.completions.create({
-      model: config.foundry.highModel,
+      model: await modelFor(req.user, 'editorReview'),
       messages: [
         { role: 'system', content: buildEditorPrompt(cleanBlocks, contextText) },
         { role: 'user', content: 'Review the chapter and emit editorial suggestions as JSONL.' },
@@ -283,7 +284,7 @@ router.post('/refine', async (req: Request, res: Response) => {
 
   try {
     const response = await client.chat.completions.create({
-      model: config.foundry.midModel,
+      model: await modelFor(req.user, 'editorRefine'),
       messages: [
         { role: 'system', content: systemPrompt },
         { role: 'user', content: instruction },

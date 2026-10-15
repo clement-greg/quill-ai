@@ -1,6 +1,7 @@
 import { Router, Request, Response } from 'express';
 import { AzureOpenAI } from 'openai';
 import config from '../config';
+import { modelFor } from '../services/ai-models';
 
 const router = Router();
 
@@ -69,7 +70,7 @@ router.post('/check', async (req: Request, res: Response) => {
 
   try {
     const completion = await client.chat.completions.create({
-      model: config.foundry.midModel,
+      model: await modelFor(req.user, 'writingScan'),
       messages: [
         { role: 'system', content: SYSTEM_PROMPT },
         { role: 'user', content: userContent },

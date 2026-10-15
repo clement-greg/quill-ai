@@ -247,6 +247,42 @@
             </div>
           </section>
         }
+        @case ('ai-models') {
+          <section class="settings-section">
+            <div class="section-header">
+              <h3>AI Models</h3>
+              <p class="section-desc">
+                Choose the model each AI feature runs on. Luna is fastest and cheapest, Terra balances
+                quality and cost, and Sol is the most capable but costs the most.
+              </p>
+            </div>
+            <div class="ai-model-list">
+              @for (op of aiOperations; track op.id) {
+                <div class="editor-pref-row ai-model-row">
+                  <div class="editor-pref-label-group">
+                    <span class="editor-pref-label" [id]="'ai-op-' + op.id">{{ op.label }}</span>
+                    <span class="editor-pref-sublabel">{{ op.description }}</span>
+                  </div>
+                  <mat-button-toggle-group [value]="aiModelPicks()[op.id]"
+                    (change)="setAiModel(op.id, $event.value)"
+                    [attr.aria-labelledby]="'ai-op-' + op.id"
+                    hideSingleSelectionIndicator>
+                    @for (model of aiModels; track model.key) {
+                      <mat-button-toggle [value]="model.key" [title]="model.description">
+                        {{ model.label }}@if (model.key === op.defaultModel) {<span class="ai-model-default" aria-label="(default)">&nbsp;•</span>}
+                      </mat-button-toggle>
+                    }
+                  </mat-button-toggle-group>
+                </div>
+              }
+            </div>
+            <p class="ai-model-legend">• marks the recommended default.</p>
+            <button mat-stroked-button type="button" (click)="resetAiModels()">
+              <mat-icon>restart_alt</mat-icon>
+              Reset to defaults
+            </button>
+          </section>
+        }
         @case ('characters') {
           <!-- Character Attributes Section -->
           <section class="settings-section">

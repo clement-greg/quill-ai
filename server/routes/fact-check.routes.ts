@@ -2,6 +2,7 @@ import { Router, Request, Response } from 'express';
 import { AzureOpenAI } from 'openai';
 import { randomUUID } from 'crypto';
 import config from '../config';
+import { modelFor } from '../services/ai-models';
 import {
   FactCheckCategory,
   FactCheckFinding,
@@ -285,6 +286,8 @@ router.post('/', async (req: Request, res: Response) => {
     ? `Known story entities — these are fictional, never fact-check claims about them: ${entityList.join(', ')}\n\n`
     : '';
 
+  const model = await modelFor(req.user, 'factCheck');
+
   /** Reads one segment and returns its claims. A segment that comes back
    * unreadable yields nothing rather than failing the whole run — losing one
    * part of a long chapter beats losing the whole report. */
@@ -295,7 +298,7 @@ router.post('/', async (req: Request, res: Response) => {
       ? `This is part ${index + 1} of ${segments.length} of one chapter. Check only the prose below; it may begin or end mid-scene.\n\n`
       : '';
     const completion = await client.chat.completions.create({
-      model: config.foundry.highModel,
+      model,
       messages: [
         { role: 'system', content: SYSTEM_PROMPT },
         { role: 'user', content: `${entityPreamble}${positionNote}Chapter prose:\n${segment}` },

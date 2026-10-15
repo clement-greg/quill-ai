@@ -20,7 +20,7 @@ jest.mock('../services/chapter-drafting-context', () => ({
 }));
 jest.mock('openai', () => {
   const create = jest.fn();
-  return { AzureOpenAI: jest.fn(() => ({ chat: { completions: { create } } })), __create: create };
+  return { AzureOpenAI: jest.fn(() => ({ responses: { create } })), __create: create };
 });
 
 import chatSessionRoutes from './chat-sessions.routes';
@@ -31,8 +31,10 @@ const fake = jest.requireMock('../services/cosmos').__fake as FakeCosmos;
 const create = jest.requireMock('openai').__create as jest.Mock;
 const app = makeTestApp('/api/chat-sessions', chatSessionRoutes);
 
-async function* chunks(...deltas: object[]) {
-  for (const delta of deltas) yield { choices: [{ delta }] };
+/** A Responses API stream that answers with plain text. */
+async function* textStream(text: string) {
+  yield { type: 'response.output_text.delta', delta: text };
+  yield { type: 'response.completed', response: { output: [{ type: 'message' }] } };
 }
 
 const session = (overrides: Record<string, unknown> = {}) => ({
@@ -135,10 +137,10 @@ describe('attaching chat sessions to entities', () => {
 
 describe('quick chat grounded in an attached entity', () => {
   const systemPrompt = () =>
-    (create.mock.calls[0]![0] as { messages: { role: string; content: string }[] }).messages[0]!.content;
+    (create.mock.calls[0]![0] as { input: { role: string; content: string }[] }).input[0]!.content;
 
   async function quickChat(body: object) {
-    create.mockImplementation(async () => chunks({ content: 'She maps the northern wastes.' }));
+    create.mockImplementation(async () => textStream('She maps the northern wastes.'));
     return request(app)
       .post('/api/chat-sessions/quick-chat')
       .send({ messages: [{ role: 'user', content: 'What does she do?' }], ...body });

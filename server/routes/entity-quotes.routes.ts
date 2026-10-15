@@ -3,6 +3,7 @@ import { randomUUID } from 'crypto';
 import { AzureOpenAI } from 'openai';
 import { getContainer } from '../services/cosmos';
 import config from '../config';
+import { modelFor } from '../services/ai-models';
 import { EntityQuote } from '../../shared/models/entity-quote.model';
 import { Chapter } from '../../shared/models/chapter.model';
 import { Book } from '../../shared/models/book.model';
@@ -75,7 +76,7 @@ router.post('/capture', async (req: Request, res: Response) => {
       `Who is speaking this quote? Reply with ONLY the exact character name from the list above, or "unknown" if you cannot determine it.`;
 
     const aiResponse = await aiClient.chat.completions.create({
-      model: config.foundry.lowModel,
+      model: await modelFor(req.user, 'quoteCapture'),
       messages: [{ role: 'user', content: aiPrompt }],
     });
 

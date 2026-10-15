@@ -457,8 +457,8 @@
 .qc-input-area {
   position: relative;
   display: flex;
-  align-items: flex-end;
-  gap: 8px;
+  flex-direction: column;
+  gap: 6px;
   padding: 12px 14px;
   border-top: 1px solid var(--mat-sys-outline-variant);
 }
@@ -609,8 +609,18 @@
 }
 
 .qc-textarea-wrap {
-  flex: 1;
   position: relative;
+}
+
+/* Model switcher on the left, mic and send on the right, under the full-width input. */
+.qc-input-actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.qc-input-actions-spacer {
+  flex: 1;
 }
 
 .qc-textarea {
@@ -946,6 +956,38 @@
 .qc-mic-recording {
   color: var(--mat-sys-error);
   animation: qc-mic-pulse 1.2s ease-in-out infinite;
+}
+
+.qc-model {
+  flex: none;
+  min-width: 0;
+  padding: 0 8px;
+  color: var(--mat-sys-on-surface-variant);
+
+  mat-icon {
+    font-size: 18px;
+    width: 18px;
+    height: 18px;
+    margin-right: 4px;
+  }
+}
+
+.qc-model-label {
+  font-size: 0.8125rem;
+}
+
+/* The menu renders in the overlay container, outside this component's host. */
+::ng-deep .qc-model-menu {
+  .qc-model-option {
+    display: flex;
+    flex-direction: column;
+    line-height: 1.25;
+  }
+
+  .qc-model-option-desc {
+    font-size: 0.75rem;
+    color: var(--mat-sys-on-surface-variant);
+  }
 }
 
 @keyframes qc-mic-pulse {

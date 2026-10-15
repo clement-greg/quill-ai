@@ -1,6 +1,7 @@
 import { Router, Request, Response } from 'express';
 import { AzureOpenAI } from 'openai';
 import config from '../config';
+import { modelFor } from '../services/ai-models';
 import { getContainer } from '../services/cosmos';
 import { deleteBlob } from '../services/storage';
 import { Entity } from '../../shared/models/entity.model';
@@ -669,7 +670,7 @@ router.post('/:id/generate-personality', async (req: Request, res: Response) => 
       `Basic description: ${basicDescription}`;
 
     const completion = await aiClient.chat.completions.create({
-      model: config.foundry.midModel,
+      model: await modelFor(req.user, 'entityWriting'),
       messages: [{ role: 'user', content: metaPrompt }],
     });
 
@@ -775,7 +776,7 @@ router.post('/:id/generate-biography', async (req: Request, res: Response) => {
       contextBlock;
 
     const completion = await aiClient.chat.completions.create({
-      model: config.foundry.midModel,
+      model: await modelFor(req.user, 'entityWriting'),
       messages: [{ role: 'user', content: prompt }],
     });
 

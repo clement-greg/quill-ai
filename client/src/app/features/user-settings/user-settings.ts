@@ -12,6 +12,7 @@ import { UserSettingsService, GhostCompleteItem, DEFAULT_GENDER_OPTIONS, DEFAULT
 import { HeaderService } from '@app/core/services/header.service';
 import { AppUpdateService } from '@app/core/services/app-update.service';
 import { ContentFilterService } from './content-filter.service';
+import { AI_MODELS, AI_OPERATIONS, AiModelKey, AiOperation } from '@shared/models/ai-model.model';
 
 export interface ColorThemeOption {
   id: string;
@@ -36,12 +37,13 @@ export const COLOR_THEMES: ColorThemeOption[] = [
   { id: 'minimalist',  label: 'Minimalist', primaryColor: '#E0E0E0', surfaceColor: '#FFFFFF' },
 ];
 
-export type SettingsTabId = 'profile' | 'appearance' | 'writing' | 'characters' | 'advanced';
+export type SettingsTabId = 'profile' | 'appearance' | 'writing' | 'ai-models' | 'characters' | 'advanced';
 
 export const SETTINGS_TABS: { id: SettingsTabId; label: string; icon: string }[] = [
   { id: 'profile',    label: 'Profile',    icon: 'person' },
   { id: 'appearance', label: 'Appearance', icon: 'palette' },
   { id: 'writing',    label: 'Writing',    icon: 'edit_note' },
+  { id: 'ai-models',  label: 'AI Models',  icon: 'auto_awesome' },
   { id: 'characters', label: 'Characters', icon: 'groups' },
   { id: 'advanced',   label: 'Advanced',   icon: 'tune' },
 ];
@@ -289,6 +291,25 @@ export class UserSettingsComponent {
 
   setAutoSaveEnabled(value: boolean): void {
     this.settingsService.setAutoSaveEnabled(value);
+  }
+
+  // ── AI Models ──────────────────────────────────────
+  readonly aiModels = AI_MODELS;
+  readonly aiOperations = AI_OPERATIONS;
+  /** Current pick per operation, defaults filled in. */
+  readonly aiModelPicks = computed(() => {
+    return Object.fromEntries(
+      AI_OPERATIONS.map(op => [op.id, this.settingsService.modelFor(op.id)]),
+    ) as Record<AiOperation, AiModelKey>;
+  });
+
+  setAiModel(op: AiOperation, model: AiModelKey): void {
+    this.settingsService.setAiModel(op, model);
+  }
+
+  resetAiModels(): void {
+    this.settingsService.resetAiModels();
+    this.snackBar.open('AI models reset to defaults', undefined, { duration: 2500 });
   }
 
   // ── Character Attribute Options ────────────────────

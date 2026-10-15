@@ -155,6 +155,8 @@ export class QuickChatService {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           messages: apiMessages,
+          // The model picked in the chat's model switcher.
+          model: this.userSettings.chatModel(),
           ...(chapterContext ? { chapterContext } : {}),
           // Grounds the answer in the entity this chat is attached to.
           ...(this.attachedEntityId() ? { entityId: this.attachedEntityId() } : {}),
