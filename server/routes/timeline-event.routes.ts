@@ -20,6 +20,7 @@ import {
   deleteTimelineEventChunk,
 } from '../services/timeline-event-chunks';
 import config from '../config';
+import { modelFor } from '../services/ai-models';
 
 const router = Router();
 const container = getContainer('timeline-events');
@@ -349,7 +350,7 @@ router.post('/extract-from-chapter', async (req: Request, res: Response) => {
     ].join('\n');
 
     const completion = await aiClient.chat.completions.create({
-      model: config.foundry.highModel,
+      model: await modelFor(req.user, 'chapterAnalysis'),
       messages: [
         { role: 'system', content: EXTRACTION_SYSTEM_PROMPT },
         { role: 'user', content: userContent },
@@ -575,7 +576,7 @@ router.get('/places/autocomplete', async (req: Request, res: Response) => {
   }
   try {
     const completion = await aiClient.chat.completions.create({
-      model: config.foundry.lowModel,
+      model: await modelFor(req.user, 'placeSuggestions'),
       messages: [
         {
           role: 'system',

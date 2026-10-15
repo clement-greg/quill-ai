@@ -4,6 +4,8 @@ import config from '../config';
 import { getContainer } from './cosmos';
 import { sanitizeForModeration } from './content-sanitize';
 import { Chapter } from '../../shared/models/chapter.model';
+import { modelKeyFor } from '../../shared/models/ai-model.model';
+import { deploymentFor, modelFor } from './ai-models';
 
 const client = new AzureOpenAI({
   endpoint: config.foundry.endpoint,
@@ -44,9 +46,9 @@ function isContentFilterError(err: unknown): boolean {
   return (err as { code?: string } | null)?.code === 'content_filter';
 }
 
-async function requestSummary(input: string): Promise<string | null> {
+async function requestSummary(input: string, model: string): Promise<string | null> {
   const response = await client.chat.completions.create({
-    model: config.foundry.midModel,
+    model,
     messages: [
       { role: 'system', content: SUMMARY_SYSTEM_PROMPT },
       { role: 'user', content: input },
@@ -72,13 +74,13 @@ function isOutputLimitError(err: unknown): boolean {
 /**
  * Cheap probe to check whether a prompt alone would be blocked by the content
  * filter, without paying for a full completion.
- * Must use the same tier as the real call — Azure content filters are
- * configured per deployment, so a probe on another tier proves nothing.
+ * Must use the same deployment as the real call — Azure content filters are
+ * configured per deployment, so a probe on another one proves nothing.
  */
-async function isPromptSafe(input: string): Promise<boolean> {
+async function isPromptSafe(input: string, model: string): Promise<boolean> {
   try {
     await client.chat.completions.create({
-      model: config.foundry.midModel,
+      model,
       messages: [{ role: 'user', content: input }],
       max_completion_tokens: PROBE_MAX_TOKENS,
       stream: false,
@@ -101,6 +103,7 @@ async function isPromptSafe(input: string): Promise<boolean> {
  */
 export async function generateChapterSummary(
   content: string | undefined,
+  model: string = deploymentFor(modelKeyFor(undefined, 'chapterSummary')),
 ): Promise<{ summary: string; sourceHash: string } | null> {
   const plainText = toPlainText(content ?? '');
   if (plainText.length < 200) return null; // too short to be worth summarizing
@@ -114,7 +117,7 @@ export async function generateChapterSummary(
   const input = await sanitizeForModeration(truncated);
 
   try {
-    const summary = await requestSummary(input);
+    const summary = await requestSummary(input, model);
     if (!summary) return null;
     return { summary, sourceHash: hashContent(plainText) };
   } catch (err) {
@@ -134,7 +137,7 @@ export async function generateChapterSummary(
   const survivors: string[] = [];
   for (const [index, paragraph] of paragraphs.entries()) {
     try {
-      if (await isPromptSafe(paragraph)) {
+      if (await isPromptSafe(paragraph, model)) {
         survivors.push(paragraph);
       } else {
         const preview = paragraph.length > 200 ? `${paragraph.slice(0, 200)}...` : paragraph;
@@ -150,7 +153,7 @@ export async function generateChapterSummary(
   if (survivors.length === 0) return null;
 
   try {
-    const summary = await requestSummary(survivors.join('\n\n'));
+    const summary = await requestSummary(survivors.join('\n\n'), model);
     if (!summary) return null;
     return { summary, sourceHash: hashContent(plainText) };
   } catch (err) {
@@ -177,7 +180,8 @@ export function summaryIsStale(chapter: Chapter): boolean {
 export async function refreshChapterSummary(chapter: Chapter): Promise<string | null> {
   try {
     if (!summaryIsStale(chapter)) return null;
-    const result = await generateChapterSummary(chapter.content);
+    const model = await modelFor(chapter.owner ? { email: chapter.owner } : undefined, 'chapterSummary');
+    const result = await generateChapterSummary(chapter.content, model);
     if (!result) return null;
 
     // Re-read before writing so we don't clobber a concurrent content edit.

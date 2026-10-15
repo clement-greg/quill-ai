@@ -185,6 +185,46 @@ describe('UserSettingsService', () => {
     expect(service.ghostCompleteItems()).toEqual([]);
   });
 
+  // ── AI models ──────────────────────────────────────────────────────────────
+
+  describe('AI models', () => {
+    it('defaults the chat to Luna and each operation to its default', () => {
+      expect(service.chatModel()).toBe('luna');
+      expect(service.modelFor('writingScan')).toBe('luna');
+      expect(service.modelFor('editorReview')).toBe('terra');
+    });
+
+    it('setAiModel updates the pick and saves it', () => {
+      service.setAiModel('chat', 'sol');
+      const req = http.expectOne('/api/user-settings');
+      expect(req.request.body.aiModels).toEqual({ chat: 'sol' });
+      req.flush({});
+      expect(service.chatModel()).toBe('sol');
+    });
+
+    it('resetAiModels clears every pick', () => {
+      service.setAiModel('factCheck', 'luna');
+      flushSave();
+      service.resetAiModels();
+      const req = http.expectOne('/api/user-settings');
+      expect(req.request.body.aiModels).toEqual({});
+      req.flush({});
+      expect(service.modelFor('factCheck')).toBe('terra');
+    });
+
+    it('loadFromServer keeps valid picks and drops invalid ones', async () => {
+      const load = service.loadFromServer();
+      http.expectOne('/api/user-settings').flush({ aiModels: { chat: 'terra' } });
+      await load;
+      expect(service.chatModel()).toBe('terra');
+
+      const reload = service.loadFromServer();
+      http.expectOne('/api/user-settings').flush({ aiModels: { chat: 'gpt-4' } });
+      await reload;
+      expect(service.chatModel()).toBe('luna');
+    });
+  });
+
   // ── Desktop top bar ────────────────────────────────────────────────────────
 
   describe('desktop top bar', () => {

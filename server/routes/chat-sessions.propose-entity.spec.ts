@@ -22,7 +22,7 @@ jest.mock('../services/chapter-drafting-context', () => ({
 // `toolArgs`, every later turn answers with plain text.
 jest.mock('openai', () => {
   const create = jest.fn();
-  return { AzureOpenAI: jest.fn(() => ({ chat: { completions: { create } } })), __create: create };
+  return { AzureOpenAI: jest.fn(() => ({ responses: { create } })), __create: create };
 });
 
 import chatSessionRoutes from './chat-sessions.routes';
@@ -33,23 +33,35 @@ const fake = jest.requireMock('../services/cosmos').__fake as FakeCosmos;
 const create = jest.requireMock('openai').__create as jest.Mock;
 const app = makeTestApp('/api/chat-sessions', chatSessionRoutes);
 
-async function* chunks(...deltas: object[]) {
-  for (const delta of deltas) yield { choices: [{ delta }] };
+/** A Responses API stream that answers with plain text. */
+async function* textStream(text: string) {
+  yield { type: 'response.output_text.delta', delta: text };
+  yield { type: 'response.completed', response: { output: [{ type: 'message' }] } };
 }
 
+/** A Responses API stream whose turn ends in a single tool call. */
+async function* toolCallStream(name: string, args: object) {
+  yield {
+    type: 'response.completed',
+    response: { output: [{ type: 'function_call', call_id: 'call-1', name, arguments: JSON.stringify(args) }] },
+  };
+}
+
+type InputItem = { role?: string; content?: string; type?: string; output?: string };
+
 function scriptToolCall(toolArgs: object, toolName = 'propose_entity'): void {
-  create.mockImplementation(async (body: { messages: { role: string }[] }) => {
-    const isFirstTurn = !body.messages.some(m => m.role === 'tool');
+  create.mockImplementation(async (body: { input: InputItem[] }) => {
+    const isFirstTurn = !body.input.some(i => i.type === 'function_call_output');
     return isFirstTurn
-      ? chunks({ tool_calls: [{ index: 0, id: 'call-1', function: { name: toolName, arguments: JSON.stringify(toolArgs) } }] })
-      : chunks({ content: 'The form is open for you to review.' });
+      ? toolCallStream(toolName, toolArgs)
+      : textStream('The form is open for you to review.');
   });
 }
 
 /** The tool result the route fed back to the model on the second turn. */
 function toolResult(): Record<string, unknown> {
-  const second = create.mock.calls[1]![0] as { messages: { role: string; content: string }[] };
-  return JSON.parse(second.messages.find(m => m.role === 'tool')!.content);
+  const second = create.mock.calls[1]![0] as { input: InputItem[] };
+  return JSON.parse(second.input.find(i => i.type === 'function_call_output')!.output!);
 }
 
 function sseEvents(text: string): Record<string, unknown>[] {
@@ -72,9 +84,9 @@ const proposalOf = (events: Record<string, unknown>[]) =>
     | { entityId?: string; seriesId: string; seriesTitle: string; entity: Record<string, unknown>; chatImages?: unknown[] }
     | undefined;
 
-type ToolDef = { function: { name: string; parameters: { properties: Record<string, unknown> } } };
-const firstTurn = () => create.mock.calls[0]![0] as { messages: { role: string; content: string }[]; tools: ToolDef[] };
-const toolNamed = (name: string) => firstTurn().tools.find(t => t.function.name === name);
+type ToolDef = { name: string; parameters: { properties: Record<string, unknown> } };
+const firstTurn = () => create.mock.calls[0]![0] as { input: { role: string; content: string }[]; tools: ToolDef[] };
+const toolNamed = (name: string) => firstTurn().tools.find(t => t.name === name);
 
 const BLOB = 'https://acct.blob.core.windows.net/images';
 const genImage = (id: string, prompt?: string) => ({
@@ -132,8 +144,8 @@ describe('propose_entity tool (quick chat)', () => {
     scriptToolCall({ name: 'X', type: 'THING' });
     await quickChat({ entityOptions: { gender: ['Male', 'Female'] } });
 
-    const tools = (create.mock.calls[0]![0] as { tools: { function: { name: string; parameters: { properties: Record<string, { enum?: string[] }> } } }[] }).tools;
-    const props = tools.find(t => t.function.name === 'propose_entity')!.function.parameters.properties;
+    const tools = (create.mock.calls[0]![0] as { tools: { name: string; parameters: { properties: Record<string, { enum?: string[] }> } }[] }).tools;
+    const props = tools.find(t => t.name === 'propose_entity')!.parameters.properties;
     expect(props['gender']!.enum).toEqual(['Male', 'Female']);
     expect(props['race']!.enum).toBeUndefined();
   });
@@ -218,10 +230,10 @@ describe('chat pictures for entities', () => {
       ],
     });
 
-    const system = firstTurn().messages[0]!.content;
+    const system = firstTurn().input[0]!.content;
     expect(system).toContain('[1] Malik in desert robes\n[2] Malik with a falcon');
     expect(system).not.toContain('[3]');
-    expect(toolNamed('propose_entity')!.function.parameters.properties).toHaveProperty('profileImage');
+    expect(toolNamed('propose_entity')!.parameters.properties).toHaveProperty('profileImage');
     expect(toolNamed('propose_entity_pictures')).toBeDefined();
     expect(proposalOf(sseEvents((await quickChat()).res.text))!.chatImages).toBeUndefined();
   });
@@ -229,9 +241,9 @@ describe('chat pictures for entities', () => {
   it('offers no picture options when the chat has no pictures', async () => {
     scriptToolCall({ name: 'Malik', type: 'PERSON' });
     await quickChat();
-    expect(toolNamed('propose_entity')!.function.parameters.properties).not.toHaveProperty('profileImage');
+    expect(toolNamed('propose_entity')!.parameters.properties).not.toHaveProperty('profileImage');
     expect(toolNamed('propose_entity_pictures')).toBeUndefined();
-    expect(firstTurn().messages[0]!.content).not.toContain('PICTURES GENERATED');
+    expect(firstTurn().input[0]!.content).not.toContain('PICTURES GENERATED');
   });
 
   it('puts the picked pictures on the draft: profile first in the gallery, no repeats', async () => {

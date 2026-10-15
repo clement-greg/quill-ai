@@ -4,6 +4,9 @@ const create = jest.fn();
 jest.mock('openai', () => ({
   AzureOpenAI: jest.fn(() => ({ chat: { completions: { create } } })),
 }));
+jest.mock('../services/ai-models', () => ({
+  modelFor: jest.fn(async () => 'test-model'),
+}));
 // Grounding is exercised in google-search-grounding.spec.ts; here it is stubbed so
 // the route's own streaming, merge and fallback logic is what's under test.
 jest.mock('../services/google-search-grounding', () => ({

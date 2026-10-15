@@ -1,6 +1,7 @@
 import { Router, Request, Response } from 'express';
 import { AzureOpenAI } from 'openai';
 import config from '../config';
+import { modelFor } from '../services/ai-models';
 import { getContainer } from '../services/cosmos';
 import { Series } from '../../shared/models/series.model';
 import { readOwnedItem, readAccessibleItem } from '../middleware/owner-guard';
@@ -264,7 +265,7 @@ router.post('/:id/generate-system-prompt', async (req: Request, res: Response) =
       `Basic description: ${basicPrompt}`;
 
     const completion = await aiClient.chat.completions.create({
-      model: config.foundry.midModel,
+      model: await modelFor(req.user, 'seriesPrompt'),
       messages: [{ role: 'user', content: metaPrompt }],
     });
 

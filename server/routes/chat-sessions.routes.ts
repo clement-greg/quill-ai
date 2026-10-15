@@ -2,6 +2,7 @@ import { Router, Request, Response } from 'express';
 import { AzureOpenAI } from 'openai';
 import { randomUUID } from 'crypto';
 import config from '../config';
+import { chatModelFor, modelFor } from '../services/ai-models';
 import { getContainer } from '../services/cosmos';
 import { withOwnerFilter } from '../middleware/owner-guard';
 import {
@@ -288,9 +289,41 @@ function emitUsedCitations(res: Response, answer: string, citations: ChapterCita
   }
 }
 
+/** A tool definition in the Chat Completions shape (how every tool here is declared). */
+interface FunctionToolDefinition {
+  function: { name: string; description?: string; parameters?: Record<string, unknown> };
+}
+
 /**
- * Streams a chat completion as SSE: `{content}` deltas, then a `{sources}`
- * event for any cited chapters, then `[DONE]`. Assumes SSE headers are flushed.
+ * Converts a Chat Completions tool definition to the Responses API shape, which
+ * flattens `function` into the tool itself. `strict` stays off: the existing
+ * schemas use optional properties that strict mode would reject.
+ */
+function toResponsesTool(definition: unknown) {
+  const { name, description, parameters } = (definition as FunctionToolDefinition).function;
+  return {
+    type: 'function' as const,
+    name,
+    description: description ?? null,
+    parameters: parameters ?? { type: 'object', properties: {} },
+    strict: false,
+  };
+}
+
+/** The parts of a Responses API output item this loop reads. */
+interface ResponseOutputItem {
+  type: string;
+  call_id?: string;
+  name?: string;
+  arguments?: string;
+}
+
+/**
+ * Streams a chat turn as SSE: `{content}` deltas, then a `{sources}` event for
+ * any cited chapters, then `[DONE]`. Assumes SSE headers are flushed.
+ *
+ * Runs on the Responses API rather than Chat Completions because some models
+ * (gpt-6.1-sol) refuse function tools on /chat/completions.
  *
  * When `tools` are supplied, runs a small agent loop: if the model calls a
  * tool, its result is fed back and the model is re-invoked until it produces a
@@ -302,12 +335,13 @@ async function streamChatResponse(
   systemPrompt: string,
   messages: { role: 'user' | 'assistant'; content: string }[],
   citations: ChapterCitation[],
-  tools?: Record<string, ChatTool>,
-  model: string = config.foundry.midModel,
+  tools: Record<string, ChatTool> | undefined,
+  model: string,
 ): Promise<void> {
-  // The running conversation; grows as tool calls/results are appended.
-  const convo: unknown[] = [{ role: 'system', content: systemPrompt }, ...messages];
-  const toolDefinitions = tools ? Object.values(tools).map(t => t.definition) : undefined;
+  // The running conversation; grows as each turn's output items (reasoning and
+  // tool calls) and the tool results are appended.
+  const input: unknown[] = [{ role: 'system', content: systemPrompt }, ...messages];
+  const toolDefinitions = tools ? Object.values(tools).map(t => toResponsesTool(t.definition)) : undefined;
   // Lottie URL to emit after the model's final text response (set when a tool with successLottie succeeds).
   let pendingLottie: string | null = null;
 
@@ -323,7 +357,7 @@ async function streamChatResponse(
     for (let turn = 0; turn < MAX_TURNS; turn++) {
       const isFinalTurn = turn === MAX_TURNS - 1;
       if (isFinalTurn && toolDefinitions) {
-        convo.push({
+        input.push({
           role: 'system',
           content:
             'You have no more searches available. Answer now from what you have already found. If it ' +
@@ -331,31 +365,31 @@ async function streamChatResponse(
             'so the author can point you somewhere better. Do not invent details.',
         });
       }
-      const stream = await client.chat.completions.create({
+      const stream = await client.responses.create({
         model,
-        messages: convo as never,
-        ...(toolDefinitions && !isFinalTurn ? { tools: toolDefinitions as never } : {}),
+        input: input as never,
+        ...(toolDefinitions && !isFinalTurn ? { tools: toolDefinitions } : {}),
         stream: true,
       });
 
       let answer = '';
-      const toolCalls: { id: string; name: string; args: string }[] = [];
-      for await (const chunk of stream) {
-        const delta = chunk.choices[0]?.delta;
-        if (delta?.content) {
-          answer += delta.content;
-          res.write(`data: ${JSON.stringify({ content: delta.content })}\n\n`);
-        }
-        for (const tc of delta?.tool_calls ?? []) {
-          const idx = tc.index ?? 0;
-          const slot = (toolCalls[idx] ??= { id: '', name: '', args: '' });
-          if (tc.id) slot.id = tc.id;
-          if (tc.function?.name) slot.name = tc.function.name;
-          if (tc.function?.arguments) slot.args += tc.function.arguments;
+      let output: ResponseOutputItem[] = [];
+      for await (const event of stream) {
+        if (event.type === 'response.output_text.delta') {
+          answer += event.delta;
+          res.write(`data: ${JSON.stringify({ content: event.delta })}\n\n`);
+        } else if (event.type === 'response.completed' || event.type === 'response.incomplete') {
+          output = event.response.output as ResponseOutputItem[];
+        } else if (event.type === 'response.failed') {
+          throw Object.assign(new Error(event.response.error?.message ?? 'Response failed'), {
+            code: event.response.error?.code,
+          });
+        } else if (event.type === 'error') {
+          throw Object.assign(new Error(event.message), { code: event.code });
         }
       }
 
-      const calls = toolCalls.filter(Boolean);
+      const calls = output.filter(item => item.type === 'function_call');
       if (calls.length === 0 || !tools || isFinalTurn) {
         if (pendingLottie) res.write(`data: ${JSON.stringify({ lottie: pendingLottie })}\n\n`);
         emitUsedCitations(res, answer, citations);
@@ -363,23 +397,17 @@ async function streamChatResponse(
         return;
       }
 
-      // Record the assistant turn that requested the tools, then run each tool.
-      convo.push({
-        role: 'assistant',
-        content: answer || null,
-        tool_calls: calls.map(c => ({
-          id: c.id,
-          type: 'function',
-          function: { name: c.name, arguments: c.args || '{}' },
-        })),
-      });
+      // Carry the whole turn forward -- reasoning models need their reasoning
+      // items alongside the tool calls they produced -- then run each tool.
+      input.push(...output);
       for (const c of calls) {
-        const tool = tools[c.name];
+        const name = c.name ?? '';
+        const tool = tools[name];
         // Tell the client which tool ran so it can surface a "Used: …" chip.
-        if (c.name) res.write(`data: ${JSON.stringify({ tool: c.name })}\n\n`);
+        if (name) res.write(`data: ${JSON.stringify({ tool: name })}\n\n`);
         let parsedArgs: Record<string, unknown> = {};
         try {
-          parsedArgs = c.args ? JSON.parse(c.args) : {};
+          parsedArgs = c.arguments ? JSON.parse(c.arguments) : {};
         } catch {
           // Leave args empty if the model produced invalid JSON.
         }
@@ -388,10 +416,10 @@ async function streamChatResponse(
         if (tool?.pending) res.write(`data: ${JSON.stringify(tool.pending)}\n\n`);
         const { toolResult, sse, success } = tool
           ? await tool.execute(parsedArgs)
-          : { toolResult: { error: `Unknown tool ${c.name}` }, sse: undefined, success: false };
+          : { toolResult: { error: `Unknown tool ${name}` }, sse: undefined, success: false };
         if (sse) res.write(`data: ${JSON.stringify(sse)}\n\n`);
         if (success && tool?.successLottie) pendingLottie = tool.successLottie;
-        convo.push({ role: 'tool', tool_call_id: c.id, content: JSON.stringify(toolResult) });
+        input.push({ type: 'function_call_output', call_id: c.call_id, output: JSON.stringify(toolResult) });
       }
     }
     // Unreachable in practice: the final turn runs without tools and always
@@ -739,7 +767,7 @@ async function generateChapterContent(bookId: string, title: string, description
 
   try {
     const response = await client.chat.completions.create({
-      model: config.foundry.highModel,
+      model: await modelFor(req.user, 'chapterDraft'),
       messages: [
         { role: 'system', content: systemPrompt },
         { role: 'user', content: `Write the content for a chapter titled "${title}" based on the following description:\n\n${description}` },
@@ -1707,7 +1735,7 @@ function getDescribeEntityTool(req: Request): ChatTool {
         (instructions ? `\n\nAuthor's instructions: ${instructions}` : '');
       try {
         const completion = await client.chat.completions.create({
-          model: config.foundry.midModel,
+          model: await modelFor(req.user, 'entityWriting'),
           messages: [
             { role: 'system', content: DESCRIBE_ENTITY_SYSTEM_PROMPT },
             {
@@ -2817,6 +2845,7 @@ router.post('/:id/chat', async (req: Request, res: Response) => {
     messages,
     citations,
     seriesChatTools(req, { seriesId: session?.seriesId ?? undefined }, citations),
+    await chatModelFor(req.user, req.body.model),
   );
 });
 
@@ -2867,14 +2896,14 @@ router.post('/quick-chat', async (req: Request, res: Response) => {
 
       // Stage 1: beat sheet (scene plan), surfaced to the client and fed into
       // the prose generation for structural coherence.
-      const beats = await generateChapterBeatSheet(draftPrompt, lastUser?.content ?? '');
+      const beats = await generateChapterBeatSheet(draftPrompt, lastUser?.content ?? '', await modelFor(req.user, 'beatSheet'));
       if (beats) res.write(`data: ${JSON.stringify({ beats })}\n\n`);
 
       // Stage 2: high-tier prose draft, grounded in the beat sheet.
       const prosePrompt = beats
         ? `${draftPrompt}\n\nFollow this beat sheet, expanding each beat into immersive prose:\n${beats}`
         : draftPrompt;
-      await streamChatResponse(res, prosePrompt, messages, [], undefined, config.foundry.highModel);
+      await streamChatResponse(res, prosePrompt, messages, [], undefined, await modelFor(req.user, 'chapterDraft'));
       return;
     }
   }
@@ -2971,7 +3000,7 @@ router.post('/quick-chat', async (req: Request, res: Response) => {
     IMAGE_TOOL_GUIDANCE + ENTITY_RESEARCH_GUIDANCE + ENTITY_DESCRIPTION_GUIDANCE + SEARCH_CHAPTER_TEXT_GUIDANCE + SAVE_THOUGHT_GUIDANCE +
     ENTITY_CREATION_GUIDANCE + chatImagesGuidance(chatImages) +
     (chapterContext?.chapterId ? LINK_REFERENCES_GUIDANCE + SMART_EDIT_GUIDANCE : '');
-  await streamChatResponse(res, systemPrompt + guidance, messages, citations, tools);
+  await streamChatResponse(res, systemPrompt + guidance, messages, citations, tools, await chatModelFor(req.user, req.body.model));
 });
 
 // POST /:id/name — ask the LLM to generate a session name, then persist it
@@ -3000,7 +3029,7 @@ router.post('/:id/name', async (req: Request, res: Response) => {
 
   try {
     const response = await client.chat.completions.create({
-      model: config.foundry.lowModel,
+      model: await modelFor(req.user, 'titles'),
       messages: [
         {
           role: 'system',

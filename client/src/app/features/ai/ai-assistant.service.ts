@@ -3,6 +3,7 @@ import { ChapterCitation, ChatFolder, ChatMessageHighlight, ChatSession, ChatSes
 import { Series } from '@shared/models/series.model';
 import { SeriesContextService } from '@app/core/services/series-context.service';
 import { AuthFetchService } from '@app/core/services/auth-fetch.service';
+import { UserSettingsService } from '@app/core/services/user-settings.service';
 
 const PENDING_ID = '__pending__';
 
@@ -10,6 +11,7 @@ const PENDING_ID = '__pending__';
 export class AiAssistantService {
   private readonly seriesContext = inject(SeriesContextService);
   private readonly authFetchService = inject(AuthFetchService);
+  private readonly userSettings = inject(UserSettingsService);
 
   // Panel open/closed state
   readonly isOpen = signal(false);
@@ -402,7 +404,7 @@ export class AiAssistantService {
       const res = await this.authFetch(`/api/chat-sessions/${session.id}/chat`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ messages: apiMessages }),
+        body: JSON.stringify({ messages: apiMessages, model: this.userSettings.chatModel() }),
         signal: this.abortController.signal,
       });
 

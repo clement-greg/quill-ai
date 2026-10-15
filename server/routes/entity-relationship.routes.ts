@@ -15,6 +15,7 @@ import { Entity } from '../../shared/models/entity.model';
 import { Chapter } from '../../shared/models/chapter.model';
 import { withOwnerFilter, readOwnedItem } from '../middleware/owner-guard';
 import config from '../config';
+import { modelFor } from '../services/ai-models';
 
 const router = Router();
 const relationshipContainer = getContainer('entity-relationships');
@@ -186,7 +187,7 @@ router.post('/extract-from-chapter', async (req: Request, res: Response) => {
     ].join('\n');
 
     const completion = await aiClient.chat.completions.create({
-      model: config.foundry.highModel,
+      model: await modelFor(req.user, 'chapterAnalysis'),
       messages: [
         { role: 'system', content: RELATIONSHIP_EXTRACTION_PROMPT },
         { role: 'user', content: userContent },

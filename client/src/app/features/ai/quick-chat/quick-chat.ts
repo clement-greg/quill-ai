@@ -15,12 +15,14 @@ import { MatButtonModule } from '@angular/material/button';
 import { MatIconModule } from '@angular/material/icon';
 import { MatTooltipModule } from '@angular/material/tooltip';
 import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
+import { MatMenuModule } from '@angular/material/menu';
 import { MatDialog } from '@angular/material/dialog';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { DomSanitizer, SafeHtml } from '@angular/platform-browser';
 import { firstValueFrom, forkJoin } from 'rxjs';
 import { ChapterEditProposal, ChatMessageHighlight, ChatSessionMessage, EntityLinkGroup, EntityLinkSession, EntityProposal, MapPreview } from '@shared/models';
 import { Entity } from '@shared/models/entity.model';
+import { AI_MODELS, AiModelKey } from '@shared/models/ai-model.model';
 import { QuickChatService } from '../quick-chat.service';
 import { SpeechRecognitionService } from '@app/core/services/speech-recognition.service';
 import { AiAssistantService } from '../ai-assistant.service';
@@ -261,7 +263,7 @@ const SLASH_COMMANDS: readonly SlashCommand[] = [
 @Component({
   selector: 'app-quick-chat',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [MatButtonModule, MatIconModule, MatTooltipModule, MatProgressSpinnerModule, MapPreviewComponent],
+  imports: [MatButtonModule, MatIconModule, MatTooltipModule, MatProgressSpinnerModule, MatMenuModule, MapPreviewComponent],
   templateUrl: './quick-chat.html',
   styleUrl: './quick-chat.scss',
   schemas: [CUSTOM_ELEMENTS_SCHEMA],
@@ -283,6 +285,16 @@ export class QuickChatComponent {
   readonly editorBridge = inject(EditorBridgeService);
   readonly userSettings = inject(UserSettingsService);
   private readonly ngZone = inject(NgZone);
+
+  // ── Model switcher ───────────────────────────────────────────────────────
+  readonly models = AI_MODELS;
+  readonly chatModel = this.userSettings.chatModel;
+  readonly chatModelLabel = computed(() => AI_MODELS.find(m => m.key === this.chatModel())?.label ?? '');
+
+  /** Switches the chat's model; remembered as the author's chat default. */
+  selectChatModel(model: AiModelKey): void {
+    this.userSettings.setAiModel('chat', model);
+  }
 
   // ── Drag-to-reposition (desktop only) ────────────────────────────────────
   readonly dragPos = signal<{ left: number; top: number } | null>(null);

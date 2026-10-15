@@ -3,6 +3,7 @@ import { DOCUMENT } from '@angular/common';
 import { HttpClient } from '@angular/common/http';
 import { firstValueFrom } from 'rxjs';
 import { getQuillDesktop } from '@app/core/desktop/quill-desktop';
+import { AiModelKey, AiModelSettings, AiOperation, isAiModelSettings, modelKeyFor } from '@shared/models/ai-model.model';
 
 const HIDE_DESKTOP_TOOLBAR_KEY = 'quill_hide_desktop_toolbar';
 
@@ -39,6 +40,7 @@ export interface UserSettingsData {
   grammarCheckEnabled?: boolean;
   entityDetectionEnabled?: boolean;
   autoSaveEnabled?: boolean;
+  aiModels?: AiModelSettings;
   genderOptions?: string[];
   raceOptions?: string[];
   orientationOptions?: string[];
@@ -66,6 +68,7 @@ export class UserSettingsService {
   private _grammarCheckEnabled = signal<boolean>(true);
   private _entityDetectionEnabled = signal<boolean>(true);
   private _autoSaveEnabled = signal<boolean>(false);
+  private _aiModels = signal<AiModelSettings>({});
   private _genderOptions = signal<string[]>(DEFAULT_GENDER_OPTIONS);
   private _raceOptions = signal<string[]>(DEFAULT_RACE_OPTIONS);
   private _orientationOptions = signal<string[]>(DEFAULT_ORIENTATION_OPTIONS);
@@ -86,6 +89,10 @@ export class UserSettingsService {
   readonly grammarCheckEnabled = this._grammarCheckEnabled.asReadonly();
   readonly entityDetectionEnabled = this._entityDetectionEnabled.asReadonly();
   readonly autoSaveEnabled = this._autoSaveEnabled.asReadonly();
+  /** Model picked per AI operation; operations not listed use their default. */
+  readonly aiModels = this._aiModels.asReadonly();
+  /** Model the chat starts on (Luna unless the author picked another). */
+  readonly chatModel = computed(() => modelKeyFor(this._aiModels(), 'chat'));
   readonly genderOptions = this._genderOptions.asReadonly();
   readonly raceOptions = this._raceOptions.asReadonly();
   readonly orientationOptions = this._orientationOptions.asReadonly();
@@ -113,6 +120,7 @@ export class UserSettingsService {
       this._grammarCheckEnabled.set(settings.grammarCheckEnabled ?? true);
       this._entityDetectionEnabled.set(settings.entityDetectionEnabled ?? true);
       this._autoSaveEnabled.set(settings.autoSaveEnabled ?? false);
+      this._aiModels.set(isAiModelSettings(settings.aiModels) ? settings.aiModels : {});
       this._genderOptions.set(settings.genderOptions ?? DEFAULT_GENDER_OPTIONS);
       this._raceOptions.set(settings.raceOptions ?? DEFAULT_RACE_OPTIONS);
       this._orientationOptions.set(settings.orientationOptions ?? DEFAULT_ORIENTATION_OPTIONS);
@@ -136,6 +144,7 @@ export class UserSettingsService {
         grammarCheckEnabled: this._grammarCheckEnabled(),
         entityDetectionEnabled: this._entityDetectionEnabled(),
         autoSaveEnabled: this._autoSaveEnabled(),
+        aiModels: this._aiModels(),
         genderOptions: this._genderOptions(),
         raceOptions: this._raceOptions(),
         orientationOptions: this._orientationOptions(),
@@ -210,6 +219,22 @@ export class UserSettingsService {
 
   setAutoSaveEnabled(value: boolean): void {
     this._autoSaveEnabled.set(value);
+    this.saveToServer();
+  }
+
+  /** The model an operation runs on: the author's pick, or the operation's default. */
+  modelFor(op: AiOperation): AiModelKey {
+    return modelKeyFor(this._aiModels(), op);
+  }
+
+  setAiModel(op: AiOperation, model: AiModelKey): void {
+    this._aiModels.update(current => ({ ...current, [op]: model }));
+    this.saveToServer();
+  }
+
+  /** Puts every operation back on its default model. */
+  resetAiModels(): void {
+    this._aiModels.set({});
     this.saveToServer();
   }
 

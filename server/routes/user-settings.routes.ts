@@ -1,5 +1,7 @@
 import { Router, Request, Response } from 'express';
 import { getContainer } from '../services/cosmos';
+import { invalidateAiModelSettings } from '../services/ai-models';
+import { AiModelSettings, isAiModelSettings } from '../../shared/models/ai-model.model';
 
 const router = Router();
 
@@ -20,6 +22,8 @@ interface UserSettings {
   grammarCheckEnabled?: boolean;
   entityDetectionEnabled?: boolean;
   autoSaveEnabled?: boolean;
+  /** Model picked per AI operation; unset operations use their default. */
+  aiModels?: AiModelSettings;
   pinHash?: string;
 }
 
@@ -50,6 +54,7 @@ const FIELD_VALIDATORS: Record<SettingsField, (v: unknown) => boolean> = {
   grammarCheckEnabled: isBoolean,
   entityDetectionEnabled: isBoolean,
   autoSaveEnabled: isBoolean,
+  aiModels: isAiModelSettings,
   pinHash: isString,
 };
 
@@ -112,6 +117,7 @@ router.put('/', async (req: Request, res: Response): Promise<void> => {
       email: user.email,
     };
     await getContainer('user-settings').items.upsert(settings);
+    if (updates.aiModels) invalidateAiModelSettings({ sub: user.sub, email: user.email });
     const { id: _id, ...result } = settings;
     res.json(result);
   } catch (err) {

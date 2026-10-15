@@ -606,3 +606,21 @@
   color: var(--mat-sys-on-surface-variant, #666);
 }
 
+
+.ai-model-list {
+  margin-bottom: 16px;
+}
+
+.ai-model-row .editor-pref-label-group {
+  flex: 1 1 260px;
+}
+
+.ai-model-default {
+  color: var(--mat-sys-primary);
+}
+
+.ai-model-legend {
+  font-size: 0.8125rem;
+  color: var(--mat-sys-on-surface-variant);
+  margin: 0 0 12px;
+}

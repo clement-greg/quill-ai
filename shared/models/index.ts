@@ -15,3 +15,4 @@ export * from './fact-check.model';
 export * from './folder-note.model';
 export * from './thought.model';
 export * from './generation-queue.model';
+export * from './ai-model.model';

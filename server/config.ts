@@ -27,10 +27,9 @@ interface AppConfig {
     apiVersion: string;
     embeddingModel: string;
     /**
-     * The three chat tiers. Every completion picks one deliberately:
-     * `low` for mechanical one-liners and latency-sensitive probes, `mid` for
-     * interactive assistant turns and bounded structured work, `high` for
-     * long-form prose and whole-chapter extraction where quality wins.
+     * Deployments behind the three selectable chat models: `low` is Luna,
+     * `mid` is Terra, `high` is Sol. Which one an AI operation uses is the
+     * author's choice (see services/ai-models.ts).
      */
     lowModel: string;
     midModel: string;
@@ -67,9 +66,9 @@ export const FOUNDRY_API_VERSION_DEFAULT = '2025-04-01-preview';
  * deployments are named differently.
  */
 export const FOUNDRY_CHAT_TIER_DEFAULTS = {
-  lowModel: 'gpt-5.6-luna',
+  lowModel: 'gpt-6-luna',
   midModel: 'gpt-5.6-terra',
-  highModel: 'gpt-5.6-sol',
+  highModel: 'gpt-6.1-sol',
 } as const;
 
 function loadConfig(): AppConfig {

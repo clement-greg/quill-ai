@@ -1,6 +1,7 @@
 import { Router, Request, Response } from 'express';
 import { AzureOpenAI } from 'openai';
 import config from '../config';
+import { modelFor } from '../services/ai-models';
 import { downloadBlob } from '../services/storage';
 import { generateImage } from '../services/image-generation';
 import { sanitizeForModeration } from '../services/content-sanitize';
@@ -66,9 +67,9 @@ function isContentFilterError(err: unknown): boolean {
   return (err as { code?: string } | null)?.code === 'content_filter';
 }
 
-async function requestImagePrompt(userContent: string): Promise<string> {
+async function requestImagePrompt(userContent: string, model: string): Promise<string> {
   const completion = await aiClient.chat.completions.create({
-    model: config.foundry.midModel,
+    model,
     messages: [
       { role: 'system', content: SUGGEST_PROMPT_SYSTEM_PROMPT },
       { role: 'user', content: userContent },
@@ -93,13 +94,13 @@ function isOutputLimitError(err: unknown): boolean {
 /**
  * Cheap probe to check whether a passage alone would be blocked by the content
  * filter, without paying for a full completion.
- * Must use the same tier as the real call — Azure content filters are
- * configured per deployment, so a probe on another tier proves nothing.
+ * Must use the same model as the real call — Azure content filters are
+ * configured per deployment, so a probe on another one proves nothing.
  */
-async function isPromptSafe(input: string): Promise<boolean> {
+async function isPromptSafe(input: string, model: string): Promise<boolean> {
   try {
     await aiClient.chat.completions.create({
-      model: config.foundry.midModel,
+      model,
       messages: [{ role: 'user', content: input }],
       max_completion_tokens: PROBE_MAX_TOKENS,
     });
@@ -118,7 +119,7 @@ async function isPromptSafe(input: string): Promise<boolean> {
  * violent scene can still be described. Mirrors the chapter-summary fallback.
  * Probes in small batches to keep latency down on long chapters.
  */
-async function dropFilteredParagraphs(text: string): Promise<string[]> {
+async function dropFilteredParagraphs(text: string, model: string): Promise<string[]> {
   const paragraphs = text.split('\n').filter(Boolean);
   const survivors: string[] = [];
   const BATCH = 8;
@@ -127,7 +128,7 @@ async function dropFilteredParagraphs(text: string): Promise<string[]> {
     const verdicts = await Promise.all(
       batch.map(async paragraph => {
         try {
-          return await isPromptSafe(paragraph);
+          return await isPromptSafe(paragraph, model);
         } catch (err) {
           console.error('Content filter probe failed; keeping paragraph:', err);
           return true;
@@ -169,21 +170,22 @@ router.post('/suggest-prompt', async (req: Request, res: Response) => {
 
   try {
     const excerpt = await sanitizeForModeration(plain.slice(0, SUGGEST_PROMPT_MAX_CHARS));
+    const model = await modelFor(req.user, 'imagePrompts');
 
     let prompt: string;
     try {
-      prompt = await requestImagePrompt(`${heading}Chapter text:\n${excerpt}`);
+      prompt = await requestImagePrompt(`${heading}Chapter text:\n${excerpt}`, model);
     } catch (err) {
       if (!isContentFilterError(err)) throw err;
       // The filter reacts to the scene as a whole; drop the paragraphs it
       // objects to so the rest of the chapter can still be described.
       console.warn('Image prompt input filtered; isolating offending paragraph(s).');
-      const survivors = await dropFilteredParagraphs(excerpt);
+      const survivors = await dropFilteredParagraphs(excerpt, model);
       if (survivors.length === 0) {
         res.status(422).json({ error: 'This chapter\'s text was blocked by the content filter' });
         return;
       }
-      prompt = await requestImagePrompt(`${heading}Chapter text:\n${survivors.join('\n')}`);
+      prompt = await requestImagePrompt(`${heading}Chapter text:\n${survivors.join('\n')}`, model);
     }
 
     if (!prompt) {

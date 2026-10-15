@@ -3,6 +3,7 @@ import { randomUUID } from 'crypto';
 import { AzureOpenAI } from 'openai';
 import { getContainer } from '../services/cosmos';
 import config from '../config';
+import { modelFor } from '../services/ai-models';
 import { FolderNote } from '../../shared/models/folder-note.model';
 
 const router = Router();
@@ -27,10 +28,10 @@ function extractFirstParagraph(html: string): string {
 }
 
 /** Call the LLM to produce a short name for the note. */
-async function generateNoteName(firstParagraph: string): Promise<string> {
+async function generateNoteName(firstParagraph: string, model: string): Promise<string> {
   try {
     const completion = await client.chat.completions.create({
-      model: config.foundry.lowModel,
+      model,
       messages: [
         {
           role: 'system',
@@ -85,7 +86,7 @@ router.post('/:folderId', async (req: Request, res: Response) => {
   let name = 'Untitled Note';
   const firstParagraph = extractFirstParagraph(content);
   if (firstParagraph.length >= 10) {
-    name = await generateNoteName(firstParagraph);
+    name = await generateNoteName(firstParagraph, await modelFor(req.user, 'titles'));
   }
 
   const record: FolderNote & { owner: string; deleted: boolean } = {
@@ -148,7 +149,7 @@ router.put('/:folderId/:noteId', async (req: Request, res: Response) => {
     let name = resource.name;
     const firstParagraph = extractFirstParagraph(content);
     if (firstParagraph.length >= 10) {
-      name = await generateNoteName(firstParagraph);
+      name = await generateNoteName(firstParagraph, await modelFor(req.user, 'titles'));
     }
 
     const updated = { ...resource, content, name, updatedAt: new Date().toISOString() };

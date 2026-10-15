@@ -442,28 +442,52 @@
           <span class="qc-ghost-tab-badge" aria-hidden="true">Tab</span>
         }
       </div>
-      @if (speech.supported) {
-        <button mat-icon-button type="button" class="qc-mic"
-                [class.qc-mic-recording]="speech.recording()"
-                [attr.aria-pressed]="speech.recording()"
-                [disabled]="quickChat.streaming()"
-                [matTooltip]="speech.recording() ? 'Release to stop' : 'Hold to talk'"
-                aria-label="Push to talk"
-                (pointerdown)="startDictation($event)"
-                (pointerup)="stopDictation()"
-                (pointerleave)="stopDictation()"
-                (pointercancel)="stopDictation()"
-                (keydown)="onMicKeyDown($event)"
-                (keyup)="onMicKeyUp($event)"
-                (contextmenu)="$event.preventDefault()">
-          <mat-icon>{{ speech.recording() ? 'mic' : 'mic_none' }}</mat-icon>
+      <div class="qc-input-actions">
+        <button mat-button type="button" class="qc-model"
+                [matMenuTriggerFor]="modelMenu"
+                [matTooltip]="'Model: ' + chatModelLabel()"
+                [attr.aria-label]="'Change model, current: ' + chatModelLabel()">
+          <mat-icon>auto_awesome</mat-icon>
+          <span class="qc-model-label">{{ chatModelLabel() }}</span>
         </button>
-      }
-      <button mat-icon-button class="qc-send" aria-label="Send"
-              [disabled]="quickChat.streaming() || !input().trim()"
-              (click)="send()">
-        <mat-icon>{{ quickChat.streaming() ? 'hourglass_top' : 'send' }}</mat-icon>
-      </button>
+        <mat-menu #modelMenu="matMenu" class="qc-model-menu">
+          @for (model of models; track model.key) {
+            <button mat-menu-item type="button"
+                    [attr.aria-checked]="model.key === chatModel()"
+                    role="menuitemradio"
+                    (click)="selectChatModel(model.key)">
+              <mat-icon>{{ model.key === chatModel() ? 'check' : '' }}</mat-icon>
+              <span class="qc-model-option">
+                <span class="qc-model-option-name">{{ model.label }}</span>
+                <span class="qc-model-option-desc">{{ model.description }}</span>
+              </span>
+            </button>
+          }
+        </mat-menu>
+        <span class="qc-input-actions-spacer"></span>
+        @if (speech.supported) {
+          <button mat-icon-button type="button" class="qc-mic"
+                  [class.qc-mic-recording]="speech.recording()"
+                  [attr.aria-pressed]="speech.recording()"
+                  [disabled]="quickChat.streaming()"
+                  [matTooltip]="speech.recording() ? 'Release to stop' : 'Hold to talk'"
+                  aria-label="Push to talk"
+                  (pointerdown)="startDictation($event)"
+                  (pointerup)="stopDictation()"
+                  (pointerleave)="stopDictation()"
+                  (pointercancel)="stopDictation()"
+                  (keydown)="onMicKeyDown($event)"
+                  (keyup)="onMicKeyUp($event)"
+                  (contextmenu)="$event.preventDefault()">
+            <mat-icon>{{ speech.recording() ? 'mic' : 'mic_none' }}</mat-icon>
+          </button>
+        }
+        <button mat-icon-button class="qc-send" aria-label="Send"
+                [disabled]="quickChat.streaming() || !input().trim()"
+                (click)="send()">
+          <mat-icon>{{ quickChat.streaming() ? 'hourglass_top' : 'send' }}</mat-icon>
+        </button>
+      </div>
     </div>
   </div>
 

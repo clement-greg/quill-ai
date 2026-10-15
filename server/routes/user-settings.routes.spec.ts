@@ -100,6 +100,9 @@ describe('user-settings routes', () => {
     ['displayName', 42],
     ['genderOptions', ['ok', 7]],
     ['ghostCompleteItems', [{ id: 'x', label: 'y' }]],
+    ['aiModels', { chat: 'gpt-4' }],
+    ['aiModels', { notAnOperation: 'luna' }],
+    ['aiModels', ['luna']],
   ])('PUT / rejects an invalid %s with 400 and leaves stored settings untouched', async (field, value) => {
     await request(app).put('/api/user-settings').set('x-test-user', USER_A).send({ displayName: 'Alice' });
 
@@ -124,5 +127,16 @@ describe('user-settings routes', () => {
     expect(stored?.isAdmin).toBeUndefined();
     expect(stored?.email).toBe(USER_A);
     expect(fake.container('user-settings').get('someone-else')).toBeUndefined();
+  });
+
+  it('PUT / stores a per-operation model pick', async () => {
+    const res = await request(app)
+      .put('/api/user-settings')
+      .set('x-test-user', USER_A)
+      .send({ aiModels: { chat: 'terra', editorReview: 'sol' } });
+    expect(res.status).toBe(200);
+
+    const get = await request(app).get('/api/user-settings').set('x-test-user', USER_A);
+    expect(get.body.aiModels).toEqual({ chat: 'terra', editorReview: 'sol' });
   });
 });
