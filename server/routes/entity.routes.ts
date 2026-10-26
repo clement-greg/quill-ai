@@ -367,6 +367,36 @@ router.put('/:id', async (req: Request, res: Response) => {
   }
 });
 
+// PATCH set the profile photo only, so a photo change in the edit form can be
+// saved immediately without committing the author's other unsaved edits.
+router.patch('/:id/profile-photo', async (req: Request, res: Response) => {
+  try {
+    const id = req.params['id'] as string;
+    const { url, thumbnailUrl } = req.body as { url?: string; thumbnailUrl?: string };
+    if (!url || !thumbnailUrl) {
+      res.status(400).json({ error: 'url and thumbnailUrl are required' });
+      return;
+    }
+    const existing = await readOwnedItem<Entity>(container, id, id, req);
+    if (!existing) {
+      res.status(404).json({ error: 'Entity not found' });
+      return;
+    }
+    const updated: Entity = {
+      ...existing,
+      originalUrl: url,
+      thumbnailUrl,
+      modifiedBy: req.user!.email,
+      modifiedAt: new Date().toISOString(),
+    };
+    const { resource } = await container.item(id, id).replace<Entity>(updated);
+    res.json(resource);
+  } catch (err) {
+    console.error('Error setting profile photo:', err);
+    res.status(500).json({ error: 'Failed to set profile photo' });
+  }
+});
+
 // PATCH reorder entities (bulk sort-order update)
 router.patch('/reorder', async (req: Request, res: Response) => {
   try {

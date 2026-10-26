@@ -276,6 +276,10 @@ export class EntityService {
     return this.http.post<Entity>(`${this.apiUrl}/${entityId}/photos`, { url, thumbnailUrl, hidden });
   }
 
+  setProfilePhoto(entityId: string, url: string, thumbnailUrl: string): Observable<Entity> {
+    return this.http.patch<Entity>(`${this.apiUrl}/${entityId}/profile-photo`, { url, thumbnailUrl });
+  }
+
   removePhoto(entityId: string, index: number): Observable<Entity> {
     return this.http.delete<Entity>(`${this.apiUrl}/${entityId}/photos/${index}`);
   }

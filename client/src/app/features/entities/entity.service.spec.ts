@@ -17,6 +17,16 @@ describe('EntityService', () => {
 
   afterEach(() => httpMock.verify());
 
+  describe('setProfilePhoto()', () => {
+    it('patches just the photo urls onto the entity', () => {
+      service.setProfilePhoto('e-1', 'https://blob.test/a.png', 'https://blob.test/a-thumb.png').subscribe();
+      const req = httpMock.expectOne('/api/entities/e-1/profile-photo');
+      expect(req.request.method).toBe('PATCH');
+      expect(req.request.body).toEqual({ url: 'https://blob.test/a.png', thumbnailUrl: 'https://blob.test/a-thumb.png' });
+      req.flush({});
+    });
+  });
+
   describe('clothesSwap()', () => {
     const JOB: PhotoGenJob = { promptId: 'swap-1', seed: 11, queueNumber: 2, count: 2, tracked: true };
 

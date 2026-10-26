@@ -228,6 +228,19 @@ export class EntityPageComponent implements OnInit, OnDestroy {
     }
   }
 
+  /**
+   * A photo change was saved while editing. Refresh the list so it shows the
+   * new photo, but leave editingEntity alone — resetting it would wipe the
+   * author's other unsaved edits in the form.
+   */
+  onPhotoSaved(saved: Entity): void {
+    if (saved.isNarrator) {
+      this.panel.narrator.set(saved);
+    } else {
+      this.panel.entityList.update(list => list.map(e => e.id === saved.id ? saved : e));
+    }
+  }
+
   onCancel(): void {
     this.isEditMode.set(false);
     this.editingEntity.set(null);

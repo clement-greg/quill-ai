@@ -57,6 +57,8 @@ export class EntityEditComponent {
   unarchive = output<string>();
   refresh = output<void>();
   viewDetails = output<void>();
+  /** Emits the stored entity after a photo change on an existing entity is saved. */
+  photoSaved = output<Entity>();
 
   readonly entityTypes: Entity['type'][] = ['PERSON', 'PLACE', 'THING'];
   readonly referenceOptions: { value: EntityReference; label: string; requiresTitle?: boolean }[] = [
@@ -193,11 +195,7 @@ export class EntityEditComponent {
     this.uploading.set(true);
     this.entityService.uploadThumbnail(file).subscribe({
       next: ({ url, thumbnailUrl }) => {
-        const current = this.draft();
-        if (current) {
-          this.draft.set({ ...current, thumbnailUrl, originalUrl: url });
-        }
-        this.thumbnailPreview.set(this.proxyUrl(thumbnailUrl));
+        this.setProfilePhoto(url, thumbnailUrl);
         this.uploading.set(false);
       },
       error: () => this.uploading.set(false),
@@ -218,11 +216,23 @@ export class EntityEditComponent {
     }
   }
 
-  /** Sets the profile picture without touching the rest of the draft. */
+  /**
+   * Sets the profile picture without touching the rest of the draft. On an
+   * existing entity the photo is saved straight away (and only the photo), so
+   * a freshly generated image is not lost if the author never hits Save.
+   */
   setProfilePhoto(url: string, thumbnailUrl: string): void {
     const current = this.draft();
     if (current) this.draft.set({ ...current, thumbnailUrl, originalUrl: url });
     this.thumbnailPreview.set(this.proxyUrl(thumbnailUrl));
+
+    const id = this.entity().id;
+    if (this.isNew() || !id) return;
+    this.entityService.setProfilePhoto(id, url, thumbnailUrl).subscribe({
+      next: saved => this.photoSaved.emit(saved),
+      // The photo stays in the draft, so Save still applies it.
+      error: () => undefined,
+    });
   }
 
   openPhotoPickerDialog(): void {

@@ -1408,6 +1408,11 @@ export class ChapterEditComponent implements OnInit, OnDestroy {
     });
   }
 
+  /** Keeps the entity list in sync with a photo saved mid-edit, without resetting the form. */
+  onEntityPhotoSaved(saved: Entity): void {
+    this.entities.update(list => list.map(e => e.id === saved.id ? saved : e));
+  }
+
   cancelEntityEdit(): void { this.editingEntity.set(null); }
 
   openAiStats(): void {
