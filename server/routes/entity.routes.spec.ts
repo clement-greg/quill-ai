@@ -113,6 +113,38 @@ describe('entity routes — owner guard', () => {
     expect(fake.container('entities').get('e-b')!.sortOrder).toBeUndefined();
   });
 
+  describe('PATCH /:id/profile-photo', () => {
+    it('sets only the profile photo fields', async () => {
+      const res = await request(app)
+        .patch('/api/entities/e-a/profile-photo')
+        .set('x-test-user', USER_A)
+        .send({ url: 'https://blob/new.png', thumbnailUrl: 'https://blob/new-thumb.png', name: 'Ignored' });
+      expect(res.status).toBe(200);
+      const stored = fake.container('entities').get('e-a')!;
+      expect(stored.originalUrl).toBe('https://blob/new.png');
+      expect(stored.thumbnailUrl).toBe('https://blob/new-thumb.png');
+      expect(stored.name).toBe('Arthur');
+      expect(stored.photos).toHaveLength(1);
+    });
+
+    it('requires both urls', async () => {
+      const res = await request(app)
+        .patch('/api/entities/e-a/profile-photo')
+        .set('x-test-user', USER_A)
+        .send({ url: 'https://blob/new.png' });
+      expect(res.status).toBe(400);
+    });
+
+    it('rejects a non-owner with 404', async () => {
+      const res = await request(app)
+        .patch('/api/entities/e-b/profile-photo')
+        .set('x-test-user', USER_A)
+        .send({ url: 'https://blob/new.png', thumbnailUrl: 'https://blob/new-thumb.png' });
+      expect(res.status).toBe(404);
+      expect(fake.container('entities').get('e-b')!.thumbnailUrl).toBeUndefined();
+    });
+  });
+
   it('PATCH /:id/archive rejects a non-owner with 404', async () => {
     const res = await request(app).patch('/api/entities/e-b/archive').set('x-test-user', USER_A);
     expect(res.status).toBe(404);

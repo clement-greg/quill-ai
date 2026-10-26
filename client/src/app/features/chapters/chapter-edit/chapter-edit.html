@@ -578,6 +578,7 @@
           [entity]="editingEntity()!"
           [isNew]="false"
           (save)="saveEntityEdit($event)"
+          (photoSaved)="onEntityPhotoSaved($event)"
           (cancel)="cancelEntityEdit()"
           (archive)="archiveEntityEdit($event)" />
       </div>
