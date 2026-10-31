@@ -994,6 +994,9 @@
   max-height: 100%;
   object-fit: contain;
   border-radius: 4px;
+  // Long-press opens our photo menu here too — keep iOS's image callout out of it.
+  -webkit-touch-callout: none;
+  user-select: none;
 
   &.loading { opacity: 0; }
 }
