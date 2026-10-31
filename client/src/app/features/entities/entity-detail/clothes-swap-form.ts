@@ -39,7 +39,8 @@ export const MAX_SWAP_COUNT = 8;
                 cdkAutosizeMaxRows="10"
                 [formControl]="prompt"
                 [maxlength]="MAX_PROMPT"
-                placeholder="e.g. Change the clothing to a charcoal wool overcoat over a white shirt. Replace the background with a city street at dusk."></textarea>
+                autocomplete="off"
+                placeholder="e.g. Change the clothing to a charcoal wool overcoat over a white shirt. Replace the background with a rain-soaked harbor at dusk."></textarea>
       <mat-hint align="end">{{ length() }} / {{ MAX_PROMPT }}</mat-hint>
     </mat-form-field>
 

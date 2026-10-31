@@ -38,6 +38,16 @@ describe('ClothesSwapFormComponent', () => {
     form.prompt.setValue('x'.repeat(MAX_SWAP_PROMPT_LENGTH + 1));
     expect(form.result()).toBeNull();
   });
+
+  // iOS Safari reads address words in a field's placeholder as a cue to offer
+  // contact AutoFill in place of its typing suggestions.
+  it('keeps the prompt free of address AutoFill cues', () => {
+    const fixture = TestBed.createComponent(ClothesSwapFormComponent);
+    fixture.detectChanges();
+    const textarea = (fixture.nativeElement as HTMLElement).querySelector('textarea')!;
+    expect(textarea.getAttribute('autocomplete')).toBe('off');
+    expect(textarea.placeholder).not.toMatch(/\b(street|city|address|zip|state)\b/i);
+  });
 });
 
 describe('ClothesSwapDialogComponent', () => {
