@@ -235,6 +235,10 @@
   aspect-ratio: 1;
   background: var(--mat-sys-surface-variant, #e8e0f0);
   position: relative;
+  // A long-press opens our own photo menu; without these, iOS Safari layers
+  // its "Save / Copy / Share" image callout and a text selection over it.
+  -webkit-touch-callout: none;
+  user-select: none;
 
   &:focus-visible {
     outline: 2px solid var(--mat-sys-primary, #6750a4);
@@ -248,6 +252,7 @@
     object-fit: cover;
     display: block;
     transition: transform 0.2s ease;
+    -webkit-touch-callout: none;
   }
 
   &:hover img,
