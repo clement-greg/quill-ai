@@ -255,3 +255,84 @@ describe('EntityDetailComponent lightbox keyboard', () => {
     content.remove();
   });
 });
+
+describe('EntityDetailComponent generated media landing', () => {
+  let getById: ReturnType<typeof vi.fn>;
+  let getOutstandingJobs: ReturnType<typeof vi.fn>;
+  const job = { id: 'job1', kind: 'images', entityId: 'e1', state: 'running', requestedCount: 1 };
+
+  beforeEach(() => {
+    vi.useFakeTimers();
+    // The gallery's lazy tiles watch the viewport; jsdom has no observer.
+    vi.stubGlobal('IntersectionObserver', class {
+      observe() {}
+      unobserve() {}
+      disconnect() {}
+    });
+    getById = vi.fn().mockReturnValue(of(entityWith(['a'])));
+    getOutstandingJobs = vi.fn().mockReturnValue(of({ jobs: [job] }));
+    TestBed.configureTestingModule({
+      providers: [
+        { provide: EntityService, useValue: stubService<EntityService>({ getById, getOutstandingJobs }) },
+        { provide: TimelineEventService, useValue: stubService<TimelineEventService>() },
+        { provide: EntityRelationshipService, useValue: stubService<EntityRelationshipService>() },
+        { provide: MapService, useValue: stubService<MapService>() },
+        { provide: MatDialog, useValue: stubService<MatDialog>() },
+        { provide: MatSnackBar, useValue: { open: vi.fn() } },
+        { provide: UserSettingsService, useValue: stubService<UserSettingsService>({ showHiddenPhotos: signal(true) }) },
+      ],
+    });
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.unstubAllGlobals();
+  });
+
+  function load() {
+    const fixture = TestBed.createComponent(EntityDetailComponent);
+    fixture.componentRef.setInput('entityId', 'e1');
+    TestBed.flushEffects();
+    return fixture;
+  }
+
+  it('reloads in place, never swapping the page for the spinner, when a job lands', () => {
+    const fixture = load();
+    const cmp = fixture.componentInstance;
+    expect(cmp.loading()).toBe(false);
+    expect(cmp.outstandingJobs()).toHaveLength(1);
+
+    getById.mockClear();
+    const reload = new Subject<Entity>();
+    getById.mockReturnValue(reload);
+    getOutstandingJobs.mockReturnValue(of({ jobs: [] }));
+    vi.advanceTimersByTime(15_000);
+
+    expect(getById).toHaveBeenCalledTimes(1);
+    expect(cmp.loading()).toBe(false);
+    expect(cmp.entity()?.photos?.map(p => p.url)).toEqual(['a']);
+
+    reload.next(entityWith(['a', 'b']));
+    expect(cmp.loading()).toBe(false);
+    expect(cmp.entity()?.photos?.map(p => p.url)).toEqual(['a', 'b']);
+    fixture.destroy();
+  });
+
+  it('drops a background reload that answers after the user moved to another entity', () => {
+    const fixture = load();
+    const cmp = fixture.componentInstance;
+
+    const reload = new Subject<Entity>();
+    getById.mockReturnValue(reload);
+    getOutstandingJobs.mockReturnValue(of({ jobs: [] }));
+    vi.advanceTimersByTime(15_000);
+
+    getById.mockReturnValue(of(entityWith(['z'], 'e2')));
+    fixture.componentRef.setInput('entityId', 'e2');
+    TestBed.flushEffects();
+    reload.next(entityWith(['a', 'b']));
+
+    expect(cmp.entity()?.id).toBe('e2');
+    fixture.destroy();
+  });
+});
