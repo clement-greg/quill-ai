@@ -337,10 +337,18 @@ export class EntityDetailComponent implements OnDestroy {
     }, { allowSignalWrites: true });
   }
 
-  private loadEntity(id: string): void {
-    this.loading.set(true);
+  /**
+   * Fetches the entity. A `silent` load leaves the page on screen while it runs:
+   * flipping `loading` swaps the whole page for a spinner, which throws away the
+   * reader's scroll position — fine for first load or a manual refresh, not for
+   * media landing in the background.
+   */
+  private loadEntity(id: string, { silent = false } = {}): void {
+    if (!silent) this.loading.set(true);
     this.entityService.getById(id).subscribe({
       next: (entity) => {
+        // A background reload can come back after the user has moved on.
+        if (silent && this.entityId() !== id) return;
         this.entity.set(entity);
         this.loading.set(false);
       },
@@ -992,7 +1000,7 @@ export class EntityDetailComponent implements OnDestroy {
           before => !jobs.some(after => after.id === before.id)
         );
         this.outstandingJobs.set(jobs);
-        if (landed) this.loadEntity(entityId);
+        if (landed) this.loadEntity(entityId, { silent: true });
         if (jobs.length > 0) this.startJobPolling(entityId);
         else this.stopJobPolling();
       },

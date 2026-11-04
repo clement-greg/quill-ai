@@ -178,7 +178,7 @@
               @if (photoGenerating()) {
                 <div class="photo-card photo-card--skeleton" aria-label="Generating image…" aria-busy="true"></div>
               }
-              @for (photo of displayedPhotos(); track $index) {
+              @for (photo of displayedPhotos(); track photo.url) {
                 <button class="photo-card" appLazyRender #photoTile="lazyRender"
                         draggable="true" (dragstart)="onPhotoDragStart($event, photo)"
                         (click)="onPhotoCardClick($index)"
