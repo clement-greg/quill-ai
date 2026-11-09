@@ -15,7 +15,9 @@ import { searchTimelineEvents, TimelineEventSearchResult } from '../services/tim
 import { Chapter, ChapterNote, OutlineItem } from '../../shared/models/chapter.model';
 import { ChapterCitation, ChatImage, EntityProposal } from '../../shared/models/chat-session.model';
 import { BookNote } from '../../shared/models/book-note.model';
-import { Thought } from '../../shared/models/thought.model';
+import { Thought, normalizeThoughtTags } from '../../shared/models/thought.model';
+import { searchThoughts, thoughtEmbeddingText } from '../services/thought-search';
+import { generateEmbedding } from '../services/embeddings';
 import { Book } from '../../shared/models/book.model';
 import { Entity, EntityReference, isVideoUrl } from '../../shared/models/entity.model';
 import { TimelineEvent } from '../../shared/models/timeline-event.model';
@@ -100,7 +102,20 @@ const SAVE_THOUGHT_GUIDANCE =
   'series, book, or chapter) to their Thoughts list. When the author uses the /thought command, or asks ' +
   'you to "save a thought", "add a thought", "remember this", "jot this down", or "save this idea", you ' +
   'MUST call save_thought with "content" set to the text of the thought. You may infer a short "title" ' +
-  'from the content if it\'s not explicitly provided. After saving, briefly confirm the thought was saved.';
+  'from the content if it\'s not explicitly provided. If the author names tags for it, pass them in "tags". ' +
+  'After saving, briefly confirm the thought was saved.';
+
+// Appended whenever the find_thoughts tool is available (always).
+const FIND_THOUGHTS_GUIDANCE =
+  '\n\nFINDING THOUGHTS: When the author asks you to find, look up, recall, or open something they saved ' +
+  'as a thought, idea, or note (e.g. "find my thought about bandaids", "what was that quote I saved about ' +
+  'war?", "show my thoughts tagged funny"), call find_thoughts. Pass the distinctive words or the gist of ' +
+  'what they remember as "query", and "tags" only when they name tags. Search matches by meaning as well as ' +
+  'by exact words, so a paraphrase works; if nothing relevant comes back, try once more with different ' +
+  'wording before saying you could not find it. Results are ranked but not all are relevant: show only the ' +
+  'ones that fit what the author described. Present each as a markdown link using the "link" field exactly ' +
+  '(e.g. [Character Quirk](/thoughts?open=abc)) followed by a one-line summary, so the author can click to ' +
+  'open it. Never invent a thought or a link.';
 
 // Appended whenever the research_entity tool is available (always).
 const ENTITY_RESEARCH_GUIDANCE =
@@ -1929,12 +1944,14 @@ function getSaveThoughtTool(req: Request): ChatTool {
           'Save a general thought, idea, or note to the author\'s Thoughts list. ' +
           'Use this when the author uses the /thought command, or asks to save a thought, idea, ' +
           'reminder, or note that is not tied to any specific series, book, or chapter. ' +
-          'Pass "content" as the text of the thought. Optionally pass "title" as a short label.',
+          'Pass "content" as the text of the thought. Optionally pass "title" as a short label and ' +
+          '"tags" when the author names tags for it.',
         parameters: {
           type: 'object',
           properties: {
             content: { type: 'string', description: 'The text of the thought to save.' },
             title: { type: 'string', description: 'Optional short title or label for the thought.' },
+            tags: { type: 'array', items: { type: 'string' }, description: 'Optional tags the author named.' },
           },
           required: ['content'],
         },
@@ -1952,12 +1969,19 @@ function getSaveThoughtTool(req: Request): ChatTool {
         id: randomUUID(),
         title,
         content,
+        tags: normalizeThoughtTags(args['tags']),
         owner: email,
         createdBy: email,
         createdAt: now,
         modifiedBy: email,
         modifiedAt: now,
       };
+      // Embed it so find_thoughts can locate it by meaning; if this fails, search backfills it later.
+      try {
+        thought.contentVector = await generateEmbedding(thoughtEmbeddingText(thought));
+      } catch (embErr) {
+        console.warn('save_thought: embedding generation failed, storing without vector:', embErr);
+      }
       try {
         await getContainer('thought-items').items.create<Thought>(thought);
         console.log('[save_thought] saved — owner="%s" title="%s"', email, title ?? '(none)');
@@ -1965,6 +1989,75 @@ function getSaveThoughtTool(req: Request): ChatTool {
       } catch (err) {
         console.error('save_thought error:', err);
         return { toolResult: { saved: false, message: 'Failed to save the thought. Please try again.' } };
+      }
+    },
+  };
+}
+
+/** Longest excerpt of a thought's content returned to the model. */
+const THOUGHT_EXCERPT_CHARS = 400;
+
+/** Tool that searches the author's Thoughts by meaning and by words. */
+export function getFindThoughtsTool(req: Request): ChatTool {
+  return {
+    definition: {
+      type: 'function',
+      function: {
+        name: 'find_thoughts',
+        description:
+          'Search the author\'s saved Thoughts (freeform ideas, notes, quotes) and return the best matches ' +
+          'with a link to open each. Matches by meaning as well as exact words, so pass what the author ' +
+          'remembers about it ("a character with bandaids on their hands"). Pass "tags" only when the ' +
+          'author names tags; with tags and no query it lists the thoughts carrying those tags.',
+        parameters: {
+          type: 'object',
+          properties: {
+            query: { type: 'string', description: 'What the thought is about, or words it contains.' },
+            tags: { type: 'array', items: { type: 'string' }, description: 'Only thoughts carrying all of these tags.' },
+          },
+          required: ['query'],
+        },
+      },
+    },
+    execute: async args => {
+      const query = String(args['query'] ?? '').trim();
+      const tags = normalizeThoughtTags(args['tags']);
+      if (!query && !tags.length) {
+        return { toolResult: { found: false, message: 'No search text was given. Ask the author what the thought was about.' } };
+      }
+      try {
+        const hits = await searchThoughts(req.user!.email, query, { topK: 8, tags });
+        console.log('[find_thoughts] query="%s" tags=%j hits=%d', query, tags, hits.length);
+        if (!hits.length) {
+          return {
+            toolResult: {
+              found: false,
+              message: tags.length
+                ? `No thoughts matched${query ? ` "${query}"` : ''} with tags ${tags.join(', ')}.`
+                : `No thoughts matched "${query}". Try different wording once before telling the author.`,
+            },
+          };
+        }
+        return {
+          toolResult: {
+            found: true,
+            thoughts: hits.map(h => ({
+              title: h.title ?? null,
+              excerpt:
+                h.content.length > THOUGHT_EXCERPT_CHARS ? `${h.content.slice(0, THOUGHT_EXCERPT_CHARS)}…` : h.content,
+              tags: h.tags,
+              date: h.modifiedAt ?? null,
+              match: h.match,
+              link: `/thoughts?open=${encodeURIComponent(h.id)}`,
+            })),
+            message:
+              'Show only the thoughts that fit what the author described, each as a markdown link using ' +
+              '"link" exactly, with the title (or a few words of the excerpt when untitled) as the link text.',
+          },
+        };
+      } catch (err) {
+        console.error('find_thoughts error:', err);
+        return { toolResult: { found: false, message: 'Searching thoughts failed. Apologize briefly and suggest trying again.' } };
       }
     },
   };
@@ -2494,6 +2587,7 @@ function quickChatTools(
       },
     },
     save_thought: getSaveThoughtTool(req),
+    find_thoughts: getFindThoughtsTool(req),
     generate_image: generateImageTool(),
   };
 }
@@ -2552,6 +2646,7 @@ function seriesChatTools(req: Request, scope: { seriesId?: string }, citations: 
     research_entity: getResearchEntityTool(req),
     describe_entity: getDescribeEntityTool(req),
     save_thought: getSaveThoughtTool(req),
+    find_thoughts: getFindThoughtsTool(req),
     search_chapter_text: getSearchChapterTextTool(scope, citations, req),
   };
 }
@@ -2841,7 +2936,7 @@ router.post('/:id/chat', async (req: Request, res: Response) => {
 
   await streamChatResponse(
     res,
-    systemPrompt + IMAGE_TOOL_GUIDANCE + ENTITY_RESEARCH_GUIDANCE + ENTITY_DESCRIPTION_GUIDANCE + SEARCH_CHAPTER_TEXT_GUIDANCE + SAVE_THOUGHT_GUIDANCE,
+    systemPrompt + IMAGE_TOOL_GUIDANCE + ENTITY_RESEARCH_GUIDANCE + ENTITY_DESCRIPTION_GUIDANCE + SEARCH_CHAPTER_TEXT_GUIDANCE + SAVE_THOUGHT_GUIDANCE + FIND_THOUGHTS_GUIDANCE,
     messages,
     citations,
     seriesChatTools(req, { seriesId: session?.seriesId ?? undefined }, citations),
@@ -2997,7 +3092,7 @@ router.post('/quick-chat', async (req: Request, res: Response) => {
       }
     : { ...quickChatTools(req, {}, citations), ...entityTools };
   const guidance =
-    IMAGE_TOOL_GUIDANCE + ENTITY_RESEARCH_GUIDANCE + ENTITY_DESCRIPTION_GUIDANCE + SEARCH_CHAPTER_TEXT_GUIDANCE + SAVE_THOUGHT_GUIDANCE +
+    IMAGE_TOOL_GUIDANCE + ENTITY_RESEARCH_GUIDANCE + ENTITY_DESCRIPTION_GUIDANCE + SEARCH_CHAPTER_TEXT_GUIDANCE + SAVE_THOUGHT_GUIDANCE + FIND_THOUGHTS_GUIDANCE +
     ENTITY_CREATION_GUIDANCE + chatImagesGuidance(chatImages) +
     (chapterContext?.chapterId ? LINK_REFERENCES_GUIDANCE + SMART_EDIT_GUIDANCE : '');
   await streamChatResponse(res, systemPrompt + guidance, messages, citations, tools, await chatModelFor(req.user, req.body.model));

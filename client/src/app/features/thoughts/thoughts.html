@@ -5,31 +5,86 @@
 
       <div class="page-header">
         <h1 class="page-title">Thoughts</h1>
-        <button mat-flat-button (click)="openNew()" aria-label="New Thought">
-          <mat-icon>add</mat-icon><span class="btn-text"> New Thought</span>
-        </button>
+        <div class="header-actions">
+          <button
+            mat-stroked-button
+            class="filter-toggle"
+            [class.active]="showFilters() || activeFilterCount() > 0"
+            (click)="toggleFilters()"
+            [attr.aria-expanded]="showFilters()"
+            aria-controls="thought-filters"
+          >
+            <mat-icon>search</mat-icon>
+            <span class="btn-text">Search</span>
+            @if (activeFilterCount()) {
+              <span class="filter-badge" [attr.aria-label]="activeFilterCount() + ' active filters'">{{ activeFilterCount() }}</span>
+            }
+          </button>
+          <button mat-flat-button (click)="openNew()" aria-label="New Thought">
+            <mat-icon>add</mat-icon><span class="btn-text"> New Thought</span>
+          </button>
+        </div>
       </div>
 
-      @if (filterTags().length) {
-        <div class="tag-filter" role="group" aria-label="Filter thoughts by tag">
-          <mat-icon class="tag-filter-icon" aria-hidden="true" matTooltip="Show thoughts with all selected tags">filter_list</mat-icon>
-          <div class="tag-filter-chips">
-            @for (t of filterTags(); track t.tag) {
-              <button
-                type="button"
-                class="filter-chip"
-                [class.selected]="isTagSelected(t.tag)"
-                [attr.aria-pressed]="isTagSelected(t.tag)"
-                (click)="toggleFilterTag(t.tag)"
-              >
-                @if (isTagSelected(t.tag)) { <mat-icon class="filter-check" aria-hidden="true">check</mat-icon> }
-                {{ t.tag }} <span class="tag-count" [attr.aria-label]="t.count + ' thoughts'">{{ t.count }}</span>
+      @if (showFilters()) {
+        <section id="thought-filters" class="filter-panel" aria-label="Search and filter thoughts">
+          <mat-form-field appearance="outline" class="search-field" subscriptSizing="dynamic">
+            <mat-label>Search thoughts</mat-label>
+            <mat-icon matPrefix>search</mat-icon>
+            <input
+              matInput
+              type="search"
+              autocomplete="off"
+              #searchInput
+              [value]="searchText()"
+              (input)="onSearchInput($any($event.target).value)"
+              (keydown.enter)="applySearch()"
+              placeholder="Words in the title, text or tags"
+            />
+            @if (searchText()) {
+              <button matSuffix mat-icon-button (click)="clearSearch()" aria-label="Clear search">
+                <mat-icon>close</mat-icon>
               </button>
             }
-          </div>
-          @if (selectedTags().length) {
-            <button mat-button class="clear-filter" (click)="clearFilter()">Clear</button>
+          </mat-form-field>
+
+          @if (filterTags().length) {
+            <div class="tag-filter" role="group" aria-labelledby="tag-filter-label">
+              <span id="tag-filter-label" class="tag-filter-label">Tags</span>
+              <div class="tag-filter-chips">
+                @for (t of filterTags(); track t.tag) {
+                  <button
+                    type="button"
+                    class="filter-chip"
+                    [class.selected]="isTagSelected(t.tag)"
+                    [attr.aria-pressed]="isTagSelected(t.tag)"
+                    (click)="toggleFilterTag(t.tag)"
+                  >
+                    @if (isTagSelected(t.tag)) { <mat-icon class="filter-check" aria-hidden="true">check</mat-icon> }
+                    {{ t.tag }} <span class="tag-count" [attr.aria-label]="t.count + ' thoughts'">{{ t.count }}</span>
+                  </button>
+                }
+              </div>
+            </div>
+          } @else {
+            <p class="no-tags-hint">Add tags to your thoughts to filter by them here.</p>
           }
+
+          <div class="filter-panel-footer">
+            <span class="result-count" aria-live="polite">{{ total() }} {{ total() === 1 ? 'thought' : 'thoughts' }}</span>
+            @if (activeFilterCount()) {
+              <button mat-button (click)="clearFilter()">Clear all</button>
+            }
+          </div>
+        </section>
+      } @else if (activeFilterCount()) {
+        <div class="filter-summary" aria-live="polite">
+          <span>
+            {{ total() }} {{ total() === 1 ? 'thought' : 'thoughts' }} matching
+            @if (appliedSearch()) { <strong>“{{ appliedSearch() }}”</strong> }
+            @for (tag of selectedTags(); track tag) { <span class="summary-tag">#{{ tag }}</span> }
+          </span>
+          <button mat-button (click)="clearFilter()">Clear</button>
         </div>
       }
 
@@ -37,10 +92,10 @@
 
       @if (!loaded()) {
         <p class="loading">Loading...</p>
-      } @else if (thoughts().length === 0 && selectedTags().length) {
+      } @else if (thoughts().length === 0 && activeFilterCount()) {
         <div class="empty-state">
-          <mat-icon class="empty-icon">label_off</mat-icon>
-          <p class="empty-text">No thoughts have all of the selected tags.</p>
+          <mat-icon class="empty-icon">search_off</mat-icon>
+          <p class="empty-text">No thoughts match your search.</p>
           <button mat-stroked-button (click)="clearFilter()">Clear filter</button>
         </div>
       } @else if (thoughts().length === 0) {
@@ -72,12 +127,7 @@
                   }
                 </div>
               }
-              <div class="thought-card-footer">
-                <span class="thought-date">{{ formatDate(thought.modifiedAt ?? thought.createdAt) }}</span>
-                <button mat-icon-button class="delete-btn" (click)="$event.stopPropagation(); delete(thought)" aria-label="Delete thought">
-                  <mat-icon>delete</mat-icon>
-                </button>
-              </div>
+              <span class="thought-date">{{ formatDate(thought.modifiedAt ?? thought.createdAt) }}</span>
             </div>
           }
         </div>

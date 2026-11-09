@@ -7,12 +7,14 @@ import {
   ChangeDetectionStrategy,
   ElementRef,
   viewChild,
+  DestroyRef,
 } from '@angular/core';
+import { ActivatedRoute, Router } from '@angular/router';
+import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { COMMA, ENTER } from '@angular/cdk/keycodes';
 import { MatAutocompleteModule, MatAutocompleteSelectedEvent } from '@angular/material/autocomplete';
 import { MatChipInputEvent } from '@angular/material/chips';
 import { MatPaginatorModule, PageEvent } from '@angular/material/paginator';
-import { MatTooltipModule } from '@angular/material/tooltip';
 import { FormsModule, ReactiveFormsModule, FormBuilder, FormGroup, Validators } from '@angular/forms';
 import { MatButtonModule } from '@angular/material/button';
 import { MatIconModule } from '@angular/material/icon';
@@ -50,7 +52,6 @@ import { SlideOutPanelContainer } from '@app/shared/slide-out-panel-container/sl
     TextFieldModule,
     MatAutocompleteModule,
     MatPaginatorModule,
-    MatTooltipModule,
     SlideOutPanelContainer,
   ],
   templateUrl: './thoughts.html',
@@ -63,6 +64,12 @@ export class ThoughtsComponent implements OnInit {
   private userSettings = inject(UserSettingsService);
   private fb = inject(FormBuilder);
   private snackBar = inject(MatSnackBar);
+  private route = inject(ActivatedRoute);
+  private router = inject(Router);
+  private destroyRef = inject(DestroyRef);
+
+  /** How long typing pauses before the search runs. */
+  static readonly SEARCH_DEBOUNCE_MS = 300;
 
   readonly pageSizeOptions = [...THOUGHT_PAGE_SIZE_OPTIONS];
   readonly separatorKeys = [ENTER, COMMA] as const;
@@ -75,6 +82,15 @@ export class ThoughtsComponent implements OnInit {
   allTags = signal<ThoughtTagCount[]>([]);
   /** Filter: show only thoughts carrying every one of these tags. */
   selectedTags = signal<string[]>([]);
+  /** Text in the search box, as typed. */
+  searchText = signal('');
+  /** The search actually applied to the list (searchText after the debounce). */
+  appliedSearch = signal('');
+  /** Whether the search & filter panel is expanded. */
+  showFilters = signal(false);
+  /** Search plus selected tags: drives the badge on the toggle and the "filtered" summary. */
+  activeFilterCount = computed(() => this.selectedTags().length + (this.appliedSearch() ? 1 : 0));
+  private searchTimer: ReturnType<typeof setTimeout> | null = null;
   pageIndex = signal(0);
   readonly pageSize = this.userSettings.thoughtsPageSize;
 
@@ -91,6 +107,7 @@ export class ThoughtsComponent implements OnInit {
   tagQuery = signal('');
   private tagInputEl = viewChild<ElementRef<HTMLInputElement>>('tagInput');
   private listTop = viewChild<ElementRef<HTMLElement>>('listTop');
+  private searchInputEl = viewChild<ElementRef<HTMLInputElement>>('searchInput');
 
   form: FormGroup = this.fb.group({
     title: [''],
@@ -123,6 +140,28 @@ export class ThoughtsComponent implements OnInit {
   ngOnInit(): void {
     this.headerService.clearAll();
     this.load();
+    this.destroyRef.onDestroy(() => {
+      if (this.searchTimer) clearTimeout(this.searchTimer);
+    });
+    // ?open=<id> (e.g. a link from the AI chat) opens that thought in the editor.
+    this.route.queryParamMap.pipe(takeUntilDestroyed(this.destroyRef)).subscribe((params) => {
+      const id = params.get('open');
+      if (id) this.openById(id);
+    });
+  }
+
+  private openById(id: string): void {
+    this.thoughtsService.get(id).subscribe({
+      next: (thought) => this.openEdit(thought),
+      error: () => this.snackBar.open('That thought could not be found', undefined, { duration: 4000 }),
+    });
+    // Drop the param so a reload or back-navigation doesn't reopen it.
+    this.router.navigate([], {
+      relativeTo: this.route,
+      queryParams: { open: null },
+      queryParamsHandling: 'merge',
+      replaceUrl: true,
+    });
   }
 
   private load(): void {
@@ -130,6 +169,7 @@ export class ThoughtsComponent implements OnInit {
     this.loading.set(true);
     this.thoughtsService
       .getPage({
+        q: this.appliedSearch(),
         tags: this.selectedTags(),
         offset: this.pageIndex() * this.pageSize(),
         limit: this.pageSize(),
@@ -171,8 +211,45 @@ export class ThoughtsComponent implements OnInit {
     this.load();
   }
 
+  toggleFilters(): void {
+    this.showFilters.update((open) => !open);
+    // Put the cursor in the search box once the panel has rendered.
+    if (this.showFilters()) setTimeout(() => this.searchInputEl()?.nativeElement.focus());
+  }
+
+  onSearchInput(value: string): void {
+    this.searchText.set(value);
+    if (this.searchTimer) clearTimeout(this.searchTimer);
+    this.searchTimer = setTimeout(() => this.applySearch(), ThoughtsComponent.SEARCH_DEBOUNCE_MS);
+  }
+
+  /** Runs the typed search now (Enter, or after the debounce). */
+  applySearch(): void {
+    if (this.searchTimer) {
+      clearTimeout(this.searchTimer);
+      this.searchTimer = null;
+    }
+    const q = this.searchText().trim();
+    if (q === this.appliedSearch()) return;
+    this.appliedSearch.set(q);
+    this.pageIndex.set(0);
+    this.load();
+  }
+
+  clearSearch(): void {
+    this.searchText.set('');
+    this.applySearch();
+  }
+
+  /** Clears the search and the tag filter. */
   clearFilter(): void {
-    if (!this.selectedTags().length) return;
+    if (!this.activeFilterCount() && !this.searchText()) return;
+    if (this.searchTimer) {
+      clearTimeout(this.searchTimer);
+      this.searchTimer = null;
+    }
+    this.searchText.set('');
+    this.appliedSearch.set('');
     this.selectedTags.set([]);
     this.pageIndex.set(0);
     this.load();

@@ -11,14 +11,10 @@ import {
   normalizeThoughtTags,
 } from '../../shared/models/thought.model';
 import { readOwnedItem } from '../middleware/owner-guard';
+import { hasAllTags, keywordHits, searchWords, thoughtEmbeddingText as embeddingText } from '../services/thought-search';
 
 const router = Router();
 const container = getContainer('thought-items');
-
-/** Builds the text to embed: title (if any) prepended to content. */
-function embeddingText(thought: Pick<Thought, 'title' | 'content'>): string {
-  return thought.title ? `${thought.title}\n\n${thought.content}` : thought.content;
-}
 
 /** Reads a non-negative integer query param, falling back when absent or junk. */
 function intParam(value: unknown, fallback: number): number {
@@ -41,13 +37,15 @@ function tagCounts(thoughts: Thought[]): ThoughtTagCount[] {
 }
 
 // GET a page of the current user's thoughts, newest first.
+//   ?q=words    only thoughts whose title, content or tags contain every word
 //   ?tags=a,b   only thoughts carrying every listed tag (case-insensitive)
 //   ?offset=0   thoughts to skip
 //   ?limit=50   page size (capped at MAX_THOUGHT_PAGE_SIZE)
 router.get('/', async (req: Request, res: Response) => {
   try {
     const email = req.user!.email;
-    const filter = normalizeThoughtTags(String(req.query['tags'] ?? '').split(',')).map((t) => t.toLowerCase());
+    const filter = normalizeThoughtTags(String(req.query['tags'] ?? '').split(','));
+    const words = searchWords(String(req.query['q'] ?? ''));
     const offset = intParam(req.query['offset'], 0);
     const limit = Math.min(Math.max(intParam(req.query['limit'], DEFAULT_THOUGHT_PAGE_SIZE), 1), MAX_THOUGHT_PAGE_SIZE);
 
@@ -64,12 +62,9 @@ router.get('/', async (req: Request, res: Response) => {
       .fetchAll();
     const all = resources.map(({ contentVector: _v, ...t }) => t as Thought);
 
-    const matching = filter.length
-      ? all.filter((t) => {
-          const tags = new Set((t.tags ?? []).map((tag) => tag.toLowerCase()));
-          return filter.every((tag) => tags.has(tag));
-        })
-      : all;
+    const matching = all.filter(
+      (t) => hasAllTags(t, filter) && (!words.length || keywordHits(t, words) === words.length),
+    );
 
     const page: ThoughtPage = {
       items: matching.slice(offset, offset + limit),
@@ -80,6 +75,23 @@ router.get('/', async (req: Request, res: Response) => {
   } catch (err) {
     console.error('Error fetching thoughts:', err);
     res.status(500).json({ error: 'Failed to fetch thoughts' });
+  }
+});
+
+// GET one thought (without its vector), e.g. to open a thought linked from chat.
+router.get('/:id', async (req: Request, res: Response) => {
+  try {
+    const id = req.params['id'] as string;
+    const thought = await readOwnedItem<Thought>(container, id, id, req);
+    if (!thought || thought.deleted) {
+      res.status(404).json({ error: 'Thought not found' });
+      return;
+    }
+    const { contentVector: _v, ...rest } = thought;
+    res.json(rest);
+  } catch (err) {
+    console.error('Error fetching thought:', err);
+    res.status(500).json({ error: 'Failed to fetch thought' });
   }
 });
 

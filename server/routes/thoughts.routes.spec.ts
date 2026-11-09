@@ -111,6 +111,10 @@ describe('thoughts routes', () => {
     expect(ids(listAfter.body)).toEqual(['t-a1']);
   });
 
+  it('GET /:id hides deleted thoughts', async () => {
+    expect((await request(app).get('/api/thoughts/t-a-deleted').set('x-test-user', USER_A)).status).toBe(404);
+  });
+
   it('PATCH /:id/restore returns 404 for unknown or foreign thoughts', async () => {
     expect((await request(app).patch('/api/thoughts/nope/restore').set('x-test-user', USER_A)).status).toBe(404);
     expect((await request(app).patch('/api/thoughts/t-b/restore').set('x-test-user', USER_A)).status).toBe(404);
@@ -163,6 +167,31 @@ describe('thoughts routes', () => {
       const capped = await request(app).get('/api/thoughts?limit=9999').set('x-test-user', USER_A);
       expect(capped.body.items).toHaveLength(500);
       expect(capped.body.total).toBe(524);
+    });
+
+    it('filters by search words across title, content and tags, combined with tags', async () => {
+      const q = await request(app).get('/api/thoughts?q=TWO').set('x-test-user', USER_A);
+      expect(ids(q.body)).toEqual(['n2']);
+      expect(q.body.total).toBe(1);
+
+      const byTagWord = await request(app).get('/api/thoughts?q=plot').set('x-test-user', USER_A);
+      expect(ids(byTagWord.body)).toEqual(['n1']);
+
+      const both = await request(app).get('/api/thoughts?q=o&tags=quirk').set('x-test-user', USER_A);
+      expect(ids(both.body)).toEqual(['n2', 'n1']); // 1-char query ignored, tag filter kept
+
+      const none = await request(app).get('/api/thoughts?q=one%20two').set('x-test-user', USER_A);
+      expect(none.body.total).toBe(0); // every word must match
+    });
+
+    it('GET /:id returns the owner’s thought without its vector; 404 otherwise', async () => {
+      const own = await request(app).get('/api/thoughts/n1').set('x-test-user', USER_A);
+      expect(own.status).toBe(200);
+      expect(own.body.content).toBe('one');
+      expect(own.body.contentVector).toBeUndefined();
+
+      expect((await request(app).get('/api/thoughts/nb').set('x-test-user', USER_A)).status).toBe(404);
+      expect((await request(app).get('/api/thoughts/missing').set('x-test-user', USER_A)).status).toBe(404);
     });
 
     it('normalizes tags on create and update', async () => {
