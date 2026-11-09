@@ -45,3 +45,18 @@ export function chapterIdFromClick(event: MouseEvent): string | null {
   const target = (event.target as HTMLElement | null)?.closest('[data-chapter-id]') as HTMLElement | null;
   return target?.dataset['chapterId'] ?? null;
 }
+
+/**
+ * The in-app route of a plain left-click on a link in rendered chat markdown
+ * (e.g. `/thoughts?open=abc` from find_thoughts), so the caller can route to it
+ * without a full page load. Null for external links, protocol-relative links,
+ * and modified clicks (new tab/window), which the browser should handle.
+ */
+export function appRouteFromClick(event: MouseEvent): string | null {
+  if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return null;
+  const anchor = (event.target as HTMLElement | null)?.closest('a[href]') as HTMLAnchorElement | null;
+  const href = anchor?.getAttribute('href');
+  if (!href || !href.startsWith('/') || href.startsWith('//')) return null;
+  if (anchor!.target && anchor!.target !== '_self') return null;
+  return href;
+}

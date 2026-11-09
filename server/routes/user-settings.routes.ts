@@ -2,6 +2,7 @@ import { Router, Request, Response } from 'express';
 import { getContainer } from '../services/cosmos';
 import { invalidateAiModelSettings } from '../services/ai-models';
 import { AiModelSettings, isAiModelSettings } from '../../shared/models/ai-model.model';
+import { THOUGHT_PAGE_SIZE_OPTIONS } from '../../shared/models/thought.model';
 
 const router = Router();
 
@@ -24,6 +25,8 @@ interface UserSettings {
   autoSaveEnabled?: boolean;
   /** Model picked per AI operation; unset operations use their default. */
   aiModels?: AiModelSettings;
+  /** Thoughts shown per page in the thoughts list. */
+  thoughtsPageSize?: number;
   pinHash?: string;
 }
 
@@ -55,6 +58,7 @@ const FIELD_VALIDATORS: Record<SettingsField, (v: unknown) => boolean> = {
   entityDetectionEnabled: isBoolean,
   autoSaveEnabled: isBoolean,
   aiModels: isAiModelSettings,
+  thoughtsPageSize: (v: unknown) => (THOUGHT_PAGE_SIZE_OPTIONS as readonly unknown[]).includes(v),
   pinHash: isString,
 };
 

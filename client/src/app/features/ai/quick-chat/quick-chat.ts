@@ -31,7 +31,7 @@ import { BookService } from '@app/features/books/book.service';
 import { ChapterService } from '@app/features/chapters/chapter.service';
 import { EditorBridgeService } from '@app/features/chapters/editor-bridge.service';
 import { UserSettingsService, GhostCompleteItem } from '@app/core/services/user-settings.service';
-import { chatMarkdownToHtml, chapterIdFromClick } from '@app/shared/chat-markdown';
+import { chatMarkdownToHtml, chapterIdFromClick, appRouteFromClick } from '@app/shared/chat-markdown';
 import { annotateEntityReferences, entityIdFromClick } from '@app/shared/entity-references';
 import { MapPreviewComponent } from '@app/features/maps/map-preview/map-preview';
 import { EntityPickerDialogComponent, EntityPickerData } from '@app/features/entities/entity-edit/entity-picker-dialog';
@@ -564,10 +564,19 @@ export class QuickChatComponent {
       return;
     }
     const chapterId = chapterIdFromClick(event);
-    if (!chapterId) return;
-    event.preventDefault();
-    this.quickChat.close();
-    this.router.navigate(['/chapters', chapterId, 'edit']);
+    if (chapterId) {
+      event.preventDefault();
+      this.quickChat.close();
+      this.router.navigate(['/chapters', chapterId, 'edit']);
+      return;
+    }
+    // In-app links in a reply (e.g. a thought from find_thoughts) route without a reload.
+    const route = appRouteFromClick(event);
+    if (route) {
+      event.preventDefault();
+      this.quickChat.close();
+      this.router.navigateByUrl(route);
+    }
   }
 
   /** Navigates to an entity's page, closing the chat overlay. */

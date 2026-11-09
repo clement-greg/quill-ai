@@ -185,6 +185,41 @@ describe('UserSettingsService', () => {
     expect(service.ghostCompleteItems()).toEqual([]);
   });
 
+  // ── Thoughts page size ─────────────────────────────────────────────────────
+
+  describe('thoughts page size', () => {
+    it('defaults to 50', () => {
+      expect(service.thoughtsPageSize()).toBe(50);
+    });
+
+    it('setThoughtsPageSize saves an offered size', () => {
+      service.setThoughtsPageSize(200);
+      const req = http.expectOne('/api/user-settings');
+      expect(req.request.body.thoughtsPageSize).toBe(200);
+      req.flush({});
+      expect(service.thoughtsPageSize()).toBe(200);
+    });
+
+    it('setThoughtsPageSize ignores sizes not offered, and unchanged sizes', () => {
+      service.setThoughtsPageSize(10);
+      service.setThoughtsPageSize(50);
+      http.expectNone('/api/user-settings');
+      expect(service.thoughtsPageSize()).toBe(50);
+    });
+
+    it('loadFromServer restores a saved size and rejects a bogus one', async () => {
+      const first = service.loadFromServer();
+      http.expectOne('/api/user-settings').flush({ thoughtsPageSize: 500 });
+      await first;
+      expect(service.thoughtsPageSize()).toBe(500);
+
+      const second = service.loadFromServer();
+      http.expectOne('/api/user-settings').flush({ thoughtsPageSize: 7 });
+      await second;
+      expect(service.thoughtsPageSize()).toBe(50);
+    });
+  });
+
   // ── AI models ──────────────────────────────────────────────────────────────
 
   describe('AI models', () => {

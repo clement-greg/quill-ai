@@ -1,5 +1,5 @@
 import { ChapterCitation } from '@shared/models';
-import { chatMarkdownToHtml, chapterIdFromClick } from './chat-markdown';
+import { chatMarkdownToHtml, chapterIdFromClick, appRouteFromClick } from './chat-markdown';
 
 const sources: ChapterCitation[] = [
   { n: 1, chapterId: 'ch-1', title: 'The Beginning' },
@@ -71,5 +71,35 @@ describe('chapterIdFromClick', () => {
     container.innerHTML = '<p>plain text</p>';
     expect(chapterIdFromClick(clickEventOn(container.querySelector('p')))).toBeNull();
     expect(chapterIdFromClick(clickEventOn(null))).toBeNull();
+  });
+});
+
+describe('appRouteFromClick', () => {
+  function clickOn(html: string, selector: string, init: MouseEventInit = {}): MouseEvent {
+    const host = document.createElement('div');
+    host.innerHTML = html;
+    const target = host.querySelector(selector)!;
+    const event = new MouseEvent('click', { button: 0, ...init });
+    Object.defineProperty(event, 'target', { value: target });
+    return event;
+  }
+
+  it('returns the route of an in-app link, including clicks on nested text', () => {
+    expect(appRouteFromClick(clickOn('<a href="/thoughts?open=abc"><b>Quirk</b></a>', 'b'))).toBe('/thoughts?open=abc');
+  });
+
+  it('ignores external and protocol-relative links', () => {
+    expect(appRouteFromClick(clickOn('<a href="https://example.com/x">x</a>', 'a'))).toBeNull();
+    expect(appRouteFromClick(clickOn('<a href="//evil.example/x">x</a>', 'a'))).toBeNull();
+  });
+
+  it('leaves modified clicks and new-tab targets to the browser', () => {
+    expect(appRouteFromClick(clickOn('<a href="/thoughts">x</a>', 'a', { metaKey: true }))).toBeNull();
+    expect(appRouteFromClick(clickOn('<a href="/thoughts">x</a>', 'a', { ctrlKey: true }))).toBeNull();
+    expect(appRouteFromClick(clickOn('<a href="/thoughts" target="_blank">x</a>', 'a'))).toBeNull();
+  });
+
+  it('returns null when the click is not on a link', () => {
+    expect(appRouteFromClick(clickOn('<p>plain</p>', 'p'))).toBeNull();
   });
 });
