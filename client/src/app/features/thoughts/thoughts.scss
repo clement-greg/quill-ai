@@ -120,6 +120,124 @@
   }
 }
 
+/* Tag filter */
+.tag-filter {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin-bottom: 16px;
+}
+
+.tag-filter-icon {
+  flex: none;
+  margin-top: 10px;
+  color: var(--mat-sys-on-surface-variant);
+}
+
+.tag-filter-chips {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.filter-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  min-height: 32px;
+  padding: 4px 12px;
+  border: 1px solid var(--mat-sys-outline);
+  border-radius: 8px;
+  background: transparent;
+  color: var(--mat-sys-on-surface);
+  font: inherit;
+  font-size: 0.875rem;
+  cursor: pointer;
+  transition: background 0.15s;
+
+  &:hover {
+    background: var(--mat-sys-surface-container-high);
+  }
+
+  &:focus-visible {
+    outline: 2px solid var(--mat-sys-primary);
+    outline-offset: 2px;
+  }
+
+  &.selected {
+    background: var(--mat-sys-secondary-container);
+    color: var(--mat-sys-on-secondary-container);
+    border-color: transparent;
+  }
+}
+
+.filter-check {
+  font-size: 18px;
+  width: 18px;
+  height: 18px;
+}
+
+.tag-count {
+  margin-left: 4px;
+  font-size: 0.75em;
+  opacity: 0.7;
+}
+
+.clear-filter {
+  flex: none;
+  margin-top: 2px;
+}
+
+.list-top {
+  scroll-margin-top: 16px;
+}
+
+.thoughts-list.reloading {
+  opacity: 0.6;
+  transition: opacity 0.15s;
+}
+
+/* Tags on a card */
+.thought-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.thought-tag {
+  border: 1px solid var(--mat-sys-outline-variant);
+  background: transparent;
+  color: var(--mat-sys-primary);
+  border-radius: 999px;
+  padding: 2px 10px;
+  font: inherit;
+  font-size: 0.8rem;
+  cursor: pointer;
+  transition: background 0.15s;
+
+  &:hover {
+    background: var(--mat-sys-secondary-container);
+  }
+
+  &:focus-visible {
+    outline: 2px solid var(--mat-sys-primary);
+    outline-offset: 2px;
+  }
+
+  &.active {
+    background: var(--mat-sys-secondary-container);
+    color: var(--mat-sys-on-secondary-container);
+    border-color: transparent;
+  }
+}
+
+.paginator {
+  margin-top: 16px;
+  background: transparent;
+}
+
 /* Right panel */
 [right-panel] {
   height: 100%;
@@ -137,7 +255,8 @@
   margin: 0;
 }
 
-.content-field {
+.content-field,
+.tags-field {
   width: 100%;
 }
 

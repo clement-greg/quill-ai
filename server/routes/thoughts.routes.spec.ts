@@ -26,6 +26,8 @@ function seed(): void {
   );
 }
 
+const ids = (page: { items: { id: string }[] }) => page.items.map((t) => t.id);
+
 beforeEach(() => {
   seed();
   generateEmbedding.mockClear();
@@ -36,10 +38,11 @@ describe('thoughts routes', () => {
   it('GET / returns only the caller’s non-deleted thoughts', async () => {
     const asA = await request(app).get('/api/thoughts').set('x-test-user', USER_A);
     expect(asA.status).toBe(200);
-    expect(asA.body.map((t: { id: string }) => t.id)).toEqual(['t-a1']);
+    expect(ids(asA.body)).toEqual(['t-a1']);
+    expect(asA.body.total).toBe(1);
 
     const asB = await request(app).get('/api/thoughts').set('x-test-user', USER_B);
-    expect(asB.body.map((t: { id: string }) => t.id)).toEqual(['t-b']);
+    expect(ids(asB.body)).toEqual(['t-b']);
   });
 
   it('POST / rejects blank content', async () => {
@@ -98,18 +101,89 @@ describe('thoughts routes', () => {
     expect(fake.container('thought-items').get('t-a1')!.deleted).toBe(true);
 
     const list = await request(app).get('/api/thoughts').set('x-test-user', USER_A);
-    expect(list.body).toEqual([]);
+    expect(list.body.items).toEqual([]);
 
     const restored = await request(app).patch('/api/thoughts/t-a1/restore').set('x-test-user', USER_A);
     expect(restored.status).toBe(200);
     expect(restored.body.deleted).toBe(false);
 
     const listAfter = await request(app).get('/api/thoughts').set('x-test-user', USER_A);
-    expect(listAfter.body.map((t: { id: string }) => t.id)).toEqual(['t-a1']);
+    expect(ids(listAfter.body)).toEqual(['t-a1']);
   });
 
   it('PATCH /:id/restore returns 404 for unknown or foreign thoughts', async () => {
     expect((await request(app).patch('/api/thoughts/nope/restore').set('x-test-user', USER_A)).status).toBe(404);
     expect((await request(app).patch('/api/thoughts/t-b/restore').set('x-test-user', USER_A)).status).toBe(404);
+  });
+
+  describe('tags and paging', () => {
+    beforeEach(() => {
+      fake.reset();
+      fake.container('thought-items').seed(
+        { id: 'n1', content: 'one', tags: ['Plot', 'Quirk'], owner: USER_A, modifiedAt: '2026-01-01', contentVector: [1] },
+        { id: 'n2', content: 'two', tags: ['quirk'], owner: USER_A, modifiedAt: '2026-01-02' },
+        { id: 'n3', content: 'three', tags: [], owner: USER_A, modifiedAt: '2026-01-03' },
+        { id: 'n4', content: 'four', owner: USER_A, modifiedAt: '2026-01-04' },
+        { id: 'nb', content: 'bob', tags: ['secret'], owner: USER_B, modifiedAt: '2026-01-05' },
+      );
+    });
+
+    it('lists the caller’s tags with counts, merging case variants, and omits vectors', async () => {
+      const res = await request(app).get('/api/thoughts').set('x-test-user', USER_A);
+      expect(res.body.tags).toEqual([
+        { tag: 'Plot', count: 1 },
+        { tag: 'quirk', count: 2 }, // spelling from the most recent thought
+      ]);
+      expect(res.body.items.every((t: { contentVector?: unknown }) => t.contentVector === undefined)).toBe(true);
+    });
+
+    it('filters to thoughts carrying every requested tag, case-insensitively', async () => {
+      const one = await request(app).get('/api/thoughts?tags=QUIRK').set('x-test-user', USER_A);
+      expect(ids(one.body)).toEqual(['n2', 'n1']);
+      expect(one.body.total).toBe(2);
+      expect(one.body.tags).toHaveLength(2); // tag list ignores the filter
+
+      const both = await request(app).get('/api/thoughts?tags=quirk,plot').set('x-test-user', USER_A);
+      expect(ids(both.body)).toEqual(['n1']);
+    });
+
+    it('pages with offset and limit, reporting the full total', async () => {
+      const res = await request(app).get('/api/thoughts?offset=1&limit=2').set('x-test-user', USER_A);
+      expect(ids(res.body)).toEqual(['n3', 'n2']);
+      expect(res.body.total).toBe(4);
+    });
+
+    it('defaults to 50 per page and caps the limit at 500', async () => {
+      const many = Array.from({ length: 520 }, (_, i) => ({
+        id: `m${i}`, content: `m${i}`, owner: USER_A, modifiedAt: `2025-${String(i).padStart(4, '0')}`,
+      }));
+      fake.container('thought-items').seed(...many);
+      const dflt = await request(app).get('/api/thoughts').set('x-test-user', USER_A);
+      expect(dflt.body.items).toHaveLength(50);
+      const capped = await request(app).get('/api/thoughts?limit=9999').set('x-test-user', USER_A);
+      expect(capped.body.items).toHaveLength(500);
+      expect(capped.body.total).toBe(524);
+    });
+
+    it('normalizes tags on create and update', async () => {
+      const created = await request(app)
+        .post('/api/thoughts')
+        .set('x-test-user', USER_A)
+        .send({ content: 'x', tags: ['  Big   idea ', 'big idea', '', 'a,b', 7] });
+      expect(created.body.tags).toEqual(['Big idea', 'a b']);
+
+      const updated = await request(app)
+        .put('/api/thoughts/n2')
+        .set('x-test-user', USER_A)
+        .send({ tags: ['Villain'] });
+      expect(updated.body.tags).toEqual(['Villain']);
+      expect(updated.body.content).toBe('two');
+    });
+
+    it('does not re-embed when only the tags change', async () => {
+      await request(app).put('/api/thoughts/n1').set('x-test-user', USER_A).send({ tags: ['New'] });
+      expect(generateEmbedding).not.toHaveBeenCalled();
+      expect(fake.container('thought-items').get('n1')!.contentVector).toEqual([1]);
+    });
   });
 });

@@ -4,6 +4,7 @@ import { HttpClient } from '@angular/common/http';
 import { firstValueFrom } from 'rxjs';
 import { getQuillDesktop } from '@app/core/desktop/quill-desktop';
 import { AiModelKey, AiModelSettings, AiOperation, isAiModelSettings, modelKeyFor } from '@shared/models/ai-model.model';
+import { DEFAULT_THOUGHT_PAGE_SIZE, THOUGHT_PAGE_SIZE_OPTIONS } from '@shared/models/thought.model';
 
 const HIDE_DESKTOP_TOOLBAR_KEY = 'quill_hide_desktop_toolbar';
 
@@ -44,6 +45,7 @@ export interface UserSettingsData {
   genderOptions?: string[];
   raceOptions?: string[];
   orientationOptions?: string[];
+  thoughtsPageSize?: number;
 }
 
 @Injectable({ providedIn: 'root' })
@@ -72,6 +74,7 @@ export class UserSettingsService {
   private _genderOptions = signal<string[]>(DEFAULT_GENDER_OPTIONS);
   private _raceOptions = signal<string[]>(DEFAULT_RACE_OPTIONS);
   private _orientationOptions = signal<string[]>(DEFAULT_ORIENTATION_OPTIONS);
+  private _thoughtsPageSize = signal<number>(DEFAULT_THOUGHT_PAGE_SIZE);
   private _showHiddenPhotos = signal<boolean>(false);
   private _hideDesktopToolbar = signal<boolean>(localStorage.getItem(HIDE_DESKTOP_TOOLBAR_KEY) === 'true');
   private _settingsLoaded = signal(false);
@@ -96,6 +99,7 @@ export class UserSettingsService {
   readonly genderOptions = this._genderOptions.asReadonly();
   readonly raceOptions = this._raceOptions.asReadonly();
   readonly orientationOptions = this._orientationOptions.asReadonly();
+  readonly thoughtsPageSize = this._thoughtsPageSize.asReadonly();
   readonly showHiddenPhotos = this._showHiddenPhotos.asReadonly();
   readonly settingsLoaded = this._settingsLoaded.asReadonly();
   /** True inside the Electron desktop app, whose native menus duplicate the top bar. */
@@ -124,6 +128,11 @@ export class UserSettingsService {
       this._genderOptions.set(settings.genderOptions ?? DEFAULT_GENDER_OPTIONS);
       this._raceOptions.set(settings.raceOptions ?? DEFAULT_RACE_OPTIONS);
       this._orientationOptions.set(settings.orientationOptions ?? DEFAULT_ORIENTATION_OPTIONS);
+      this._thoughtsPageSize.set(
+        (THOUGHT_PAGE_SIZE_OPTIONS as readonly number[]).includes(settings.thoughtsPageSize ?? NaN)
+          ? settings.thoughtsPageSize!
+          : DEFAULT_THOUGHT_PAGE_SIZE,
+      );
     } catch {
       // Server unavailable — signals keep their default values
     }
@@ -148,6 +157,7 @@ export class UserSettingsService {
         genderOptions: this._genderOptions(),
         raceOptions: this._raceOptions(),
         orientationOptions: this._orientationOptions(),
+        thoughtsPageSize: this._thoughtsPageSize(),
       })
     ).catch(() => {});
   }
@@ -214,6 +224,12 @@ export class UserSettingsService {
 
   setEntityDetectionEnabled(value: boolean): void {
     this._entityDetectionEnabled.set(value);
+    this.saveToServer();
+  }
+
+  setThoughtsPageSize(value: number): void {
+    if (!(THOUGHT_PAGE_SIZE_OPTIONS as readonly number[]).includes(value) || value === this._thoughtsPageSize()) return;
+    this._thoughtsPageSize.set(value);
     this.saveToServer();
   }
 
