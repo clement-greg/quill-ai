@@ -67,14 +67,15 @@
       </div>
       }
 
-      <app-open-tasks-tile />
-
       <div class="feature-links">
         <h2>Explore</h2>
         <div class="feature-grid">
           @for (link of visibleFeatureLinks(); track link.path) {
           <button class="feature-card" (click)="navigateTo(link.path)">
             <mat-icon class="feature-card-icon">{{ link.icon }}</mat-icon>
+            @if (link.path === '/tasks' && openTaskCount(); as count) {
+            <span class="feature-card-badge" [attr.aria-label]="count + ' open'">{{ count }}</span>
+            }
             <span class="feature-card-label">{{ link.label }}</span>
           </button>
           }
