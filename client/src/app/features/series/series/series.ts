@@ -280,6 +280,7 @@ import { UserSettingsService } from '@app/core/services/user-settings.service';
 import { v4 as uuidv4 } from 'uuid';
 import { SlideOutPanelContainer } from '@app/shared/slide-out-panel-container/slide-out-panel-container';
 import { WritingStatsSummaryComponent } from '@app/features/writing-stats/writing-stats-summary';
+import { OpenTasksTileComponent } from '@app/features/tasks/open-tasks-tile';
 
 @Component({
   selector: 'app-series',
@@ -298,6 +299,7 @@ import { WritingStatsSummaryComponent } from '@app/features/writing-stats/writin
     TextFieldModule,
     SlideOutPanelContainer,
     WritingStatsSummaryComponent,
+    OpenTasksTileComponent,
   ],
   templateUrl: './series.html',
   styleUrl: './series.scss',
@@ -335,6 +337,7 @@ export class SeriesComponent implements OnInit {
 
   readonly featureLinks = [
     { label: 'Thoughts',      icon: 'lightbulb',     path: '/thoughts' },
+    { label: 'Tasks',         icon: 'checklist',     path: '/tasks' },
     { label: 'Entities',      icon: 'people',        path: '/entities' },
     { label: 'Relationships', icon: 'account_tree',  path: '/relationships' },
     { label: 'Maps',          icon: 'map',           path: '/maps' },

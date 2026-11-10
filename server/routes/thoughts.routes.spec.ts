@@ -216,3 +216,29 @@ describe('thoughts routes', () => {
     });
   });
 });
+
+describe('thoughts and tasks share a container', () => {
+  beforeEach(() => {
+    fake.container('thought-items').seed(
+      { id: 'task-1', docType: 'task', title: 'A task', bookId: 'b', completed: false, owner: USER_A },
+      { id: 't-new', docType: 'thought', content: 'Stamped thought', owner: USER_A },
+    );
+  });
+
+  it('never lists a task as a thought', async () => {
+    const res = await request(app).get('/api/thoughts').set('x-test-user', USER_A);
+    expect(ids(res.body).sort()).toEqual(['t-a1', 't-new']);
+  });
+
+  it('will not read, edit, or delete a task through the thoughts API', async () => {
+    expect((await request(app).get('/api/thoughts/task-1').set('x-test-user', USER_A)).status).toBe(404);
+    expect((await request(app).put('/api/thoughts/task-1').set('x-test-user', USER_A).send({ content: 'x' })).status).toBe(404);
+    expect((await request(app).delete('/api/thoughts/task-1').set('x-test-user', USER_A)).status).toBe(404);
+    expect(fake.container('thought-items').get('task-1')?.['deleted']).toBeUndefined();
+  });
+
+  it('stamps new thoughts with their docType', async () => {
+    const res = await request(app).post('/api/thoughts').set('x-test-user', USER_A).send({ content: 'Fresh' });
+    expect(res.body.docType).toBe('thought');
+  });
+});

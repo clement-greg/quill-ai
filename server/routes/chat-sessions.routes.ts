@@ -27,6 +27,7 @@ import { generateImage } from '../services/image-generation';
 import { downloadBlob } from '../services/storage';
 import { buildChapterContextPrompt } from '../services/chapter-ai-context';
 import { buildChapterDraftingContext, generateChapterBeatSheet } from '../services/chapter-drafting-context';
+import { taskChatTools, taskGuidance } from './task-chat-tools';
 
 /** True when the author is asking to draft a whole chapter (vs. a small inline
  * edit/insert), e.g. "write the chapter based on the outline and notes" or
@@ -2041,6 +2042,7 @@ function getSaveThoughtTool(req: Request): ChatTool {
       const email = req.user!.email;
       const thought: Thought = {
         id: randomUUID(),
+        docType: 'thought',
         title,
         content,
         tags: normalizeThoughtTags(args['tags']),
@@ -2722,6 +2724,7 @@ function seriesChatTools(req: Request, scope: { seriesId?: string }, citations: 
     save_thought: getSaveThoughtTool(req),
     find_thoughts: getFindThoughtsTool(req),
     search_chapter_text: getSearchChapterTextTool(scope, citations, req),
+    ...taskChatTools(req, { seriesId: scope.seriesId }),
   };
 }
 
@@ -3010,7 +3013,7 @@ router.post('/:id/chat', async (req: Request, res: Response) => {
 
   await streamChatResponse(
     res,
-    systemPrompt + IMAGE_TOOL_GUIDANCE + ENTITY_RESEARCH_GUIDANCE + ENTITY_DESCRIPTION_GUIDANCE + SEARCH_CHAPTER_TEXT_GUIDANCE + SAVE_THOUGHT_GUIDANCE + FIND_THOUGHTS_GUIDANCE,
+    systemPrompt + IMAGE_TOOL_GUIDANCE + ENTITY_RESEARCH_GUIDANCE + ENTITY_DESCRIPTION_GUIDANCE + SEARCH_CHAPTER_TEXT_GUIDANCE + SAVE_THOUGHT_GUIDANCE + FIND_THOUGHTS_GUIDANCE + taskGuidance(req),
     messages,
     citations,
     seriesChatTools(req, { seriesId: session?.seriesId ?? undefined }, citations),
@@ -3078,9 +3081,11 @@ router.post('/voice', async (req: Request, res: Response) => {
       search_chapter_text: getSearchChapterTextTool({}, citations, req),
       save_thought: getSaveThoughtTool(req),
       find_thoughts: getFindThoughtsTool(req),
+      ...taskChatTools(req),
     };
     const guidance =
-      ENTITY_RESEARCH_GUIDANCE + SEARCH_CHAPTER_TEXT_GUIDANCE + SAVE_THOUGHT_GUIDANCE + FIND_THOUGHTS_GUIDANCE + VOICE_GUIDANCE;
+      ENTITY_RESEARCH_GUIDANCE + SEARCH_CHAPTER_TEXT_GUIDANCE + SAVE_THOUGHT_GUIDANCE + FIND_THOUGHTS_GUIDANCE + taskGuidance(req) +
+      VOICE_GUIDANCE;
     const collector = createAnswerCollector();
     await streamChatResponse(collector.sink, systemPrompt + guidance, messages, citations, tools, await chatModelFor(req.user, undefined));
 
@@ -3230,17 +3235,30 @@ router.post('/quick-chat', async (req: Request, res: Response) => {
     }),
     ...(chatImages.length ? { propose_entity_pictures: getProposeEntityPicturesTool(req, chatImages) } : {}),
   };
+  // Tasks added from the chapter editor default to that chapter's book.
+  let chapterBookId: string | undefined;
+  if (chapterContext?.chapterId) {
+    try {
+      const { resource } = await getContainer('chapters').item(chapterContext.chapterId, chapterContext.chapterId).read<Chapter>();
+      chapterBookId = resource?.bookId;
+    } catch {
+      // No default book; create_task will ask.
+    }
+  }
+  const taskTools = taskChatTools(req, { defaultBookId: chapterBookId });
   const tools = chapterContext?.chapterId
     ? {
         ...quickChatTools(req, {}, citations),
+        ...taskTools,
         ...entityTools,
         get_chapter_text: getChapterTextTool(chapterContext.chapterId, req),
         link_entity_references: getLinkEntityReferencesTool(req),
         propose_chapter_edit: getProposeChapterEditTool(chapterContext.chapterId, req),
       }
-    : { ...quickChatTools(req, {}, citations), ...entityTools };
+    : { ...quickChatTools(req, {}, citations), ...taskTools, ...entityTools };
   const guidance =
     IMAGE_TOOL_GUIDANCE + ENTITY_RESEARCH_GUIDANCE + ENTITY_DESCRIPTION_GUIDANCE + SEARCH_CHAPTER_TEXT_GUIDANCE + SAVE_THOUGHT_GUIDANCE + FIND_THOUGHTS_GUIDANCE +
+    taskGuidance(req) +
     ENTITY_CREATION_GUIDANCE + chatImagesGuidance(chatImages) +
     (chapterContext?.chapterId ? LINK_REFERENCES_GUIDANCE + SMART_EDIT_GUIDANCE : '');
   await streamChatResponse(res, systemPrompt + guidance, messages, citations, tools, await chatModelFor(req.user, req.body.model));

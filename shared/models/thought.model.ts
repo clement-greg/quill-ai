@@ -8,6 +8,16 @@ export interface Thought extends AuditedRecord {
   /** 1536-dim cosine vector embedding of (title + content), for semantic search. */
   contentVector?: number[];
   deleted?: boolean;
+  /**
+   * Thoughts share their container with tasks. Older thoughts have no docType;
+   * new ones are stamped 'thought'. Tasks always carry 'task' (see task.model.ts).
+   */
+  docType?: 'thought';
+}
+
+/** True when a document read from the shared container is a thought rather than a task. */
+export function isThoughtDoc(doc: { docType?: string } | null | undefined): boolean {
+  return !!doc && (doc.docType === undefined || doc.docType === 'thought');
 }
 
 /** A tag in use on the caller's thoughts, with how many thoughts carry it. */

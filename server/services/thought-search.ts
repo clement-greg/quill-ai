@@ -1,8 +1,12 @@
 import { getContainer } from './cosmos';
 import { generateEmbedding } from './embeddings';
 import { Thought } from '../../shared/models/thought.model';
+import { THOUGHT_DOC_TYPE } from '../../shared/models/task.model';
 
-const NOT_DELETED = '(NOT IS_DEFINED(c.deleted) OR c.deleted = false)';
+// Thoughts share their container with tasks; THOUGHTS_ONLY keeps tasks out of
+// every query here. It needs the @docType parameter (THOUGHT_PARAM).
+const NOT_DELETED = '(NOT IS_DEFINED(c.deleted) OR c.deleted = false) AND (NOT IS_DEFINED(c.docType) OR c.docType = @docType)';
+const THOUGHT_PARAM = { name: '@docType', value: THOUGHT_DOC_TYPE };
 const LIGHT_FIELDS = 'c.id, c.title, c.content, c.tags, c.createdAt, c.modifiedAt';
 
 /** Builds the text a thought is embedded from: title (if any) prepended to content. */
@@ -52,7 +56,7 @@ export async function backfillThoughtVectors(owner: string, max = 25): Promise<n
   const { resources } = await container.items
     .query<Thought>({
       query: `SELECT TOP ${max} * FROM c WHERE c.owner = @owner AND ${NOT_DELETED} AND NOT IS_DEFINED(c.contentVector)`,
-      parameters: [{ name: '@owner', value: owner }],
+      parameters: [{ name: '@owner', value: owner }, THOUGHT_PARAM],
     })
     .fetchAll();
   let filled = 0;
@@ -87,6 +91,7 @@ async function semanticSearch(
       parameters: [
         { name: '@owner', value: owner },
         { name: '@vec', value: vector },
+        THOUGHT_PARAM,
       ],
     })
     .fetchAll();
@@ -97,7 +102,7 @@ async function allLightThoughts(owner: string): Promise<LightThought[]> {
   const { resources } = await getContainer('thought-items')
     .items.query<LightThought>({
       query: `SELECT ${LIGHT_FIELDS} FROM c WHERE c.owner = @owner AND ${NOT_DELETED} ORDER BY c.modifiedAt DESC`,
-      parameters: [{ name: '@owner', value: owner }],
+      parameters: [{ name: '@owner', value: owner }, THOUGHT_PARAM],
     })
     .fetchAll();
   return resources;

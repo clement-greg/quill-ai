@@ -35,6 +35,7 @@ import mapRoutes from './routes/map.routes';
 import mapAssetRoutes from './routes/map-asset.routes';
 import chapterEditorReviewRoutes from './routes/chapter-editor-review.routes';
 import thoughtsRoutes from './routes/thoughts.routes';
+import tasksRoutes from './routes/tasks.routes';
 import appSettingsRoutes from './routes/app-settings.routes';
 import diagnosticsRoutes from './routes/diagnostics.routes';
 import { clientRoutes, findClientDir } from './client-static';
@@ -106,6 +107,7 @@ app.use('/api/maps', mapRoutes);
 app.use('/api/map-assets', mapAssetRoutes);
 app.use('/api/chapter-editor-review', chapterEditorReviewRoutes);
 app.use('/api/thoughts', thoughtsRoutes);
+app.use('/api/tasks', tasksRoutes);
 app.use('/api/app-settings', appSettingsRoutes);
 app.use('/api/diagnostics', diagnosticsRoutes);
 

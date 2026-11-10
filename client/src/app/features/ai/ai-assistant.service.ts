@@ -404,7 +404,12 @@ export class AiAssistantService {
       const res = await this.authFetch(`/api/chat-sessions/${session.id}/chat`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ messages: apiMessages, model: this.userSettings.chatModel() }),
+        body: JSON.stringify({
+          messages: apiMessages,
+          model: this.userSettings.chatModel(),
+          // Lets the assistant resolve "Friday" and "overdue" for tasks in the author's own time zone.
+          tz: Intl.DateTimeFormat().resolvedOptions().timeZone,
+        }),
         signal: this.abortController.signal,
       });
 

@@ -72,9 +72,10 @@ describe('POST /voice', () => {
 
     const call = create.mock.calls[0][0];
     expect(call.tools.map((t: { name: string }) => t.name).sort()).toEqual(
-      ['find_thoughts', 'research_entity', 'save_thought', 'search_chapter_text'],
+      ['complete_task', 'create_task', 'find_tasks', 'find_thoughts', 'research_entity', 'save_thought', 'search_chapter_text'],
     );
     expect(call.input[0].content).toContain('VOICE REPLY');
+    expect(call.input[0].content).toContain('TASKS:');
   });
 
   it('runs tools as the caller and answers from their results', async () => {

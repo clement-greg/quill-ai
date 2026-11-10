@@ -21,6 +21,7 @@ import { EntityPageComponent } from '@app/features/entities/entity-page/entity-p
 import { MapListComponent } from '@app/features/maps/map-list/map-list';
 import { MapEditorComponent } from '@app/features/maps/map-editor/map-editor';
 import { ThoughtsComponent } from '@app/features/thoughts/thoughts';
+import { TasksComponent } from '@app/features/tasks/tasks';
 import { authGuard } from '@app/core/auth/auth.guard';
 import { authInterceptor, authErrorInterceptor } from '@app/core/auth/auth.interceptor';
 
@@ -45,6 +46,7 @@ const routes: Routes = [
   { path: 'maps', component: MapListComponent, canActivate: [authGuard] },
   { path: 'maps/:id', component: MapEditorComponent, canActivate: [authGuard] },
   { path: 'thoughts', component: ThoughtsComponent, canActivate: [authGuard] },
+  { path: 'tasks', component: TasksComponent, canActivate: [authGuard] },
   { path: 'home', component: Home, canActivate: [authGuard] },
   {
     path: 'quilly-demo',

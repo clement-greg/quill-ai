@@ -3,8 +3,8 @@ import XCTest
 @testable import Quill_AI
 
 final class SiriCommandTests: XCTestCase {
-    func testBothSiriCommandsAreRegistered() {
-        XCTAssertEqual(QuillShortcuts.appShortcuts.count, 2)
+    func testAllSiriCommandsAreRegistered() {
+        XCTAssertEqual(QuillShortcuts.appShortcuts.count, 4)
     }
 
     func testSignedOutAskExplainsWhatToDo() async throws {

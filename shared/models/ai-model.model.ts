@@ -45,7 +45,8 @@ export type AiOperation =
   | 'chapterSummary'
   | 'imagePrompts'
   | 'seriesPrompt'
-  | 'titles';
+  | 'titles'
+  | 'tasks';
 
 export interface AiOperationOption {
   id: AiOperation;
@@ -72,6 +73,7 @@ export const AI_OPERATIONS: readonly AiOperationOption[] = [
   { id: 'imagePrompts', label: 'Image prompts', description: 'Turns chapter text into a prompt for picture generation.', defaultModel: 'luna' },
   { id: 'seriesPrompt', label: 'Series system prompt', description: 'Generates a series-wide instruction prompt.', defaultModel: 'luna' },
   { id: 'titles', label: 'Titles & names', description: 'Names chats and notes.', defaultModel: 'luna' },
+  { id: 'tasks', label: 'Tasks', description: 'Links tasks to characters and chapters, reads spoken tasks, and spots tasks a chapter save may have finished.', defaultModel: 'luna' },
 ];
 
 export type AiModelSettings = Partial<Record<AiOperation, AiModelKey>>;
