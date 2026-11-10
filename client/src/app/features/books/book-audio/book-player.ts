@@ -36,6 +36,12 @@ export class BookPlayerComponent {
     const index = this.ra.index();
     return this.chapters().find(c => index >= c.start && index < c.end) ?? null;
   });
+  /** The playing chapter's picture, else the book's cover. */
+  readonly artwork = computed(() => {
+    const playing = this.audio.nowPlaying();
+    const chapterId = this.chapter()?.chapterId;
+    return (chapterId && playing?.chapterArt[chapterId]) || playing?.coverUrl || null;
+  });
   readonly multiChapter = computed(() => this.chapters().length > 1);
   readonly hasNextChapter = computed(() => nextChapterStart(this.ra.segments(), this.ra.index()) >= 0);
   readonly atStart = computed(() => this.ra.index() === 0);

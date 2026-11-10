@@ -43,7 +43,7 @@ describe('BookPlayerComponent', () => {
     localStorage.clear();
     const ra = TestBed.inject(ReadAloudService);
     ra.start(BOOK, { bookTitle: 'Book', bookId: 'b1' });
-    TestBed.inject(BookAudioService).nowPlaying.set({ bookId: 'b1', title: 'Book', coverUrl: null });
+    TestBed.inject(BookAudioService).nowPlaying.set({ bookId: 'b1', title: 'Book', coverUrl: '/api/image/cover.png', chapterArt: { b: '/api/image/b.png' } });
     const fixture = TestBed.createComponent(BookPlayerComponent);
     fixture.detectChanges();
     return { fixture, cmp: fixture.componentInstance, ra, engine, emit, el: fixture.nativeElement as HTMLElement };
@@ -56,6 +56,23 @@ describe('BookPlayerComponent', () => {
     expect(el.querySelector('.bp-sub')?.textContent).toContain('Chapter 1 of 2');
     expect(cmp.bookProgress()?.percent).toBe(0);
     expect(cmp.clock().elapsed).toBe('0:00');
+  });
+
+  it('shows the chapter picture when it has one, else the book cover', () => {
+    const { el, emit, fixture } = setup();
+    const art = () => el.querySelector<HTMLImageElement>('.bp-art img')?.getAttribute('src');
+    expect(art()).toBe('/api/image/cover.png');
+    emit().progress(4);
+    fixture.detectChanges();
+    expect(art()).toBe('/api/image/b.png');
+  });
+
+  it('shows a placeholder when there is no picture at all', () => {
+    const { el, fixture } = setup();
+    TestBed.inject(BookAudioService).nowPlaying.set({ bookId: 'b1', title: 'Book', coverUrl: null, chapterArt: {} });
+    fixture.detectChanges();
+    expect(el.querySelector('.bp-art img')).toBeNull();
+    expect(el.querySelector('.bp-art mat-icon')?.textContent).toContain('auto_stories');
   });
 
   it('scrubs within the current chapter, previewing the paragraph before seeking', () => {

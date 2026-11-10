@@ -11,8 +11,9 @@ import { BookAudioService, proxyImageUrl, SAVE_INTERVAL_MS } from './book-audio.
 
 const BOOK = { id: 'b1', title: 'The Book', seriesId: 's', thumnailUrl: 'https://blob/x/thumb.png', originalUrl: 'https://blob/x/cover.png' };
 const CHAPTERS = [
-  { id: 'c2', title: 'Two', content: '<p>B1</p><p>B2</p>', sortOrder: 2 },
+  { id: 'c2', title: 'Two', content: '<p>B1</p><p>B2</p>', sortOrder: 2, imageUrl: 'https://blob/x/two.png', imageThumbnailUrl: 'https://blob/x/two_thumb.webp' },
   { id: 'c1', title: 'One', content: '<p>A1</p><p>A2</p>', sortOrder: 1 },
+  { id: 'c3', title: 'Three', content: '', sortOrder: 3, imageThumbnailUrl: 'https://blob/x/three_thumb.webp' },
   { id: 'cx', title: 'Gone', content: '<p>X</p>', sortOrder: 0, archived: true },
 ];
 
@@ -77,8 +78,14 @@ describe('BookAudioService', () => {
     await done;
     const req = engine.play.mock.calls[0]![0];
     expect(req.startIndex).toBe(0);
-    expect(req.segments.map((s: { text: string }) => s.text)).toEqual(['One', 'Draft', 'Two', 'B1', 'B2']);
-    expect(svc.nowPlaying()).toEqual({ bookId: 'b1', title: 'The Book', coverUrl: '/api/image/cover.png' });
+    expect(req.segments.map((s: { text: string }) => s.text)).toEqual(['One', 'Draft', 'Two', 'B1', 'B2', 'Three']);
+    expect(svc.nowPlaying()).toEqual({
+      bookId: 'b1',
+      title: 'The Book',
+      coverUrl: '/api/image/cover.png',
+      // Full image preferred, thumbnail when that's all there is, none for c1.
+      chapterArt: { c2: '/api/image/two.png', c3: '/api/image/three_thumb.webp' },
+    });
     expect(dialog.open).toHaveBeenCalledTimes(1);
     expect(svc.expanded()).toBe(true);
     expect(svc.loading()).toBeNull();

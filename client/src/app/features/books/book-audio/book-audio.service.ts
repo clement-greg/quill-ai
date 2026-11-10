@@ -21,6 +21,14 @@ export interface NowPlaying {
   title: string;
   /** Proxied cover image URL, ready for an <img>. */
   coverUrl: string | null;
+  /** Proxied image per chapter id, for chapters that have one. */
+  chapterArt: Readonly<Record<string, string>>;
+}
+
+/** A book's chapters ready to play, plus their pictures. */
+interface LoadedChapters {
+  chapters: ReadAloudChapter[];
+  art: Record<string, string>;
 }
 
 /** Book listening: starts a book where the reader left off, remembers the
@@ -106,7 +114,7 @@ export class BookAudioService {
     this.loading.set(bookId);
     this.error.set(null);
     try {
-      const [book, chapters, saved] = await Promise.all([
+      const [book, { chapters, art }, saved] = await Promise.all([
         firstValueFrom(this.books.getById(bookId)),
         this.loadChapters(bookId),
         this.loadPositions().then(() => this.positionFor(bookId)),
@@ -118,7 +126,12 @@ export class BookAudioService {
       }
       const resume = saved && !saved.finished && !options.fromStart ? saved : null;
       this.flush();
-      this.nowPlaying.set({ bookId, title: book.title, coverUrl: proxyImageUrl(book.originalUrl ?? book.thumnailUrl) });
+      this.nowPlaying.set({
+        bookId,
+        title: book.title,
+        coverUrl: proxyImageUrl(book.originalUrl ?? book.thumnailUrl),
+        chapterArt: art,
+      });
       this.coverUrl = book.thumnailUrl ?? book.originalUrl;
       this.ra.start(chapters, {
         bookTitle: book.title,
@@ -163,16 +176,23 @@ export class BookAudioService {
     this.ra.stop();
   }
 
-  /** Every chapter in reading order, with unsaved drafts from this device. */
-  private async loadChapters(bookId: string): Promise<ReadAloudChapter[]> {
+  /** Every chapter in reading order, with unsaved drafts from this device,
+   *  and each chapter's picture where it has one. */
+  private async loadChapters(bookId: string): Promise<LoadedChapters> {
     const list = await firstValueFrom(this.chapters.getByBook(bookId));
     const sorted = list
       .filter(c => !c.archived)
       .sort((a, b) => (a.sortOrder ?? Infinity) - (b.sortOrder ?? Infinity));
-    return Promise.all(sorted.map(async c => {
+    const chapters = await Promise.all(sorted.map(async c => {
       const draft = await this.drafts.resolvePendingDraft(c).catch(() => null);
       return { id: c.id, title: c.title, html: draft?.content ?? c.content ?? '' };
     }));
+    const art: Record<string, string> = {};
+    for (const c of sorted) {
+      const url = proxyImageUrl(c.imageUrl || c.imageThumbnailUrl);
+      if (url) art[c.id] = url;
+    }
+    return { chapters, art };
   }
 
   /** Notes the current position; sends it now if playback paused, stopped or

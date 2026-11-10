@@ -30,8 +30,8 @@
     </nav>
   } @else {
     <div class="bp-art">
-      @if (audio.nowPlaying()?.coverUrl; as cover) {
-        <img [src]="cover" alt="" />
+      @if (artwork(); as art) {
+        <img [src]="art" alt="" />
       } @else {
         <mat-icon aria-hidden="true">auto_stories</mat-icon>
       }
