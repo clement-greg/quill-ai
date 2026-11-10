@@ -71,13 +71,14 @@ describe('user-settings routes', () => {
     const put = await request(app)
       .put('/api/user-settings')
       .set('x-test-user', USER_A)
-      .send({ grammarCheckEnabled: false, entityDetectionEnabled: false, autoSaveEnabled: true });
+      .send({ grammarCheckEnabled: false, entityDetectionEnabled: false, autoSaveEnabled: true, fullBookEditing: true });
     expect(put.status).toBe(200);
 
     const res = await request(app).get('/api/user-settings').set('x-test-user', USER_A);
     expect(res.body.grammarCheckEnabled).toBe(false);
     expect(res.body.entityDetectionEnabled).toBe(false);
     expect(res.body.autoSaveEnabled).toBe(true);
+    expect(res.body.fullBookEditing).toBe(true);
   });
 
   it('PUT / preserves pinHash when the client does not send it', async () => {
@@ -96,6 +97,7 @@ describe('user-settings routes', () => {
     ['grammarCheckEnabled', 'false'],
     ['entityDetectionEnabled', 1],
     ['autoSaveEnabled', null],
+    ['fullBookEditing', 'on'],
     ['darkMode', 'yes'],
     ['displayName', 42],
     ['genderOptions', ['ok', 7]],

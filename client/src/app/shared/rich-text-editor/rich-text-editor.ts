@@ -59,8 +59,15 @@ const TRANSIENT_MARK_SELECTOR =
   '.quill-suggestion-mark, mark.quill-review-highlight, mark.quill-passage-highlight';
 
 
+/** Top-level blocks of the editor, skipping full-book page spacers so block
+ *  indices (review anchors, move selections) are stable across re-pagination. */
+function editorBlocks(el: Element): Element[] {
+  return Array.from(el.children).filter(c => !c.hasAttribute('data-page-spacer'));
+}
+
 @Component({
   selector: 'app-rich-text-editor',
+  host: { '[class.rte-embedded]': 'embedded()' },
   imports: [MatButtonModule, MatIconModule, MatProgressSpinnerModule, MatTooltipModule, DecimalPipe, RouterLink],
   templateUrl: './rich-text-editor.html',
   styleUrl: './rich-text-editor.scss',
@@ -88,6 +95,9 @@ export class RichTextEditorComponent implements OnInit, AfterViewInit, OnDestroy
   showNoteButton = input<boolean>(false);
   /** Show a "Move to chapter" button in the formatting toolbar. */
   showMoveButton = input<boolean>(false);
+  /** Embedded in the full-book editor: the page scrolls instead of the editor,
+   *  and the per-editor chrome (border, minimap, word count) is hidden. */
+  embedded = input<boolean>(false);
 
   // ── Outputs ─────────────────────────────────────────────────────────────
   /** Debounced (800 ms) clean HTML whenever content changes. */
@@ -624,7 +634,7 @@ export class RichTextEditorComponent implements OnInit, AfterViewInit, OnDestroy
 
     // Clean up hollow shells extractContents() left at the seam. Blocks with a
     // <br> or image are intentional spacing/content and are kept.
-    Array.from(editorEl.children).forEach(el => {
+    editorBlocks(editorEl).forEach(el => {
       if (!el.textContent?.trim() && !el.querySelector('img, br')) el.remove();
     });
     editorEl.normalize();
@@ -738,7 +748,7 @@ export class RichTextEditorComponent implements OnInit, AfterViewInit, OnDestroy
    *  Returns false when the anchor can't be located or wrapped. */
   decorateSuggestion(s: ReviewDecoration): boolean {
     const el = this.editorRef?.nativeElement;
-    const block = el?.children[s.blockIndex];
+    const block = el ? editorBlocks(el)[s.blockIndex] : undefined;
     if (!el || !block) return false;
     if (block.querySelector(`.quill-suggestion-mark[data-suggestion-id="${s.id}"]`)) {
       this.reviewSuggestions.set(s.id, s);
@@ -783,7 +793,7 @@ export class RichTextEditorComponent implements OnInit, AfterViewInit, OnDestroy
       span.textContent = s.replacementText ?? '';
       this.unwrapElement(span);
     } else {
-      const block = el.children[s.blockIndex];
+      const block = editorBlocks(el)[s.blockIndex];
       if (!block) return false;
       const range = this.locateRangeInBlock(block, s.originalText);
       if (!range) return false;
@@ -797,7 +807,8 @@ export class RichTextEditorComponent implements OnInit, AfterViewInit, OnDestroy
   /** Returns the normalized text of a review block (matches extractReviewBlocks),
    *  used as context when refining a suggestion. */
   getReviewBlockText(blockIndex: number): string {
-    const block = this.editorRef?.nativeElement.children[blockIndex];
+    const host = this.editorRef?.nativeElement;
+    const block = host ? editorBlocks(host)[blockIndex] : undefined;
     return (block?.textContent ?? '').replace(/ /g, ' ').trim();
   }
 
@@ -846,7 +857,7 @@ export class RichTextEditorComponent implements OnInit, AfterViewInit, OnDestroy
    *  Best-effort: returns false if the replacement text can't be located. */
   revertSuggestionEdit(s: ReviewDecoration): boolean {
     const el = this.editorRef?.nativeElement;
-    const block = el?.children[s.blockIndex];
+    const block = el ? editorBlocks(el)[s.blockIndex] : undefined;
     if (!el || !block || !s.replacementText) return false;
     const range = this.locateRangeInBlock(block, s.replacementText);
     if (!range) return false;
@@ -937,7 +948,7 @@ export class RichTextEditorComponent implements OnInit, AfterViewInit, OnDestroy
     const el = this.editorRef?.nativeElement;
     if (!el) return [];
     const blocks: { index: number; text: string }[] = [];
-    Array.from(el.children).forEach((child, index) => {
+    editorBlocks(el).forEach((child, index) => {
       const text = (child.textContent ?? '').replace(/ /g, ' ').trim();
       if (text) blocks.push({ index, text });
     });
@@ -949,7 +960,7 @@ export class RichTextEditorComponent implements OnInit, AfterViewInit, OnDestroy
    *  anchor can't be found — e.g. the text drifted. */
   applyReviewReplacement(blockIndex: number, originalText: string, replacementText: string): boolean {
     const el = this.editorRef?.nativeElement;
-    const block = el?.children[blockIndex];
+    const block = el ? editorBlocks(el)[blockIndex] : undefined;
     if (!el || !block) return false;
     this.clearReviewHighlight();
     const range = this.locateRangeInBlock(block, originalText);
@@ -967,7 +978,7 @@ export class RichTextEditorComponent implements OnInit, AfterViewInit, OnDestroy
   /** Briefly highlights the text a suggestion targets and scrolls it into view. */
   highlightReviewAnchor(blockIndex: number, originalText: string): void {
     const el = this.editorRef?.nativeElement;
-    const block = el?.children[blockIndex] as HTMLElement | undefined;
+    const block = (el ? editorBlocks(el)[blockIndex] : undefined) as HTMLElement | undefined;
     if (!block) return;
     this.clearReviewHighlight();
     const range = this.locateRangeInBlock(block, originalText);
@@ -1001,7 +1012,7 @@ export class RichTextEditorComponent implements OnInit, AfterViewInit, OnDestroy
     if (!el || !target) return false;
     this.clearReviewHighlight();
 
-    for (const block of Array.from(el.children) as HTMLElement[]) {
+    for (const block of editorBlocks(el) as HTMLElement[]) {
       const range = this.locateRangeInBlock(block, target);
       if (!range) continue;
       const mark = document.createElement('mark');

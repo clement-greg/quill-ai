@@ -1,0 +1,109 @@
+<div class="book-shell">
+  <div #scroller class="book-scroller" (scroll)="onScroll()" tabindex="-1">
+    <div class="book-column" [style.height.px]="totalHeight()" [style.width.px]="PAGE_WIDTH">
+
+      @for (ch of chapters(); track ch.id; let i = $index) {
+        <section class="book-chapter"
+          [attr.data-chapter-id]="ch.id"
+          [attr.aria-label]="'Chapter ' + (i + 1) + ': ' + (ch.title || 'Untitled chapter')"
+          [class.is-active]="ch.id === activeChapterId()"
+          [style.top.px]="tops()[i]"
+          [style.height.px]="heights()[i]">
+          @if (mountedIds().has(ch.id)) {
+            @for (p of pagesFor(i); track p) {
+              <div class="sheet" [style.top.px]="p * PAGE_STRIDE" aria-hidden="true">
+                <span class="page-number">{{ offsets().starts[i]! + p + 1 }}</span>
+              </div>
+            }
+            <div class="chapter-flow">
+              <input class="chapter-title" type="text"
+                [value]="ch.title"
+                placeholder="Chapter title"
+                aria-label="Chapter title"
+                (input)="onTitleInput(ch.id, $any($event.target).value)"
+                (keydown)="onTitleKeyDown(ch.id, $event)" />
+              <app-rich-text-editor
+                [embedded]="true"
+                [initialContent]="ch.content"
+                [seriesId]="seriesId()"
+                [externalEntities]="entities()"
+                [aiEndpoint]="'/api/chat/' + ch.id"
+                [ctxMenuExtraItems]="ctxMenuExtraItems()"
+                [showNoteButton]="true"
+                [showMoveButton]="true"
+                placeholder="Start writing…"
+                (contentChange)="chapterContentChange.emit({ id: ch.id, html: $event })"
+                (entityEditRequest)="entityEditRequest.emit($event)"
+                (pendingSuggestionsChange)="onPendingSuggestions(ch.id, $event)"
+                (ctxMenuExtraItemSelected)="ctxMenuExtraItemSelected.emit($event)"
+                (aiAssistRequested)="aiAssistRequested.emit()"
+                (reviewSuggestionHovered)="reviewSuggestionHovered.emit($event)"
+                (reviewSuggestionAction)="reviewSuggestionAction.emit($event)"
+                (noteRequest)="noteRequest.emit()"
+                (moveTextRequest)="moveTextRequest.emit($event)" />
+            </div>
+          } @else {
+            <div class="placeholder-pages" aria-hidden="true"></div>
+          }
+        </section>
+      }
+
+      @if (chapterHint(); as hint) {
+        <div class="chapter-hint" aria-hidden="true"
+          [style.top.px]="hint.top" [style.left.px]="hint.left">{{ hint.text }}</div>
+      }
+
+      @if (chapters().length) {
+        <div class="book-end" [style.top.px]="endButtonTop()">
+          <button type="button" class="new-chapter-btn" (click)="newChapterAtEnd.emit()">
+            <span class="new-chapter-plus" aria-hidden="true">+</span> New chapter
+          </button>
+          <p class="new-chapter-tip">
+            Or, anywhere in the book: type <kbd>#</kbd> and a title on an empty line, then <kbd>Enter</kbd>
+            &middot; <kbd>{{ modKey }}</kbd>+<kbd>Enter</kbd> splits the chapter at the cursor
+          </p>
+        </div>
+      }
+
+      <!-- Off-screen copy of the page flow, used to count pages of chapters
+           that aren't mounted. Same width, fonts and title spacing. -->
+      <div #measureSection class="book-chapter measure-section" aria-hidden="true">
+        <div class="chapter-flow">
+          <input class="chapter-title" type="text" tabindex="-1" readonly value="Measure" />
+          <div #measureFlow class="measure-flow"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Book minimap: every page of the book; drag or click to travel. -->
+  <div class="book-minimap"
+    role="scrollbar"
+    aria-orientation="vertical"
+    aria-label="Book pages"
+    tabindex="0"
+    [attr.aria-valuenow]="currentPosition()?.page ?? 1"
+    aria-valuemin="1"
+    [attr.aria-valuemax]="offsets().total"
+    [attr.aria-valuetext]="currentPosition() ? 'Page ' + currentPosition()!.page + ' of ' + currentPosition()!.totalPages : null"
+    (mousedown)="onMinimapMouseDown($event)"
+    (mousemove)="onMinimapHover($event)"
+    (mouseleave)="onMinimapLeave()"
+    (wheel)="onMinimapWheel($event)"
+    (keydown)="onMinimapKeyDown($event)">
+    <canvas #minimapCanvas class="book-minimap-canvas"></canvas>
+    <div class="book-minimap-viewport"
+      [style.top.px]="viewport().top * minimapScale()"
+      [style.height.px]="Math.max(6, viewport().height * minimapScale())"></div>
+    @if (minimapPopup(); as pop) {
+      <div class="book-minimap-popup" role="status" [style.top.px]="pop.y">
+        <div class="book-minimap-popup-page">Page {{ pop.page }} <span>of {{ pop.totalPages }}</span></div>
+        <div class="book-minimap-popup-chapter">Ch. {{ pop.chapterIndex + 1 }} — {{ pop.chapterTitle }}</div>
+      </div>
+    }
+  </div>
+
+  @if (currentPosition(); as pos) {
+    <div class="book-page-indicator" aria-hidden="true">Page {{ pos.page }} of {{ pos.totalPages }}</div>
+  }
+</div>

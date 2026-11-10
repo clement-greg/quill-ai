@@ -52,10 +52,23 @@
         @if (mentionedEntities().length > 0) {
           <app-mentioned-entities-panel class="desktop-only"
             [entities]="mentionedEntities()"
-            [editor]="editorRef"
+            [editor]="editorRef ?? null"
             (entitySelected)="onEntityEditRequest($event)" />
         }
         <div class="top-bar-actions">
+          @if (viewportWide()) {
+            <mat-button-toggle-group class="mode-toggle" hideSingleSelectionIndicator
+              aria-label="Editing view"
+              [value]="bookMode() ? 'book' : 'chapter'"
+              (change)="setBookMode($event.value === 'book')">
+              <mat-button-toggle value="chapter" matTooltip="Edit one chapter at a time">
+                <mat-icon>description</mat-icon> Chapter
+              </mat-button-toggle>
+              <mat-button-toggle value="book" matTooltip="Edit the whole book as pages">
+                <mat-icon>menu_book</mat-icon> Book
+              </mat-button-toggle>
+            </mat-button-toggle-group>
+          }
           @if (hasDraft()) {
             <button mat-button class="draft-indicator" [matMenuTriggerFor]="draftMenu">
               Unsaved draft
@@ -72,8 +85,12 @@
               </button>
             </mat-menu>
           }
-          <button mat-flat-button (click)="save()" [disabled]="saving() || !chapter()">
+          <button mat-flat-button (click)="save()" [disabled]="saving() || !chapter()"
+            [attr.aria-label]="bookMode() && dirtyChapterIds().size ? 'Save ' + dirtyChapterIds().size + ' changed chapters' : null">
             {{ saving() ? 'Saving…' : 'Save' }}
+            @if (bookMode() && dirtyChapterIds().size > 0) {
+              <span class="dirty-count">{{ dirtyChapterIds().size }}</span>
+            }
           </button>
           <button mat-icon-button [matMenuTriggerFor]="chapterMenu" title="More options" [disabled]="!chapter()">
             <mat-icon>more_vert</mat-icon>
@@ -106,11 +123,21 @@
 
             <!-- Find-in-page search bar -->
             @if (searchVisible()) {
-              <div class="search-bar" role="search" aria-label="Find in chapter">
+              <div class="search-bar" [class.in-book]="bookMode()" role="search" [attr.aria-label]="searchScope() === 'book' ? 'Find in book' : 'Find in chapter'">
+                @if (bookMode()) {
+                  <div class="search-scope" role="group" aria-label="Search scope">
+                    <button type="button" class="search-scope-btn" [class.active]="searchScope() === 'chapter'"
+                      [attr.aria-pressed]="searchScope() === 'chapter'" (click)="setSearchScope('chapter')"
+                      matTooltip="This chapter (Ctrl/⌘+F)">Chapter</button>
+                    <button type="button" class="search-scope-btn" [class.active]="searchScope() === 'book'"
+                      [attr.aria-pressed]="searchScope() === 'book'" (click)="setSearchScope('book')"
+                      matTooltip="Whole book (Ctrl/⌘+Shift+F)">Book</button>
+                  </div>
+                }
                 <input #searchInputEl
                   class="search-input"
                   type="search"
-                  placeholder="Find…"
+                  [placeholder]="searchScope() === 'book' ? 'Find in book…' : 'Find in chapter…'"
                   aria-label="Search text"
                   autocomplete="off"
                   [value]="searchQuery()"
@@ -121,6 +148,9 @@
                     No results
                   } @else if (searchMatchCount() > 0) {
                     {{ searchMatchIndex() + 1 }} / {{ searchMatchCount() }}
+                    @if (searchScope() === 'book' && searchLocation()) {
+                      <span class="search-location">· {{ searchLocation() }}</span>
+                    }
                   }
                 </span>
                 <button mat-icon-button class="search-nav-btn" (click)="prevSearchMatch()"
@@ -137,6 +167,31 @@
               </div>
             }
 
+            @if (bookMode()) {
+              <app-book-editor
+                [chapters]="bookChapters()"
+                [activeChapterId]="chapter()!.id"
+                [seriesId]="seriesId()"
+                [entities]="entities()"
+                [ctxMenuExtraItems]="ctxMenuExtraItems"
+                [pinActive]="bookPinActive()"
+                (activeChapterChange)="activateBookChapter($event)"
+                (editorMounted)="onBookEditorMounted($event)"
+                (chapterInput)="onBookChapterInput($event)"
+                (chapterContentChange)="onBookChapterContent($event)"
+                (titleChange)="onBookTitleChange($event)"
+                (splitChapter)="onSplitChapter($event)"
+                (mergeRequest)="onMergeRequest($event)"
+                (newChapterAtEnd)="onNewChapterAtEnd()"
+                (entityEditRequest)="onEntityEditRequest($event)"
+                (pendingSuggestionsChange)="onEditorPendingSuggestionsChange($event)"
+                (ctxMenuExtraItemSelected)="onEditorCtxMenuAction($event)"
+                (aiAssistRequested)="openAskQuill()"
+                (reviewSuggestionHovered)="onInlineReviewHovered($event)"
+                (reviewSuggestionAction)="onInlineReviewAction($event)"
+                (noteRequest)="onNoteRequest()"
+                (moveTextRequest)="onMoveTextRequest($event)" />
+            } @else {
             <app-rich-text-editor #rte
               [seriesId]="seriesId()"
               [externalEntities]="entities()"
@@ -155,6 +210,7 @@
               (noteRequest)="onNoteRequest()"
               (moveTextRequest)="onMoveTextRequest($event)">
             </app-rich-text-editor>
+            }
           </div>
 
           <!-- Resizer handle (desktop only) -->
@@ -446,7 +502,7 @@
               </ng-template>
               <app-quill-review-panel class="sidebar-tab-content"
                 [chapterId]="chapter()!.id"
-                [editor]="rte"
+                [editor]="editorRef ?? null"
                 [hoveredId]="quillHoveredId()"
                 (runReview)="startQuillReview()" />
             </mat-tab>

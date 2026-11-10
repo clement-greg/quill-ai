@@ -2,7 +2,7 @@
  *  highlights and browser-injected formatting that must never be saved. */
 const UNWRAP_SELECTOR = 'mark.grammar-error, mark[data-search-match], font';
 /** Elements removed outright. */
-const REMOVE_SELECTOR = '.ai-insertion-marker';
+const REMOVE_SELECTOR = '.ai-insertion-marker, [data-page-spacer]';
 
 /**
  * Strips transient editor state from HTML before it is stored or displayed:
@@ -12,7 +12,8 @@ const REMOVE_SELECTOR = '.ai-insertion-marker';
  */
 export function cleanEditorHtml(value: string): string {
   const mayNeedClean = value.includes('grammar-error') || value.includes('data-search-match')
-    || value.includes('ai-insertion-marker') || value.includes('<font');
+    || value.includes('ai-insertion-marker') || value.includes('<font')
+    || value.includes('data-page-spacer');
   if (!mayNeedClean) return value;
   const div = document.createElement('div');
   div.innerHTML = value;

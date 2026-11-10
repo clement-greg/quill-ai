@@ -1,4 +1,4 @@
-import { Component, inject, signal, OnInit, OnDestroy } from '@angular/core';
+import { Component, inject, signal, OnInit, OnDestroy, ElementRef, Injector, afterNextRender, effect } from '@angular/core';
 import { ActivatedRoute, Router } from '@angular/router';
 import { HttpClient } from '@angular/common/http';
 import { FormsModule } from '@angular/forms';
@@ -10,6 +10,7 @@ import { MatMenuModule } from '@angular/material/menu';
 import { MatFormFieldModule } from '@angular/material/form-field';
 import { MatInputModule } from '@angular/material/input';
 import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
+import { MatTabsModule } from '@angular/material/tabs';
 import { CdkDragDrop, DragDropModule, moveItemInArray } from '@angular/cdk/drag-drop';
 import { BookService } from '../book.service';
 import { ChapterService } from '@app/features/chapters/chapter.service';
@@ -18,6 +19,7 @@ import { EntityService } from '@app/features/entities/entity.service';
 import { Book } from '@shared/models/book.model';
 import { Chapter } from '@shared/models/chapter.model';
 import { Entity } from '@shared/models/entity.model';
+import { UserSettingsService } from '@app/core/services/user-settings.service';
 import { v4 as uuidv4 } from 'uuid';
 import { HeaderService } from '@app/core/services/header.service';
 import { SeriesContextService } from '@app/core/services/series-context.service';
@@ -39,6 +41,7 @@ import { OutlineItem } from '@shared/models/chapter.model';
     MatProgressSpinnerModule,
     DragDropModule,
     MatMenuModule,
+    MatTabsModule,
     SlideOutPanelContainer,
     BookNotesComponent,
     AiStatsComponent,
@@ -50,6 +53,7 @@ import { OutlineItem } from '@shared/models/chapter.model';
 export class BookDetailComponent implements OnInit, OnDestroy {
   private route = inject(ActivatedRoute);
   private router = inject(Router);
+  private userSettings = inject(UserSettingsService);
   private bookService = inject(BookService);
   private chapterService = inject(ChapterService);
   private seriesService = inject(SeriesService);
@@ -67,22 +71,73 @@ export class BookDetailComponent implements OnInit, OnDestroy {
   uploading = signal(false);
   thumbnailPreview = signal<string | null>(null);
   exporting = signal(false);
-  panelMode = signal<'edit' | 'notes' | 'ai-stats' | 'outline' | null>(null);
+  /** The slide-out is only used for editing the book's title and cover now. */
+  panelMode = signal<'edit' | null>(null);
   bookOutline = signal<OutlineItem[]>([]);
-  bookOutlineEntities = signal<Entity[]>([]);
-  notesContent = signal<string>('');
-  savingNotes = signal(false);
+  /** Active series entities, shared by the Outline and AI Insights tabs. */
+  seriesEntities = signal<Entity[]>([]);
   seriesId = signal<string>('');
-  aiStatsChapters = signal<Chapter[]>([]);
-  aiStatsLoading = signal(false);
-  aiStatsEntities = signal<Entity[]>([]);
+
+  /** Side panel tab: 0 Outline, 1 Notes, 2 AI Insights. Remembered per browser. */
+  static readonly SIDE_TAB_KEY = 'book-detail-side-tab';
+  sideTab = signal(BookDetailComponent.loadSideTab());
+
+  private static loadSideTab(): number {
+    try {
+      const n = Number(localStorage.getItem(BookDetailComponent.SIDE_TAB_KEY));
+      return n >= 0 && n <= 2 ? n : 0;
+    } catch {
+      return 0;
+    }
+  }
+
+  /** Side panel height: from its top to the bottom of the window, so the
+   *  whole panel (e.g. the note composer at its foot) is always reachable,
+   *  growing as the cover scrolls away. Null when it stacks (narrow screens). */
+  sidePanelHeight = signal<number | null>(null);
+  private host = inject<ElementRef<HTMLElement>>(ElementRef);
+  private scroller: HTMLElement | null = null;
+  private sizeFrame: number | null = null;
+  private readonly scheduleSidePanelSize = (): void => {
+    if (this.sizeFrame !== null) return;
+    this.sizeFrame = requestAnimationFrame(() => {
+      this.sizeFrame = null;
+      this.updateSidePanelSize();
+    });
+  };
+
+  private injector = inject(Injector);
+
+  constructor() {
+    // The cover image arrives with the book and pushes the panel down: re-measure.
+    effect(() => {
+      this.book();
+      afterNextRender({ read: () => this.updateSidePanelSize() }, { injector: this.injector });
+    });
+    afterNextRender(() => {
+      this.scroller = this.host.nativeElement.querySelector<HTMLElement>('[main-content]');
+      this.scroller?.addEventListener('scroll', this.scheduleSidePanelSize, { passive: true });
+      window.addEventListener('resize', this.scheduleSidePanelSize);
+      this.updateSidePanelSize();
+    });
+  }
+
+  private updateSidePanelSize(): void {
+    const panel = this.host.nativeElement.querySelector<HTMLElement>('.book-side-panel');
+    if (!panel || window.innerWidth < 1100) { this.sidePanelHeight.set(null); return; }
+    const top = Math.max(panel.getBoundingClientRect().top, this.scroller?.getBoundingClientRect().top ?? 0);
+    this.sidePanelHeight.set(Math.max(360, Math.round(window.innerHeight - top - 16)));
+  }
+
+  selectSideTab(index: number): void {
+    this.sideTab.set(index);
+    try { localStorage.setItem(BookDetailComponent.SIDE_TAB_KEY, String(index)); } catch { /* storage unavailable */ }
+  }
   private routeSub?: Subscription;
 
   private outlineSaveTimer: ReturnType<typeof setTimeout> | null = null;
 
-  get rightPanelWidth(): number {
-    return this.panelMode() === 'ai-stats' ? 520 : 420;
-  }
+  readonly rightPanelWidth = 420;
 
   ngOnInit(): void {
     this.routeSub = this.route.paramMap.subscribe(params => {
@@ -96,6 +151,7 @@ export class BookDetailComponent implements OnInit, OnDestroy {
     this.bookService.getById(id).subscribe({
       next: (data) => {
         this.book.set(data);
+        this.bookOutline.set(data.outline ?? []);
         forkJoin({
           series: this.seriesService.getById(data.seriesId),
           allSeries: this.seriesService.getAll(),
@@ -104,6 +160,9 @@ export class BookDetailComponent implements OnInit, OnDestroy {
           next: ({ series, allSeries, booksInSeries }) => {
             this.seriesId.set(series.id);
             this.seriesContext.set(series.id);
+            this.entityService.getBySeries(series.id).subscribe({
+              next: entities => this.seriesEntities.set(entities.filter(e => !e.archived && !e.deleted)),
+            });
             const filteredSeries = allSeries.filter(s => !s.archived && !s.deleted);
             const filteredBooks = booksInSeries.filter(b => !b.archived && !b.deleted)
               .sort((a, b) => (a.sortOrder ?? Infinity) - (b.sortOrder ?? Infinity));
@@ -145,44 +204,6 @@ export class BookDetailComponent implements OnInit, OnDestroy {
     this.showPanel.set(true);
   }
 
-  openNotes(): void {
-    this.panelMode.set('notes');
-    this.showPanel.set(true);
-  }
-
-  openAiStats(): void {
-    this.panelMode.set('ai-stats');
-    this.showPanel.set(true);
-    const book = this.book();
-    if (!book) return;
-    this.aiStatsLoading.set(true);
-    forkJoin({
-      chapters: this.chapterService.getByBook(book.id),
-      entities: this.entityService.getBySeries(this.seriesId()),
-    }).subscribe({
-      next: ({ chapters, entities }) => {
-        const sorted = [...chapters].sort((a, b) => (a.sortOrder ?? Infinity) - (b.sortOrder ?? Infinity));
-        this.aiStatsChapters.set(sorted);
-        this.aiStatsEntities.set(entities.filter(e => !e.archived && !e.deleted));
-        this.aiStatsLoading.set(false);
-      },
-      error: () => this.aiStatsLoading.set(false),
-    });
-  }
-
-  openOutline(): void {
-    const book = this.book();
-    if (!book) return;
-    this.bookOutline.set(book.outline ?? []);
-    this.panelMode.set('outline');
-    this.showPanel.set(true);
-    if (this.bookOutlineEntities().length === 0) {
-      this.entityService.getBySeries(this.seriesId()).subscribe({
-        next: (entities) => this.bookOutlineEntities.set(entities.filter(e => !e.archived && !e.deleted)),
-      });
-    }
-  }
-
   onBookOutlineChange(items: OutlineItem[]): void {
     this.bookOutline.set(items);
     if (this.outlineSaveTimer) clearTimeout(this.outlineSaveTimer);
@@ -197,16 +218,8 @@ export class BookDetailComponent implements OnInit, OnDestroy {
   }
 
   onPanelChanged(open: boolean): void {
-    this.showPanel.set(open);
-    if (!open) {
-      this.editingBook.set(null);
-      this.thumbnailPreview.set(null);
-      this.panelMode.set(null);
-      this.aiStatsChapters.set([]);
-      this.aiStatsEntities.set([]);
-      this.bookOutline.set([]);
-      this.bookOutlineEntities.set([]);
-    }
+    if (open) this.showPanel.set(true);
+    else this.closePanel();
   }
 
   closePanel(): void {
@@ -214,10 +227,6 @@ export class BookDetailComponent implements OnInit, OnDestroy {
     this.editingBook.set(null);
     this.thumbnailPreview.set(null);
     this.panelMode.set(null);
-    this.aiStatsChapters.set([]);
-    this.aiStatsEntities.set([]);
-    this.bookOutline.set([]);
-    this.bookOutlineEntities.set([]);
   }
 
   updateTitle(value: string): void {
@@ -273,6 +282,14 @@ export class BookDetailComponent implements OnInit, OnDestroy {
     this.router.navigate(['/chapters', chapter.id, 'edit']);
   }
 
+  /** Opens the whole book in the paginated full-book editor, at its first chapter. */
+  editBook(): void {
+    const first = this.chapterList()[0];
+    if (!first) return;
+    this.userSettings.setFullBookEditing(true);
+    void this.router.navigate(['/chapters', first.id, 'edit']);
+  }
+
   addChapter(): void {
     const book = this.book();
     if (!book) return;
@@ -294,6 +311,9 @@ export class BookDetailComponent implements OnInit, OnDestroy {
   }
 
   ngOnDestroy(): void {
+    this.scroller?.removeEventListener('scroll', this.scheduleSidePanelSize);
+    window.removeEventListener('resize', this.scheduleSidePanelSize);
+    if (this.sizeFrame !== null) cancelAnimationFrame(this.sizeFrame);
     this.routeSub?.unsubscribe();
     this.headerService.clear();
     if (this.outlineSaveTimer) clearTimeout(this.outlineSaveTimer);

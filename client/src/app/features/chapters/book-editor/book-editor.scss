@@ -1,0 +1,273 @@
+:host {
+  --book-desk: color-mix(in srgb, var(--mat-sys-on-surface, #000) 6%, var(--mat-sys-surface, #fff));
+  --book-paper: var(--mat-sys-surface-container-lowest, #fff);
+  --book-page-edge: color-mix(in srgb, var(--mat-sys-on-surface, #000) 18%, transparent);
+  --book-accent: var(--mat-sys-primary, #1976d2);
+  --book-minimap-ink: var(--mat-sys-on-surface-variant, #555);
+
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  min-width: 0;
+  position: relative;
+}
+
+.book-shell {
+  position: relative;
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  min-width: 0;
+  background: var(--book-desk);
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.book-scroller {
+  flex: 1;
+  min-width: 0;
+  overflow: auto;
+  /* We compensate height changes above the viewport ourselves. */
+  overflow-anchor: none;
+  scrollbar-width: none; /* the book minimap is the scrollbar */
+  &::-webkit-scrollbar { display: none; }
+  outline: none;
+  /* Room so the last line clears the docked Ask Quill bar. */
+  scroll-padding-bottom: 60px;
+}
+
+.book-column {
+  position: relative;
+  margin: 0 auto;
+}
+
+.book-chapter {
+  position: absolute;
+  left: 0;
+  width: 816px;
+  /* No layout/paint containment here: it would become the containing block
+     for the editor's position:fixed popups (toolbar, grammar, autocomplete). */
+}
+
+/* ── Page sheets ─────────────────────────────────────── */
+.sheet {
+  position: absolute;
+  left: 0;
+  width: 816px;
+  height: 1056px;
+  background: var(--book-paper);
+  box-shadow:
+    0 1px 3px color-mix(in srgb, #000 18%, transparent),
+    0 0 0 1px var(--book-page-edge);
+  pointer-events: none;
+}
+
+.page-number {
+  position: absolute;
+  bottom: 30px;
+  left: 0;
+  right: 0;
+  text-align: center;
+  font-family: var(--editor-font-family, Georgia, serif);
+  font-size: 0.75rem;
+  color: var(--mat-sys-on-surface-variant, #777);
+}
+
+/* Unmounted chapters: the same pages, painted cheaply. */
+.placeholder-pages {
+  position: absolute;
+  inset: 0;
+  background: repeating-linear-gradient(
+    to bottom,
+    var(--book-paper) 0,
+    var(--book-paper) 1056px,
+    transparent 1056px,
+    transparent 1080px
+  );
+  opacity: 0.85;
+}
+
+/* ── Text flow inside the margins ────────────────────── */
+.chapter-flow {
+  position: absolute;
+  top: 72px;
+  left: 72px;
+  width: 672px;
+  z-index: 1;
+}
+
+.chapter-title {
+  display: block;
+  width: 100%;
+  box-sizing: border-box;
+  height: 64px;
+  margin: 0 0 24px;
+  padding: 0;
+  border: none;
+  border-bottom: 1px solid transparent;
+  background: transparent;
+  color: var(--mat-sys-on-surface, inherit);
+  font-family: var(--editor-font-family, Georgia, 'Times New Roman', serif);
+  font-size: 1.9rem;
+  font-weight: 600;
+  text-align: center;
+  outline: none;
+
+  &:hover { border-bottom-color: var(--book-page-edge); }
+  &:focus-visible { border-bottom-color: var(--book-accent); }
+  &::placeholder { color: var(--mat-sys-on-surface-variant, #999); font-weight: 400; }
+}
+
+/* Mirrors .rte-content-editor (embedded) for off-screen page counting. */
+.measure-section {
+  top: 0;
+  visibility: hidden;
+  pointer-events: none;
+  height: auto;
+}
+
+.measure-flow {
+  font-size: var(--editor-font-size, 1rem);
+  line-height: 1.75;
+  font-family: var(--editor-font-family, Georgia, 'Times New Roman', serif);
+  white-space: pre-wrap;
+  min-height: 1.75em;
+
+  ::ng-deep .entity-reference,
+  ::ng-deep .note-indicator { padding: 0 1px; }
+  ::ng-deep img { max-width: 100%; }
+}
+
+/* ── Minimap ─────────────────────────────────────────── */
+.book-minimap {
+  position: relative;
+  flex: none;
+  width: 84px;
+  cursor: pointer;
+  user-select: none;
+  border-left: 1px solid var(--book-page-edge);
+  outline: none;
+
+  &:focus-visible { box-shadow: inset 0 0 0 2px var(--book-accent); }
+}
+
+.book-minimap-canvas {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+
+.book-minimap-viewport {
+  position: absolute;
+  left: 0;
+  right: 0;
+  background: color-mix(in srgb, var(--book-accent) 14%, transparent);
+  border: 1px solid color-mix(in srgb, var(--book-accent) 45%, transparent);
+  pointer-events: none;
+}
+
+.book-minimap-popup {
+  position: absolute;
+  right: calc(100% + 8px);
+  transform: translateY(-50%);
+  min-width: 150px;
+  max-width: 260px;
+  padding: 8px 12px;
+  border-radius: 8px;
+  background: var(--mat-sys-inverse-surface, #303030);
+  color: var(--mat-sys-inverse-on-surface, #fff);
+  box-shadow: 0 4px 14px color-mix(in srgb, #000 30%, transparent);
+  pointer-events: none;
+  z-index: 5;
+  white-space: nowrap;
+}
+
+.book-minimap-popup-page {
+  font-size: 1rem;
+  font-weight: 600;
+
+  span { font-weight: 400; opacity: 0.8; font-size: 0.85rem; }
+}
+
+.book-minimap-popup-chapter {
+  font-size: 0.8rem;
+  opacity: 0.9;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.book-page-indicator {
+  position: absolute;
+  right: 96px;
+  bottom: 10px;
+  padding: 3px 10px;
+  border-radius: 12px;
+  font-size: 0.75rem;
+  background: color-mix(in srgb, var(--mat-sys-surface, #fff) 85%, transparent);
+  color: var(--mat-sys-on-surface-variant, #555);
+  box-shadow: 0 1px 3px color-mix(in srgb, #000 15%, transparent);
+  pointer-events: none;
+}
+
+/* ── New-chapter call-outs ───────────────────────────── */
+.chapter-hint {
+  position: absolute;
+  z-index: 2;
+  max-width: 672px;
+  font-family: var(--editor-font-family, Georgia, serif);
+  font-size: var(--editor-font-size, 1rem);
+  line-height: 1.75;
+  font-style: italic;
+  color: var(--mat-sys-on-surface-variant, #888);
+  opacity: 0.75;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  pointer-events: none;
+  /* Sit just after the caret on an empty line; for "# Title" lines, below it. */
+  transform: translateX(14px);
+}
+
+.book-end {
+  position: absolute;
+  left: 0;
+  width: 816px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+}
+
+.new-chapter-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 20px;
+  border: 1px dashed var(--book-page-edge);
+  border-radius: 20px;
+  background: var(--book-paper);
+  color: var(--book-accent);
+  font: 500 0.9rem system-ui, sans-serif;
+  cursor: pointer;
+
+  &:hover { border-style: solid; border-color: var(--book-accent); }
+  &:focus-visible { outline: 2px solid var(--book-accent); outline-offset: 2px; }
+}
+
+.new-chapter-plus { font-size: 1.2rem; line-height: 1; }
+
+.new-chapter-tip {
+  margin: 0;
+  font-size: 0.78rem;
+  color: var(--mat-sys-on-surface-variant, #666);
+  text-align: center;
+
+  kbd {
+    padding: 0 5px;
+    border: 1px solid var(--book-page-edge);
+    border-radius: 4px;
+    background: var(--book-paper);
+    font: 600 0.72rem ui-monospace, monospace;
+  }
+}

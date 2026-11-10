@@ -23,19 +23,11 @@
       </div>
     }
 
-    <div class="container">
+    <div class="book-layout">
+    <div class="book-main">
       <div class="chapters-header">
         <h2>Chapters</h2>
         <div class="chapters-header-actions">
-          <button mat-stroked-button (click)="openOutline()">
-            <mat-icon>format_list_bulleted</mat-icon> Outline
-          </button>
-          <button mat-stroked-button (click)="openNotes()">
-            <mat-icon>notes</mat-icon> Notes
-          </button>
-          <button mat-stroked-button (click)="openAiStats()">
-            <mat-icon>auto_awesome</mat-icon> AI Insights
-          </button>
           <button mat-stroked-button [matMenuTriggerFor]="exportMenu" [disabled]="exporting()">
             <mat-icon>download</mat-icon>
             {{ exporting() ? 'Exporting...' : 'Export' }}
@@ -52,6 +44,10 @@
               <mat-icon>code</mat-icon> HTML (.html)
             </button>
           </mat-menu>
+          <button mat-stroked-button class="edit-book-btn" (click)="editBook()"
+            [disabled]="chapterList().length === 0">
+            <mat-icon>menu_book</mat-icon> Edit Book
+          </button>
           <button mat-flat-button (click)="addChapter()">
             <mat-icon>add</mat-icon> Add Chapter
           </button>
@@ -83,28 +79,53 @@
         }
       </div>
     </div>
+
+    <!-- Book side panel: outline, notes and AI insights in tabs -->
+    <aside class="book-side-panel" aria-label="Book details" [style.height.px]="sidePanelHeight()">
+      <mat-tab-group class="book-side-tabs" mat-stretch-tabs animationDuration="0ms"
+        [selectedIndex]="sideTab()" (selectedIndexChange)="selectSideTab($event)">
+        <mat-tab>
+          <ng-template mat-tab-label>
+            <mat-icon class="side-tab-icon">format_list_bulleted</mat-icon> Outline
+          </ng-template>
+          <ng-template matTabContent>
+            <div class="side-tab-body">
+              <app-chapter-outline
+                [items]="bookOutline()"
+                [entities]="seriesEntities()"
+                (itemsChange)="onBookOutlineChange($event)" />
+            </div>
+          </ng-template>
+        </mat-tab>
+        <mat-tab>
+          <ng-template mat-tab-label>
+            <mat-icon class="side-tab-icon">notes</mat-icon> Notes
+          </ng-template>
+          <ng-template matTabContent>
+            <div class="side-tab-body side-tab-notes">
+              @if (book() && seriesId()) {
+                <app-book-notes [bookId]="book()!.id" [seriesId]="seriesId()" />
+              }
+            </div>
+          </ng-template>
+        </mat-tab>
+        <mat-tab>
+          <ng-template mat-tab-label>
+            <mat-icon class="side-tab-icon">auto_awesome</mat-icon> AI Insights
+          </ng-template>
+          <!-- Rendered only while selected: it analyses every chapter's text. -->
+          <ng-template matTabContent>
+            <div class="side-tab-body">
+              <app-ai-stats [chapters]="chapterList()" [loading]="loading()" [entities]="seriesEntities()" />
+            </div>
+          </ng-template>
+        </mat-tab>
+      </mat-tab-group>
+    </aside>
+    </div>
   </div>
 
   <div right-panel>
-    @if (panelMode() === 'outline') {
-      <app-chapter-outline
-        [items]="bookOutline()"
-        [entities]="bookOutlineEntities()"
-        (itemsChange)="onBookOutlineChange($event)" />
-    }
-    @if (panelMode() === 'ai-stats') {
-      <app-ai-stats [chapters]="aiStatsChapters()" [loading]="aiStatsLoading()" [entities]="aiStatsEntities()" />
-    }
-    @if (panelMode() === 'notes') {
-      <div class="editor-content notes-panel-content">
-        <div class="notes-panel-header">
-          <h3>Book Notes</h3>
-        </div>
-        @if (book() && seriesId()) {
-          <app-book-notes [bookId]="book()!.id" [seriesId]="seriesId()" />
-        }
-      </div>
-    }
     @if (panelMode() === 'edit') {
       <div class="editor-content">
         <h3>Edit Book</h3>

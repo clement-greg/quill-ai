@@ -23,6 +23,8 @@ interface UserSettings {
   grammarCheckEnabled?: boolean;
   entityDetectionEnabled?: boolean;
   autoSaveEnabled?: boolean;
+  /** Edit the whole book as one paginated document instead of one chapter at a time. */
+  fullBookEditing?: boolean;
   /** Model picked per AI operation; unset operations use their default. */
   aiModels?: AiModelSettings;
   /** Thoughts shown per page in the thoughts list. */
@@ -57,6 +59,7 @@ const FIELD_VALIDATORS: Record<SettingsField, (v: unknown) => boolean> = {
   grammarCheckEnabled: isBoolean,
   entityDetectionEnabled: isBoolean,
   autoSaveEnabled: isBoolean,
+  fullBookEditing: isBoolean,
   aiModels: isAiModelSettings,
   thoughtsPageSize: (v: unknown) => (THOUGHT_PAGE_SIZE_OPTIONS as readonly unknown[]).includes(v),
   pinHash: isString,

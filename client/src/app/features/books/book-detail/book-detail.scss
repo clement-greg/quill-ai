@@ -17,37 +17,12 @@
   min-height: 200px;
 }
 
-.notes-panel-content {
-  display: flex;
-  flex-direction: column;
-  flex: 1;
-  overflow: hidden;
-  padding: 0 !important;
-}
-
 [right-panel] {
   height: 100%;
   display: flex;
   flex-direction: column;
 }
 
-.notes-panel-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 16px 16px 8px;
-  flex-shrink: 0;
-}
-
-.notes-panel-header h3 {
-  margin: 0;
-}
-
-.notes-panel-content app-book-notes {
-  flex: 1;
-  overflow: hidden;
-  padding: 0 12px;
-}
 
 .hero {
   position: relative;
@@ -130,6 +105,9 @@
   align-items: center;
   flex-wrap: wrap;
   gap: 8px;
+  /* Slightly tighter buttons so the whole toolbar fits beside the heading. */
+  --mat-button-outlined-horizontal-padding: 14px;
+  --mat-button-filled-horizontal-padding: 14px;
 }
 
 .loading {
@@ -285,4 +263,90 @@
   background-color: #f5f5f5;
   border: 2px dashed #ccc;
   border-radius: 4px;
+}
+
+/* Full-book editing needs a page-width screen (see ChapterEditComponent.BOOK_MIN_WIDTH). */
+@media (max-width: 899px) {
+  .edit-book-btn { display: none; }
+}
+
+/* ── Chapters + side panel layout ────────────────────── */
+.book-layout {
+  display: flex;
+  align-items: flex-start;
+  gap: 24px;
+  max-width: 1320px;
+  margin: 0 auto;
+  padding: 16px 24px 24px;
+}
+
+.book-main {
+  flex: 1;
+  min-width: 0;
+}
+
+.book-side-panel {
+  flex: none;
+  width: 420px;
+  /* Stays in view while the chapter list scrolls. */
+  position: sticky;
+  top: 16px;
+  /* Height is set from code to reach the bottom of the window. */
+  height: calc(100dvh - var(--toolbar-height, 64px) - 32px);
+  display: flex;
+  flex-direction: column;
+  margin-top: 8px;
+  border: 1px solid var(--mat-sys-outline-variant, #e0e0e0);
+  border-radius: 12px;
+  background: var(--mat-sys-surface-container-low, #fafafa);
+  overflow: hidden;
+}
+
+.side-tab-icon {
+  font-size: 18px;
+  width: 18px;
+  height: 18px;
+  margin-right: 6px;
+}
+
+::ng-deep .book-side-tabs {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+
+  .mat-mdc-tab-header { flex-shrink: 0; }
+  .mat-mdc-tab-body-wrapper { flex: 1; min-height: 0; }
+  .mat-mdc-tab-body-content { height: 100%; overflow: auto; }
+}
+
+.side-tab-body {
+  height: 100%;
+  box-sizing: border-box;
+  padding: 12px 16px;
+  display: flex;
+  flex-direction: column;
+}
+
+.side-tab-notes app-book-notes {
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}
+
+/* Narrower screens: the panel moves under the chapter list. */
+@media (max-width: 1099px) {
+  .book-layout {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .book-side-panel {
+    width: auto;
+    position: static;
+    height: 640px !important;
+  }
+}
+
+@media (max-width: 599px) {
+  .book-layout { padding: 8px 12px 16px; }
 }
