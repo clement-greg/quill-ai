@@ -11,7 +11,7 @@ describe('LoginComponent', () => {
   let renderButton: ReturnType<typeof vi.fn>;
   let submitted: HTMLFormElement[];
 
-  const win = window as Window & { quillDesktop?: unknown };
+  const win = window as Window & { quillDesktop?: unknown; quillNative?: unknown };
   // @types/google.maps already types a global `google`; the GSI stub doesn't match it.
   const glob = globalThis as unknown as Record<string, unknown>;
 
@@ -44,6 +44,7 @@ describe('LoginComponent', () => {
 
   afterEach(() => {
     delete win.quillDesktop;
+    delete win.quillNative;
     delete glob['google'];
     window.history.replaceState({}, '', '/');
     vi.restoreAllMocks();
@@ -184,6 +185,84 @@ describe('LoginComponent', () => {
         expect(el.querySelector('.desktop-error')).not.toBeNull();
       });
       expect(navigate).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('opened by the iOS app for sign-in', () => {
+    const STATE = 'state_0123456789abcdef';
+    let assign: ReturnType<typeof vi.fn>;
+
+    beforeEach(() => {
+      assign = vi.fn();
+      vi.spyOn(window, 'location', 'get').mockReturnValue({
+        ...window.location,
+        search: `?nativeCallback=quillai&nativeState=${STATE}`,
+        assign,
+      } as unknown as Location);
+    });
+
+    it('tells the user they are signing in for the app', async () => {
+      const { el } = await create();
+      expect(el.textContent).toContain('continue in the Quill AI app');
+    });
+
+    it('hands the credential back through the quillai:// scheme instead of signing in here', async () => {
+      const { navigate } = await create();
+
+      gsiConfig!.callback({ credential: 'google-id-token' });
+
+      expect(assign).toHaveBeenCalledWith(`quillai://auth?state=${STATE}&credential=google-id-token`);
+      expect(auth.handleCredentialResponse).not.toHaveBeenCalled();
+      expect(navigate).not.toHaveBeenCalled();
+    });
+
+    it.each([
+      ['another app\'s scheme', `?nativeCallback=evilapp&nativeState=${STATE}`],
+      ['a too-short state', '?nativeCallback=quillai&nativeState=abc'],
+      ['a missing state', '?nativeCallback=quillai'],
+    ])('ignores a handoff with %s and signs in normally', async (_label, search) => {
+      vi.spyOn(window, 'location', 'get').mockReturnValue({ ...window.location, search, assign } as unknown as Location);
+      const { el } = await create();
+
+      gsiConfig!.callback({ credential: 'google-id-token' });
+
+      await vi.waitFor(() => expect(auth.handleCredentialResponse).toHaveBeenCalledWith('google-id-token'));
+      expect(assign).not.toHaveBeenCalled();
+      expect(el.textContent).not.toContain('continue in the Quill AI app');
+    });
+  });
+
+  describe('inside the iOS app', () => {
+    let signInWithGoogle: ReturnType<typeof vi.fn>;
+
+    beforeEach(() => {
+      signInWithGoogle = vi.fn();
+      win.quillNative = { platform: 'ios', signInWithGoogle, setSession: vi.fn() };
+    });
+
+    it('shows its own button instead of the blocked Google one', async () => {
+      const { el } = await create();
+      expect(el.querySelector('.desktop-google-btn')?.textContent).toContain('Sign in with Google');
+      expect(renderButton).not.toHaveBeenCalled();
+    });
+
+    it('signs in with the credential from the auth sheet', async () => {
+      signInWithGoogle.mockResolvedValue('google-id-token');
+      const { el, navigate } = await create();
+
+      el.querySelector<HTMLButtonElement>('.desktop-google-btn')!.click();
+
+      await vi.waitFor(() => expect(navigate).toHaveBeenCalledWith(['/series']));
+      expect(auth.handleCredentialResponse).toHaveBeenCalledWith('google-id-token');
+    });
+
+    it('does not mention a browser while waiting', async () => {
+      signInWithGoogle.mockReturnValue(new Promise(() => {}));
+      const { fixture, el } = await create();
+      const button = el.querySelector<HTMLButtonElement>('.desktop-google-btn')!;
+      button.click();
+      fixture.detectChanges();
+      expect(button.textContent).toContain('Finishing sign-in');
     });
   });
 });

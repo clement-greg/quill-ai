@@ -117,6 +117,68 @@ const FIND_THOUGHTS_GUIDANCE =
   '(e.g. [Character Quirk](/thoughts?open=abc)) followed by a one-line summary, so the author can click to ' +
   'open it. Never invent a thought or a link.';
 
+// Appended for /voice turns, whose answer Siri reads aloud.
+const VOICE_GUIDANCE =
+  '\n\nVOICE REPLY: This conversation is happening through Siri, and your answer will be spoken aloud ' +
+  'with nothing shown on screen. This overrides the formatting rules above: reply in one to three short, ' +
+  'plain sentences. No markdown, lists, links, bracketed citation numbers, or emoji. When naming thoughts ' +
+  'you found, say their titles (or a few words of an untitled one) instead of linking them. Keep facts ' +
+  'grounded in your tools exactly as in a typed chat.';
+
+/** Collects a chat turn's SSE stream into the final answer text, for callers that don't stream. */
+export function createAnswerCollector(): { sink: ChatSink; answer(): string; error(): string | null } {
+  let buffer = '';
+  let answer = '';
+  let error: string | null = null;
+  const consume = (line: string) => {
+    if (!line.startsWith('data: ')) return;
+    const data = line.slice(6);
+    if (data === '[DONE]') return;
+    try {
+      const event = JSON.parse(data) as { content?: string; error?: string };
+      if (typeof event.content === 'string') answer += event.content;
+      if (typeof event.error === 'string') error = event.error;
+    } catch {
+      // Ignore events that aren't JSON.
+    }
+  };
+  return {
+    sink: {
+      write(chunk: string) {
+        buffer += chunk;
+        let idx: number;
+        while ((idx = buffer.indexOf('\n\n')) >= 0) {
+          consume(buffer.slice(0, idx));
+          buffer = buffer.slice(idx + 2);
+        }
+        return true;
+      },
+      end() {
+        if (buffer) consume(buffer.trim());
+        buffer = '';
+      },
+    },
+    answer: () => answer,
+    error: () => error,
+  };
+}
+
+/** Turns a chat answer into text suitable for speech: no markdown, links, or citation numbers. */
+export function toSpokenText(text: string): string {
+  return text
+    .replace(/!\[[^\]]*\]\([^)]*\)/g, '') // images
+    .replace(/\[([^\]]+)\]\([^)]*\)/g, '$1') // links → their text
+    .replace(/\[\d+(?:\s*,\s*\d+)*\]/g, '') // citation markers
+    .replace(/`{1,3}([^`]*)`{1,3}/g, '$1')
+    .replace(/(\*\*|__|\*|_)(\S(?:.*?\S)?)\1/g, '$2') // bold / italic
+    .replace(/^\s{0,3}#{1,6}\s+/gm, '') // headings
+    .replace(/^\s*(?:[-*+]|\d+\.)\s+/gm, '') // list markers
+    .replace(/[ \t]+([.,;:!?])/g, '$1')
+    .replace(/\s*\n+\s*/g, ' ')
+    .replace(/\s{2,}/g, ' ')
+    .trim();
+}
+
 // Appended whenever the research_entity tool is available (always).
 const ENTITY_RESEARCH_GUIDANCE =
   '\n\nRESEARCHING ENTITIES: The author keeps a story bible of characters, places, and things (entities), ' +
@@ -287,8 +349,17 @@ async function buildRagSystemPrompt(
   return { systemPrompt, citations };
 }
 
+/**
+ * Where a chat turn's SSE events go: normally the HTTP response, or a
+ * collector when the caller wants the finished answer (see /voice).
+ */
+interface ChatSink {
+  write(chunk: string): unknown;
+  end(): unknown;
+}
+
 /** Writes the `{sources}` SSE event for the citations the answer actually used. */
-function emitUsedCitations(res: Response, answer: string, citations: ChapterCitation[]): void {
+function emitUsedCitations(res: ChatSink, answer: string, citations: ChapterCitation[]): void {
   if (citations.length === 0) return;
   const citedNumbers = new Set<number>();
   for (const match of answer.matchAll(/\[([\d,\s]+)\]/g)) {
@@ -346,7 +417,7 @@ interface ResponseOutputItem {
  * (e.g. a navigation instruction). Without tools this is a plain streamed turn.
  */
 async function streamChatResponse(
-  res: Response,
+  res: ChatSink,
   systemPrompt: string,
   messages: { role: 'user' | 'assistant'; content: string }[],
   citations: ChapterCitation[],
@@ -2950,6 +3021,47 @@ router.post('/:id/chat', async (req: Request, res: Response) => {
 // editor), it instead grounds the answer in the current chapter — book-scoped
 // RAG, character voice, and the text surrounding the cursor — so the answer is
 // suitable for inserting at the cursor, mirroring the old inline AI Insert.
+// POST /voice — one spoken question, answered in full as plain text (for Siri).
+// Body: { question: string }. Response: { answer: string }. Uses the read-only
+// research tools plus save/find thoughts; nothing that needs a screen.
+router.post('/voice', async (req: Request, res: Response) => {
+  const question = typeof req.body?.question === 'string' ? req.body.question.trim() : '';
+  if (!question) {
+    res.status(400).json({ error: 'question is required' });
+    return;
+  }
+  if (question.length > 2000) {
+    res.status(400).json({ error: 'question is too long' });
+    return;
+  }
+  try {
+    const messages = [{ role: 'user' as const, content: question }];
+    const { systemPrompt, citations } = await buildRagSystemPrompt(messages, {}, req);
+    const tools: Record<string, ChatTool> = {
+      research_entity: getResearchEntityTool(req),
+      search_chapter_text: getSearchChapterTextTool({}, citations, req),
+      save_thought: getSaveThoughtTool(req),
+      find_thoughts: getFindThoughtsTool(req),
+    };
+    const guidance =
+      ENTITY_RESEARCH_GUIDANCE + SEARCH_CHAPTER_TEXT_GUIDANCE + SAVE_THOUGHT_GUIDANCE + FIND_THOUGHTS_GUIDANCE + VOICE_GUIDANCE;
+    const collector = createAnswerCollector();
+    await streamChatResponse(collector.sink, systemPrompt + guidance, messages, citations, tools, await chatModelFor(req.user, undefined));
+
+    const answer = toSpokenText(collector.answer());
+    const error = collector.error();
+    if (!answer) {
+      res.status(502).json({ error: error ?? 'No answer was produced' });
+      return;
+    }
+    console.log('[voice] owner="%s" chars=%d', req.user!.email, answer.length);
+    res.json({ answer });
+  } catch (err) {
+    console.error('Voice chat error:', err);
+    res.status(500).json({ error: 'Failed to answer' });
+  }
+});
+
 router.post('/quick-chat', async (req: Request, res: Response) => {
   const messages: { role: 'user' | 'assistant'; content: string }[] = req.body.messages;
   const chapterContext = req.body.chapterContext as

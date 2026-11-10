@@ -5,6 +5,7 @@ import { MatCardModule } from '@angular/material/card';
 import { AuthService } from '@app/core/auth/auth.service';
 import { environment } from '../../../environments/environment';
 import { getQuillDesktop } from '@app/core/desktop/quill-desktop';
+import { getQuillNative, NATIVE_CALLBACK_SCHEME } from '@app/core/native/quill-native';
 
 /** Lines the robot cycles through while the user is on the login page. */
 const ROBOT_MESSAGES = [
@@ -36,6 +37,11 @@ const ROBOT_MESSAGES = [
  */
 interface DesktopHandoff {
   port: string;
+  state: string;
+}
+
+/** Sign-in requested by the iOS app through Apple's web-auth sheet. */
+interface NativeHandoff {
   state: string;
 }
 
@@ -75,7 +81,17 @@ export class LoginComponent implements AfterViewInit {
   private readonly destroyRef = inject(DestroyRef);
 
   protected readonly desktop = isPlatformBrowser(this.platformId) ? getQuillDesktop() : null;
+  private readonly native = isPlatformBrowser(this.platformId) ? getQuillNative() : null;
+  /**
+   * Sign-in run by the host app, when there is one: Google blocks its button in
+   * embedded web views (Electron, and the iOS app's WKWebView).
+   */
+  protected readonly appSignIn: (() => Promise<string>) | null =
+    this.desktop ? () => this.desktop!.signInWithGoogle()
+    : this.native ? () => this.native!.signInWithGoogle()
+    : null;
   protected readonly handoff = this.readDesktopHandoff();
+  protected readonly nativeHandoff = this.readNativeHandoff();
   protected readonly desktopSigningIn = signal(false);
   protected readonly desktopError = signal('');
 
@@ -97,9 +113,9 @@ export class LoginComponent implements AfterViewInit {
       if (this.reversePlaybackHandle !== null) cancelAnimationFrame(this.reversePlaybackHandle);
     });
 
-    // Google blocks sign-in inside Electron, so the desktop app signs in through
-    // the system browser instead of rendering the GSI button here.
-    if (this.desktop) return;
+    // Google blocks sign-in inside Electron and WKWebView, so those apps sign in
+    // through a real browser instead of rendering the GSI button here.
+    if (this.appSignIn) return;
 
     const waitForGoogle = () => {
       if (typeof google !== 'undefined') {
@@ -108,6 +124,10 @@ export class LoginComponent implements AfterViewInit {
           callback: (response: { credential: string }) => {
             if (this.handoff) {
               this.postToDesktop(this.handoff, response.credential);
+              return;
+            }
+            if (this.nativeHandoff) {
+              this.returnToNativeApp(this.nativeHandoff, response.credential);
               return;
             }
             this.ngZone.run(async () => {
@@ -132,11 +152,11 @@ export class LoginComponent implements AfterViewInit {
   }
 
   protected async signInWithDesktop(): Promise<void> {
-    if (!this.desktop) return;
+    if (!this.appSignIn) return;
     this.desktopSigningIn.set(true);
     this.desktopError.set('');
     try {
-      const credential = await this.desktop.signInWithGoogle();
+      const credential = await this.appSignIn();
       await this.auth.handleCredentialResponse(credential);
       this.router.navigate(['/series']);
     } catch {
@@ -152,6 +172,26 @@ export class LoginComponent implements AfterViewInit {
     const port = params.get('desktopPort');
     const state = params.get('desktopState');
     return port && /^\d+$/.test(port) && state ? { port, state } : null;
+  }
+
+  private readNativeHandoff(): NativeHandoff | null {
+    if (!isPlatformBrowser(this.platformId) || this.handoff) return null;
+    const params = new URLSearchParams(location.search);
+    const scheme = params.get('nativeCallback');
+    const state = params.get('nativeState');
+    return scheme === NATIVE_CALLBACK_SCHEME && state && /^[A-Za-z0-9_-]{16,128}$/.test(state) ? { state } : null;
+  }
+
+  /**
+   * Hands the credential back to the iOS app. Apple's web-auth sheet captures
+   * this custom-scheme navigation and closes, so the URL never reaches another
+   * app or the network; the server still verifies the token at /api/auth/login.
+   */
+  private returnToNativeApp(handoff: NativeHandoff, credential: string): void {
+    const url = new URL(`${NATIVE_CALLBACK_SCHEME}://auth`);
+    url.searchParams.set('state', handoff.state);
+    url.searchParams.set('credential', credential);
+    location.assign(url.toString());
   }
 
   /**

@@ -94,4 +94,47 @@ describe('AuthService', () => {
 
     expect(freshService.isLoggedIn).toBe(false);
   });
+
+  describe('sharing the session with the iOS app', () => {
+    const win = window as Window & { quillNative?: unknown };
+    let setSession: ReturnType<typeof vi.fn>;
+
+    beforeEach(() => {
+      setSession = vi.fn();
+      win.quillNative = { platform: 'ios', signInWithGoogle: vi.fn(), setSession };
+    });
+
+    afterEach(() => {
+      delete win.quillNative;
+    });
+
+    it('passes the refresh token on sign-in', async () => {
+      const credential = makeJwt({ email: 'u@example.com', exp: FUTURE_EXP });
+      const promise = service.handleCredentialResponse(credential);
+      httpMock.expectOne('/api/auth/login').flush({ token: makeJwt({ exp: FUTURE_EXP }), refreshToken: 'rt-1' });
+      await promise;
+      expect(setSession).toHaveBeenCalledWith('rt-1');
+    });
+
+    it('passes the rotated refresh token after a refresh', () => {
+      localStorage.setItem('app_refresh_token', 'rt-old');
+      service.refreshAccessToken().subscribe();
+      httpMock.expectOne('/api/auth/refresh').flush({ token: makeJwt({ exp: FUTURE_EXP }), refreshToken: 'rt-new' });
+      expect(setSession).toHaveBeenCalledWith('rt-new');
+    });
+
+    it('clears it on sign-out', () => {
+      service.signOut();
+      expect(setSession).toHaveBeenCalledWith(null);
+    });
+
+    it('re-shares an existing session at startup', () => {
+      localStorage.setItem('app_auth_token', makeJwt({ email: 'u@example.com', exp: FUTURE_EXP }));
+      localStorage.setItem('app_refresh_token', 'rt-stored');
+      TestBed.resetTestingModule();
+      TestBed.configureTestingModule({ providers: [provideHttpClient(), provideHttpClientTesting()] });
+      TestBed.inject(AuthService);
+      expect(setSession).toHaveBeenCalledWith('rt-stored');
+    });
+  });
 });

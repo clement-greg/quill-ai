@@ -1,3 +1,4 @@
+import { getQuillNative } from '@app/core/native/quill-native';
 import { Injectable, signal } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
 import { inject } from '@angular/core';
@@ -39,6 +40,13 @@ export class AuthService {
   private router = inject(Router);
   private snackBar = inject(MatSnackBar);
   readonly currentUser = signal<GoogleUser | null>(this.loadStoredUser());
+
+  constructor() {
+    // Re-share the session with the iOS app at startup, in case its Keychain
+    // copy was cleared (reinstall) or predates this sign-in.
+    const refresh = this.refreshToken;
+    if (this.currentUser() && refresh) getQuillNative()?.setSession(refresh);
+  }
 
   // Shared in-flight refresh so that a burst of concurrent 401s triggers exactly
   // one /refresh call; all callers await the same result.
@@ -126,6 +134,7 @@ export class AuthService {
     this.clearCookie(COOKIE_NAME);
     this.clearCookie(REFRESH_COOKIE_NAME);
     this.currentUser.set(null);
+    getQuillNative()?.setSession(null);
   }
 
   private storeTokens(accessToken: string, refreshToken?: string): void {
@@ -137,6 +146,7 @@ export class AuthService {
     if (refreshToken) {
       localStorage.setItem(REFRESH_KEY, refreshToken);
       this.setCookie(REFRESH_COOKIE_NAME, refreshToken);
+      getQuillNative()?.setSession(refreshToken);
     }
   }
 
