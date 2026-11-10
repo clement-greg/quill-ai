@@ -1,0 +1,107 @@
+<div class="bp">
+  <header class="bp-head">
+    <button mat-icon-button type="button" (click)="audio.minimize()" aria-label="Minimize player" matTooltip="Minimize">
+      <mat-icon>keyboard_arrow_down</mat-icon>
+    </button>
+    <h2 class="bp-head-title" mat-dialog-title>{{ audio.nowPlaying()?.title }}</h2>
+    <button mat-icon-button type="button" (click)="audio.stop()" aria-label="Stop and close player" matTooltip="Stop and close">
+      <mat-icon>close</mat-icon>
+    </button>
+  </header>
+
+  @if (showChapters()) {
+    <nav class="bp-chapters" aria-label="Chapters">
+      <ol>
+        @for (c of chapters(); track c.chapterId) {
+          <li>
+            <button type="button" class="bp-chapter" [class.is-current]="c.chapterIndex === chapter()?.chapterIndex"
+              [attr.aria-current]="c.chapterIndex === chapter()?.chapterIndex ? 'true' : null"
+              (click)="playChapter(c.start)">
+              <span class="bp-chapter-num">{{ c.chapterIndex + 1 }}</span>
+              <span class="bp-chapter-title">{{ c.title }}</span>
+              <span class="bp-chapter-len">{{ chapterLength(c) }}</span>
+              @if (c.chapterIndex === chapter()?.chapterIndex) {
+                <mat-icon class="bp-chapter-now" aria-hidden="true">{{ playing() ? 'pause' : 'play_arrow' }}</mat-icon>
+              }
+            </button>
+          </li>
+        }
+      </ol>
+    </nav>
+  } @else {
+    <div class="bp-art">
+      @if (audio.nowPlaying()?.coverUrl; as cover) {
+        <img [src]="cover" alt="" />
+      } @else {
+        <mat-icon aria-hidden="true">auto_stories</mat-icon>
+      }
+    </div>
+  }
+
+  <div class="bp-now">
+    <div class="bp-chapter-heading" aria-live="polite">{{ chapter()?.title }}</div>
+    <div class="bp-sub">
+      @if (multiChapter()) {
+        Chapter {{ (chapter()?.chapterIndex ?? 0) + 1 }} of {{ chapters().length }}
+      }
+      @if (bookProgress(); as p) {
+        @if (multiChapter()) { · }{{ p.percent }}% · {{ p.left }} left
+      }
+    </div>
+    @if (ra.error(); as error) {
+      <div class="bp-error" role="alert">{{ error }}</div>
+    }
+  </div>
+
+  <div class="bp-scrub">
+    <!-- Rebuilt per chapter so the range and thumb never disagree after a jump. -->
+    @for (c of [chapter()]; track c?.chapterId) {
+      <mat-slider [min]="0" [max]="scrubMax()" [step]="1" [disabled]="scrubMax() < 1" [displayWith]="formatThumb">
+        <input matSliderThumb [value]="scrubValue()" aria-label="Position in chapter"
+          (input)="onScrub(+$any($event.target).value)"
+          (change)="commitScrub(+$any($event.target).value)" />
+      </mat-slider>
+    }
+    <div class="bp-times" aria-hidden="true">
+      <span>{{ clock().elapsed }}</span>
+      <span>-{{ clock().remaining }}</span>
+    </div>
+    @if (scrubPreview()) {
+      <p class="bp-preview">{{ scrubPreview() }}</p>
+    }
+  </div>
+
+  <div class="bp-controls" role="group" aria-label="Playback">
+    <button mat-icon-button type="button" (click)="ra.previousChapter()" [disabled]="atStart()"
+      aria-label="Previous chapter" matTooltip="Previous chapter">
+      <mat-icon>skip_previous</mat-icon>
+    </button>
+    <button mat-icon-button type="button" (click)="ra.previousParagraph()" [disabled]="atStart()"
+      aria-label="Previous paragraph" matTooltip="Previous paragraph">
+      <mat-icon>fast_rewind</mat-icon>
+    </button>
+    <button mat-flat-button type="button" class="bp-play" (click)="ra.playPause()"
+      [attr.aria-label]="playing() ? 'Pause' : 'Play'">
+      <mat-icon>{{ playing() ? 'pause' : 'play_arrow' }}</mat-icon>
+    </button>
+    <button mat-icon-button type="button" (click)="ra.nextParagraph()" [disabled]="atEnd()"
+      aria-label="Next paragraph" matTooltip="Next paragraph">
+      <mat-icon>fast_forward</mat-icon>
+    </button>
+    <button mat-icon-button type="button" (click)="ra.nextChapter()" [disabled]="!hasNextChapter()"
+      aria-label="Next chapter" matTooltip="Next chapter">
+      <mat-icon>skip_next</mat-icon>
+    </button>
+  </div>
+
+  <div class="bp-footer">
+    <div class="bp-settings">
+      <app-read-aloud-settings />
+    </div>
+    <button mat-button type="button" (click)="showChapters.set(!showChapters())"
+      [attr.aria-pressed]="showChapters()">
+      <mat-icon>list</mat-icon>
+      Chapters
+    </button>
+  </div>
+</div>

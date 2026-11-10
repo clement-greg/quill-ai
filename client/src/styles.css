@@ -150,3 +150,29 @@ body.resizing-col, body.resizing-col * {
 ::highlight(read-aloud) {
   background-color: color-mix(in srgb, var(--mat-sys-primary, #6750a4) 22%, transparent);
 }
+
+/* Full book player (book-player.ts): a centered card on wide screens, the
+   whole screen on phones. */
+.book-player-dialog .mat-mdc-dialog-surface {
+  border-radius: 24px;
+}
+
+@media (max-width: 600px) {
+  .book-player-dialog {
+    width: 100vw !important;
+    height: 100dvh;
+    max-height: 100dvh !important;
+  }
+
+  .book-player-dialog .mat-mdc-dialog-surface {
+    border-radius: 0;
+    padding-top: env(safe-area-inset-top, 0px);
+    /* Clears the Quilly button docked bottom-left (quick-chat.scss). */
+    padding-bottom: calc(76px + env(safe-area-inset-bottom, 0px));
+  }
+
+  .book-player-dialog app-book-player .bp {
+    min-height: 100%;
+    justify-content: space-between;
+  }
+}

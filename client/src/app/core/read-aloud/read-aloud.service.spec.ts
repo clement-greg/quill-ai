@@ -111,6 +111,22 @@ describe('ReadAloudService', () => {
     expect(engine.play).toHaveBeenLastCalledWith(expect.objectContaining({ startIndex: 0 }));
   });
 
+  it('knows which book is loaded and when it finished, until stopped', () => {
+    const { engine, emit } = fakeEngine();
+    const svc = setup(engine);
+    svc.start(BOOK, { bookTitle: 'Book', bookId: 'b1' });
+    expect(svc.bookId()).toBe('b1');
+    expect(svc.finished()).toBe(false);
+    emit().state('idle');
+    expect(svc.finished()).toBe(true);
+    svc.seek(1);
+    expect(svc.finished()).toBe(false);
+    svc.stop();
+    expect(svc.bookId()).toBeNull();
+    svc.start(BOOK, { bookTitle: 'Chapter only' });
+    expect(svc.bookId()).toBeNull();
+  });
+
   it('remembers speed and voice, replaying from the current paragraph', () => {
     const { engine, emit } = fakeEngine();
     const svc = setup(engine);

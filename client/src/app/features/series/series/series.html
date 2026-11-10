@@ -31,6 +31,38 @@
         </div>
       </div>
 
+      @if (audio.supported) {
+        @if (audio.resumable(); as pos) {
+        <section class="resume-listening" aria-labelledby="resume-listening-heading">
+          <h2 id="resume-listening-heading" class="recent-chapters-heading">Keep listening</h2>
+          <button type="button" class="resume-card" (click)="resumeListening(pos.bookId)"
+            [disabled]="audio.loading() === pos.bookId"
+            [attr.aria-label]="(audio.isLoaded(pos.bookId) ? 'Open player for ' : 'Resume listening to ') + pos.bookTitle + ', ' + pos.chapterTitle">
+            <span class="resume-art">
+              @if (coverFor(pos.coverUrl); as cover) {
+                <img [src]="cover" alt="" />
+              } @else {
+                <mat-icon aria-hidden="true">auto_stories</mat-icon>
+              }
+            </span>
+            <span class="resume-text">
+              <span class="resume-book">{{ pos.bookTitle }}</span>
+              <span class="resume-chapter">{{ pos.chapterTitle }} · {{ percent(pos.progress) }}%</span>
+              <span class="resume-bar" aria-hidden="true"><span [style.width.%]="percent(pos.progress)"></span></span>
+            </span>
+            <span class="resume-play" aria-hidden="true">
+              <mat-icon>{{ audio.isLoaded(pos.bookId) ? 'headphones' : 'play_arrow' }}</mat-icon>
+            </span>
+          </button>
+          @if (audio.error(); as err) {
+            @if (err.bookId === pos.bookId) {
+              <p class="resume-error" role="alert">{{ err.message }}</p>
+            }
+          }
+        </section>
+        }
+      }
+
       @if (recentChapters().length > 0) {
       <div class="recent-chapters">
         <h2 class="recent-chapters-heading">Continue writing</h2>

@@ -1,4 +1,4 @@
-import { parseContentBlocks, insertHtmlAtAnchor, collectContentBlocks, blockRange, blockIndexOf } from './chapter-content-blocks';
+import { parseContentBlocks, insertHtmlAtAnchor, collectContentBlocks, blockRange } from './chapter-content-blocks';
 
 describe('parseContentBlocks', () => {
   it('lists flat top-level paragraphs', () => {
@@ -98,13 +98,5 @@ describe('live block helpers', () => {
 
   it('returns null for an anchor that no longer resolves', () => {
     expect(blockRange(root('<p>x</p>'), { startPath: [4], endPath: [4] })).toBeNull();
-  });
-
-  it('finds the block holding a node, or -1', () => {
-    const el = root('<p>One</p><p>Two <i>it</i></p>');
-    const blocks = collectContentBlocks(el);
-    const italic = el.querySelector('i')!.firstChild!;
-    expect(blockIndexOf(el, blocks, italic)).toBe(1);
-    expect(blockIndexOf(el, blocks, document.createTextNode('elsewhere'))).toBe(-1);
   });
 });

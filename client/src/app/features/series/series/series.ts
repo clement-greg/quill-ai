@@ -281,6 +281,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { SlideOutPanelContainer } from '@app/shared/slide-out-panel-container/slide-out-panel-container';
 import { WritingStatsSummaryComponent } from '@app/features/writing-stats/writing-stats-summary';
 import { TasksService } from '@app/features/tasks/tasks.service';
+import { BookAudioService, proxyImageUrl } from '@app/features/books/book-audio/book-audio.service';
 
 @Component({
   selector: 'app-series',
@@ -312,6 +313,7 @@ export class SeriesComponent implements OnInit {
   private http = inject(HttpClient);
   readonly userSettings = inject(UserSettingsService);
   private tasksService = inject(TasksService);
+  readonly audio = inject(BookAudioService);
 
   /** Open-task count shown as a badge on the Explore "Tasks" tile (0 hides it). */
   readonly openTaskCount = signal(0);
@@ -448,8 +450,22 @@ export class SeriesComponent implements OnInit {
   prevQuote(): void { this.cycle(-1); }
   nextQuote(): void { this.cycle(1); }
 
+  /** Picks a book back up where the reader stopped listening. */
+  resumeListening(bookId: string): void {
+    void this.audio.listen(bookId);
+  }
+
+  coverFor(url: string | undefined): string | null {
+    return proxyImageUrl(url);
+  }
+
+  percent(progress: number): number {
+    return Math.round(progress * 100);
+  }
+
   ngOnInit(): void {
     this.headerService.clearAll();
+    void this.audio.loadPositions(true);
     this.loadSeries();
     this.loadStreak();
   }
