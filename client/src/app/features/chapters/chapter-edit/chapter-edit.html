@@ -56,6 +56,22 @@
             (entitySelected)="onEntityEditRequest($event)" />
         }
         <div class="top-bar-actions">
+          @if (!bookMode() && chapter()) {
+            <div class="chapter-nav" role="group" aria-label="Chapter navigation">
+              <button mat-icon-button type="button" (click)="goToAdjacentChapter('prev')"
+                [disabled]="!adjacent().prev"
+                [attr.aria-label]="adjacent().prev ? 'Previous chapter: ' + (adjacent().prev!.title || 'Untitled') : 'No previous chapter'"
+                [matTooltip]="adjacent().prev ? 'Previous: ' + (adjacent().prev!.title || 'Untitled') : ''">
+                <mat-icon>chevron_left</mat-icon>
+              </button>
+              <button mat-icon-button type="button" (click)="goToAdjacentChapter('next')"
+                [disabled]="!adjacent().next"
+                [attr.aria-label]="adjacent().next ? 'Next chapter: ' + (adjacent().next!.title || 'Untitled') : 'No next chapter'"
+                [matTooltip]="adjacent().next ? 'Next: ' + (adjacent().next!.title || 'Untitled') : ''">
+                <mat-icon>chevron_right</mat-icon>
+              </button>
+            </div>
+          }
           @if (viewportWide()) {
             <mat-button-toggle-group class="mode-toggle" hideSingleSelectionIndicator
               aria-label="Editing view"

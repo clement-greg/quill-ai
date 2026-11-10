@@ -56,3 +56,9 @@
   overflow: hidden;
   text-overflow: ellipsis;
 }
+
+/* ── Previous / next chapter (chapter view) ──────────── */
+.chapter-nav {
+  display: inline-flex;
+  align-items: center;
+}
