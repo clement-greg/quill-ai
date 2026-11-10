@@ -37,10 +37,15 @@ enum QuillAPI {
         _ = try await authorizedPOST("/api/thoughts", body: ["content": text])
     }
 
-    /// Asks Quill a question and returns the spoken-style answer.
-    static func ask(_ question: String) async throws -> String {
+    /// Asks Quill a question and returns the spoken-style answer. `history` is
+    /// the conversation so far, so follow-ups are answered in context.
+    static func ask(_ question: String, history: [VoiceTurn] = []) async throws -> String {
         struct Answer: Decodable { let answer: String }
-        let data = try await authorizedPOST("/api/chat-sessions/voice", body: ["question": question])
+        let body: [String: Any] = [
+            "question": question,
+            "messages": history.map { ["role": $0.role.rawValue, "content": $0.content] },
+        ]
+        let data = try await authorizedPOST("/api/chat-sessions/voice", body: body)
         return try JSONDecoder().decode(Answer.self, from: data).answer
     }
 
@@ -63,7 +68,7 @@ enum QuillAPI {
         return pair.token
     }
 
-    private static func authorizedPOST(_ path: String, body: [String: String]) async throws -> Data {
+    private static func authorizedPOST(_ path: String, body: [String: Any]) async throws -> Data {
         let token = try await accessToken()
         let (data, response) = try await post(path, body: body, token: token)
         guard (200..<300).contains(response.statusCode) else {
@@ -72,7 +77,7 @@ enum QuillAPI {
         return data
     }
 
-    private static func post(_ path: String, body: [String: String], token: String?) async throws -> (Data, HTTPURLResponse) {
+    private static func post(_ path: String, body: [String: Any], token: String?) async throws -> (Data, HTTPURLResponse) {
         var request = URLRequest(url: AppConfig.baseURL.appendingPathComponent(path))
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")

@@ -17,12 +17,14 @@ struct SaveThoughtIntent: AppIntent {
     }
 }
 
-/// "Hey Siri, ask Quill AI" → Siri asks for the question and reads the answer.
-/// Covers finding thoughts too ("what was my thought about bandaids?").
+/// "Hey Siri, ask Quill AI" → Siri asks for the question, reads the answer, and
+/// asks "Anything else?". Follow-ups stay in this conversation (answered with
+/// the earlier turns as context) until the author says something like "no" or
+/// "that's all", or stops replying. Covers finding thoughts too.
 struct AskQuillIntent: AppIntent {
     static let title: LocalizedStringResource = "Ask Quill"
     static let description = IntentDescription(
-        "Asks Quill about your story, characters, or saved thoughts and reads the answer."
+        "Asks Quill about your story, characters, or saved thoughts, reads the answer, and takes follow-up questions."
     )
     static let openAppWhenRun = false
 
@@ -30,7 +32,28 @@ struct AskQuillIntent: AppIntent {
     var question: String
 
     func perform() async throws -> some IntentResult & ProvidesDialog & ReturnsValue<String> {
-        let answer = try await QuillAPI.ask(question)
+        var history: [VoiceTurn] = []
+        var current = question
+        var answer = ""
+
+        for turn in 1...Conversation.maxTurns {
+            answer = try await QuillAPI.ask(current, history: history)
+            history += [VoiceTurn(role: .user, content: current), VoiceTurn(role: .assistant, content: answer)]
+            if turn == Conversation.maxTurns { break }
+
+            // Read the answer and keep listening, still inside Quill rather than Siri.
+            let reply: String
+            do {
+                reply = try await $question.requestValue(IntentDialog(stringLiteral: "\(answer) Anything else?"))
+            } catch {
+                // No reply, or the author dismissed Siri: the answer has already been read.
+                return .result(value: answer, dialog: "")
+            }
+            if Conversation.isClosing(reply) {
+                return .result(value: answer, dialog: "Okay.")
+            }
+            current = reply
+        }
         return .result(value: answer, dialog: IntentDialog(stringLiteral: answer))
     }
 }
