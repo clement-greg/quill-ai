@@ -44,7 +44,7 @@ device builds load the hosted site (`AppConfig.swift`).
 3. **Open the project:** `open ios/QuillAI.xcodeproj`
 4. **Pick your team:** select the **QuillAI** project in the left sidebar →
    **QuillAI** target → **Signing & Capabilities** → *Team* → your team. If Xcode
-   says the bundle identifier is taken, change `app.quillai.ios` to something
+   says the bundle identifier is taken, change `com.elevatehomescriptions.quillai` to something
    unique to you (e.g. `com.yourname.quillai`) there and in `project.yml`.
 
 ## Running it

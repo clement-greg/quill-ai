@@ -71,6 +71,8 @@
 	<string>Quill AI uses your photos when you add one to a chat or an entity.</string>
 	<key>NSMicrophoneUsageDescription</key>
 	<string>Quill AI uses the microphone when you dictate to Ask Quill.</string>
+	<key>NSSiriUsageDescription</key>
+	<string>Siri can save thoughts to Quill AI and answer questions about your story.</string>
 	<key>NSSpeechRecognitionUsageDescription</key>
 	<string>Quill AI turns your dictation into text for Ask Quill.</string>
 </dict>
