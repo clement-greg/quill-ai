@@ -18,6 +18,7 @@ export const SAVE_INTERVAL_MS = 10_000;
 /** What's loaded in the player, for its header and artwork. */
 export interface NowPlaying {
   bookId: string;
+  seriesId: string;
   title: string;
   /** Proxied cover image URL, ready for an <img>. */
   coverUrl: string | null;
@@ -128,6 +129,7 @@ export class BookAudioService {
       this.flush();
       this.nowPlaying.set({
         bookId,
+        seriesId: book.seriesId,
         title: book.title,
         coverUrl: proxyImageUrl(book.originalUrl ?? book.thumnailUrl),
         chapterArt: art,

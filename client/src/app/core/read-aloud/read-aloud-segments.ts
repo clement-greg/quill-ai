@@ -151,3 +151,14 @@ export function formatDuration(seconds: number): string {
   if (!h) return `${m} min`;
   return m ? `${h} h ${m} min` : `${h} h`;
 }
+
+/** The segment in [start, end) that's playing `seconds` into the queue
+ *  (as given by cumulativeSeconds), clamped to that range. */
+export function segmentAtTime(times: readonly number[], start: number, end: number, seconds: number): number {
+  let index = start;
+  for (let i = start; i < end; i++) {
+    if ((times[i] ?? Infinity) <= seconds) index = i;
+    else break;
+  }
+  return index;
+}

@@ -1,5 +1,5 @@
 import {
-  buildSegments, chapterSpans, cumulativeSeconds, estimateSeconds, findSegmentIndex, formatClock, formatDuration, nextChapterStart, previousChapterStart, sortVoices, splitIntoChunks,
+  buildSegments, chapterSpans, cumulativeSeconds, estimateSeconds, findSegmentIndex, formatClock, formatDuration, segmentAtTime, nextChapterStart, previousChapterStart, sortVoices, splitIntoChunks,
 } from './read-aloud-segments';
 import { ReadAloudVoice } from './read-aloud.model';
 
@@ -126,5 +126,21 @@ describe('time estimates', () => {
     expect(formatDuration(12 * 60)).toBe('12 min');
     expect(formatDuration(3 * 3600 + 600)).toBe('3 h 10 min');
     expect(formatDuration(7200)).toBe('2 h');
+  });
+});
+
+describe('segmentAtTime', () => {
+  const times = [0, 10, 25, 40, 50]; // four segments
+
+  it('finds the segment playing at a time', () => {
+    expect(segmentAtTime(times, 0, 4, 0)).toBe(0);
+    expect(segmentAtTime(times, 0, 4, 9.9)).toBe(0);
+    expect(segmentAtTime(times, 0, 4, 10)).toBe(1);
+    expect(segmentAtTime(times, 0, 4, 39)).toBe(2);
+  });
+
+  it('stays within the given range', () => {
+    expect(segmentAtTime(times, 1, 3, 0)).toBe(1);
+    expect(segmentAtTime(times, 1, 3, 49)).toBe(2);
   });
 });

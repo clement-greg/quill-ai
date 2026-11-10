@@ -3,16 +3,27 @@
 }
 
 .bp {
+  /* The chapter panel and the Chapters button that opens it share this surface. */
+  --bp-panel: var(--mat-sys-surface-container-high);
+  --bp-panel-radius: 16px;
+  /* Where the panel sits: under the header, down to the top of the button. */
+  --bp-head-height: 56px;
+  --bp-toggle-height: 40px;
+  --bp-pad: 20px;
+
+  position: relative;
   display: flex;
   flex-direction: column;
   gap: 12px;
-  padding: 8px 20px 20px;
+  padding: 8px var(--bp-pad) var(--bp-pad);
   max-height: 100%;
   box-sizing: border-box;
   color: var(--mat-sys-on-surface);
 }
 
 .bp-head {
+  position: relative;
+  z-index: 3;
   display: flex;
   align-items: center;
   gap: 4px;
@@ -22,18 +33,84 @@
 .bp-head-title {
   flex: 1 1 0;
   min-width: 0;
+  display: flex;
+  justify-content: center;
   margin: 0;
   padding: 0;
-  text-align: center;
   font: var(--mat-sys-title-small);
-  color: var(--mat-sys-on-surface-variant);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
 
   &::before {
     display: none;
   }
+}
+
+/* The book title doubles as the book picker's tab. */
+.bp-books-toggle {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  /* Leaves room for the inside curves either side when open. */
+  max-width: calc(100% - 2 * var(--bp-panel-radius));
+  height: 48px;
+  padding: 0 8px 0 14px;
+  border: 0;
+  border-radius: 24px;
+  background: transparent;
+  color: var(--mat-sys-on-surface-variant);
+  font: inherit;
+  cursor: pointer;
+  transition: background-color 200ms ease, border-radius 200ms ease;
+
+  &:hover {
+    background-color: var(--mat-sys-surface-container);
+  }
+
+  &:focus-visible {
+    outline: 2px solid var(--mat-sys-primary);
+    outline-offset: -2px;
+  }
+
+  mat-icon {
+    flex: none;
+    font-size: 20px;
+    width: 20px;
+    height: 20px;
+  }
+
+  &.is-open {
+    background-color: var(--bp-panel);
+    border-radius: var(--bp-panel-radius) var(--bp-panel-radius) 0 0;
+    color: var(--mat-sys-on-surface);
+
+    /* Inside curves where the tab meets the panel's top edge. */
+    &::before,
+    &::after {
+      content: '';
+      position: absolute;
+      bottom: 0;
+      width: var(--bp-panel-radius);
+      height: var(--bp-panel-radius);
+      pointer-events: none;
+    }
+
+    &::before {
+      left: calc(-1 * var(--bp-panel-radius));
+      background: radial-gradient(circle at 0 0, transparent calc(var(--bp-panel-radius) - 0.5px), var(--bp-panel) var(--bp-panel-radius));
+    }
+
+    &::after {
+      right: calc(-1 * var(--bp-panel-radius));
+      background: radial-gradient(circle at 100% 0, transparent calc(var(--bp-panel-radius) - 0.5px), var(--bp-panel) var(--bp-panel-radius));
+    }
+  }
+}
+
+.bp-books-toggle-text {
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .bp-art {
@@ -62,11 +139,181 @@
   }
 }
 
-.bp-chapters {
-  height: min(300px, 70vw, 38vh);
+/* Panels that cover the player, each attached to the control that opened it. */
+.bp-panel {
+  position: absolute;
+  z-index: 2;
+  left: var(--bp-pad);
+  right: var(--bp-pad);
   overflow-y: auto;
-  border-radius: 12px;
-  background: var(--mat-sys-surface-container);
+  overscroll-behavior: contain;
+  background: var(--bp-panel);
+  box-shadow: 0 8px 24px rgb(0 0 0 / 0.18);
+}
+
+.bp-panel-note {
+  display: flex;
+  justify-content: center;
+  margin: 0;
+  padding: 32px 16px;
+  color: var(--mat-sys-on-surface-variant);
+}
+
+.bp-books {
+  top: var(--bp-head-height);
+  /* Stops just above the bottom row, which stays usable. */
+  bottom: calc(var(--bp-pad) + var(--bp-toggle-height) + 8px);
+  border-radius: var(--bp-panel-radius);
+  padding: 4px 0;
+}
+
+.bp-series {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  min-height: 44px;
+  padding: 8px 16px 8px 10px;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: var(--mat-sys-title-small);
+  text-align: left;
+  cursor: pointer;
+
+  &:hover {
+    background: var(--mat-sys-surface-container-highest);
+  }
+
+  &:focus-visible {
+    outline: 2px solid var(--mat-sys-primary);
+    outline-offset: -2px;
+  }
+}
+
+.bp-series-chevron {
+  flex: none;
+  color: var(--mat-sys-on-surface-variant);
+  transition: transform 160ms ease;
+
+  &.is-open {
+    transform: rotate(90deg);
+  }
+}
+
+.bp-series-title {
+  flex: 1 1 0;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.bp-series-count {
+  flex: none;
+  font: var(--mat-sys-body-small);
+  color: var(--mat-sys-on-surface-variant);
+}
+
+.bp-book-list {
+  list-style: none;
+  margin: 0 0 4px;
+  padding: 0;
+}
+
+.bp-book {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  min-height: 56px;
+  padding: 6px 16px 6px 42px;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+
+  &:hover:not(:disabled) {
+    background: var(--mat-sys-surface-container-highest);
+  }
+
+  &:focus-visible {
+    outline: 2px solid var(--mat-sys-primary);
+    outline-offset: -2px;
+  }
+
+  &:disabled {
+    cursor: progress;
+  }
+
+  &.is-current {
+    color: var(--mat-sys-primary);
+
+    .bp-book-title {
+      font-weight: 600;
+    }
+  }
+}
+
+.bp-book-cover {
+  flex: none;
+  width: 40px;
+  height: 40px;
+  border-radius: 8px;
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--mat-sys-surface-container-highest);
+  color: var(--mat-sys-on-surface-variant);
+
+  img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+  }
+}
+
+.bp-book-text {
+  flex: 1 1 0;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.bp-book-title,
+.bp-book-status {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.bp-book-status {
+  font-size: 12px;
+  color: var(--mat-sys-on-surface-variant);
+}
+
+.bp-book-now {
+  flex: none;
+  font-size: 20px;
+  width: 20px;
+  height: 20px;
+}
+
+.bp-book-error {
+  margin: 0;
+  padding: 0 16px 8px 94px;
+  font-size: 12px;
+  color: var(--mat-sys-error);
+}
+
+.bp-chapters {
+  top: var(--bp-head-height);
+  bottom: calc(var(--bp-pad) + var(--bp-toggle-height));
+  /* Square bottom-right corner: that's where it joins the button. */
+  border-radius: var(--bp-panel-radius) var(--bp-panel-radius) 0 var(--bp-panel-radius);
 
   ol {
     list-style: none;
@@ -90,7 +337,7 @@
   cursor: pointer;
 
   &:hover {
-    background: var(--mat-sys-surface-container-high);
+    background: var(--mat-sys-surface-container-highest);
   }
 
   &:focus-visible {
@@ -216,8 +463,97 @@
 }
 
 .bp-footer {
+  position: relative;
+  z-index: 3;
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 8px;
+}
+
+/* The Chapters button doubles as the open panel's tab. */
+.bp-chapters-toggle {
+  position: relative;
+  height: var(--bp-toggle-height);
+  transition: background-color 200ms ease, border-radius 200ms ease;
+
+  &.is-open {
+    background-color: var(--bp-panel);
+    border-radius: 0 0 var(--bp-panel-radius) var(--bp-panel-radius);
+
+    /* Inside curve where the panel's bottom edge meets the tab. */
+    &::before {
+      content: '';
+      position: absolute;
+      top: 0;
+      left: calc(-1 * var(--bp-panel-radius));
+      width: var(--bp-panel-radius);
+      height: var(--bp-panel-radius);
+      background: radial-gradient(circle at 0 100%, transparent calc(var(--bp-panel-radius) - 0.5px), var(--bp-panel) var(--bp-panel-radius));
+      pointer-events: none;
+    }
+  }
+}
+
+/* Grows up and out of the button, and folds back into it. */
+.bp-chapters--enter {
+  animation: bp-chapters-open 260ms cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+.bp-chapters--leave {
+  animation: bp-chapters-open 180ms cubic-bezier(0.4, 0, 1, 1) reverse forwards;
+}
+
+@keyframes bp-chapters-open {
+  from {
+    clip-path: inset(calc(100% - 4px) 0 0 65% round var(--bp-panel-radius) var(--bp-panel-radius) 0 var(--bp-panel-radius));
+    opacity: 0.4;
+  }
+  to {
+    clip-path: inset(0 round var(--bp-panel-radius) var(--bp-panel-radius) 0 var(--bp-panel-radius));
+    opacity: 1;
+  }
+}
+
+/* Drops down out of the book title, and folds back up into it. */
+.bp-books--enter {
+  animation: bp-books-open 260ms cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+.bp-books--leave {
+  animation: bp-books-open 180ms cubic-bezier(0.4, 0, 1, 1) reverse forwards;
+}
+
+@keyframes bp-books-open {
+  from {
+    clip-path: inset(0 30% calc(100% - 4px) 30% round var(--bp-panel-radius));
+    opacity: 0.4;
+  }
+  to {
+    clip-path: inset(0 round var(--bp-panel-radius));
+    opacity: 1;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .bp-chapters--enter,
+  .bp-books--enter {
+    animation: bp-chapters-fade 120ms linear;
+  }
+
+  .bp-chapters--leave,
+  .bp-books--leave {
+    animation: bp-chapters-fade 120ms linear reverse forwards;
+  }
+
+  .bp-chapters-toggle,
+  .bp-books-toggle,
+  .bp-series-chevron {
+    transition: none;
+  }
+}
+
+@keyframes bp-chapters-fade {
+  from { opacity: 0; }
+  to { opacity: 1; }
 }
