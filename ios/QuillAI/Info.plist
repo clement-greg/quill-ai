@@ -20,6 +20,23 @@
 	<string>$(MARKETING_VERSION)</string>
 	<key>CFBundleVersion</key>
 	<string>$(CURRENT_PROJECT_VERSION)</string>
+	<!-- Other names Siri accepts for the app, so "save a thought in Quill" works too.
+	     The hints steer speech recognition away from similar words (e.g. "Quinn"). -->
+	<key>INAlternativeAppNames</key>
+	<array>
+		<dict>
+			<key>INAlternativeAppName</key>
+			<string>Quill</string>
+			<key>INAlternativeAppNamePronunciationHint</key>
+			<string>kwill</string>
+		</dict>
+		<dict>
+			<key>INAlternativeAppName</key>
+			<string>Quill A I</string>
+			<key>INAlternativeAppNamePronunciationHint</key>
+			<string>kwill ay eye</string>
+		</dict>
+	</array>
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
 	<key>UILaunchScreen</key>

@@ -45,6 +45,10 @@ struct QuillShortcuts: AppShortcutsProvider {
                 "Save a thought in \(.applicationName)",
                 "Add a thought to \(.applicationName)",
                 "New \(.applicationName) thought",
+                "Save an idea in \(.applicationName)",
+                "Add an idea to \(.applicationName)",
+                "New \(.applicationName) idea",
+                "Jot something down in \(.applicationName)",
             ],
             shortTitle: "Save a Thought",
             systemImageName: "lightbulb"
@@ -54,7 +58,10 @@ struct QuillShortcuts: AppShortcutsProvider {
             phrases: [
                 "Ask \(.applicationName)",
                 "Ask \(.applicationName) a question",
+                "Ask \(.applicationName) something",
+                "Question for \(.applicationName)",
                 "Search my \(.applicationName) thoughts",
+                "Search \(.applicationName)",
             ],
             shortTitle: "Ask Quill",
             systemImageName: "bubble.left.and.text.bubble.right"
