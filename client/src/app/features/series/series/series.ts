@@ -1,4 +1,4 @@
-import { Component, inject, signal, OnInit, computed } from '@angular/core';
+import { Component, inject, signal, OnInit, computed, effect } from '@angular/core';
 
 interface GreetingContext {
   /** First name, or a warm fallback when no name is available. */
@@ -280,7 +280,7 @@ import { UserSettingsService } from '@app/core/services/user-settings.service';
 import { v4 as uuidv4 } from 'uuid';
 import { SlideOutPanelContainer } from '@app/shared/slide-out-panel-container/slide-out-panel-container';
 import { WritingStatsSummaryComponent } from '@app/features/writing-stats/writing-stats-summary';
-import { OpenTasksTileComponent } from '@app/features/tasks/open-tasks-tile';
+import { TasksService } from '@app/features/tasks/tasks.service';
 
 @Component({
   selector: 'app-series',
@@ -299,7 +299,6 @@ import { OpenTasksTileComponent } from '@app/features/tasks/open-tasks-tile';
     TextFieldModule,
     SlideOutPanelContainer,
     WritingStatsSummaryComponent,
-    OpenTasksTileComponent,
   ],
   templateUrl: './series.html',
   styleUrl: './series.scss',
@@ -312,6 +311,21 @@ export class SeriesComponent implements OnInit {
   private headerService = inject(HeaderService);
   private http = inject(HttpClient);
   readonly userSettings = inject(UserSettingsService);
+  private tasksService = inject(TasksService);
+
+  /** Open-task count shown as a badge on the Explore "Tasks" tile (0 hides it). */
+  readonly openTaskCount = signal(0);
+
+  constructor() {
+    // Load now, and again whenever a task changes elsewhere in the app.
+    effect(() => {
+      this.tasksService.changes();
+      this.tasksService.summary(1).subscribe({
+        next: (s) => this.openTaskCount.set(s.open),
+        error: () => this.openTaskCount.set(0),
+      });
+    });
+  }
 
   readonly recentChapters = this.recentChaptersService.recentChapters;
 

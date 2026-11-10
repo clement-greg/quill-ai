@@ -275,6 +275,28 @@
   }
 }
 
+.feature-card {
+  position: relative;
+}
+
+.feature-card-badge {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  min-width: 22px;
+  height: 22px;
+  padding: 0 7px;
+  border-radius: 11px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--mat-sys-primary);
+  color: var(--mat-sys-on-primary);
+  font-size: 0.75rem;
+  font-weight: 600;
+  line-height: 1;
+}
+
 .feature-card-icon {
   font-size: 28px;
   width: 28px;
