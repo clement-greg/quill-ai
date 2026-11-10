@@ -202,6 +202,16 @@
   opacity: 0.4;
 }
 
+/* Desktop: the author can tuck the sidebar away for a full-width editor.
+   Hidden rather than removed so its tabs keep their state. (The mobile
+   bottom sheet below overrides this — collapse is a desktop-only choice.) */
+.workspace.sidebar-collapsed {
+  .panel-resizer,
+  .sidebar-panel {
+    display: none;
+  }
+}
+
 /* ── Sidebar panel (AI / Notes / History tabs) ───────── */
 .sidebar-panel {
   flex-shrink: 0;
@@ -1196,6 +1206,10 @@ button.mobile-only {
     border-radius: 16px 16px 0 0;
     transform: translateY(100%);
     transition: transform 0.25s ease;
+  }
+
+  .workspace.sidebar-collapsed .sidebar-panel {
+    display: flex;
   }
 
   .sidebar-panel.mobile-sidebar-open {

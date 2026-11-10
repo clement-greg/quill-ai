@@ -110,6 +110,13 @@
               <span class="dirty-count">{{ dirtyChapterIds().size }}</span>
             }
           </button>
+          <button mat-icon-button type="button" class="sidebar-toggle desktop-only"
+            (click)="toggleSidebarCollapsed()" [disabled]="!chapter()"
+            [attr.aria-pressed]="!sidebarCollapsed()"
+            [attr.aria-label]="sidebarCollapsed() ? 'Show side panel' : 'Hide side panel'"
+            [matTooltip]="sidebarCollapsed() ? 'Show side panel' : 'Hide side panel'">
+            <mat-icon>{{ sidebarCollapsed() ? 'right_panel_open' : 'right_panel_close' }}</mat-icon>
+          </button>
           <button mat-icon-button [matMenuTriggerFor]="chapterMenu" title="More options" [disabled]="!chapter()">
             <mat-icon>more_vert</mat-icon>
           </button>
@@ -134,7 +141,7 @@
       </div>
 
       @if (chapter()) {
-        <div class="workspace">
+        <div class="workspace" [class.sidebar-collapsed]="sidebarCollapsed()">
 
           <!-- Rich text editor -->
           <div class="editor-panel">

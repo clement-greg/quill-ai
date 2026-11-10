@@ -71,6 +71,7 @@ import { BookEditorComponent, BookChapter, ChapterSplitEvent } from '../book-edi
 import { BookTextIndex, countMatches, firstMatchFrom, locateMatch } from '../book-editor/book-search';
 import { forkJoin, Subscription, map } from 'rxjs';
 import { v4 as uuidv4 } from 'uuid';
+import { readSidebarCollapsed, writeSidebarCollapsed } from './sidebar-collapse';
 import { adjacentChapters, ChapterNavItem } from './chapter-nav';
 
 @Component({
@@ -277,6 +278,9 @@ export class ChapterEditComponent implements OnInit, OnDestroy {
   mobileSidebarOpen = signal(false);
   sidebarTabIndex = signal(0);
   sidebarWidth = signal(350);
+  /** Desktop only: the author has tucked the sidebar away to give the editor
+   *  the full width. Open by default; the choice is remembered. */
+  sidebarCollapsed = signal(false);
 
   // ── Quill Editor (AI review pass) ─────────────────────────────────────────
   /** Index of the "Quill Editor" sidebar tab. */
@@ -385,6 +389,7 @@ export class ChapterEditComponent implements OnInit, OnDestroy {
   ngOnInit(): void {
     document.addEventListener('keydown', this.onDocumentKeyDown);
     this.loadSidebarWidth();
+    this.loadSidebarCollapsed();
     this.initSubscriptions();
 
     window.addEventListener('resize', this.onWindowResize);
@@ -2104,6 +2109,7 @@ export class ChapterEditComponent implements OnInit, OnDestroy {
    *  left as the author had it — same as starting a Quill review — because
    *  sliding it up unprompted would cover the chapter they're reading. */
   private openFactCheckPanel(): void {
+    this.setSidebarCollapsed(false);
     this.onSidebarTabChange(ChapterEditComponent.FACT_CHECK_TAB);
   }
 
@@ -2214,6 +2220,7 @@ export class ChapterEditComponent implements OnInit, OnDestroy {
     }
     this.quillPanel()?.resetDecorations();
     this.editorRef.setEditable(false);
+    this.setSidebarCollapsed(false);
     this.onSidebarTabChange(ChapterEditComponent.QUILL_REVIEW_TAB);
     void this.editorReview.run(chapter.id, blocks);
   }
@@ -2250,6 +2257,20 @@ export class ChapterEditComponent implements OnInit, OnDestroy {
   activateSidebarTab(index: number): void {
     if (this.mobileSidebarOpen() && this.sidebarTabIndex() === index) this.mobileSidebarOpen.set(false);
     else { this.onSidebarTabChange(index); this.mobileSidebarOpen.set(true); }
+  }
+
+  toggleSidebarCollapsed(): void {
+    this.setSidebarCollapsed(!this.sidebarCollapsed());
+  }
+
+  setSidebarCollapsed(collapsed: boolean): void {
+    if (this.sidebarCollapsed() === collapsed) return;
+    this.sidebarCollapsed.set(collapsed);
+    writeSidebarCollapsed(localStorage, collapsed);
+  }
+
+  private loadSidebarCollapsed(): void {
+    this.sidebarCollapsed.set(readSidebarCollapsed(localStorage));
   }
 
   private static readonly SIDEBAR_STORAGE_KEY = 'chapter-edit-sidebar-width';
