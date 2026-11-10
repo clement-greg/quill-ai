@@ -37,6 +37,19 @@
 			<string>kwill ay eye</string>
 		</dict>
 	</array>
+	<key>QuillKeychainGroup</key>
+	<string>$(AppIdentifierPrefix)com.elevatehomescriptions.quillai.shared</string>
+	<key>CFBundleURLTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleURLName</key>
+			<string>com.elevatehomescriptions.quillai.links</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>quillaiapp</string>
+			</array>
+		</dict>
+	</array>
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
 	<key>UILaunchScreen</key>

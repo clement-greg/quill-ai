@@ -20,6 +20,10 @@ targets:
     platform: iOS
     sources:
       - path: QuillAI
+      - path: Shared
+    dependencies:
+      - target: QuillAIWidgets
+        embed: true
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.elevatehomescriptions.quillai
@@ -29,6 +33,21 @@ targets:
         INFOPLIST_FILE: QuillAI/Info.plist
         CODE_SIGN_ENTITLEMENTS: QuillAI/QuillAI.entitlements
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+  QuillAIWidgets:
+    type: app-extension
+    platform: iOS
+    sources:
+      - path: QuillAIWidgets
+      - path: Shared
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.elevatehomescriptions.quillai.widgets
+        PRODUCT_NAME: QuillAIWidgets
+        TARGETED_DEVICE_FAMILY: "1,2"
+        GENERATE_INFOPLIST_FILE: NO
+        INFOPLIST_FILE: QuillAIWidgets/Info.plist
+        CODE_SIGN_ENTITLEMENTS: QuillAIWidgets/QuillAIWidgets.entitlements
+        SKIP_INSTALL: YES
   QuillAITests:
     type: bundle.unit-test
     platform: iOS

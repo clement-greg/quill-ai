@@ -49,6 +49,23 @@ enum QuillAPI {
         return try JSONDecoder().decode(Answer.self, from: data).answer
     }
 
+    /// Writing activity for the last `days` days, bucketed in the phone's time zone.
+    static func writingStats(days: Int) async throws -> WritingStatsResponse {
+        let token = try await accessToken()
+        var components = URLComponents(url: AppConfig.baseURL.appendingPathComponent("/api/user-stats/writing"), resolvingAgainstBaseURL: false)!
+        components.queryItems = [
+            URLQueryItem(name: "days", value: String(days)),
+            URLQueryItem(name: "tz", value: TimeZone.current.identifier),
+        ]
+        var request = URLRequest(url: components.url!)
+        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        let (data, response) = try await session.data(for: request)
+        guard let http = response as? HTTPURLResponse, http.statusCode == 200 else {
+            throw QuillAPIError.server(message(from: data, fallback: "Couldn't load writing stats."))
+        }
+        return try JSONDecoder().decode(WritingStatsResponse.self, from: data)
+    }
+
     // MARK: - Plumbing
 
     /// Trades the stored refresh token for a short-lived access token, storing

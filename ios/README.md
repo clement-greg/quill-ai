@@ -12,6 +12,11 @@ website in a `WKWebView`; the Swift code only adds what a web page can't do:
     thought about bandaids?").
   - Both also appear in the Shortcuts app and Spotlight, and can be assigned to the
     Action button.
+- **Writing Stats widgets.** Home Screen widgets in three sizes (small: net words,
+  streak and a mini chart; medium: the headline numbers beside a chart; large:
+  the Writing Stats page in miniature, best day highlighted) plus Lock Screen
+  widgets (streak, today's words, a one-line summary). Each widget can show 7,
+  30 or 90 days (long-press → Edit Widget). Tapping one opens Writing Stats.
 - **Google sign-in.** Google blocks sign-in inside embedded web views, so the app
   signs in through Apple's sign-in sheet (`GoogleSignIn.swift`), the same idea
   the desktop app uses with the system browser.
@@ -23,9 +28,11 @@ website in a `WKWebView`; the Swift code only adds what a web page can't do:
 | Web view and the `window.quillNative` bridge | `QuillAI/WebView.swift` |
 | Bridge, web side (sign-in, sharing the session) | `client/src/app/core/native/quill-native.ts` |
 | Sign-in sheet hand-off (`/login?nativeCallback=quillai`) | `QuillAI/GoogleSignIn.swift`, `client/src/app/features/login/login.ts` |
-| Refresh token for Siri, in the Keychain | `QuillAI/SessionStore.swift` |
+| Refresh token for Siri and widgets, in a Keychain group shared with the widget extension | `Shared/SessionStore.swift` |
 | Siri commands | `QuillAI/QuillIntents.swift` |
-| API calls Siri makes | `QuillAI/QuillAPI.swift`: `POST /api/thoughts`, `POST /api/chat-sessions/voice` |
+| Widgets: data, layouts | `QuillAIWidgets/`, `Shared/StatsWidgetViews.swift`, `Shared/WritingStats.swift` (`GET /api/user-stats/writing`) |
+| Code used by both the app and the widget extension | `Shared/` |
+| API calls outside the web view | `Shared/QuillAPI.swift`: `POST /api/thoughts`, `POST /api/chat-sessions/voice`, `GET /api/user-stats/writing` |
 
 When you sign in, the web app passes its refresh token to the native side.
 Siri commands exchange it for a fresh access token at `/api/auth/refresh` and
@@ -33,7 +40,7 @@ store the rotated token, so Siri keeps working as long as it's used at least
 once every 30 days (or you open the app). Signing out in the app clears it.
 
 Simulator builds load `http://localhost:6258` (run `npm run dev` first);
-device builds load the hosted site (`AppConfig.swift`).
+device builds load the hosted site (`Shared/AppConfig.swift`).
 
 ## One-time setup
 
@@ -83,6 +90,13 @@ cd ios && TEST_RUNNER_QUILL_LIVE_TESTS=1 xcodebuild test -project QuillAI.xcodep
 The live test asks a read-only question and prints the answer Siri would
 speak. Without `TEST_RUNNER_QUILL_LIVE_TESTS=1` it is skipped and only the
 offline tests run. In Xcode, ⌘U runs the offline tests.
+
+Widget layouts can be checked without a phone: the snapshot test renders each
+one with sample data to PNGs.
+
+```bash
+cd ios && TEST_RUNNER_QUILL_SNAPSHOT_DIR=/tmp/quill-widgets xcodebuild test -project QuillAI.xcodeproj -scheme QuillAI -destination 'platform=iOS Simulator,name=iPhone 18 Pro' -only-testing:QuillAITests/WidgetSnapshotTests
+```
 
 ## Changing the project
 
