@@ -1,5 +1,5 @@
 import {
-  buildSegments, findSegmentIndex, nextChapterStart, previousChapterStart, sortVoices, splitIntoChunks,
+  buildSegments, chapterSpans, cumulativeSeconds, estimateSeconds, findSegmentIndex, formatClock, formatDuration, nextChapterStart, previousChapterStart, sortVoices, splitIntoChunks,
 } from './read-aloud-segments';
 import { ReadAloudVoice } from './read-aloud.model';
 
@@ -85,5 +85,46 @@ describe('sortVoices', () => {
       v('Nat', 'en_GB', 'premium'), v('Ava', 'en-US', 'premium'), v('Eve', 'en-AU', 'enhanced'),
     ], 'en-US');
     expect(sorted.map(x => x.id)).toEqual(['Ava', 'Nat', 'Eve', 'Amy', 'Zed']);
+  });
+});
+
+describe('chapterSpans', () => {
+  it('gives each chapter its start and (exclusive) end in the queue', () => {
+    const spans = chapterSpans(buildSegments(BOOK));
+    expect(spans.map(s => [s.chapterId, s.start, s.end])).toEqual([['a', 0, 3], ['b', 3, 6], ['c', 6, 7]]);
+    expect(spans[1]!.title).toBe('Untitled chapter');
+  });
+
+  it('is empty for an empty queue', () => {
+    expect(chapterSpans([])).toEqual([]);
+  });
+});
+
+describe('time estimates', () => {
+  const seg = (text: string, blockIndex = 0) =>
+    ({ chapterId: 'a', chapterIndex: 0, chapterTitle: 'A', blockIndex, text });
+
+  it('scales with word count and pauses longer after titles', () => {
+    expect(estimateSeconds(seg('one two three'.repeat(1)))).toBeCloseTo(3 * 60 / 170 + 0.25);
+    expect(estimateSeconds(seg('Title', -1))).toBeCloseTo(60 / 170 + 0.6);
+    expect(estimateSeconds(seg('   '))).toBeCloseTo(0.25);
+  });
+
+  it('accumulates running totals', () => {
+    const totals = cumulativeSeconds([seg('a b'), seg('c')]);
+    expect(totals).toHaveLength(3);
+    expect(totals[0]).toBe(0);
+    expect(totals[2]).toBeCloseTo(3 * 60 / 170 + 0.5);
+  });
+
+  it('formats clocks and durations', () => {
+    expect(formatClock(0)).toBe('0:00');
+    expect(formatClock(245)).toBe('4:05');
+    expect(formatClock(3729)).toBe('1:02:09');
+    expect(formatClock(-5)).toBe('0:00');
+    expect(formatDuration(20)).toBe('under a minute');
+    expect(formatDuration(12 * 60)).toBe('12 min');
+    expect(formatDuration(3 * 3600 + 600)).toBe('3 h 10 min');
+    expect(formatDuration(7200)).toBe('2 h');
   });
 });

@@ -24,6 +24,8 @@ const VOICE_KEY = 'quill_read_aloud_voice';
 
 export interface ReadAloudStartOptions {
   bookTitle: string;
+  /** The book being read, so its listening position can be remembered. */
+  bookId?: string;
   /** Chapter to start in (defaults to the first). */
   chapterId?: string;
   /** Paragraph to start at within that chapter; omitted or -1 starts with the chapter title. */
@@ -45,6 +47,10 @@ export class ReadAloudService {
   readonly voiceId = signal<string | null>(this.storage?.getItem(this.voiceKey()) ?? null);
   readonly voices = signal<ReadAloudVoice[]>([]);
   readonly error = signal<string | null>(null);
+  /** The book loaded in the player (null when it isn't a whole book, or nothing is loaded). */
+  readonly bookId = signal<string | null>(null);
+  /** Reading reached the end of the queue. */
+  readonly finished = signal(false);
 
   /** True while a queue is loaded (the player bar is showing). */
   readonly active = computed(() => this.segments().length > 0);
@@ -61,14 +67,13 @@ export class ReadAloudService {
   private bookTitle = '';
   /** Set when the position, voice or speed changed while paused, so resume replays from `index`. */
   private restartOnResume = false;
-  private finished = false;
   private voicesLoaded = false;
 
   constructor() {
     this.engine?.setListener({
       progress: index => this.index.set(index),
       state: state => {
-        if (state === 'idle' && this.active()) this.finished = true;
+        if (state === 'idle' && this.active()) this.finished.set(true);
         this.state.set(state);
       },
       error: message => this.error.set(message),
@@ -86,6 +91,7 @@ export class ReadAloudService {
     const segments = buildSegments(chapters);
     if (!segments.length) return;
     this.bookTitle = options.bookTitle;
+    this.bookId.set(options.bookId ?? null);
     this.segments.set(segments);
     const index = options.chapterId ? findSegmentIndex(segments, options.chapterId, options.blockIndex) : 0;
     this.playFrom(index);
@@ -97,7 +103,7 @@ export class ReadAloudService {
     const state = this.state();
     if (state === 'playing') this.engine.pause();
     else if (state === 'paused' && !this.restartOnResume) this.engine.resume();
-    else this.playFrom(this.finished ? 0 : this.index());
+    else this.playFrom(this.finished() ? 0 : this.index());
   }
 
   /** Stops and closes the player. */
@@ -108,7 +114,8 @@ export class ReadAloudService {
     this.state.set('idle');
     this.error.set(null);
     this.restartOnResume = false;
-    this.finished = false;
+    this.finished.set(false);
+    this.bookId.set(null);
   }
 
   seek(index: number): void {
@@ -119,7 +126,7 @@ export class ReadAloudService {
       this.playFrom(target);
     } else {
       this.index.set(target);
-      this.finished = false;
+      this.finished.set(false);
       this.restartOnResume = true;
     }
   }
@@ -169,7 +176,7 @@ export class ReadAloudService {
     if (!this.engine) return;
     this.index.set(index);
     this.error.set(null);
-    this.finished = false;
+    this.finished.set(false);
     this.restartOnResume = false;
     this.engine.play({
       segments: this.segments(),

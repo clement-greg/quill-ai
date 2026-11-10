@@ -103,12 +103,6 @@
               </button>
             </mat-menu>
           }
-          @if (readAloud.supported && chapter()) {
-            <button mat-icon-button type="button" (click)="startReadAloud()"
-              aria-label="Read aloud from the cursor" matTooltip="Read aloud from the cursor">
-              <mat-icon>headphones</mat-icon>
-            </button>
-          }
           <button mat-flat-button (click)="save()" [disabled]="saving() || !chapter()"
             [attr.aria-label]="bookMode() && dirtyChapterIds().size ? 'Save ' + dirtyChapterIds().size + ' changed chapters' : null">
             {{ saving() ? 'Saving…' : 'Save' }}

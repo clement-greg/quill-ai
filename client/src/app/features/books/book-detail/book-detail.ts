@@ -1,4 +1,4 @@
-import { Component, inject, signal, OnInit, OnDestroy, ElementRef, Injector, afterNextRender, effect } from '@angular/core';
+import { Component, computed, inject, signal, OnInit, OnDestroy, ElementRef, Injector, afterNextRender, effect } from '@angular/core';
 import { ActivatedRoute, Router } from '@angular/router';
 import { HttpClient } from '@angular/common/http';
 import { FormsModule } from '@angular/forms';
@@ -28,6 +28,8 @@ import { BookNotesComponent } from '../book-notes/book-notes';
 import { AiStatsComponent } from './ai-stats/ai-stats';
 import { ChapterOutlineComponent } from '@app/features/chapters/chapter-edit/chapter-outline/chapter-outline';
 import { OutlineItem } from '@shared/models/chapter.model';
+import { BookAudioService } from '../book-audio/book-audio.service';
+import { ReadAloudService } from '@app/core/read-aloud/read-aloud.service';
 
 @Component({
   selector: 'app-book-detail',
@@ -62,6 +64,31 @@ export class BookDetailComponent implements OnInit, OnDestroy {
   private entityService = inject(EntityService);
 
   private http = inject(HttpClient);
+  private readAloud = inject(ReadAloudService);
+  readonly audio = inject(BookAudioService);
+
+  /** Where the reader left off listening to this book, if anywhere. */
+  readonly listenPosition = computed(() => {
+    const id = this.book()?.id;
+    const pos = id ? this.audio.positionFor(id) : null;
+    return pos && !pos.finished ? pos : null;
+  });
+  readonly listenPercent = computed(() => Math.round((this.listenPosition()?.progress ?? 0) * 100));
+  private readonly listenLoaded = computed(() => {
+    const id = this.book()?.id;
+    return !!id && this.audio.isLoaded(id);
+  });
+  readonly listenIcon = computed(() => (this.listenLoaded() && this.readAloud.state() === 'playing' ? 'headphones' : 'play_arrow'));
+  readonly listenLabel = computed(() => {
+    if (this.listenLoaded()) return this.readAloud.state() === 'playing' ? 'Now playing' : 'Continue';
+    return this.listenPosition() ? 'Resume' : 'Listen';
+  });
+
+  /** Plays the book from where the reader left off (or from the start). */
+  listen(fromStart = false): void {
+    const id = this.book()?.id;
+    if (id) void this.audio.listen(id, { fromStart });
+  }
 
   book = signal<Book | null>(null);
   chapterList = signal<Chapter[]>([]);
@@ -140,6 +167,7 @@ export class BookDetailComponent implements OnInit, OnDestroy {
   readonly rightPanelWidth = 420;
 
   ngOnInit(): void {
+    void this.audio.loadPositions();
     this.routeSub = this.route.paramMap.subscribe(params => {
       const id = params.get('id')!;
       this.loadBook(id);

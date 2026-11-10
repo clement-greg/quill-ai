@@ -53,11 +53,6 @@ export function blockRange(root: Node, anchor: BlockAnchor): Range | null {
   return range;
 }
 
-/** Index of the block containing node (e.g. the caret), or -1. */
-export function blockIndexOf(root: Node, blocks: readonly ContentBlock[], node: Node): number {
-  return blocks.findIndex(b => blockRange(root, b.anchor)?.intersectsNode(node));
-}
-
 function collectBlocks(parent: Node, path: number[], out: ContentBlock[]): void {
   const nodes = Array.from(parent.childNodes);
   let runStart = -1;

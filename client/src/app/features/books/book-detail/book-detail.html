@@ -15,7 +15,28 @@
         }
         <div class="hero-overlay">
 
-          <h1 class="hero-title">{{ book()!.title }}</h1>
+          <div class="hero-text">
+            <h1 class="hero-title">{{ book()!.title }}</h1>
+            @if (audio.supported && chapterList().length > 0) {
+              <div class="listen-row">
+                <button mat-flat-button class="listen-btn" (click)="listen()" [disabled]="audio.loading() === book()!.id">
+                  <mat-icon>{{ listenIcon() }}</mat-icon>
+                  {{ listenLabel() }}
+                </button>
+                @if (listenPosition(); as pos) {
+                  @if (!audio.isLoaded(book()!.id)) {
+                    <span class="listen-where">{{ pos.chapterTitle }} · {{ listenPercent() }}%</span>
+                    <button mat-button class="listen-restart" (click)="listen(true)">Start over</button>
+                  }
+                }
+              </div>
+              @if (audio.error(); as err) {
+                @if (err.bookId === book()!.id) {
+                  <p class="listen-error" role="alert">{{ err.message }}</p>
+                }
+              }
+            }
+          </div>
           <button mat-icon-button class="edit-button" (click)="openEditBook()">
             <mat-icon>edit</mat-icon>
           </button>

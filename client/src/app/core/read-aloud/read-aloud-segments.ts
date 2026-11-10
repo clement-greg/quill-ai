@@ -96,3 +96,58 @@ export function sortVoices(voices: readonly ReadAloudVoice[], language: string):
       Number(b.lang.toLowerCase().replace('_', '-') === exact) - Number(a.lang.toLowerCase().replace('_', '-') === exact) ||
       a.name.localeCompare(b.name));
 }
+
+/** A chapter's run of segments in the queue: [start, end). */
+export interface ChapterSpan {
+  chapterIndex: number;
+  chapterId: string;
+  title: string;
+  start: number;
+  end: number;
+}
+
+/** The queue's chapters in order, with where each starts and ends. */
+export function chapterSpans(segments: readonly ReadAloudSegment[]): ChapterSpan[] {
+  const spans: ChapterSpan[] = [];
+  segments.forEach((s, i) => {
+    const last = spans.at(-1);
+    if (last && last.chapterIndex === s.chapterIndex) last.end = i + 1;
+    else spans.push({ chapterIndex: s.chapterIndex, chapterId: s.chapterId, title: s.chapterTitle, start: i, end: i + 1 });
+  });
+  return spans;
+}
+
+/** Roughly how fast the voices speak at 1×; only used for time estimates. */
+const WORDS_PER_MINUTE = 170;
+
+/** Estimated seconds to speak a segment at 1×, including the pause after it. */
+export function estimateSeconds(segment: ReadAloudSegment): number {
+  const words = segment.text.split(/\s+/).filter(Boolean).length;
+  return (words * 60) / WORDS_PER_MINUTE + (segment.blockIndex < 0 ? 0.6 : 0.25);
+}
+
+/** Running totals of estimated time: entry i is the time before segment i; the last is the total. */
+export function cumulativeSeconds(segments: readonly ReadAloudSegment[]): number[] {
+  const out = [0];
+  for (const s of segments) out.push(out[out.length - 1]! + estimateSeconds(s));
+  return out;
+}
+
+/** "4:05", or "1:02:09" past an hour. */
+export function formatClock(seconds: number): string {
+  const total = Math.max(0, Math.round(seconds));
+  const h = Math.floor(total / 3600);
+  const m = Math.floor((total % 3600) / 60);
+  const s = String(total % 60).padStart(2, '0');
+  return h ? `${h}:${String(m).padStart(2, '0')}:${s}` : `${m}:${s}`;
+}
+
+/** "3 h 10 min", "12 min", "under a minute". */
+export function formatDuration(seconds: number): string {
+  const minutes = Math.round(seconds / 60);
+  if (minutes < 1) return 'under a minute';
+  const h = Math.floor(minutes / 60);
+  const m = minutes % 60;
+  if (!h) return `${m} min`;
+  return m ? `${h} h ${m} min` : `${h} h`;
+}

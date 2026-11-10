@@ -57,9 +57,9 @@ import { MentionedEntitiesPanelComponent } from './mentioned-entities-panel';
 import { VersionHistoryPanelComponent } from './version-history-panel/version-history-panel';
 import { ConfirmDialogComponent } from '@app/shared/confirm-dialog/confirm-dialog';
 import { MoveTextDialogComponent, MoveTextDialogData, MoveTextDialogResult } from './move-text-dialog';
-import { blockIndexOf, collectContentBlocks, insertHtmlAtAnchor } from './chapter-content-blocks';
+import { insertHtmlAtAnchor } from './chapter-content-blocks';
 import { ReadAloudService } from '@app/core/read-aloud/read-aloud.service';
-import { ReadAloudChapter, ReadAloudSegment } from '@app/core/read-aloud/read-aloud.model';
+import { ReadAloudSegment } from '@app/core/read-aloud/read-aloud.model';
 import { findReadAloudRange, revealRange, setReadAloudHighlight } from '@app/core/read-aloud/read-aloud-highlight';
 import { TasksService } from '@app/features/tasks/tasks.service';
 import {
@@ -69,7 +69,7 @@ import {
 } from '@app/features/tasks/task-fulfillment-dialog';
 import { BookEditorComponent, BookChapter, ChapterSplitEvent } from '../book-editor/book-editor';
 import { BookTextIndex, countMatches, firstMatchFrom, locateMatch } from '../book-editor/book-search';
-import { firstValueFrom, forkJoin, Subscription, map } from 'rxjs';
+import { forkJoin, Subscription, map } from 'rxjs';
 import { v4 as uuidv4 } from 'uuid';
 import { adjacentChapters, ChapterNavItem } from './chapter-nav';
 
@@ -126,7 +126,7 @@ export class ChapterEditComponent implements OnInit, OnDestroy {
   private recentChapters = inject(RecentChaptersService);
   private factCheckService = inject(FactCheckService);
   private factCheckReports = inject(FactCheckReportService);
-  readonly readAloud = inject(ReadAloudService);
+  private readonly readAloud = inject(ReadAloudService);
   /** Public so the template can read the streamed review suggestions. */
   readonly editorReview = inject(EditorReviewService);
   private routeSub?: Subscription;
@@ -520,57 +520,6 @@ export class ChapterEditComponent implements OnInit, OnDestroy {
    *  from "the author browsed to another chapter". */
   private readAloudFollowing: string | null = null;
   private readAloudSeq = 0;
-
-  /** Reads the book aloud from the paragraph at the caret (or the chapter's start). */
-  async startReadAloud(): Promise<void> {
-    const current = this.chapter();
-    if (!current || !this.readAloud.supported) return;
-    this.readAloud.prime();
-    const el = this.editorRef?.getEditorElement();
-    const caret = document.getSelection()?.anchorNode;
-    const blockIndex = el && caret && el.contains(caret) && caret !== el
-      ? blockIndexOf(el, collectContentBlocks(el), caret)
-      : -1;
-    const chapters = await this.readAloudChapters(current);
-    if (this.destroyed || this.chapter()?.id !== current.id) return;
-    this.readAloudFollowing = current.id;
-    this.readAloud.start(chapters, {
-      bookTitle: this.headerBase?.book.title ?? '',
-      chapterId: current.id,
-      blockIndex: blockIndex >= 0 ? blockIndex : null,
-    });
-  }
-
-  /** Every chapter of the book in reading order, with live editor content and
-   *  pending drafts; just this chapter if the rest can't be loaded. */
-  private async readAloudChapters(current: Chapter): Promise<ReadAloudChapter[]> {
-    const live = (id: string) => this.bookMode()
-      ? this.bookEditor()?.editorFor(id)?.getContent()
-      : (id === current.id ? this.editorRef?.getContent() : undefined);
-    if (this.bookMode() && this.bookChapters().length) {
-      return this.bookChapters().map(c => ({
-        id: c.id,
-        title: c.id === current.id ? current.title : c.title,
-        html: live(c.id) ?? this.bookSlots.get(c.id)?.content ?? c.content ?? '',
-      }));
-    }
-    const self: ReadAloudChapter = { id: current.id, title: current.title, html: live(current.id) ?? current.content ?? '' };
-    if (!current.bookId) return [self];
-    try {
-      const list = await firstValueFrom(this.chapterService.getByBook(current.bookId));
-      const sorted = list
-        .filter(c => !c.archived)
-        .sort((a, b) => (a.sortOrder ?? Infinity) - (b.sortOrder ?? Infinity));
-      if (!sorted.some(c => c.id === current.id)) return [self];
-      return await Promise.all(sorted.map(async c => {
-        if (c.id === current.id) return self;
-        const draft = await this.draftService.resolvePendingDraft(c);
-        return { id: c.id, title: c.title, html: draft?.content ?? c.content ?? '' };
-      }));
-    } catch {
-      return [self];
-    }
-  }
 
   private async followReadAloud(segment: ReadAloudSegment | null, chapterId: string | undefined): Promise<void> {
     const seq = ++this.readAloudSeq;
