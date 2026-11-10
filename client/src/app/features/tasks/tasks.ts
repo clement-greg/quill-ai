@@ -34,7 +34,7 @@ import { SlideOutPanelContainer } from '@app/shared/slide-out-panel-container/sl
 import { TasksService, dueLabel, formatTaskDate, localToday } from './tasks.service';
 import { TaskBodyComponent } from './task-body';
 
-/** Remembers the last book a task was filed under, as the default for the next one. */
+/** Remembers the last book a task was filed under: the fallback default when nothing has been edited. */
 const LAST_BOOK_KEY = 'quill.tasks.lastBookId';
 
 @Component({
@@ -76,6 +76,8 @@ export class TasksComponent implements OnInit {
   tasks = signal<TaskListItem[]>([]);
   total = signal(0);
   books = signal<TaskBookOption[]>([]);
+  /** The book the author last edited a chapter in: the default for a new task. */
+  lastEditedBookId = signal<string | null>(null);
   status = signal<TaskStatusFilter>('open');
   bookFilter = signal<string>('');
   searchText = signal('');
@@ -151,6 +153,7 @@ export class TasksComponent implements OnInit {
           this.tasks.set(page.items);
           this.total.set(page.total);
           this.books.set(page.books);
+          this.lastEditedBookId.set(page.lastEditedBookId ?? null);
           this.loading.set(false);
           this.loaded.set(true);
         },
@@ -256,6 +259,8 @@ export class TasksComponent implements OnInit {
   private defaultBookId(): string {
     const books = this.books();
     if (this.bookFilter()) return this.bookFilter();
+    const recent = this.lastEditedBookId();
+    if (recent && books.some(b => b.id === recent)) return recent;
     let remembered = '';
     try {
       remembered = localStorage.getItem(LAST_BOOK_KEY) ?? '';

@@ -104,6 +104,49 @@ export function matchBookByTitle(books: TaskBookOption[], name: string): TaskBoo
   return best && best.score >= 0.5 ? best.book : null;
 }
 
+/** Newest version snapshots checked when looking for the last-edited book. */
+const RECENT_EDIT_SCAN = 25;
+
+/**
+ * The book the owner most recently edited, among `books`: the book of their
+ * newest chapter save (version snapshot), else of their most recently modified
+ * chapter. Used as the default book when a task doesn't name one. Null when
+ * they haven't edited anything in these books.
+ */
+export async function lastEditedBookId(owner: string, books: TaskBookOption[]): Promise<string | null> {
+  if (!books.length) return null;
+  const owned = new Set(books.map(b => b.id));
+  const chapters = getContainer('chapters');
+  try {
+    const { resources: versions } = await getContainer('chapter-versions')
+      .items.query<{ chapterId: string }>(withOwnerFilter(owner, {
+        query:
+          `SELECT TOP ${RECENT_EDIT_SCAN} c.chapterId FROM c ` +
+          'WHERE (NOT IS_DEFINED(c.docType) OR c.docType = @docType) ORDER BY c.savedAt DESC',
+        parameters: [{ name: '@docType', value: 'version' }],
+      }))
+      .fetchAll();
+    const tried = new Set<string>();
+    for (const { chapterId } of versions) {
+      if (!chapterId || tried.has(chapterId)) continue;
+      tried.add(chapterId);
+      const { resource } = await chapters.item(chapterId, chapterId).read<{ bookId?: string }>().catch(() => ({ resource: undefined }));
+      if (resource?.bookId && owned.has(resource.bookId)) return resource.bookId;
+    }
+  } catch (err) {
+    console.warn('tasks: could not read recent chapter saves:', err);
+  }
+  try {
+    const { resources } = await chapters
+      .items.query<{ bookId?: string }>(withOwnerFilter(owner, `SELECT TOP 50 c.bookId FROM c WHERE ${NOT_HIDDEN} ORDER BY c.modifiedAt DESC`))
+      .fetchAll();
+    return resources.find(c => c.bookId && owned.has(c.bookId))?.bookId ?? null;
+  } catch (err) {
+    console.warn('tasks: could not read recent chapters:', err);
+    return null;
+  }
+}
+
 // ── Storage ──────────────────────────────────────────────────────────────────
 
 /** All of the owner's non-deleted tasks, optionally for one book. */

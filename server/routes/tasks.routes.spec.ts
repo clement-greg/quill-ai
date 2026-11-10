@@ -50,7 +50,15 @@ function seed(): void {
   );
   fake.container('chapters').seed(
     { id: 'ch-1', title: 'Arrival', bookId: 'book-1', sortOrder: 1, owner: USER_A },
-    { id: 'ch-2', title: 'Flood', bookId: 'book-1', sortOrder: 2, owner: USER_A },
+    { id: 'ch-2', title: 'Flood', bookId: 'book-1', sortOrder: 2, owner: USER_A, modifiedAt: '2026-01-01T00:00:00Z' },
+    { id: 'ch-cobalt', title: 'Cobalt opener', bookId: 'book-2', sortOrder: 1, owner: USER_A, modifiedAt: '2025-01-01T00:00:00Z' },
+    { id: 'ch-bob', title: 'Bob chapter', bookId: 'book-b', owner: USER_B },
+  );
+  fake.container('chapter-versions').seed(
+    { id: 'v-old', chapterId: 'ch-2', savedAt: '2026-01-01T00:00:00Z', owner: USER_A },
+    { id: 'v-new', chapterId: 'ch-cobalt', savedAt: '2026-02-01T00:00:00Z', owner: USER_A },
+    { id: 'v-report', docType: 'fact-check-report', chapterId: 'ch-2', savedAt: '2026-03-01T00:00:00Z', owner: USER_A },
+    { id: 'v-bob', chapterId: 'ch-bob', savedAt: '2026-04-01T00:00:00Z', owner: USER_B },
   );
   fake.container('thought-items').seed(
     { id: 'thought-1', content: 'Just a thought', owner: USER_A },
@@ -77,6 +85,7 @@ describe('GET /api/tasks', () => {
     expect(ids(res.body)).toEqual(['task-late', 'task-soon', 'task-undated']);
     expect(res.body.items[0].bookTitle).toBe('Lithium');
     expect(res.body.books.map((b: { title: string }) => b.title)).toEqual(['Cobalt', 'Lithium']);
+    expect(res.body.lastEditedBookId).toBe('book-2');
   });
 
   it('filters by status, book and search words', async () => {
@@ -225,7 +234,20 @@ describe('POST /api/tasks/voice', () => {
     expect(res.body.spoken).toContain('Lithium');
   });
 
-  it('asks for the book when it can’t tell, then uses the named one', async () => {
+  it('files an unnamed book under the one last edited (newest chapter save, reports ignored)', async () => {
+    llmReturns({ title: 'Name the ferry', book: null, dueDate: null });
+    const res = await request(app).post('/api/tasks/voice').send({ text: 'name the ferry' });
+    expect(res.body.saved).toBe(true);
+    expect(res.body.task.bookId).toBe('book-2');
+    expect(res.body.spoken).toContain('Cobalt');
+  });
+
+  it('falls back to the most recently modified chapter, then asks when nothing was edited', async () => {
+    fake.container('chapter-versions').clear();
+    llmReturns({ title: 'Name the ferry', book: null, dueDate: null });
+    expect((await request(app).post('/api/tasks/voice').send({ text: 'name the ferry' })).body.task.bookId).toBe('book-1');
+
+    fake.container('chapters').clear();
     llmReturns({ title: 'Name the ferry', book: null, dueDate: null });
     const ask = await request(app).post('/api/tasks/voice').send({ text: 'name the ferry' });
     expect(ask.body).toMatchObject({ saved: false, needsBook: true, books: ['Cobalt', 'Lithium'] });
@@ -233,5 +255,10 @@ describe('POST /api/tasks/voice', () => {
     llmReturns({ title: 'Name the ferry', book: null, dueDate: null });
     const saved = await request(app).post('/api/tasks/voice').send({ text: 'name the ferry', bookName: 'cobalt' });
     expect(saved.body.task.bookId).toBe('book-2');
+  });
+
+  it('a named book beats the last-edited one', async () => {
+    llmReturns({ title: 'Name the ferry', book: 'B2', dueDate: null });
+    expect((await request(app).post('/api/tasks/voice').send({ text: 'name the ferry in lithium' })).body.task.bookId).toBe('book-1');
   });
 });

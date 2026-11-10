@@ -59,6 +59,8 @@ export interface TaskPage {
   total: number;
   /** The caller's books, for the book picker and filter. */
   books: TaskBookOption[];
+  /** The book the caller last edited a chapter in: the default for a new task. */
+  lastEditedBookId?: string | null;
 }
 
 /** Response of `GET /api/tasks/summary`, for the home tile and Siri. */

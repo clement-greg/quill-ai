@@ -3,6 +3,7 @@ import { getContainer } from '../services/cosmos';
 import {
   createTask,
   findFulfilledTasks,
+  lastEditedBookId,
   linkTaskBody,
   listTaskBooks,
   matchBookByTitle,
@@ -54,6 +55,7 @@ router.get('/', async (req: Request, res: Response) => {
       items: withBookTitles(matching.slice(offset, offset + limit), books),
       total: matching.length,
       books,
+      lastEditedBookId: await lastEditedBookId(owner, books),
     };
     res.json(page);
   } catch (err) {
@@ -131,7 +133,13 @@ router.post('/voice', async (req: Request, res: Response) => {
       return;
     }
     const named = typeof req.body?.bookName === 'string' ? matchBookByTitle(books, req.body.bookName) : null;
-    const book = named ?? books.find(b => b.id === parsed.bookId) ?? (books.length === 1 ? books[0] : undefined);
+    // No book named: assume the one the author last edited.
+    const recentId = named || parsed.bookId ? null : await lastEditedBookId(owner, books);
+    const book =
+      named ??
+      books.find(b => b.id === parsed.bookId) ??
+      books.find(b => b.id === recentId) ??
+      (books.length === 1 ? books[0] : undefined);
     if (!book) {
       res.json({
         saved: false,

@@ -5,6 +5,7 @@
 import { Request } from 'express';
 import {
   createTask,
+  lastEditedBookId,
   listTaskBooks,
   matchBookByTitle,
   matchesTaskSearch,
@@ -44,7 +45,8 @@ export function taskGuidance(req: Request): string {
     '(or use the /task command), call create_task: a short imperative "title", any further detail in "body" ' +
     'in their words (mention characters and chapters by name — they get linked automatically), "bookName" ' +
     'when they name a book, and "dueDate" as YYYY-MM-DD resolved against today when they give a date ' +
-    '("Friday" is the coming Friday). If the tool says it needs a book, ask which one. When they ask what ' +
+    '("Friday" is the coming Friday). Don\'t ask which book when they don\'t name one: the tool files it under the ' +
+    'book they last edited. If the tool says it needs a book, ask which one. When they ask what ' +
     'tasks they have, what is due or overdue, or about a particular task, call find_tasks and show each as a ' +
     'markdown link using its "link" exactly, with its book and due date. When they say they finished or did ' +
     'a task, call find_tasks to identify it if needed, then complete_task with its "id"; if several could ' +
@@ -111,6 +113,13 @@ function getCreateTaskTool(req: Request, ctx: TaskChatContext): TaskChatTool {
         const inSeries = books.filter(b => b.seriesId === ctx.seriesId);
         if (inSeries.length === 1) book = inSeries[0];
       }
+      // Nothing named or in scope: assume the book the author last edited.
+      let assumed = false;
+      if (!book) {
+        const recentId = await lastEditedBookId(owner, books);
+        book = books.find(b => b.id === recentId);
+        assumed = !!book;
+      }
       if (!book && books.length === 1) book = books[0];
       if (!book) {
         return { toolResult: { saved: false, needsBook: true, message: `Which book is this task for? Their books: ${bookChoices(books)}.` } };
@@ -126,6 +135,7 @@ function getCreateTaskTool(req: Request, ctx: TaskChatContext): TaskChatTool {
             saved: true,
             task: taskView(task, books, todayIn(requestTimeZone(req))),
             message: `Task added to ${book.title}. Confirm briefly, linking it with "link".` +
+              (assumed ? ` No book was named, so it went under ${book.title}, the book they last edited; say so in a few words.` : '') +
               (rawDue && !dueDate ? ' The due date was not a valid date and was left off; tell the author.' : ''),
           },
           success: true,

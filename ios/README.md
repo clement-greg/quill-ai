@@ -12,7 +12,8 @@ website in a `WKWebView`; the Swift code only adds what a web page can't do:
     thought about bandaids?").
   - *"Hey Siri, add a task in Quill AI"*: Siri asks "What's the task?" and adds
     it. Say the book and due date in the same breath ("tighten the flood scene in
-    Lithium by Friday"); if Quill can't tell the book, Siri asks which one.
+    Lithium by Friday"). With no book named, it goes under the book you last
+    edited; Siri only asks which book if you haven't edited one yet.
   - *"Hey Siri, what's on my Quill AI task list?"*: reads how many tasks are open,
     how many are overdue, and the next few. "Ask Quill AI" also answers task
     questions ("what's due this week?", "I finished the flood scene").

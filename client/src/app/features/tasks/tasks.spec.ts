@@ -112,6 +112,13 @@ describe('TasksComponent', () => {
     expect(c.showPanel()).toBe(false);
   });
 
+  it('defaults a new task to the book last edited', () => {
+    page = { ...page, lastEditedBookId: 'b2' };
+    const fixture = create();
+    fixture.componentInstance.openNew();
+    expect(fixture.componentInstance.form.controls.bookId.value).toBe('b2');
+  });
+
   it('defaults a new task to the filtered book', () => {
     const fixture = create();
     const c = fixture.componentInstance;
