@@ -181,6 +181,19 @@
   pointer-events: none;
   z-index: 5;
   white-space: nowrap;
+
+  // Arrow pointing right at the hovered spot on the minimap (the popup is
+  // vertically centered on the cursor, so 50% lines up with it).
+  &::after {
+    content: '';
+    position: absolute;
+    top: 50%;
+    left: 100%;
+    transform: translateY(-50%);
+    border: 7px solid transparent;
+    border-left-color: var(--mat-sys-inverse-surface, #303030);
+    border-right-width: 0;
+  }
 }
 
 .book-minimap-popup-page {
