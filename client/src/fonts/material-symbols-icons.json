@@ -190,6 +190,8 @@
   "remove_circle_outline",
   "resize",
   "restart_alt",
+  "right_panel_close",
+  "right_panel_open",
   "road",
   "route",
   "save",
