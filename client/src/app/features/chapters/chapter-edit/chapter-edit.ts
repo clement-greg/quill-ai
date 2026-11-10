@@ -68,6 +68,7 @@ import { BookEditorComponent, BookChapter, ChapterSplitEvent } from '../book-edi
 import { BookTextIndex, countMatches, firstMatchFrom, locateMatch } from '../book-editor/book-search';
 import { forkJoin, Subscription, map } from 'rxjs';
 import { v4 as uuidv4 } from 'uuid';
+import { adjacentChapters, ChapterNavItem } from './chapter-nav';
 
 @Component({
   selector: 'app-chapter-edit',
@@ -149,6 +150,9 @@ export class ChapterEditComponent implements OnInit, OnDestroy {
     this.analyzingChapter() || this.noteInputVisible(),
   );
   private urlSyncTimer: ReturnType<typeof setTimeout> | null = null;
+  /** The book's chapters in reading order, for the previous / next buttons. */
+  private readonly bookChapterList = signal<ChapterNavItem[]>([]);
+  readonly adjacent = computed(() => adjacentChapters(this.bookChapterList(), this.chapter()?.id));
   private headerBase: {
     series: { id: string; title: string };
     seriesItems: { label: string; link: string; isCurrent: boolean }[];
@@ -458,6 +462,9 @@ export class ChapterEditComponent implements OnInit, OnDestroy {
                   bookItems: filteredBooks.map(b => ({ label: b.title, link: '/books/' + b.id, isCurrent: b.id === book.id })),
                   chapters: sortedChapters.map(c => ({ id: c.id, title: c.title })),
                 };
+                this.bookChapterList.set(sortedChapters
+                  .filter(c => !c.archived)
+                  .map(c => ({ id: c.id, title: c.title })));
                 this.updateHeader();
               },
             });
@@ -494,6 +501,16 @@ export class ChapterEditComponent implements OnInit, OnDestroy {
   }
 
   // ── Full-book mode ───────────────────────────────────────────────────────
+
+  /** Moves to the previous or next chapter of the book, keeping any unsaved
+   *  work in this one as a draft. */
+  async goToAdjacentChapter(direction: 'prev' | 'next'): Promise<void> {
+    const target = this.adjacent()[direction];
+    if (!target || this.bookMode()) return;
+    await this.persistSingleDraft();
+    if (this.destroyed) return;
+    void this.router.navigate(['/chapters', target.id, 'edit']);
+  }
 
   /** Switches between single-chapter and full-book editing. */
   setBookMode(on: boolean): void {
