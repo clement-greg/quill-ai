@@ -11,13 +11,25 @@
 		3C820FA8A44AACDA7FA97212 /* WebView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5137CFAA2F0B9ABC30F62D12 /* WebView.swift */; };
 		6D38E0E0FA439EB7724721B2 /* AppConfig.swift in Sources */ = {isa = PBXBuildFile; fileRef = DCFD1FF2EB4765E10B735C20 /* AppConfig.swift */; };
 		88A5A3650ADDC94B63CA798C /* QuillAPI.swift in Sources */ = {isa = PBXBuildFile; fileRef = 587D0AE9E8A8DA3E9D0265EC /* QuillAPI.swift */; };
+		93146E22098238A25D134A28 /* QuillAITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = E43D65CD5014B5E050ED3CC2 /* QuillAITests.swift */; };
 		980170CCBD09455A4C93EEBD /* QuillAIApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = F08D2D498DE9040FF29121C5 /* QuillAIApp.swift */; };
 		CA2CC9A7A2C6F92C6507498E /* SessionStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 996FCDD69EADAC0C99CBD489 /* SessionStore.swift */; };
 		D031E00D50D0CB60159513E6 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 7735F5D7AF8B8DDBC3EAF5FA /* Assets.xcassets */; };
 		EC1EF49A277FDCB23C6B19F8 /* GoogleSignIn.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A98BFE85F390884560CC377 /* GoogleSignIn.swift */; };
 /* End PBXBuildFile section */
 
+/* Begin PBXContainerItemProxy section */
+		B94E84C45A985AF2CB2FB7AB /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = EEF222CB25A76FFBF6949CBB /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 3F8595EA126C3788268F72C2;
+			remoteInfo = QuillAI;
+		};
+/* End PBXContainerItemProxy section */
+
 /* Begin PBXFileReference section */
+		276436283B098196162BBC71 /* QuillAITests.xctest */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.cfbundle; path = QuillAITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		2A98BFE85F390884560CC377 /* GoogleSignIn.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GoogleSignIn.swift; sourceTree = "<group>"; };
 		4D9570B9B2B5ED699775A40E /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
 		5137CFAA2F0B9ABC30F62D12 /* WebView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WebView.swift; sourceTree = "<group>"; };
@@ -27,10 +39,19 @@
 		A90EC633E83383A25B27FDF9 /* QuillIntents.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QuillIntents.swift; sourceTree = "<group>"; };
 		BD24F852D3A4DC0CCED360AC /* QuillAI.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = QuillAI.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		DCFD1FF2EB4765E10B735C20 /* AppConfig.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppConfig.swift; sourceTree = "<group>"; };
+		E43D65CD5014B5E050ED3CC2 /* QuillAITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QuillAITests.swift; sourceTree = "<group>"; };
 		F08D2D498DE9040FF29121C5 /* QuillAIApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QuillAIApp.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXGroup section */
+		28C439DD6D85C684C7E5A408 /* QuillAITests */ = {
+			isa = PBXGroup;
+			children = (
+				E43D65CD5014B5E050ED3CC2 /* QuillAITests.swift */,
+			);
+			path = QuillAITests;
+			sourceTree = "<group>";
+		};
 		4C05429A1EAB02701368B30F /* QuillAI */ = {
 			isa = PBXGroup;
 			children = (
@@ -51,6 +72,7 @@
 			isa = PBXGroup;
 			children = (
 				BD24F852D3A4DC0CCED360AC /* QuillAI.app */,
+				276436283B098196162BBC71 /* QuillAITests.xctest */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -59,6 +81,7 @@
 			isa = PBXGroup;
 			children = (
 				4C05429A1EAB02701368B30F /* QuillAI */,
+				28C439DD6D85C684C7E5A408 /* QuillAITests */,
 				620DEC07E4490E6187FA0C1E /* Products */,
 			);
 			sourceTree = "<group>";
@@ -84,6 +107,24 @@
 			productReference = BD24F852D3A4DC0CCED360AC /* QuillAI.app */;
 			productType = "com.apple.product-type.application";
 		};
+		F0252D5529D77F7799237E19 /* QuillAITests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = F890B2E7E4CF1F6AF72B385E /* Build configuration list for PBXNativeTarget "QuillAITests" */;
+			buildPhases = (
+				D443EDFEFA7AF374951B0FB9 /* Sources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				85B818984A8367C5F93FDBA7 /* PBXTargetDependency */,
+			);
+			name = QuillAITests;
+			packageProductDependencies = (
+			);
+			productName = QuillAITests;
+			productReference = 276436283B098196162BBC71 /* QuillAITests.xctest */;
+			productType = "com.apple.product-type.bundle.unit-test";
+		};
 /* End PBXNativeTarget section */
 
 /* Begin PBXProject section */
@@ -94,6 +135,10 @@
 				LastUpgradeCheck = 1430;
 				TargetAttributes = {
 					3F8595EA126C3788268F72C2 = {
+						DevelopmentTeam = "";
+						ProvisioningStyle = Automatic;
+					};
+					F0252D5529D77F7799237E19 = {
 						DevelopmentTeam = "";
 						ProvisioningStyle = Automatic;
 					};
@@ -114,6 +159,7 @@
 			projectRoot = "";
 			targets = (
 				3F8595EA126C3788268F72C2 /* QuillAI */,
+				F0252D5529D77F7799237E19 /* QuillAITests */,
 			);
 		};
 /* End PBXProject section */
@@ -144,9 +190,42 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		D443EDFEFA7AF374951B0FB9 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				93146E22098238A25D134A28 /* QuillAITests.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXSourcesBuildPhase section */
 
+/* Begin PBXTargetDependency section */
+		85B818984A8367C5F93FDBA7 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 3F8595EA126C3788268F72C2 /* QuillAI */;
+			targetProxy = B94E84C45A985AF2CB2FB7AB /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
+
 /* Begin XCBuildConfiguration section */
+		018B0DF52BB35E52D64ED8F8 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				GENERATE_INFOPLIST_FILE = YES;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@loader_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = app.quillai.ios.tests;
+				SDKROOT = iphoneos;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Quill AI.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/Quill AI";
+			};
+			name = Debug;
+		};
 		04646BA74F4AB0324FAF3BE2 /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
@@ -292,6 +371,23 @@
 			};
 			name = Debug;
 		};
+		CCF91D69D138E37F039F681D /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				GENERATE_INFOPLIST_FILE = YES;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@loader_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = app.quillai.ios.tests;
+				SDKROOT = iphoneos;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Quill AI.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/Quill AI";
+			};
+			name = Release;
+		};
 		D84AB8FF193E6B5B6DD13A74 /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
@@ -327,6 +423,15 @@
 			buildConfigurations = (
 				83D6640A13B1CC7F15E12E66 /* Debug */,
 				D84AB8FF193E6B5B6DD13A74 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+		F890B2E7E4CF1F6AF72B385E /* Build configuration list for PBXNativeTarget "QuillAITests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				018B0DF52BB35E52D64ED8F8 /* Debug */,
+				CCF91D69D138E37F039F681D /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Debug;

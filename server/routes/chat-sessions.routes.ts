@@ -121,8 +121,10 @@ const FIND_THOUGHTS_GUIDANCE =
 const VOICE_GUIDANCE =
   '\n\nVOICE REPLY: This conversation is happening through Siri, and your answer will be spoken aloud ' +
   'with nothing shown on screen. This overrides the formatting rules above: reply in one to three short, ' +
-  'plain sentences. No markdown, lists, links, bracketed citation numbers, or emoji. When naming thoughts ' +
-  'you found, say their titles (or a few words of an untitled one) instead of linking them. Keep facts ' +
+  'plain sentences that sound natural read aloud. No markdown, lists, links, bracketed citation numbers, ' +
+  'or emoji. When naming several things, join them in a sentence (e.g. "You have two: Character Quirk, ' +
+  'and one about a French perfume commercial."). Say a thought\'s title, or describe an untitled one in ' +
+  'a few words, instead of linking it. Keep facts ' +
   'grounded in your tools exactly as in a typed chat.';
 
 /** Collects a chat turn's SSE stream into the final answer text, for callers that don't stream. */

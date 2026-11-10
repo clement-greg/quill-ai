@@ -64,6 +64,20 @@ Builds installed this way with a paid developer account last a year. To share
 with others, or to install without Xcode, use TestFlight: Product → Archive →
 Distribute App → TestFlight.
 
+## Testing Siri without a phone
+
+Siri doesn't take voice requests in the Simulator, so `QuillAITests` runs the
+same code a Siri command does, inside the app. Sign in to the app in the
+Simulator once, start the dev server, then:
+
+```bash
+cd ios && TEST_RUNNER_QUILL_LIVE_TESTS=1 xcodebuild test -project QuillAI.xcodeproj -scheme QuillAI -destination 'platform=iOS Simulator,name=iPhone 18 Pro'
+```
+
+The live test asks a read-only question and prints the answer Siri would
+speak. Without `TEST_RUNNER_QUILL_LIVE_TESTS=1` it is skipped and only the
+offline tests run. In Xcode, ⌘U runs the offline tests.
+
 ## Changing the project
 
 `project.yml` is the source of truth for the Xcode project (generated with
