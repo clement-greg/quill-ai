@@ -60,6 +60,12 @@ device builds load the hosted site (`AppConfig.swift`).
      you've signed in once.
   5. Try *"Hey Siri, save a thought in Quill AI."*
 
+If Siri replies "I don't understand" (or tries a contact or the Health app)
+even though **Save a Thought** and **Ask Quill** run fine from Search, make sure
+Apple's **Shortcuts** app is installed. Siri uses it to run other apps'
+commands, and it can be deleted like any other app. Reinstall it from the App
+Store, then open Quill AI once.
+
 Builds installed this way with a paid developer account last a year. To share
 with others, or to install without Xcode, use TestFlight: Product → Archive →
 Distribute App → TestFlight.
