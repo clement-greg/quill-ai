@@ -12,7 +12,43 @@ export interface QuillNative {
    * Siri commands can call the API without the web view; null on sign-out.
    */
   setSession(refreshToken: string | null): void;
+  /**
+   * Read-aloud with the iPhone's own voices. Plays in the background and shows
+   * on the lock screen, Control Center and CarPlay. Absent in older app builds.
+   * The app reports progress with a `quillspeech` window event (NativeSpeechEvent).
+   */
+  speech?: QuillNativeSpeech;
 }
+
+export interface NativeSpeechSegment {
+  text: string;
+  chapterTitle: string;
+  chapterIndex: number;
+}
+
+export interface QuillNativeSpeech {
+  voices(): Promise<{ id: string; name: string; lang: string; quality: 'default' | 'enhanced' | 'premium' }[]>;
+  play(request: {
+    segments: NativeSpeechSegment[];
+    startIndex: number;
+    voiceId: string | null;
+    rate: number;
+    bookTitle: string;
+  }): void;
+  pause(): void;
+  resume(): void;
+  stop(): void;
+  /** Where playback is now (events may be missed while the app is in the background). */
+  status(): Promise<{ index: number; state: 'idle' | 'playing' | 'paused' }>;
+}
+
+export type NativeSpeechEvent =
+  | { type: 'progress'; index: number }
+  | { type: 'state'; state: 'idle' | 'playing' | 'paused' }
+  | { type: 'error'; message: string };
+
+/** Window event the iOS app dispatches with a NativeSpeechEvent as `detail`. */
+export const NATIVE_SPEECH_EVENT = 'quillspeech';
 
 /**
  * The only URL scheme the login page will hand a credential to. Pinned so a

@@ -1,0 +1,111 @@
+:host {
+  position: fixed;
+  left: 50%;
+  bottom: calc(16px + env(safe-area-inset-bottom, 0px));
+  transform: translateX(-50%);
+  z-index: 900;
+  width: min(760px, calc(100vw - 32px));
+  pointer-events: none;
+}
+
+.ra-bar {
+  pointer-events: auto;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 8px 8px 16px;
+  border-radius: 16px;
+  background: var(--mat-sys-surface-container-high);
+  color: var(--mat-sys-on-surface);
+  border: 1px solid var(--mat-sys-outline-variant);
+  box-shadow: 0 6px 24px rgb(0 0 0 / 0.18);
+}
+
+.ra-info {
+  flex: 1 1 0;
+  min-width: 0;
+}
+
+.ra-title {
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.ra-sub {
+  font-size: 12px;
+  color: var(--mat-sys-on-surface-variant);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.ra-error {
+  font-size: 12px;
+  color: var(--mat-sys-error);
+}
+
+.ra-controls,
+.ra-settings {
+  display: flex;
+  align-items: center;
+  flex: none;
+}
+
+.ra-play {
+  min-width: 48px;
+  height: 48px;
+  border-radius: 24px;
+  padding: 0;
+  margin: 0 4px;
+
+  mat-icon {
+    margin: 0;
+    font-size: 28px;
+    width: 28px;
+    height: 28px;
+  }
+}
+
+.ra-rate {
+  min-width: 48px;
+  font-variant-numeric: tabular-nums;
+}
+
+.ra-voice-meta {
+  margin-left: 8px;
+  font-size: 12px;
+  color: var(--mat-sys-on-surface-variant);
+}
+
+.ra-voice-hint {
+  margin: 4px 16px 8px;
+  max-width: 280px;
+  font-size: 12px;
+  line-height: 1.4;
+  color: var(--mat-sys-on-surface-variant);
+}
+
+@media (max-width: 640px) {
+  /* Sit above the Quilly button docked bottom-left (quick-chat.scss). */
+  :host {
+    width: calc(100vw - 16px);
+    bottom: calc(84px + env(safe-area-inset-bottom, 0px));
+  }
+
+  .ra-bar {
+    flex-wrap: wrap;
+    padding: 8px;
+    gap: 0;
+  }
+
+  .ra-info {
+    flex-basis: 100%;
+    padding: 0 8px 4px;
+  }
+
+  .ra-controls {
+    flex: 1 1 auto;
+  }
+}

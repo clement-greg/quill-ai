@@ -80,6 +80,8 @@
   "expand_more",
   "face",
   "fact_check",
+  "fast_forward",
+  "fast_rewind",
   "files",
   "filter",
   "find_replace",
@@ -106,6 +108,7 @@
   "grid_view",
   "group",
   "groups",
+  "headphones",
   "height",
   "help",
   "help_outline",
@@ -198,6 +201,8 @@
   "send",
   "serif",
   "settings",
+  "skip_next",
+  "skip_previous",
   "slideshow",
   "smart_toy",
   "sort",
@@ -250,5 +255,6 @@
   "volume_up",
   "warning",
   "water",
+  "web",
   "width"
 ]

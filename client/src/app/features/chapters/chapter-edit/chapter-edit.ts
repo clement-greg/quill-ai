@@ -57,7 +57,10 @@ import { MentionedEntitiesPanelComponent } from './mentioned-entities-panel';
 import { VersionHistoryPanelComponent } from './version-history-panel/version-history-panel';
 import { ConfirmDialogComponent } from '@app/shared/confirm-dialog/confirm-dialog';
 import { MoveTextDialogComponent, MoveTextDialogData, MoveTextDialogResult } from './move-text-dialog';
-import { insertHtmlAtAnchor } from './chapter-content-blocks';
+import { blockIndexOf, collectContentBlocks, insertHtmlAtAnchor } from './chapter-content-blocks';
+import { ReadAloudService } from '@app/core/read-aloud/read-aloud.service';
+import { ReadAloudChapter, ReadAloudSegment } from '@app/core/read-aloud/read-aloud.model';
+import { findReadAloudRange, revealRange, setReadAloudHighlight } from '@app/core/read-aloud/read-aloud-highlight';
 import { TasksService } from '@app/features/tasks/tasks.service';
 import {
   TaskFulfillmentDialogComponent,
@@ -66,7 +69,7 @@ import {
 } from '@app/features/tasks/task-fulfillment-dialog';
 import { BookEditorComponent, BookChapter, ChapterSplitEvent } from '../book-editor/book-editor';
 import { BookTextIndex, countMatches, firstMatchFrom, locateMatch } from '../book-editor/book-search';
-import { forkJoin, Subscription, map } from 'rxjs';
+import { firstValueFrom, forkJoin, Subscription, map } from 'rxjs';
 import { v4 as uuidv4 } from 'uuid';
 import { adjacentChapters, ChapterNavItem } from './chapter-nav';
 
@@ -123,6 +126,7 @@ export class ChapterEditComponent implements OnInit, OnDestroy {
   private recentChapters = inject(RecentChaptersService);
   private factCheckService = inject(FactCheckService);
   private factCheckReports = inject(FactCheckReportService);
+  readonly readAloud = inject(ReadAloudService);
   /** Public so the template can read the streamed review suggestions. */
   readonly editorReview = inject(EditorReviewService);
   private routeSub?: Subscription;
@@ -368,6 +372,14 @@ export class ChapterEditComponent implements OnInit, OnDestroy {
       const notes = this.notes();
       untracked(() => this.editorBridge.updateChapterOutlineAndNotes(outline, notes));
     });
+
+    // Follow the read-aloud player: highlight the paragraph being read and
+    // move to the next chapter when playback reaches it.
+    effect(() => {
+      const segment = this.readAloud.current();
+      const chapterId = this.chapter()?.id;
+      untracked(() => void this.followReadAloud(segment, chapterId));
+    });
   }
 
   ngOnInit(): void {
@@ -501,6 +513,106 @@ export class ChapterEditComponent implements OnInit, OnDestroy {
   }
 
   // ── Full-book mode ───────────────────────────────────────────────────────
+
+  // ── Read aloud ───────────────────────────────────────────────────────────
+
+  /** Chapter the player was last following here, to tell "playback moved on"
+   *  from "the author browsed to another chapter". */
+  private readAloudFollowing: string | null = null;
+  private readAloudSeq = 0;
+
+  /** Reads the book aloud from the paragraph at the caret (or the chapter's start). */
+  async startReadAloud(): Promise<void> {
+    const current = this.chapter();
+    if (!current || !this.readAloud.supported) return;
+    this.readAloud.prime();
+    const el = this.editorRef?.getEditorElement();
+    const caret = document.getSelection()?.anchorNode;
+    const blockIndex = el && caret && el.contains(caret) && caret !== el
+      ? blockIndexOf(el, collectContentBlocks(el), caret)
+      : -1;
+    const chapters = await this.readAloudChapters(current);
+    if (this.destroyed || this.chapter()?.id !== current.id) return;
+    this.readAloudFollowing = current.id;
+    this.readAloud.start(chapters, {
+      bookTitle: this.headerBase?.book.title ?? '',
+      chapterId: current.id,
+      blockIndex: blockIndex >= 0 ? blockIndex : null,
+    });
+  }
+
+  /** Every chapter of the book in reading order, with live editor content and
+   *  pending drafts; just this chapter if the rest can't be loaded. */
+  private async readAloudChapters(current: Chapter): Promise<ReadAloudChapter[]> {
+    const live = (id: string) => this.bookMode()
+      ? this.bookEditor()?.editorFor(id)?.getContent()
+      : (id === current.id ? this.editorRef?.getContent() : undefined);
+    if (this.bookMode() && this.bookChapters().length) {
+      return this.bookChapters().map(c => ({
+        id: c.id,
+        title: c.id === current.id ? current.title : c.title,
+        html: live(c.id) ?? this.bookSlots.get(c.id)?.content ?? c.content ?? '',
+      }));
+    }
+    const self: ReadAloudChapter = { id: current.id, title: current.title, html: live(current.id) ?? current.content ?? '' };
+    if (!current.bookId) return [self];
+    try {
+      const list = await firstValueFrom(this.chapterService.getByBook(current.bookId));
+      const sorted = list
+        .filter(c => !c.archived)
+        .sort((a, b) => (a.sortOrder ?? Infinity) - (b.sortOrder ?? Infinity));
+      if (!sorted.some(c => c.id === current.id)) return [self];
+      return await Promise.all(sorted.map(async c => {
+        if (c.id === current.id) return self;
+        const draft = await this.draftService.resolvePendingDraft(c);
+        return { id: c.id, title: c.title, html: draft?.content ?? c.content ?? '' };
+      }));
+    } catch {
+      return [self];
+    }
+  }
+
+  private async followReadAloud(segment: ReadAloudSegment | null, chapterId: string | undefined): Promise<void> {
+    const seq = ++this.readAloudSeq;
+    if (!segment || !chapterId) {
+      setReadAloudHighlight(null);
+      if (!segment) this.readAloudFollowing = null;
+      return;
+    }
+    if (segment.chapterId !== chapterId) {
+      setReadAloudHighlight(null);
+      // Only follow if the author was on the chapter that just finished;
+      // if they browsed elsewhere, leave them there.
+      if (this.readAloudFollowing !== chapterId) return;
+      this.readAloudFollowing = segment.chapterId;
+      if (this.bookMode()) {
+        if (!this.bookChapters().some(c => c.id === segment.chapterId)) return;
+        this.bookEditor()?.scrollToChapter(segment.chapterId);
+        this.activateBookChapter(segment.chapterId);
+      } else {
+        await this.persistSingleDraft();
+        if (this.destroyed) return;
+        void this.router.navigate(['/chapters', segment.chapterId, 'edit']);
+      }
+      return;
+    }
+    this.readAloudFollowing = chapterId;
+    // The editor may still be loading this chapter; wait for the paragraph to appear.
+    for (let frame = 0; frame < 90; frame++) {
+      if (seq !== this.readAloudSeq || this.destroyed) return;
+      const el = this.editorRef?.getEditorElement();
+      if (el?.isConnected) {
+        const range = findReadAloudRange(el, segment.blockIndex, segment.text);
+        if (range || segment.blockIndex < 0) {
+          setReadAloudHighlight(range);
+          if (range) revealRange(range);
+          return;
+        }
+      }
+      await new Promise(r => requestAnimationFrame(r));
+    }
+    setReadAloudHighlight(null);
+  }
 
   /** Moves to the previous or next chapter of the book, keeping any unsaved
    *  work in this one as a draft. */
@@ -935,6 +1047,7 @@ export class ChapterEditComponent implements OnInit, OnDestroy {
 
   ngOnDestroy(): void {
     this.destroyed = true;
+    setReadAloudHighlight(null);
     // A run has nowhere to report to once the editor is gone, so abandon it.
     this.factCheckToast?.dismiss();
     this.factCheckService.reset();

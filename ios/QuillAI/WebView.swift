@@ -64,6 +64,13 @@ struct WebView: UIViewRepresentable {
               if (ok) p.resolve(value); else p.reject(new Error(value));
             },
           });
+          var call = function (type) {
+            return new Promise(function (resolve, reject) {
+              var id = ++seq;
+              pending.set(id, { resolve: resolve, reject: reject });
+              post({ type: type, id: id });
+            });
+          };
           window.quillNative = Object.freeze({
             platform: 'ios',
             signInWithGoogle: function () {
@@ -76,6 +83,14 @@ struct WebView: UIViewRepresentable {
             setSession: function (refreshToken) {
               post({ type: 'setSession', refreshToken: refreshToken == null ? null : String(refreshToken) });
             },
+            speech: Object.freeze({
+              voices: function () { return call('speechVoices'); },
+              status: function () { return call('speechStatus'); },
+              play: function (request) { post({ type: 'speechPlay', request: request }); },
+              pause: function () { post({ type: 'speechPause' }); },
+              resume: function () { post({ type: 'speechResume' }); },
+              stop: function () { post({ type: 'speechStop' }); },
+            }),
           });
         })();
         """
@@ -116,6 +131,24 @@ struct WebView: UIViewRepresentable {
             case "signIn":
                 guard let id = body["id"] as? Int else { return }
                 runSignIn(id: id)
+            case "speechPlay":
+                guard let raw = body["request"],
+                      let data = try? JSONSerialization.data(withJSONObject: raw),
+                      let request = try? JSONDecoder().decode(SpeechPlayRequest.self, from: data) else { return }
+                connectSpeech()
+                SpeechController.shared.play(request)
+            case "speechPause":
+                SpeechController.shared.pause()
+            case "speechResume":
+                SpeechController.shared.resume()
+            case "speechStop":
+                SpeechController.shared.stop()
+            case "speechVoices":
+                guard let id = body["id"] as? Int else { return }
+                Task { await settle(id: id, ok: true, value: SpeechController.voices()) }
+            case "speechStatus":
+                guard let id = body["id"] as? Int else { return }
+                Task { await settle(id: id, ok: true, value: SpeechController.shared.status) }
             default:
                 break
             }
@@ -135,7 +168,21 @@ struct WebView: UIViewRepresentable {
             }
         }
 
-        private func settle(id: Int, ok: Bool, value: String) async {
+        /// Sends the speech player's progress to the page as a `quillspeech` event.
+        private func connectSpeech() {
+            SpeechController.shared.onEvent = { [weak self] event in
+                guard let webView = self?.webView else { return }
+                Task {
+                    _ = try? await webView.callAsyncJavaScript(
+                        "window.dispatchEvent(new CustomEvent('quillspeech', { detail: detail }))",
+                        arguments: ["detail": event],
+                        contentWorld: .page
+                    )
+                }
+            }
+        }
+
+        private func settle(id: Int, ok: Bool, value: Any) async {
             _ = try? await webView?.callAsyncJavaScript(
                 "window.__quillNativeSettle(id, ok, value)",
                 arguments: ["id": id, "ok": ok, "value": value],
