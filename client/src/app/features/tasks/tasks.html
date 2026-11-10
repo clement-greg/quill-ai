@@ -1,0 +1,193 @@
+<app-slide-out-panel-container [showRightPanel]="showPanel()" (showRightPanelChange)="onPanelChanged($event)">
+
+  <div main-content>
+    <div class="container">
+
+      <div class="page-header">
+        <h1 class="page-title">Tasks</h1>
+        <button mat-flat-button (click)="openNew()" aria-label="New Task" [disabled]="loaded() && books().length === 0">
+          <mat-icon>add</mat-icon><span class="btn-text"> New Task</span>
+        </button>
+      </div>
+
+      <div class="toolbar">
+        <mat-button-toggle-group
+          class="status-toggle"
+          [value]="status()"
+          (change)="setStatus($event.value)"
+          aria-label="Show tasks"
+          hideSingleSelectionIndicator
+        >
+          <mat-button-toggle value="open">Open</mat-button-toggle>
+          <mat-button-toggle value="completed">Completed</mat-button-toggle>
+          <mat-button-toggle value="all">All</mat-button-toggle>
+        </mat-button-toggle-group>
+
+        <mat-form-field appearance="outline" class="book-filter" subscriptSizing="dynamic">
+          <mat-label>Book</mat-label>
+          <mat-select [value]="bookFilter()" (selectionChange)="setBookFilter($event.value)">
+            <mat-option value="">All books</mat-option>
+            @for (book of books(); track book.id) {
+              <mat-option [value]="book.id">{{ book.title }}</mat-option>
+            }
+          </mat-select>
+        </mat-form-field>
+
+        <mat-form-field appearance="outline" class="search-field" subscriptSizing="dynamic">
+          <mat-label>Search tasks</mat-label>
+          <mat-icon matPrefix>search</mat-icon>
+          <input
+            matInput
+            type="search"
+            autocomplete="off"
+            [value]="searchText()"
+            (input)="onSearchInput($any($event.target).value)"
+            (keydown.enter)="applySearch()"
+          />
+          @if (searchText()) {
+            <button matSuffix mat-icon-button (click)="clearFilters()" aria-label="Clear search">
+              <mat-icon>close</mat-icon>
+            </button>
+          }
+        </mat-form-field>
+      </div>
+
+      <p class="result-count" aria-live="polite">
+        @if (loaded()) {
+          {{ total() }} {{ total() === 1 ? 'task' : 'tasks' }}
+          @if (filtered()) { <button mat-button class="clear-link" (click)="clearFilters()">Clear filters</button> }
+        }
+      </p>
+
+      @if (!loaded()) {
+        <p class="loading">Loading…</p>
+      } @else if (books().length === 0) {
+        <div class="empty-state">
+          <mat-icon class="empty-icon" aria-hidden="true">menu_book</mat-icon>
+          <p class="empty-text">Tasks belong to a book. Create a book first, then add tasks to it.</p>
+        </div>
+      } @else if (tasks().length === 0) {
+        <div class="empty-state">
+          <mat-icon class="empty-icon" aria-hidden="true">task_alt</mat-icon>
+          <p class="empty-text">{{ emptyMessage() }}</p>
+          @if (filtered()) {
+            <button mat-stroked-button (click)="clearFilters()">Clear filters</button>
+          } @else if (status() !== 'completed') {
+            <button mat-stroked-button (click)="openNew()">Add a task</button>
+          }
+        </div>
+      } @else {
+        <ul class="task-list" [class.reloading]="loading()">
+          @for (task of tasks(); track task.id) {
+            <li class="task-card" [class.done]="task.completed" [class.overdue]="isOverdue(task)">
+              <mat-checkbox
+                class="task-check"
+                [checked]="task.completed"
+                [disabled]="toggling().has(task.id)"
+                (change)="toggleComplete(task)"
+                [aria-label]="(task.completed ? 'Mark not done: ' : 'Mark done: ') + task.title"
+              />
+              <button type="button" class="task-main" (click)="openEdit(task)" [attr.aria-label]="'Edit task: ' + task.title">
+                <span class="task-title">{{ task.title }}</span>
+              </button>
+              @if (task.body) {
+                <p class="task-body"><app-task-body [body]="task.body" [links]="task.links" /></p>
+              }
+              <div class="task-meta">
+                @if (task.bookTitle) {
+                  <span class="meta-chip"><mat-icon aria-hidden="true">menu_book</mat-icon>{{ task.bookTitle }}</span>
+                }
+                @if (dueText(task); as due) {
+                  <span class="meta-chip due" [class.overdue]="isOverdue(task)" [class.today]="isDueSoon(task)">
+                    <mat-icon aria-hidden="true">{{ task.completed ? 'check_circle' : isOverdue(task) ? 'error' : 'event' }}</mat-icon>{{ due }}
+                  </span>
+                }
+              </div>
+            </li>
+          }
+        </ul>
+      }
+    </div>
+  </div>
+
+  <div right-panel>
+    <form class="panel-col" [formGroup]="form" (ngSubmit)="save()">
+      <h2 class="panel-title">{{ isNew() ? 'New Task' : 'Edit Task' }}</h2>
+
+      <mat-form-field appearance="outline">
+        <mat-label>Task</mat-label>
+        <input matInput formControlName="title" [maxlength]="maxTitle" placeholder="e.g. Foreshadow the flood in chapter 2" />
+        @if (form.controls.title.hasError('required')) { <mat-error>Give the task a title</mat-error> }
+      </mat-form-field>
+
+      <mat-form-field appearance="outline">
+        <mat-label>Book</mat-label>
+        <mat-select formControlName="bookId">
+          @for (book of books(); track book.id) {
+            <mat-option [value]="book.id">{{ book.title }}</mat-option>
+          }
+        </mat-select>
+        @if (form.controls.bookId.hasError('required')) { <mat-error>Choose a book</mat-error> }
+      </mat-form-field>
+
+      <mat-form-field appearance="outline">
+        <mat-label>Due date (optional)</mat-label>
+        <input matInput type="date" formControlName="dueDate" />
+        @if (form.controls.dueDate.value) {
+          <button matSuffix mat-icon-button type="button" (click)="form.controls.dueDate.setValue('')" aria-label="Clear due date">
+            <mat-icon>close</mat-icon>
+          </button>
+        }
+      </mat-form-field>
+
+      <mat-form-field appearance="outline" class="body-field">
+        <mat-label>Details (optional)</mat-label>
+        <textarea
+          matInput
+          cdkTextareaAutosize
+          cdkAutosizeMinRows="5"
+          cdkAutosizeMaxRows="18"
+          formControlName="body"
+          [maxlength]="maxBody"
+          placeholder="Mention characters, places or chapters — Quill links them for you."
+        ></textarea>
+      </mat-form-field>
+
+      @if (!isNew() && editing(); as task) {
+        @if (task.body && !bodyChanged()) {
+          <section class="linked-preview" aria-label="Details with links">
+            <h3 class="preview-heading">
+              <mat-icon aria-hidden="true">link</mat-icon>
+              {{ task.links?.length ? 'Linked ' + linkCount(task) : 'No references found' }}
+            </h3>
+            <p class="preview-body"><app-task-body [body]="task.body" [links]="task.links" /></p>
+          </section>
+        } @else if (bodyChanged()) {
+          <p class="preview-hint">References are linked again when you save.</p>
+        }
+      }
+
+      <div class="panel-actions">
+        <button mat-flat-button type="submit" [disabled]="saving()">
+          @if (saving()) { <mat-spinner diameter="18" /> }
+          {{ saving() ? 'Saving…' : 'Save' }}
+        </button>
+        <button mat-button type="button" (click)="closePanel()">Cancel</button>
+      </div>
+
+      @if (!isNew() && editing(); as task) {
+        <mat-divider />
+        <div class="secondary-actions">
+          <button mat-button type="button" (click)="toggleComplete(task); closePanel()">
+            <mat-icon>{{ task.completed ? 'undo' : 'task_alt' }}</mat-icon>
+            {{ task.completed ? 'Mark not done' : 'Mark done' }}
+          </button>
+          <button mat-button type="button" class="danger" (click)="delete(task)">
+            <mat-icon>delete</mat-icon> Delete task
+          </button>
+        </div>
+      }
+    </form>
+  </div>
+
+</app-slide-out-panel-container>

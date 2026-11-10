@@ -17,6 +17,47 @@ struct SaveThoughtIntent: AppIntent {
     }
 }
 
+/// "Hey Siri, add a task in Quill AI" → Siri asks for the task, the server works out
+/// the book and due date from what was said, and Siri asks which book when it can't tell.
+struct AddTaskIntent: AppIntent {
+    static let title: LocalizedStringResource = "Add a Task"
+    static let description = IntentDescription("Adds a to-do for one of your books, with a due date if you say one.")
+    static let openAppWhenRun = false
+
+    @Parameter(title: "Task", requestValueDialog: "What's the task?")
+    var text: String
+
+    @Parameter(title: "Book")
+    var bookName: String?
+
+    func perform() async throws -> some IntentResult & ProvidesDialog {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return .result(dialog: "There was no task to add.") }
+
+        var result = try await QuillAPI.addTask(trimmed, bookName: bookName)
+        if !result.saved, result.needsBook == true {
+            let book = try await $bookName.requestValue(IntentDialog(stringLiteral: TaskSpeech.whichBook(result.books ?? [])))
+            result = try await QuillAPI.addTask(trimmed, bookName: book)
+            if !result.saved, result.needsBook == true {
+                return .result(dialog: "I couldn't find that book, so the task wasn't added.")
+            }
+        }
+        return .result(dialog: IntentDialog(stringLiteral: result.spoken))
+    }
+}
+
+/// "Hey Siri, what's on my Quill AI task list" → reads the open-task count and the next few.
+struct ListTasksIntent: AppIntent {
+    static let title: LocalizedStringResource = "Open Tasks"
+    static let description = IntentDescription("Tells you how many tasks are open and which are most pressing.")
+    static let openAppWhenRun = false
+
+    func perform() async throws -> some IntentResult & ProvidesDialog {
+        let summary = try await QuillAPI.taskSummary(limit: 3)
+        return .result(dialog: IntentDialog(stringLiteral: TaskSpeech.summary(summary)))
+    }
+}
+
 /// "Hey Siri, ask Quill AI" → Siri asks for the question, reads the answer, and
 /// asks "Anything else?". Follow-ups stay in this conversation (answered with
 /// the earlier turns as context) until the author says something like "no" or
@@ -75,6 +116,29 @@ struct QuillShortcuts: AppShortcutsProvider {
             ],
             shortTitle: "Save a Thought",
             systemImageName: "lightbulb"
+        )
+        AppShortcut(
+            intent: AddTaskIntent(),
+            phrases: [
+                "Add a task in \(.applicationName)",
+                "Add a task to \(.applicationName)",
+                "New \(.applicationName) task",
+                "Add a to-do in \(.applicationName)",
+                "Remind me in \(.applicationName)",
+            ],
+            shortTitle: "Add a Task",
+            systemImageName: "checklist"
+        )
+        AppShortcut(
+            intent: ListTasksIntent(),
+            phrases: [
+                "What's on my \(.applicationName) task list",
+                "What are my \(.applicationName) tasks",
+                "Read my \(.applicationName) tasks",
+                "What's due in \(.applicationName)",
+            ],
+            shortTitle: "Open Tasks",
+            systemImageName: "checklist.checked"
         )
         AppShortcut(
             intent: AskQuillIntent(),

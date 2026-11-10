@@ -44,9 +44,30 @@ enum QuillAPI {
         let body: [String: Any] = [
             "question": question,
             "messages": history.map { ["role": $0.role.rawValue, "content": $0.content] },
+            // So "what's due Friday" and new tasks' due dates use the phone's calendar.
+            "tz": TimeZone.current.identifier,
         ]
         let data = try await authorizedPOST("/api/chat-sessions/voice", body: body)
         return try JSONDecoder().decode(Answer.self, from: data).answer
+    }
+
+    /// Adds a task dictated to Siri. The server works out the title, book, and due
+    /// date; when it can't tell the book it returns `needsBook` with the choices,
+    /// and the caller asks and retries with `bookName`.
+    static func addTask(_ text: String, bookName: String? = nil) async throws -> SpokenTaskResult {
+        var body: [String: Any] = ["text": text, "tz": TimeZone.current.identifier]
+        if let bookName { body["bookName"] = bookName }
+        let data = try await authorizedPOST("/api/tasks/voice", body: body)
+        return try JSONDecoder().decode(SpokenTaskResult.self, from: data)
+    }
+
+    /// Open-task counts and the most pressing few, in the phone's time zone.
+    static func taskSummary(limit: Int = 3) async throws -> TaskSummary {
+        let data = try await authorizedGET("/api/tasks/summary", query: [
+            URLQueryItem(name: "tz", value: TimeZone.current.identifier),
+            URLQueryItem(name: "limit", value: String(limit)),
+        ])
+        return try JSONDecoder().decode(TaskSummary.self, from: data)
     }
 
     /// Writing activity for the last `days` days, bucketed in the phone's time zone.
@@ -89,6 +110,19 @@ enum QuillAPI {
         let token = try await accessToken()
         let (data, response) = try await post(path, body: body, token: token)
         guard (200..<300).contains(response.statusCode) else {
+            throw QuillAPIError.server(message(from: data, fallback: "Quill AI ran into a problem. Try again."))
+        }
+        return data
+    }
+
+    private static func authorizedGET(_ path: String, query: [URLQueryItem]) async throws -> Data {
+        let token = try await accessToken()
+        var components = URLComponents(url: AppConfig.baseURL.appendingPathComponent(path), resolvingAgainstBaseURL: false)!
+        components.queryItems = query
+        var request = URLRequest(url: components.url!)
+        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        let (data, response) = try await session.data(for: request)
+        guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
             throw QuillAPIError.server(message(from: data, fallback: "Quill AI ran into a problem. Try again."))
         }
         return data

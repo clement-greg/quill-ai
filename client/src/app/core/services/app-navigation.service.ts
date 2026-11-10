@@ -30,6 +30,7 @@ export class AppNavigationService {
   readonly primary: readonly AppNavItem[] = [
     { id: 'resource-manager', icon: 'smart_toy', label: 'Resource Manager', run: () => this.aiAssistant.togglePanel() },
     { id: 'thoughts', icon: 'lightbulb', label: 'Thoughts', run: () => this.go(['/thoughts']) },
+    { id: 'tasks', icon: 'checklist', label: 'Tasks', run: () => this.go(['/tasks']) },
     { id: 'entities', icon: 'people', label: 'Entities', run: () => this.go(['/entities']) },
     { id: 'relationships', icon: 'account_tree', label: 'Relationships', run: () => this.openRelationships() },
     { id: 'maps', icon: 'map', label: 'Maps', run: () => this.go(['/maps']) },

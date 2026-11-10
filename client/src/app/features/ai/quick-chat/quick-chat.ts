@@ -149,6 +149,14 @@ const SLASH_COMMANDS: readonly SlashCommand[] = [
     scaffold: '/thought ',
   },
   {
+    command: 'task',
+    keywords: ['todo', 'to-do', 'reminder', 'due'],
+    icon: 'task_alt',
+    label: 'Add a task',
+    hint: 'Add a to-do for a book, with an optional due date',
+    scaffold: '/task ',
+  },
+  {
     command: 'edit',
     keywords: ['review', 'proofread', 'suggestions', 'quill editor'],
     icon: 'rate_review',
@@ -197,6 +205,15 @@ const SLASH_COMMANDS: readonly SlashCommand[] = [
     label: 'Entities',
     hint: 'Go to the Entities page',
     route: '/entities',
+    scaffold: '',
+  },
+  {
+    command: 'tasks',
+    keywords: ['todo', 'to-do', 'due'],
+    icon: 'checklist',
+    label: 'Tasks',
+    hint: 'Go to your Tasks',
+    route: '/tasks',
     scaffold: '',
   },
   {

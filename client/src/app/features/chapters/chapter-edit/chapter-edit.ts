@@ -57,6 +57,12 @@ import { VersionHistoryPanelComponent } from './version-history-panel/version-hi
 import { ConfirmDialogComponent } from '@app/shared/confirm-dialog/confirm-dialog';
 import { MoveTextDialogComponent, MoveTextDialogData, MoveTextDialogResult } from './move-text-dialog';
 import { insertHtmlAtAnchor } from './chapter-content-blocks';
+import { TasksService } from '@app/features/tasks/tasks.service';
+import {
+  TaskFulfillmentDialogComponent,
+  TaskFulfillmentDialogData,
+  TaskFulfillmentDialogResult,
+} from '@app/features/tasks/task-fulfillment-dialog';
 import { forkJoin, Subscription, map } from 'rxjs';
 import { v4 as uuidv4 } from 'uuid';
 
@@ -94,6 +100,7 @@ export class ChapterEditComponent implements OnInit, OnDestroy {
   private seriesService = inject(SeriesService);
   private snackBar = inject(MatSnackBar);
   private dialog = inject(MatDialog);
+  private tasksService = inject(TasksService);
   private headerService = inject(HeaderService);
   private userSettings = inject(UserSettingsService);
   private authService = inject(AuthService);
@@ -257,6 +264,13 @@ export class ChapterEditComponent implements OnInit, OnDestroy {
   /** Content as of the last successful server save — used to skip auto-saves when nothing changed. */
   private lastSavedContent: string | null = null;
 
+  // ── Task fulfillment ─────────────────────────────────────────────────────
+  /** Content the last task check covered (initially as loaded): the next check looks at changes since. */
+  private taskCheckBaseline: string | null = null;
+  /** Tasks the author said "not yet" to while this chapter is open, so they aren't asked again. */
+  private declinedTaskIds = new Set<string>();
+  private taskCheckInFlight = false;
+
   // ── Extra ctx menu items passed to the editor ────────────────────────────
   readonly ctxMenuExtraItems: { id: string; label: string; icon: string }[] = [
     { id: 'capture-quote', label: 'Capture quote', icon: 'record_voice_over' },
@@ -305,6 +319,8 @@ export class ChapterEditComponent implements OnInit, OnDestroy {
       this.notes.set([]);
       this.outline.set([]);
       this.lastSavedContent = null;
+      this.taskCheckBaseline = null;
+      this.declinedTaskIds.clear();
       this.mentionContent.set('');
 
       this.chapterService.getById(id).subscribe({
@@ -322,6 +338,7 @@ export class ChapterEditComponent implements OnInit, OnDestroy {
         this.imageUrl.set(data.imageUrl ?? null);
         this.imageThumbnailUrl.set(data.imageThumbnailUrl ?? null);
         this.lastSavedContent = data.content ?? '';
+        this.taskCheckBaseline = data.content ?? '';
         this.mentionContent.set(content);
 
         // Set editor content after view init (setTimeout ensures ViewChild is ready)
@@ -795,8 +812,46 @@ export class ChapterEditComponent implements OnInit, OnDestroy {
         this.saving.set(false);
         this.recordRecentChapter();
         this.notifyContentWarnings(saved.contentWarnings);
+        this.checkTaskFulfillment(chapter.id, content);
       },
       error: () => this.saving.set(false),
+    });
+  }
+
+  /**
+   * After a save, asks the server whether the changes since the last check
+   * may have finished any of this book's open tasks, and if so offers to
+   * complete them. Runs in the background; failures are silent.
+   */
+  private checkTaskFulfillment(chapterId: string, content: string): void {
+    const baseline = this.taskCheckBaseline;
+    if (baseline === null || baseline === content || this.taskCheckInFlight) return;
+    this.taskCheckInFlight = true;
+    this.tasksService.checkChapter(chapterId, baseline, content, [...this.declinedTaskIds]).subscribe({
+      next: ({ candidates }) => {
+        this.taskCheckInFlight = false;
+        // The author may have moved to another chapter while the check ran.
+        if (this.chapter()?.id !== chapterId) return;
+        this.taskCheckBaseline = content;
+        if (!candidates.length) return;
+        const ref = this.dialog.open<TaskFulfillmentDialogComponent, TaskFulfillmentDialogData, TaskFulfillmentDialogResult>(
+          TaskFulfillmentDialogComponent,
+          { data: { candidates }, width: '480px', maxHeight: '80vh', autoFocus: 'dialog' },
+        );
+        ref.afterClosed().subscribe(chosen => {
+          const ids = new Set(chosen ?? []);
+          for (const c of candidates) if (!ids.has(c.taskId)) this.declinedTaskIds.add(c.taskId);
+          if (!ids.size) return;
+          forkJoin([...ids].map(id => this.tasksService.setCompleted(id, true, chapterId))).subscribe({
+            next: () =>
+              this.snackBar.open(ids.size === 1 ? 'Task completed' : `${ids.size} tasks completed`, undefined, { duration: 3000 }),
+            error: () => this.snackBar.open('Couldn’t complete the task — try from the Tasks page', undefined, { duration: 5000 }),
+          });
+        });
+      },
+      error: () => {
+        this.taskCheckInFlight = false;
+      },
     });
   }
 

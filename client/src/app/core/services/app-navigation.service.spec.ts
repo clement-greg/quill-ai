@@ -36,7 +36,7 @@ describe('AppNavigationService', () => {
 
   it('lists the explorer destinations in order', () => {
     expect(service.primary.map(i => i.label)).toEqual([
-      'Resource Manager', 'Thoughts', 'Entities', 'Relationships', 'Maps', 'Photo Gallery', 'Archived Items', 'Generation Queue',
+      'Resource Manager', 'Thoughts', 'Tasks', 'Entities', 'Relationships', 'Maps', 'Photo Gallery', 'Archived Items', 'Generation Queue',
     ]);
     expect(service.secondary.map(i => i.label)).toEqual(['Writing Stats', 'Settings']);
   });

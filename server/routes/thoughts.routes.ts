@@ -9,12 +9,20 @@ import {
   DEFAULT_THOUGHT_PAGE_SIZE,
   MAX_THOUGHT_PAGE_SIZE,
   normalizeThoughtTags,
+  isThoughtDoc,
 } from '../../shared/models/thought.model';
 import { readOwnedItem } from '../middleware/owner-guard';
+import { THOUGHT_DOC_TYPE } from '../../shared/models/task.model';
 import { hasAllTags, keywordHits, searchWords, thoughtEmbeddingText as embeddingText } from '../services/thought-search';
 
 const router = Router();
 const container = getContainer('thought-items');
+
+/** Reads one of the caller's thoughts; null for a missing, foreign, or non-thought (task) document. */
+async function readThought(id: string, req: Request): Promise<Thought | null> {
+  const doc = await readOwnedItem<Thought>(container, id, id, req);
+  return isThoughtDoc(doc) ? doc : null;
+}
 
 /** Reads a non-negative integer query param, falling back when absent or junk. */
 function intParam(value: unknown, fallback: number): number {
@@ -56,8 +64,12 @@ router.get('/', async (req: Request, res: Response) => {
       .query<Thought>({
         query:
           'SELECT c.id, c.title, c.content, c.tags, c.owner, c.createdBy, c.createdAt, c.modifiedBy, c.modifiedAt ' +
-          'FROM c WHERE c.owner = @owner AND (NOT IS_DEFINED(c.deleted) OR c.deleted = false) ORDER BY c.modifiedAt DESC',
-        parameters: [{ name: '@owner', value: email }],
+          'FROM c WHERE c.owner = @owner AND (NOT IS_DEFINED(c.docType) OR c.docType = @docType) ' +
+          'AND (NOT IS_DEFINED(c.deleted) OR c.deleted = false) ORDER BY c.modifiedAt DESC',
+        parameters: [
+          { name: '@owner', value: email },
+          { name: '@docType', value: THOUGHT_DOC_TYPE },
+        ],
       })
       .fetchAll();
     const all = resources.map(({ contentVector: _v, ...t }) => t as Thought);
@@ -82,7 +94,7 @@ router.get('/', async (req: Request, res: Response) => {
 router.get('/:id', async (req: Request, res: Response) => {
   try {
     const id = req.params['id'] as string;
-    const thought = await readOwnedItem<Thought>(container, id, id, req);
+    const thought = await readThought(id, req);
     if (!thought || thought.deleted) {
       res.status(404).json({ error: 'Thought not found' });
       return;
@@ -102,6 +114,7 @@ router.post('/', async (req: Request, res: Response) => {
     const email = req.user!.email;
     const thought: Thought = {
       id: randomUUID(),
+      docType: THOUGHT_DOC_TYPE,
       title: req.body.title ?? undefined,
       content: req.body.content ?? '',
       tags: normalizeThoughtTags(req.body.tags),
@@ -132,7 +145,7 @@ router.post('/', async (req: Request, res: Response) => {
 router.put('/:id', async (req: Request, res: Response) => {
   try {
     const id = req.params['id'] as string;
-    const existing = await readOwnedItem<Thought>(container, id, id, req);
+    const existing = await readThought(id, req);
     if (!existing) {
       res.status(404).json({ error: 'Thought not found' });
       return;
@@ -165,7 +178,7 @@ router.put('/:id', async (req: Request, res: Response) => {
 router.patch('/:id/restore', async (req: Request, res: Response) => {
   try {
     const id = req.params['id'] as string;
-    const existing = await readOwnedItem<Thought>(container, id, id, req);
+    const existing = await readThought(id, req);
     if (!existing) {
       res.status(404).json({ error: 'Thought not found' });
       return;
@@ -187,7 +200,7 @@ router.patch('/:id/restore', async (req: Request, res: Response) => {
 router.delete('/:id', async (req: Request, res: Response) => {
   try {
     const id = req.params['id'] as string;
-    const existing = await readOwnedItem<Thought>(container, id, id, req);
+    const existing = await readThought(id, req);
     if (!existing) {
       res.status(404).json({ error: 'Thought not found' });
       return;
