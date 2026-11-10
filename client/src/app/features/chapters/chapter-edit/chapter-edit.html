@@ -10,6 +10,8 @@
             <mat-label>Title</mat-label>
             <input matInput [ngModel]="chapter()!.title" (ngModelChange)="updateTitle($event)" />
           </mat-form-field>
+          <!-- Read-only chapter title (mobile only; title is edited on desktop) -->
+          <h1 class="mobile-title" [title]="chapter()!.title || 'Untitled'">{{ chapter()!.title || 'Untitled' }}</h1>
           <!-- Chapter image thumbnail / upload -->
           @if (imageUrl()) {
             <div class="chapter-thumb-wrap">
