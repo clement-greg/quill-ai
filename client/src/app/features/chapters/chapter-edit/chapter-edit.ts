@@ -1,6 +1,6 @@
 import {
-  Component, inject, signal, computed, OnInit, OnDestroy,
-  ElementRef, ViewChild, HostListener, effect, untracked, viewChild,
+  Component, inject, signal, computed, OnInit, OnDestroy, Injector,
+  ElementRef, ViewChild, HostListener, effect, untracked, viewChild, afterNextRender,
 } from '@angular/core';
 import { ActivatedRoute, Router } from '@angular/router';
 import { FormsModule } from '@angular/forms';
@@ -14,6 +14,7 @@ import { MatTabsModule } from '@angular/material/tabs';
 import { MatExpansionModule } from '@angular/material/expansion';
 import { MatMenuModule } from '@angular/material/menu';
 import { MatTooltipModule } from '@angular/material/tooltip';
+import { MatButtonToggleModule } from '@angular/material/button-toggle';
 import { MatSnackBar, MatSnackBarRef } from '@angular/material/snack-bar';
 import { MatDialog, MatDialogModule, MAT_DIALOG_DATA } from '@angular/material/dialog';
 import { ChapterService } from '../chapter.service';
@@ -63,6 +64,8 @@ import {
   TaskFulfillmentDialogData,
   TaskFulfillmentDialogResult,
 } from '@app/features/tasks/task-fulfillment-dialog';
+import { BookEditorComponent, BookChapter, ChapterSplitEvent } from '../book-editor/book-editor';
+import { BookTextIndex, countMatches, firstMatchFrom, locateMatch } from '../book-editor/book-search';
 import { forkJoin, Subscription, map } from 'rxjs';
 import { v4 as uuidv4 } from 'uuid';
 
@@ -74,19 +77,27 @@ import { v4 as uuidv4 } from 'uuid';
     MatProgressSpinnerModule, MatTabsModule, MatExpansionModule, MatDialogModule, MatMenuModule, MatSelectModule, MatTooltipModule,
     SlideOutPanelContainer, EntityEditComponent, RichTextEditorComponent, AiStatsComponent, ChapterOutlineComponent,
     QuillReviewPanelComponent, VersionHistoryPanelComponent, MentionedEntitiesPanelComponent,
-    FactCheckPanelComponent,
+    FactCheckPanelComponent, BookEditorComponent, MatButtonToggleModule,
   ],
   templateUrl: './chapter-edit.html',
-  styleUrl: './chapter-edit.scss',
+  styleUrls: ['./chapter-edit.scss', './chapter-edit-book-mode.scss'],
 })
 export class ChapterEditComponent implements OnInit, OnDestroy {
-  @ViewChild(RichTextEditorComponent) editorRef!: RichTextEditorComponent;
+  @ViewChild('rte') private singleEditor?: RichTextEditorComponent;
+  private bookEditor = viewChild(BookEditorComponent);
+  /** The editor for the chapter in scope: the single-chapter editor or, in
+   *  full-book mode, the active chapter's editor (undefined while unmounted). */
+  get editorRef(): RichTextEditorComponent | undefined {
+    if (this.bookMode()) return this.bookEditor()?.editorFor(this.chapter()?.id);
+    return this.singleEditor;
+  }
   private quillPanel = viewChild(QuillReviewPanelComponent);
   private historyPanel = viewChild(VersionHistoryPanelComponent);
   @ViewChild('noteInputEl') noteInputEl!: ElementRef<HTMLTextAreaElement>;
   @ViewChild('editNoteEl') editNoteEl?: ElementRef<HTMLTextAreaElement>;
   @ViewChild('searchInputEl') searchInputEl?: ElementRef<HTMLInputElement>;
 
+  private injector = inject(Injector);
   private route = inject(ActivatedRoute);
   private router = inject(Router);
   private chapterService = inject(ChapterService);
@@ -118,6 +129,37 @@ export class ChapterEditComponent implements OnInit, OnDestroy {
   private draftAcceptedSub?: Subscription;
   /** Guards async callbacks that outlive a navigation away from the editor. */
   private destroyed = false;
+
+  // ── Full-book mode ───────────────────────────────────────────────────────
+  /** Narrowest viewport that offers full-book editing (an 8.5in page plus sidebar). */
+  static readonly BOOK_MIN_WIDTH = 900;
+  readonly viewportWide = signal(window.innerWidth >= ChapterEditComponent.BOOK_MIN_WIDTH);
+  /** Every chapter of the book on one paginated canvas (user setting + wide screen). */
+  readonly bookMode = computed(() => this.userSettings.fullBookEditing() && this.viewportWide());
+  /** Chapters handed to the book editor, in book order. */
+  readonly bookChapters = signal<BookChapter[]>([]);
+  /** Per-chapter state while the book is open. The active chapter's live state
+   *  is in `chapter`/`notes`/`outline`; it is copied back on every switch. */
+  private bookSlots = new Map<string, BookSlot>();
+  /** Chapters with changes since their last save (only these are saved). */
+  readonly dirtyChapterIds = signal<ReadonlySet<string>>(new Set());
+  /** Keeps the sidebar on the current chapter while work is running against it. */
+  readonly bookPinActive = computed(() =>
+    this.editorReview.running() || this.quillOpenCount() > 0 || this.factChecking() ||
+    this.analyzingChapter() || this.noteInputVisible(),
+  );
+  private urlSyncTimer: ReturnType<typeof setTimeout> | null = null;
+  private headerBase: {
+    series: { id: string; title: string };
+    seriesItems: { label: string; link: string; isCurrent: boolean }[];
+    book: { id: string; title: string };
+    bookItems: { label: string; link: string; isCurrent: boolean }[];
+    chapters: { id: string; title: string }[];
+  } | null = null;
+  private onWindowResize = (): void => {
+    const wide = window.innerWidth >= ChapterEditComponent.BOOK_MIN_WIDTH;
+    if (wide !== this.viewportWide()) void this.switchMode(() => this.viewportWide.set(wide));
+  };
 
   // ── Chapter state ────────────────────────────────────────────────────────
   chapter = signal<Chapter | null>(null);
@@ -215,6 +257,13 @@ export class ChapterEditComponent implements OnInit, OnDestroy {
   searchQuery = signal('');
   searchMatchCount = signal(0);
   searchMatchIndex = signal(0); // 0-based
+  /** What the find bar searches: the chapter in scope, or (Book view) every chapter. */
+  searchScope = signal<'chapter' | 'book'>('chapter');
+  /** Which chapter the current book-wide match is in, for the find bar. */
+  searchLocation = signal('');
+  private bookSearchCounts: { id: string; count: number }[] = [];
+  private bookSearchTimer: ReturnType<typeof setTimeout> | null = null;
+  private bookTextIndex = new BookTextIndex();
 
   // ── Sidebar ──────────────────────────────────────────────────────────────
   mobileSidebarOpen = signal(false);
@@ -245,9 +294,18 @@ export class ChapterEditComponent implements OnInit, OnDestroy {
   onAvatarError(email: string): void { this._avatarErrors.update(s => new Set([...s, email])); }
 
   private onDocumentKeyDown = (e: KeyboardEvent): void => {
-    if ((e.ctrlKey || e.metaKey) && e.key === 'f' && this.chapter()) {
+    const isF = e.code === 'KeyF' || e.key.toLowerCase() === 'f';
+    if ((e.ctrlKey || e.metaKey) && !e.altKey && isF && this.chapter()) {
       e.preventDefault();
-      this.openSearch();
+      if (!e.shiftKey) {
+        this.openSearch('chapter');
+      } else if (this.bookMode()) {
+        this.openSearch('book');
+      } else {
+        // The whole book is only loaded in Book view.
+        const ref = this.snackBar.open('Searching the whole book works in Book view', 'Switch to Book view', { duration: 6000 });
+        ref.onAction().subscribe(() => this.setBookMode(true));
+      }
     } else if (e.key === 'Escape' && this.searchVisible()) {
       this.closeSearch();
     }
@@ -311,9 +369,24 @@ export class ChapterEditComponent implements OnInit, OnDestroy {
   ngOnInit(): void {
     document.addEventListener('keydown', this.onDocumentKeyDown);
     this.loadSidebarWidth();
+    this.initSubscriptions();
 
+    window.addEventListener('resize', this.onWindowResize);
     this.routeSub = this.route.paramMap.subscribe(params => {
       const id = params.get('id')!;
+      // Within the open book, a chapter link just moves to that chapter.
+      if (this.bookMode() && this.bookSlots.has(id)) {
+        this.goToBookChapter(id);
+        return;
+      }
+      this.resetBook();
+      this.loadChapter(id);
+    });
+
+  }
+
+  /** Loads a chapter (and, in full-book mode, the rest of its book). */
+  private loadChapter(id: string): void {
       this.chapter.set(null);
       this.hasDraft.set(false);
       this.notes.set([]);
@@ -340,10 +413,11 @@ export class ChapterEditComponent implements OnInit, OnDestroy {
         this.lastSavedContent = data.content ?? '';
         this.taskCheckBaseline = data.content ?? '';
         this.mentionContent.set(content);
+        if (this.bookMode()) this.loadBook({ ...data, content }, notes, outline, hasDraft);
 
         // Set editor content after view init (setTimeout ensures ViewChild is ready)
         setTimeout(() => {
-          if (this.editorRef) {
+          if (this.editorRef && !this.bookMode()) {
             this.editorRef.setContent(content);
             this.editorBridge.register(this.editorRef);
             this.editorBridge.setChapterContext({ chapterId: data.id, seriesId: this.seriesId() || null });
@@ -377,22 +451,14 @@ export class ChapterEditComponent implements OnInit, OnDestroy {
                   .sort((a, b) => (a.sortOrder ?? Infinity) - (b.sortOrder ?? Infinity));
                 const sortedChapters = [...chaptersInBook]
                   .sort((a, b) => (a.sortOrder ?? Infinity) - (b.sortOrder ?? Infinity));
-                this.headerService.set([
-                  {
-                    label: series.title,
-                    link: '/series/' + series.id,
-                    dropdownItems: filteredSeries.map(s => ({ label: s.title, link: '/series/' + s.id, isCurrent: s.id === series.id })),
-                  },
-                  {
-                    label: book.title,
-                    link: '/books/' + book.id,
-                    dropdownItems: filteredBooks.map(b => ({ label: b.title, link: '/books/' + b.id, isCurrent: b.id === book.id })),
-                  },
-                  {
-                    label: data.title || 'Chapter',
-                    dropdownItems: sortedChapters.map(c => ({ label: c.title || 'Chapter', link: '/chapters/' + c.id + '/edit', isCurrent: c.id === data.id })),
-                  },
-                ]);
+                this.headerBase = {
+                  series,
+                  seriesItems: filteredSeries.map(s => ({ label: s.title, link: '/series/' + s.id, isCurrent: s.id === series.id })),
+                  book,
+                  bookItems: filteredBooks.map(b => ({ label: b.title, link: '/books/' + b.id, isCurrent: b.id === book.id })),
+                  chapters: sortedChapters.map(c => ({ id: c.id, title: c.title })),
+                };
+                this.updateHeader();
               },
             });
 
@@ -405,8 +471,9 @@ export class ChapterEditComponent implements OnInit, OnDestroy {
         });
       },
     });
-    });
+  }
 
+  private initSubscriptions(): void {
     this.chapterSyncSub = this.chapterSync.updates$.subscribe(async update => {
       const current = this.chapter();
       if (!current || current.id !== update.id) return;
@@ -426,6 +493,429 @@ export class ChapterEditComponent implements OnInit, OnDestroy {
     });
   }
 
+  // ── Full-book mode ───────────────────────────────────────────────────────
+
+  /** Switches between single-chapter and full-book editing. */
+  setBookMode(on: boolean): void {
+    if (on === this.userSettings.fullBookEditing()) return;
+    void this.switchMode(() => this.userSettings.setFullBookEditing(on));
+  }
+
+  /** Runs a change that may flip the editing mode, carrying unsaved work across:
+   *  the outgoing editor's changes are written to drafts, and the chapter is
+   *  reloaded in the new mode (which picks the drafts back up). */
+  private async switchMode(apply: () => void): Promise<void> {
+    const wasBook = this.bookMode();
+    const id = this.chapter()?.id;
+    if (wasBook) await this.persistBookDrafts();
+    else await this.persistSingleDraft();
+    apply();
+    if (this.bookMode() === wasBook || !id || this.destroyed) return;
+    this.resetBook();
+    this.loadChapter(id);
+  }
+
+  private async persistSingleDraft(): Promise<void> {
+    const ch = this.chapter();
+    const editor = this.singleEditor;
+    if (!ch || !editor) return;
+    if (this.autoSaveTimer) { clearTimeout(this.autoSaveTimer); this.autoSaveTimer = null; }
+    const content = editor.getContent();
+    if (content !== this.lastSavedContent || this.hasDraft()) {
+      await this.draftService.saveDraft(ch.id, content, this.notes(), this.outline());
+    }
+  }
+
+  private async persistBookDrafts(): Promise<void> {
+    this.bookEditor()?.flushAll();
+    this.stashActive();
+    if (this.autoSaveTimer) { clearTimeout(this.autoSaveTimer); this.autoSaveTimer = null; }
+    const dirty = this.dirtyChapterIds();
+    await Promise.all([...this.bookSlots.values()]
+      .filter(slot => dirty.has(slot.chapter.id))
+      .map(slot => this.draftService.saveDraft(slot.chapter.id, slot.content, slot.notes, slot.outline)));
+  }
+
+  private resetBook(): void {
+    this.bookSlots.clear();
+    this.bookChapters.set([]);
+    this.dirtyChapterIds.set(new Set());
+    if (this.urlSyncTimer) { clearTimeout(this.urlSyncTimer); this.urlSyncTimer = null; }
+  }
+
+  /** Loads every chapter of the active chapter's book into the book editor,
+   *  each with its pending local draft if it has one. */
+  private loadBook(active: Chapter, activeNotes: ChapterNote[], activeOutline: OutlineItem[], activeHasDraft: boolean): void {
+    this.chapterService.getByBook(active.bookId).subscribe({
+      next: async list => {
+        const stillHere = () => !this.destroyed && this.bookMode() && this.chapter()?.id === active.id;
+        if (!stillHere()) return;
+        const sorted = list
+          .filter(c => !c.archived)
+          .sort((a, b) => (a.sortOrder ?? Infinity) - (b.sortOrder ?? Infinity));
+        if (!sorted.some(c => c.id === active.id)) sorted.push(active);
+        const slots = await Promise.all(sorted.map(async c => {
+          if (c.id === active.id) {
+            return makeSlot(active, active.content ?? '', activeNotes, activeOutline, activeHasDraft, this.lastSavedContent ?? '');
+          }
+          const draft = await this.draftService.resolvePendingDraft(c);
+          return makeSlot(c, draft?.content ?? c.content ?? '', draft?.notes ?? c.notes ?? [], draft?.outline ?? c.outline ?? [], !!draft, c.content ?? '');
+        }));
+        if (!stillHere()) return;
+        // The active chapter may have been edited while the rest loaded.
+        const activeSlot = slots.find(sl => sl.chapter.id === active.id)!;
+        activeSlot.chapter = { ...this.chapter()! };
+        activeSlot.content = this.chapter()!.content ?? activeSlot.content;
+        this.bookSlots = new Map(slots.map(sl => [sl.chapter.id, sl]));
+        this.dirtyChapterIds.set(new Set(slots.filter(sl => sl.hasDraft).map(sl => sl.chapter.id)));
+        this.bookChapters.set(slots.map(sl => ({ id: sl.chapter.id, title: sl.chapter.title, content: sl.content })));
+        this.updateHeader();
+        afterNextRender({ write: () => this.bookEditor()?.scrollToChapter(active.id) }, { injector: this.injector });
+      },
+      error: () => this.snackBar.open("Couldn't load the rest of the book", undefined, { duration: 4000 }),
+    });
+  }
+
+  /** Copies the active chapter's live state back into its slot. */
+  private stashActive(): void {
+    const ch = this.chapter();
+    const slot = ch && this.bookSlots.get(ch.id);
+    if (!ch || !slot) return;
+    const editor = this.editorRef;
+    slot.content = editor ? editor.getContent() : (ch.content ?? slot.content);
+    slot.chapter = { ...ch, content: slot.content };
+    slot.notes = this.notes();
+    slot.outline = this.outline();
+    slot.hasDraft = this.hasDraft();
+    slot.taskCheckBaseline = this.taskCheckBaseline;
+    if (this.dirtyChapterIds().has(ch.id)) this.writeSlotDraft(slot);
+  }
+
+  /** Scrolls the book to a chapter and makes it the one in scope. */
+  private goToBookChapter(id: string): void {
+    if (this.chapter()?.id === id) return;
+    this.activateBookChapter(id);
+    // Put the caret at the chapter's start so typing lands where the reader is.
+    this.bookEditor()?.focusChapter(id, 'body');
+  }
+
+  /** Makes `id` the chapter the sidebar, toolbar and tools work on. */
+  activateBookChapter(id: string, force = false): void {
+    const current = this.chapter();
+    if (current?.id === id && !force) return;
+    const slot = this.bookSlots.get(id);
+    if (!slot) return;
+    // A forced re-entry means the slot was just rewritten; don't clobber it.
+    if (!force) this.stashActive();
+    // stashActive() wrote the outgoing chapter's draft; its pending timer would
+    // otherwise fire against the chapter we're switching to.
+    if (this.autoSaveTimer) { clearTimeout(this.autoSaveTimer); this.autoSaveTimer = null; }
+    // A chapter-scoped find doesn't carry over; a book-wide one drives the switch.
+    if (this.searchVisible() && !this.isBookSearch) this.closeSearch();
+    this.dismissNoteInput();
+    this.cancelEditNote();
+
+    this.chapter.set({ ...slot.chapter, content: slot.content });
+    this.notes.set(slot.notes);
+    this.outline.set(slot.outline);
+    this.hasDraft.set(slot.hasDraft);
+    this.lastSavedContent = slot.savedContent;
+    this.taskCheckBaseline = slot.taskCheckBaseline;
+    this.declinedTaskIds.clear();
+    this.imageUrl.set(slot.chapter.imageUrl ?? null);
+    this.imageThumbnailUrl.set(slot.chapter.imageThumbnailUrl ?? null);
+    this.mentionContent.set(slot.content);
+    this.pendingSuggestions.set([]);
+    this.registerActiveEditor();
+    this.updateHeader();
+    this.recordRecentChapter();
+    this.scheduleUrlSync(id);
+  }
+
+  /** Points Ask Quill (insert at cursor, chapter grounding) at the active editor. */
+  private registerActiveEditor(): void {
+    const ch = this.chapter();
+    const editor = this.editorRef;
+    if (!ch || !editor) return;
+    this.editorBridge.register(editor);
+    this.editorBridge.setChapterContext({ chapterId: ch.id, seriesId: this.seriesId() || null });
+  }
+
+  /** Keeps the address bar on the chapter in scope, so refresh and sharing land
+   *  in the same place. Debounced so scrolling doesn't spam history. */
+  private scheduleUrlSync(id: string): void {
+    if (this.urlSyncTimer) clearTimeout(this.urlSyncTimer);
+    this.urlSyncTimer = setTimeout(() => {
+      this.urlSyncTimer = null;
+      if (this.chapter()?.id !== id || this.destroyed) return;
+      void this.router.navigate(['/chapters', id, 'edit'], { replaceUrl: true });
+    }, 600);
+  }
+
+  onBookEditorMounted(id: string): void {
+    if (id !== this.chapter()?.id) return;
+    this.registerActiveEditor();
+    if (this.editorReview.consumeAutoRun(id)) setTimeout(() => this.startQuillReview());
+  }
+
+  private markDirty(id: string | undefined): void {
+    if (!id || !this.bookMode() || this.dirtyChapterIds().has(id)) return;
+    this.dirtyChapterIds.update(set => new Set(set).add(id));
+  }
+
+  onBookChapterInput(id: string): void {
+    this.markDirty(id);
+  }
+
+  onBookChapterContent(event: { id: string; html: string }): void {
+    const slot = this.bookSlots.get(event.id);
+    if (!slot) return;
+    const isActive = event.id === this.chapter()?.id;
+    const previous = isActive ? (this.chapter()?.content ?? slot.content) : slot.content;
+    slot.content = event.html;
+    if (event.html !== previous) {
+      this.bookChapters.update(list => list.map(c => (c.id === event.id ? { ...c, content: event.html } : c)));
+    }
+    if (isActive) {
+      if (event.html !== previous) {
+        this.chapter.update(ch => (ch ? { ...ch, content: event.html } : ch));
+        this.onEditorContentChange(event.html);
+      }
+    } else {
+      this.writeSlotDraft(slot);
+    }
+  }
+
+  /** Writes a non-active chapter's local draft if its content moved on since
+   *  the last draft write (drafts are what survive a reload or a mode switch). */
+  private writeSlotDraft(slot: BookSlot): void {
+    if (slot.content === slot.draftContent) return;
+    if (slot.content === slot.savedContent && !this.dirtyChapterIds().has(slot.chapter.id)) return;
+    slot.draftContent = slot.content;
+    slot.hasDraft = true;
+    void this.draftService.saveDraft(slot.chapter.id, slot.content, slot.notes, slot.outline);
+  }
+
+  onBookTitleChange(event: { id: string; title: string }): void {
+    if (event.id === this.chapter()?.id) {
+      this.updateTitle(event.title);
+      return;
+    }
+    const slot = this.bookSlots.get(event.id);
+    if (!slot) return;
+    slot.chapter = { ...slot.chapter, title: event.title };
+    this.bookChapters.update(list => list.map(c => (c.id === event.id ? { ...c, title: event.title } : c)));
+    this.markDirty(event.id);
+  }
+
+  /** "# Title" / Ctrl+Enter: creates the new chapter right after the source.
+   *  The chapter itself is created now (it needs an id for notes, chats and
+   *  drafts); the prose moved into it stays a draft until Save, like any edit. */
+  onSplitChapter(event: ChapterSplitEvent): void {
+    const source = this.bookSlots.get(event.sourceId);
+    if (!source) return;
+    if (event.html) this.markDirty(event.sourceId);
+    const index = this.bookChapters().findIndex(c => c.id === event.sourceId);
+    const draft: Chapter = {
+      id: uuidv4(),
+      title: event.title,
+      bookId: source.chapter.bookId,
+      content: '',
+      sortOrder: index + 1,
+    };
+    this.chapterService.create(draft).subscribe({
+      next: created => {
+        if (this.destroyed || !this.bookMode()) return;
+        const order = [...this.bookChapters().map(c => c.id)];
+        order.splice(order.indexOf(event.sourceId) + 1, 0, created.id);
+        this.chapterService.reorder(order.map((id, i) => ({ id, sortOrder: i }))).subscribe();
+        order.forEach((id, i) => {
+          const sl = this.bookSlots.get(id);
+          if (sl) sl.chapter = { ...sl.chapter, sortOrder: i };
+        });
+        const slot = makeSlot({ ...created, sortOrder: order.indexOf(created.id) }, event.html, [], [], !!event.html, '');
+        this.bookSlots.set(created.id, slot);
+        if (event.html) void this.draftService.saveDraft(created.id, event.html, [], []);
+        this.dirtyChapterIds.update(set => new Set(set).add(created.id));
+        this.bookChapters.update(list => {
+          const next = [...list];
+          next.splice(next.findIndex(c => c.id === event.sourceId) + 1, 0,
+            { id: created.id, title: created.title, content: event.html });
+          return next;
+        });
+        afterNextRender({ write: () => this.bookEditor()?.focusChapter(created.id, event.focus) }, { injector: this.injector });
+        this.snackBar.open(`Started "${created.title}"`, undefined, { duration: 2500 });
+      },
+      error: () => {
+        // Put the moved text back where it came from.
+        const el = this.bookEditor()?.editorFor(event.sourceId)?.getEditorElement();
+        if (el && event.html) {
+          el.insertAdjacentHTML('beforeend', event.html);
+          el.dispatchEvent(new InputEvent('input', { bubbles: true }));
+        }
+        this.snackBar.open("Couldn't create the new chapter — the text was put back", undefined, { duration: 5000 });
+      },
+    });
+  }
+
+  /** "New chapter" button under the last page: an empty chapter at the end. */
+  onNewChapterAtEnd(): void {
+    const last = this.bookChapters().at(-1);
+    if (last) this.onSplitChapter({ sourceId: last.id, title: 'New Chapter', html: '', focus: 'title' });
+  }
+
+  /** Backspace at the very start of a chapter: offer to merge it into the one before. */
+  onMergeRequest(id: string): void {
+    const list = this.bookChapters();
+    const index = list.findIndex(c => c.id === id);
+    if (index <= 0) return;
+    const prev = list[index - 1]!;
+    const cur = list[index]!;
+    const ref = this.dialog.open(ConfirmDialogComponent, {
+      data: {
+        title: 'Merge into the previous chapter?',
+        message: `"${cur.title || 'Untitled chapter'}" will be added to the end of "${prev.title || 'Untitled chapter'}", and the now-empty chapter will be archived (you can restore it from the archive).`,
+        confirm: 'Merge',
+      },
+      width: '420px',
+    });
+    ref.afterClosed().subscribe(confirmed => {
+      if (!confirmed) return;
+      this.bookEditor()?.flushAll();
+      this.stashActive();
+      const curSlot = this.bookSlots.get(id);
+      const prevSlot = this.bookSlots.get(prev.id);
+      if (!curSlot || !prevSlot) return;
+      this.chapterService.archive(id).subscribe({
+        next: () => {
+          const merged = prevSlot.content + curSlot.content;
+          prevSlot.content = merged;
+          prevSlot.notes = [...prevSlot.notes, ...curSlot.notes];
+          prevSlot.hasDraft = true;
+          this.bookSlots.delete(id);
+          void this.draftService.clearDraft(id);
+          void this.draftService.saveDraft(prev.id, merged, prevSlot.notes, prevSlot.outline);
+          this.dirtyChapterIds.update(set => {
+            const next = new Set(set);
+            next.delete(id);
+            next.add(prev.id);
+            return next;
+          });
+          this.bookChapters.update(chs => chs
+            .filter(c => c.id !== id)
+            .map(c => (c.id === prev.id ? { ...c, content: merged } : c)));
+          this.bookEditor()?.setChapterContent(prev.id, merged);
+          // Re-enter the previous chapter fresh so the sidebar shows the merged notes.
+          this.activateBookChapter(prev.id, true);
+          this.snackBar.open('Chapters merged — save to keep the change', undefined, { duration: 4000 });
+        },
+        error: () => this.snackBar.open("Couldn't merge the chapters", undefined, { duration: 4000 }),
+      });
+    });
+  }
+
+  /** After a per-chapter tool finishes in full-book mode, offers to run it on
+   *  the next chapter (moving the reader there first). */
+  private offerNextChapter(tool: 'analyze' | 'factCheck', prefix?: string): void {
+    if (!this.bookMode() || this.destroyed) return;
+    const list = this.bookChapters();
+    const index = list.findIndex(c => c.id === this.chapter()?.id);
+    const next = index >= 0 ? list[index + 1] : undefined;
+    if (!next) {
+      if (prefix) this.snackBar.open(prefix, undefined, { duration: 4000 });
+      return;
+    }
+    const verb = tool === 'analyze' ? 'Analyze' : 'Fact check';
+    const message = `${prefix ? prefix + ' — ' : ''}${verb} the next chapter, "${next.title || 'Untitled chapter'}"?`;
+    const ref = this.snackBar.open(message, 'Continue', { duration: 12000 });
+    ref.onAction().subscribe(() => {
+      this.goToBookChapter(next.id);
+      // Let the next chapter's editor mount before reading its text.
+      setTimeout(() => (tool === 'analyze' ? this.analyzeChapter() : this.factCheckChapter()), 300);
+    });
+  }
+
+  /** Saves every chapter changed since its last save (full-book mode). */
+  private async saveBook(): Promise<void> {
+    const editor = this.editorRef;
+    if (editor) {
+      editor.unwrapEntityQuotes();
+      editor.clearEntitySeekHighlight();
+    }
+    if (this.autoSaveTimer) { clearTimeout(this.autoSaveTimer); this.autoSaveTimer = null; }
+    this.bookEditor()?.flushAll();
+    this.stashActive();
+    const dirty = [...this.dirtyChapterIds()]
+      .map(id => this.bookSlots.get(id))
+      .filter((sl): sl is BookSlot => !!sl);
+    if (dirty.length === 0) {
+      this.snackBar.open('No changes to save', undefined, { duration: 2500 });
+      return;
+    }
+    if (dirty.some(sl => !sl.chapter.title.trim())) {
+      this.snackBar.open('Every chapter needs a title before saving', undefined, { duration: 4000 });
+      return;
+    }
+    this.saving.set(true);
+    const author = this.userSettings.displayName() || this.authService.currentUser()?.name || undefined;
+    const results = await Promise.all(dirty.map(slot => new Promise<{ slot: BookSlot; warnings: ContentFilterWarning[] | undefined } | null>(resolve => {
+      const content = slot.content;
+      const outline = slot.outline.filter(item => item.text.trim() !== '');
+      this.chapterService.update({ ...slot.chapter, content, notes: slot.notes, outline }).subscribe({
+        next: async saved => {
+          this.chapterVersionService.create(slot.chapter.id, content, author).subscribe();
+          await this.draftService.clearDraft(slot.chapter.id);
+          slot.savedContent = content;
+          slot.draftContent = content;
+          slot.hasDraft = false;
+          slot.chapter = { ...slot.chapter, modifiedAt: saved.modifiedAt ?? slot.chapter.modifiedAt };
+          resolve({ slot, warnings: saved.contentWarnings });
+        },
+        error: () => resolve(null),
+      });
+    })));
+    if (this.destroyed) return;
+    this.saving.set(false);
+    const ok = results.filter((r): r is NonNullable<typeof r> => !!r);
+    const savedIds = new Set(ok.map(r => r.slot.chapter.id));
+    this.dirtyChapterIds.update(set => new Set([...set].filter(id => !savedIds.has(id))));
+    const active = this.chapter();
+    if (active && savedIds.has(active.id)) {
+      const slot = this.bookSlots.get(active.id)!;
+      this.lastSavedContent = slot.savedContent;
+      this.hasDraft.set(false);
+      this.historyPanel()?.refreshAfterSave();
+      this.recordRecentChapter();
+      this.checkTaskFulfillment(active.id, slot.savedContent);
+    }
+    const failed = results.length - ok.length;
+    const warnings = ok.flatMap(r => r.warnings ?? []);
+    if (failed) {
+      this.snackBar.open(`Saved ${ok.length} of ${results.length} chapters — ${failed} failed, click Save to retry`, undefined, { duration: 6000 });
+    } else if (warnings.length) {
+      this.notifyContentWarnings(warnings);
+    } else {
+      this.snackBar.open(ok.length === 1 ? 'Chapter saved' : `${ok.length} chapters saved`, undefined, { duration: 3000 });
+    }
+  }
+
+  private updateHeader(): void {
+    const h = this.headerBase;
+    const ch = this.chapter();
+    if (!h || !ch) return;
+    const chapters = this.bookMode() && this.bookChapters().length
+      ? this.bookChapters().map(c => ({ id: c.id, title: c.title }))
+      : h.chapters;
+    this.headerService.set([
+      { label: h.series.title, link: '/series/' + h.series.id, dropdownItems: h.seriesItems },
+      { label: h.book.title, link: '/books/' + h.book.id, dropdownItems: h.bookItems },
+      {
+        label: ch.title || 'Chapter',
+        dropdownItems: chapters.map(c => ({ label: c.title || 'Chapter', link: '/chapters/' + c.id + '/edit', isCurrent: c.id === ch.id })),
+      },
+    ]);
+  }
+
   ngOnDestroy(): void {
     this.destroyed = true;
     // A run has nowhere to report to once the editor is gone, so abandon it.
@@ -433,6 +923,9 @@ export class ChapterEditComponent implements OnInit, OnDestroy {
     this.factCheckService.reset();
     this.factCheckReports.reset();
     document.removeEventListener('keydown', this.onDocumentKeyDown);
+    window.removeEventListener('resize', this.onWindowResize);
+    if (this.bookSearchTimer) clearTimeout(this.bookSearchTimer);
+    if (this.urlSyncTimer) clearTimeout(this.urlSyncTimer);
     this.editorBridge.unregister();
     this.routeSub?.unsubscribe();
     this.chapterSyncSub?.unsubscribe();
@@ -453,6 +946,10 @@ export class ChapterEditComponent implements OnInit, OnDestroy {
   private startPeriodicSave(): void {
     if (this.periodicSaveTimer) return;
     this.periodicSaveTimer = setInterval(() => {
+      if (this.bookMode()) {
+        if (!this.saving() && this.dirtyChapterIds().size > 0) void this.saveBook();
+        return;
+      }
       const currentContent = this.editorRef?.getContent() ?? '';
       if (!this.saving() && this.lastSavedContent !== null && currentContent !== this.lastSavedContent) {
         this.save();
@@ -507,6 +1004,7 @@ export class ChapterEditComponent implements OnInit, OnDestroy {
 
   onOutlineChange(items: OutlineItem[]): void {
     this.outline.set(items);
+    this.markDirty(this.chapter()?.id);
     this.scheduleDraftSave();
   }
 
@@ -602,8 +1100,32 @@ export class ChapterEditComponent implements OnInit, OnDestroy {
 
   private finishMove(targetId: string, targetTitle: string): void {
     this.persistSourceAfterMove();
+    if (this.bookMode()) this.refreshBookChapter(targetId);
     const ref = this.snackBar.open(`Text moved to "${targetTitle || 'Chapter'}"`, 'Open chapter', { duration: 8000 });
     ref.onAction().subscribe(() => window.open(`/chapters/${targetId}/edit`, '_blank'));
+  }
+
+  /** Pulls a chapter changed outside the book editor (e.g. text moved into it)
+   *  back into the open book, inserting it in order if it's new. */
+  private refreshBookChapter(id: string): void {
+    this.chapterService.getById(id).subscribe(data => {
+      if (!this.bookMode() || this.destroyed || data.bookId !== this.chapter()?.bookId) return;
+      const content = data.content ?? '';
+      const existing = this.bookSlots.get(id);
+      if (existing) {
+        const pending = this.dirtyChapterIds().has(id);
+        existing.chapter = { ...data, content };
+        existing.savedContent = content;
+        if (!pending) existing.content = content;
+        this.bookChapters.update(list => list.map(c => (c.id === id ? { ...c, content: existing.content } : c)));
+        if (!pending) this.bookEditor()?.setChapterContent(id, content);
+        return;
+      }
+      this.bookSlots.set(id, makeSlot(data, content, data.notes ?? [], data.outline ?? [], false, content));
+      const ordered = [...this.bookSlots.values()]
+        .sort((a, b) => (a.chapter.sortOrder ?? Infinity) - (b.chapter.sortOrder ?? Infinity));
+      this.bookChapters.set(ordered.map(sl => ({ id: sl.chapter.id, title: sl.chapter.title, content: sl.content })));
+    });
   }
 
   /** Persists the source chapter after a move — mirrors save() but without the
@@ -622,6 +1144,12 @@ export class ChapterEditComponent implements OnInit, OnDestroy {
         await this.draftService.clearDraft(chapter.id);
         this.hasDraft.set(false);
         this.lastSavedContent = content;
+        const slot = this.bookSlots.get(chapter.id);
+        if (slot) {
+          slot.savedContent = content;
+          slot.hasDraft = false;
+          this.dirtyChapterIds.update(set => new Set([...set].filter(x => x !== chapter.id)));
+        }
       },
       error: () => this.snackBar.open('Text moved, but saving this chapter failed — click Save to retry', undefined, { duration: 5000 }),
     });
@@ -751,7 +1279,15 @@ export class ChapterEditComponent implements OnInit, OnDestroy {
 
   updateTitle(value: string): void {
     const current = this.chapter();
-    if (current) this.chapter.set({ ...current, title: value });
+    if (!current) return;
+    this.chapter.set({ ...current, title: value });
+    if (this.bookMode()) {
+      const slot = this.bookSlots.get(current.id);
+      if (slot) slot.chapter = { ...slot.chapter, title: value };
+      this.bookChapters.update(list => list.map(c => (c.id === current.id ? { ...c, title: value } : c)));
+      this.markDirty(current.id);
+      this.updateHeader();
+    }
   }
 
   // ── Chapter details (POV / setting / story-time) ──────────────────────────
@@ -782,6 +1318,7 @@ export class ChapterEditComponent implements OnInit, OnDestroy {
   }
 
   async save(): Promise<void> {
+    if (this.bookMode()) return this.saveBook();
     const chapter = this.chapter();
     if (!chapter || !chapter.title.trim()) return;
 
@@ -913,6 +1450,12 @@ export class ChapterEditComponent implements OnInit, OnDestroy {
           this.imageThumbnailUrl.set(data.imageThumbnailUrl ?? null);
           this.editorRef?.setContent(data.content ?? '');
           this.mentionContent.set(data.content ?? '');
+          const slot = this.bookSlots.get(data.id);
+          if (slot) {
+            Object.assign(slot, makeSlot(data, data.content ?? '', data.notes ?? [], data.outline ?? [], false, data.content ?? ''));
+            this.bookChapters.update(list => list.map(c => (c.id === data.id ? { id: data.id, title: data.title, content: data.content ?? '' } : c)));
+            this.dirtyChapterIds.update(set => new Set([...set].filter(x => x !== data.id)));
+          }
         },
       });
     });
@@ -975,6 +1518,7 @@ export class ChapterEditComponent implements OnInit, OnDestroy {
   private scheduleNotesDraftSave(): void {
     const current = this.chapter();
     if (!current) return;
+    this.markDirty(current.id);
     const content = this.editorRef?.getContent() ?? '';
     if (this.autoSaveTimer) clearTimeout(this.autoSaveTimer);
     this.autoSaveTimer = setTimeout(() => {
@@ -1077,9 +1621,24 @@ export class ChapterEditComponent implements OnInit, OnDestroy {
 
   // ── Find-in-page search ──────────────────────────────────────────────────
 
-  openSearch(): void {
+  openSearch(scope: 'chapter' | 'book' = 'chapter'): void {
+    const wasVisible = this.searchVisible();
     this.searchVisible.set(true);
-    setTimeout(() => this.searchInputEl?.nativeElement?.focus());
+    if (scope !== this.searchScope() || !wasVisible) this.setSearchScope(scope);
+    setTimeout(() => {
+      this.searchInputEl?.nativeElement?.focus();
+      this.searchInputEl?.nativeElement?.select();
+    });
+  }
+
+  /** Switches the find bar between this chapter and the whole book, re-running
+   *  the current query in the new scope. */
+  setSearchScope(scope: 'chapter' | 'book'): void {
+    const effective = scope === 'book' && !this.bookMode() ? 'chapter' : scope;
+    this.clearAllSearchHighlights();
+    this.searchScope.set(effective);
+    this.searchLocation.set('');
+    if (this.searchQuery()) this.onSearchQueryChange(this.searchQuery());
   }
 
   closeSearch(): void {
@@ -1087,12 +1646,92 @@ export class ChapterEditComponent implements OnInit, OnDestroy {
     this.searchQuery.set('');
     this.searchMatchCount.set(0);
     this.searchMatchIndex.set(0);
-    this.editorRef?.clearSearchHighlights();
+    this.searchLocation.set('');
+    this.bookSearchCounts = [];
+    if (this.bookSearchTimer) { clearTimeout(this.bookSearchTimer); this.bookSearchTimer = null; }
+    this.clearAllSearchHighlights();
     this.editorRef?.focus();
+  }
+
+  private clearAllSearchHighlights(): void {
+    const editors = this.bookMode() ? this.bookEditor()?.mountedEditors() ?? [] : [this.editorRef];
+    for (const editor of editors) editor?.clearSearchHighlights();
+  }
+
+  private get isBookSearch(): boolean {
+    return this.searchScope() === 'book' && this.bookMode();
+  }
+
+  /** Counts matches in every chapter (stored text for unmounted chapters,
+   *  live text for mounted ones) and jumps to the first one at or after the
+   *  chapter being read. */
+  private runBookSearch(): void {
+    const query = this.searchQuery();
+    this.clearAllSearchHighlights();
+    if (!query.trim()) {
+      this.bookSearchCounts = [];
+      this.searchMatchCount.set(0);
+      this.searchMatchIndex.set(0);
+      this.searchLocation.set('');
+      return;
+    }
+    const activeId = this.chapter()?.id;
+    this.bookSearchCounts = this.bookChapters().map(c => {
+      const live = this.bookEditor()?.editorFor(c.id)?.getContent();
+      const html = live ?? this.bookSlots.get(c.id)?.content ?? c.content;
+      return { id: c.id, count: countMatches(this.bookTextIndex.runsFor(c.id, html), query) };
+    });
+    const counts = this.bookSearchCounts.map(c => c.count);
+    const total = counts.reduce((a, b) => a + b, 0);
+    this.searchMatchCount.set(total);
+    if (total === 0) { this.searchMatchIndex.set(0); this.searchLocation.set(''); return; }
+    const start = firstMatchFrom(counts, Math.max(0, this.bookSearchCounts.findIndex(c => c.id === activeId)));
+    this.searchMatchIndex.set(start);
+    void this.showBookMatch(start);
+  }
+
+  /** Brings a book-wide match on screen: moves to its chapter (mounting the
+   *  editor if needed), highlights the chapter's matches and scrolls to it. */
+  private async showBookMatch(global: number): Promise<void> {
+    const query = this.searchQuery();
+    const where = locateMatch(this.bookSearchCounts.map(c => c.count), global);
+    if (!where) return;
+    const entry = this.bookSearchCounts[where.chapter]!;
+    if (entry.id !== this.chapter()?.id) {
+      this.clearAllSearchHighlights();
+      this.bookEditor()?.scrollToChapter(entry.id);
+      this.activateBookChapter(entry.id);
+    }
+    const editor = await this.waitForBookEditor(entry.id);
+    if (!editor || this.searchQuery() !== query || !this.searchVisible()) return;
+    const live = editor.highlightSearchMatches(query);
+    if (live !== entry.count) {
+      // The live text can differ slightly from the stored text (e.g. a match
+      // split by a grammar mark); keep the totals honest.
+      this.searchMatchCount.update(t => t + live - entry.count);
+      entry.count = live;
+    }
+    if (live > 0) editor.scrollToSearchMatch(Math.min(where.local, live - 1));
+    const title = this.bookChapters()[where.chapter]?.title || 'Untitled chapter';
+    this.searchLocation.set(`Ch. ${where.chapter + 1} — ${title}`);
+  }
+
+  private async waitForBookEditor(id: string): Promise<RichTextEditorComponent | undefined> {
+    for (let i = 0; i < 60; i++) {
+      const editor = this.bookEditor()?.editorFor(id);
+      if (editor?.getEditorElement()?.isConnected) return editor;
+      await new Promise(r => requestAnimationFrame(r));
+    }
+    return undefined;
   }
 
   onSearchQueryChange(query: string): void {
     this.searchQuery.set(query);
+    if (this.isBookSearch) {
+      if (this.bookSearchTimer) clearTimeout(this.bookSearchTimer);
+      this.bookSearchTimer = setTimeout(() => { this.bookSearchTimer = null; this.runBookSearch(); }, 150);
+      return;
+    }
     if (!query.trim()) {
       this.editorRef?.clearSearchHighlights();
       this.searchMatchCount.set(0);
@@ -1121,7 +1760,8 @@ export class ChapterEditComponent implements OnInit, OnDestroy {
     if (count === 0) return;
     const next = (this.searchMatchIndex() + 1) % count;
     this.searchMatchIndex.set(next);
-    this.editorRef?.scrollToSearchMatch(next);
+    if (this.isBookSearch) void this.showBookMatch(next);
+    else this.editorRef?.scrollToSearchMatch(next);
   }
 
   prevSearchMatch(): void {
@@ -1129,7 +1769,8 @@ export class ChapterEditComponent implements OnInit, OnDestroy {
     if (count === 0) return;
     const prev = (this.searchMatchIndex() - 1 + count) % count;
     this.searchMatchIndex.set(prev);
-    this.editorRef?.scrollToSearchMatch(prev);
+    if (this.isBookSearch) void this.showBookMatch(prev);
+    else this.editorRef?.scrollToSearchMatch(prev);
   }
 
   // ── Quote capture ────────────────────────────────────────────────────────
@@ -1197,7 +1838,8 @@ export class ChapterEditComponent implements OnInit, OnDestroy {
           timeline.adds.length + timeline.updates.length + timeline.removes.length +
           relationships.adds.length;
         if (totalProposals === 0) {
-          this.snackBar.open('Nothing new found — everything is up to date', undefined, { duration: 4000 });
+          if (this.bookMode()) this.offerNextChapter('analyze', 'Nothing new found in this chapter');
+          else this.snackBar.open('Nothing new found — everything is up to date', undefined, { duration: 4000 });
           return;
         }
         const ref = this.dialog.open(ChapterAnalysisDialogComponent, {
@@ -1206,11 +1848,11 @@ export class ChapterEditComponent implements OnInit, OnDestroy {
           maxHeight: '85vh',
         });
         ref.afterClosed().subscribe((selection?: ChapterAnalysisDialogResult) => {
-          if (!selection) return;
+          if (!selection) { this.offerNextChapter('analyze'); return; }
           const { timeline: tl, relationships: rel } = selection;
           const hasTl = tl.adds.length + tl.updates.length + tl.removes.length > 0;
           const hasRel = rel.adds.length > 0;
-          if (!hasTl && !hasRel) return;
+          if (!hasTl && !hasRel) { this.offerNextChapter('analyze'); return; }
 
           const pending: Promise<string>[] = [];
 
@@ -1250,7 +1892,8 @@ export class ChapterEditComponent implements OnInit, OnDestroy {
 
           Promise.all(pending).then(parts => {
             const summary = parts.filter(Boolean).join(', ');
-            if (summary) this.snackBar.open(`Applied: ${summary}`, undefined, { duration: 4000 });
+            if (this.bookMode()) this.offerNextChapter('analyze', summary ? `Applied: ${summary}` : undefined);
+            else if (summary) this.snackBar.open(`Applied: ${summary}`, undefined, { duration: 4000 });
           });
         });
       },
@@ -1313,14 +1956,11 @@ export class ChapterEditComponent implements OnInit, OnDestroy {
     }
     const count = this.factCheckService.findings().length;
     if (count === 0) {
-      this.snackBar.open(
-        this.factCheckService.stopped()
-          ? 'Fact check stopped — nothing was checked'
-          : 'No real-world claims found in this chapter',
-        undefined,
-        { duration: 4000 },
-      );
+      const stopped = this.factCheckService.stopped();
+      const message = stopped ? 'Fact check stopped — nothing was checked' : 'No real-world claims found in this chapter';
       this.factCheckService.reset();
+      if (!stopped && this.bookMode()) this.offerNextChapter('factCheck', message);
+      else this.snackBar.open(message, undefined, { duration: 4000 });
       return;
     }
     // A stopped run is the author's decision to look away, so don't shove the
@@ -1339,6 +1979,7 @@ export class ChapterEditComponent implements OnInit, OnDestroy {
       return;
     }
     this.openFactCheckPanel();
+    if (!stoppedEarly) this.offerNextChapter('factCheck', `Fact check done — ${count} ${count === 1 ? 'claim' : 'claims'} checked`);
   }
 
   /** Saves the run just finished, then clears the live report so the panel
@@ -1622,4 +2263,30 @@ export interface ContentWarningsDialogData {
 })
 export class ContentWarningsDialogComponent {
   data = inject<ContentWarningsDialogData>(MAT_DIALOG_DATA);
+}
+
+/** One chapter's state while the full book is open. */
+interface BookSlot {
+  chapter: Chapter;
+  /** Latest HTML (live editor content is read back on every switch/save). */
+  content: string;
+  notes: ChapterNote[];
+  outline: OutlineItem[];
+  /** Has an unsaved local draft. */
+  hasDraft: boolean;
+  /** Content as of the last server save. */
+  savedContent: string;
+  /** Content as of the last local draft write. */
+  draftContent: string;
+  taskCheckBaseline: string | null;
+}
+
+function makeSlot(
+  chapter: Chapter, content: string, notes: ChapterNote[], outline: OutlineItem[],
+  hasDraft: boolean, savedContent: string,
+): BookSlot {
+  return {
+    chapter: { ...chapter, content }, content, notes, outline, hasDraft, savedContent,
+    draftContent: hasDraft ? content : savedContent, taskCheckBaseline: savedContent,
+  };
 }

@@ -1185,3 +1185,29 @@ mark.quill-passage-highlight {
   height: 16px;
   color: #1976d2;
 }
+
+/* ── Embedded (full-book editor) ─────────────────────── */
+:host(.rte-embedded) {
+  display: block;
+  flex: none;
+  z-index: auto;
+
+  .rte-host { display: block; }
+
+  .rte-content-editor {
+    overflow: visible;
+    border: none;
+    border-radius: 0;
+    padding: 0;
+    min-height: 1.75em;
+    scroll-padding-bottom: 0;
+
+    &:focus { box-shadow: none; }
+  }
+
+  ::ng-deep .page-spacer {
+    display: block;
+    user-select: none;
+    pointer-events: none;
+  }
+}

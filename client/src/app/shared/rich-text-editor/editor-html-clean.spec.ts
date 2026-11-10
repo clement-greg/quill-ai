@@ -31,4 +31,9 @@ describe('cleanEditorHtml', () => {
     const html = '<p><mark class="quill-review-highlight">kept</mark></p>';
     expect(cleanEditorHtml(html)).toBe(html);
   });
+
+  it('removes full-book page spacers and re-joins the text they split', () => {
+    const html = '<p>The end of one page <span data-page-spacer="" contenteditable="false" class="page-spacer" style="height: 168px"></span>and the next.</p>';
+    expect(cleanEditorHtml(html)).toBe('<p>The end of one page and the next.</p>');
+  });
 });

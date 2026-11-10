@@ -18,6 +18,7 @@
     (paste)="onEditorPaste($event)">
   </div>
 
+  @if (!embedded()) {
   <!-- Word count badge -->
   <div class="rte-word-count" aria-live="polite" aria-label="Word count">
     {{ wordCount() | number }} words
@@ -43,6 +44,7 @@
         <div class="rte-minimap-tooltip-hint">Click to open</div>
       }
     </div>
+  }
   }
 
   <!-- Image resize overlay -->

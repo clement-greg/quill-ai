@@ -1,0 +1,58 @@
+/* Book-view controls for the chapter editor: the Chapter | Book toggle, the
+   unsaved-chapters badge on Save, and the find bar's Chapter | Book scope.
+   Kept apart from chapter-edit.scss so each stays within its style budget. */
+/* ── Chapter / Book view toggle ──────────────────────── */
+.mode-toggle {
+  height: 36px;
+  align-items: center;
+  margin-right: 8px;
+
+  mat-icon { font-size: 18px; width: 18px; height: 18px; vertical-align: -4px; margin-right: 2px; }
+}
+
+.dirty-count {
+  display: inline-block;
+  min-width: 18px;
+  margin-left: 6px;
+  padding: 0 5px;
+  border-radius: 9px;
+  font-size: 0.72rem;
+  line-height: 18px;
+  text-align: center;
+  background: color-mix(in srgb, currentColor 22%, transparent);
+}
+
+/* ── Find: chapter / book scope ──────────────────────── */
+.search-bar.in-book { right: 112px; } /* clear of the book minimap */
+
+.search-scope {
+  display: inline-flex;
+  margin-right: 6px;
+  border: 1px solid var(--mat-sys-outline-variant, #e0e0e0);
+  border-radius: 6px;
+  overflow: hidden;
+}
+
+.search-scope-btn {
+  padding: 3px 8px;
+  border: none;
+  background: transparent;
+  color: var(--mat-sys-on-surface-variant, #666);
+  font: 500 0.72rem system-ui, sans-serif;
+  cursor: pointer;
+
+  &.active {
+    background: color-mix(in srgb, var(--mat-sys-primary, #1976d2) 16%, transparent);
+    color: var(--mat-sys-primary, #1976d2);
+  }
+  &:focus-visible { outline: 2px solid var(--mat-sys-primary, #1976d2); outline-offset: -2px; }
+}
+
+.search-location {
+  margin-left: 4px;
+  max-width: 180px;
+  display: inline-block;
+  vertical-align: bottom;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
