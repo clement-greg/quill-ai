@@ -1,13 +1,14 @@
 import SwiftUI
 import WebKit
+import WidgetKit
 
 /// The whole Quill AI web app in a WKWebView, plus the `window.quillNative`
 /// bridge the web app uses for sign-in and to share its session with Siri.
 struct WebView: UIViewRepresentable {
-    let url: URL
+    let page: WebPage
 
     func makeCoordinator() -> Coordinator {
-        Coordinator(appURL: url)
+        Coordinator(appURL: AppConfig.baseURL)
     }
 
     func makeUIView(context: Context) -> WKWebView {
@@ -32,11 +33,16 @@ struct WebView: UIViewRepresentable {
         webView.isInspectable = true
         #endif
         context.coordinator.webView = webView
-        webView.load(URLRequest(url: url))
+        context.coordinator.loadedPage = page.id
+        webView.load(URLRequest(url: page.url))
         return webView
     }
 
-    func updateUIView(_ webView: WKWebView, context: Context) {}
+    func updateUIView(_ webView: WKWebView, context: Context) {
+        guard context.coordinator.loadedPage != page.id else { return }
+        context.coordinator.loadedPage = page.id
+        webView.load(URLRequest(url: page.url))
+    }
 
     @MainActor
     final class Coordinator: NSObject, WKScriptMessageHandler, WKNavigationDelegate, WKUIDelegate {
@@ -76,6 +82,8 @@ struct WebView: UIViewRepresentable {
 
         let appURL: URL
         weak var webView: WKWebView?
+        /// The `WebPage` last loaded, so a new one from a widget link loads exactly once.
+        var loadedPage: UUID?
         private var signIn: GoogleSignIn?
 
         init(appURL: URL) {
@@ -100,7 +108,11 @@ struct WebView: UIViewRepresentable {
 
             switch type {
             case "setSession":
-                SessionStore.save(body["refreshToken"] as? String)
+                let token = body["refreshToken"] as? String
+                let changed = (token == nil) != (SessionStore.refreshToken == nil)
+                SessionStore.save(token)
+                // Signing in or out changes what the widgets can show.
+                if changed { WidgetCenter.shared.reloadAllTimelines() }
             case "signIn":
                 guard let id = body["id"] as? Int else { return }
                 runSignIn(id: id)
