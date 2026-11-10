@@ -44,7 +44,7 @@ device builds load the hosted site (`AppConfig.swift`).
 3. **Open the project:** `open ios/QuillAI.xcodeproj`
 4. **Pick your team:** select the **QuillAI** project in the left sidebar →
    **QuillAI** target → **Signing & Capabilities** → *Team* → your team. If Xcode
-   says the bundle identifier is taken, change `app.quillai.ios` to something
+   says the bundle identifier is taken, change `com.elevatehomescriptions.quillai` to something
    unique to you (e.g. `com.yourname.quillai`) there and in `project.yml`.
 
 ## Running it
@@ -59,6 +59,12 @@ device builds load the hosted site (`AppConfig.swift`).
   4. Open Quill AI on the phone and **sign in**. Siri can't do anything until
      you've signed in once.
   5. Try *"Hey Siri, save a thought in Quill AI."*
+
+If Siri replies "I don't understand" (or tries a contact or the Health app)
+even though **Save a Thought** and **Ask Quill** run fine from Search, make sure
+Apple's **Shortcuts** app is installed. Siri uses it to run other apps'
+commands, and it can be deleted like any other app. Reinstall it from the App
+Store, then open Quill AI once.
 
 Builds installed this way with a paid developer account last a year. To share
 with others, or to install without Xcode, use TestFlight: Product → Archive →

@@ -20,6 +20,23 @@
 	<string>$(MARKETING_VERSION)</string>
 	<key>CFBundleVersion</key>
 	<string>$(CURRENT_PROJECT_VERSION)</string>
+	<!-- Other names Siri accepts for the app, so "save a thought in Quill" works too.
+	     The hints steer speech recognition away from similar words (e.g. "Quinn"). -->
+	<key>INAlternativeAppNames</key>
+	<array>
+		<dict>
+			<key>INAlternativeAppName</key>
+			<string>Quill</string>
+			<key>INAlternativeAppNamePronunciationHint</key>
+			<string>kwill</string>
+		</dict>
+		<dict>
+			<key>INAlternativeAppName</key>
+			<string>Quill A I</string>
+			<key>INAlternativeAppNamePronunciationHint</key>
+			<string>kwill ay eye</string>
+		</dict>
+	</array>
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
 	<key>UILaunchScreen</key>
@@ -54,6 +71,8 @@
 	<string>Quill AI uses your photos when you add one to a chat or an entity.</string>
 	<key>NSMicrophoneUsageDescription</key>
 	<string>Quill AI uses the microphone when you dictate to Ask Quill.</string>
+	<key>NSSiriUsageDescription</key>
+	<string>Siri can save thoughts to Quill AI and answer questions about your story.</string>
 	<key>NSSpeechRecognitionUsageDescription</key>
 	<string>Quill AI turns your dictation into text for Ask Quill.</string>
 </dict>
