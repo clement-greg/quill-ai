@@ -1,0 +1,90 @@
+import Foundation
+
+/// One spoken unit sent by the web app: a chapter title or a paragraph.
+struct SpeechSegment: Decodable, Equatable {
+    let text: String
+    let chapterTitle: String
+    let chapterIndex: Int
+}
+
+/// What `window.quillNative.speech.play()` sends.
+struct SpeechPlayRequest: Decodable {
+    let segments: [SpeechSegment]
+    let startIndex: Int
+    let voiceId: String?
+    let rate: Double
+    let bookTitle: String
+}
+
+/// Pure timing and navigation math for the read-aloud queue. Speech has no real
+/// duration, so the lock screen / CarPlay scrubber uses an estimate from text length.
+struct SpeechTimeline {
+    /// Roughly 170 words a minute at normal speed.
+    static let charactersPerSecond = 14.5
+
+    let segments: [SpeechSegment]
+    /// The web app's speed (1 = normal).
+    let rate: Double
+
+    /// Estimated start time of each segment, plus the total at the end.
+    private var starts: [Double] {
+        var out: [Double] = [0]
+        out.reserveCapacity(segments.count + 1)
+        for seg in segments { out.append(out.last! + seconds(for: seg)) }
+        return out
+    }
+
+    func seconds(for segment: SpeechSegment) -> Double {
+        max(1, Double(segment.text.count) / (Self.charactersPerSecond * max(rate, 0.1)))
+    }
+
+    var duration: Double { starts.last ?? 0 }
+
+    func startTime(of index: Int) -> Double {
+        let s = starts
+        return s[min(max(index, 0), s.count - 1)]
+    }
+
+    /// The segment playing at `time` seconds into the queue.
+    func index(at time: Double) -> Int {
+        guard !segments.isEmpty else { return 0 }
+        let s = starts
+        var i = 0
+        while i + 1 < segments.count && s[i + 1] <= time { i += 1 }
+        return i
+    }
+
+    /// Where a ±seconds skip lands; always moves at least one segment forward.
+    func skip(from index: Int, elapsedInSegment: Double, by seconds: Double) -> Int {
+        let target = startTime(of: index) + elapsedInSegment + seconds
+        let landed = self.index(at: max(0, target))
+        if seconds > 0 && landed <= index { return min(index + 1, segments.count - 1) }
+        return landed
+    }
+
+    /// First segment of the next chapter, or nil in the last chapter.
+    func nextChapterStart(from index: Int) -> Int? {
+        guard segments.indices.contains(index) else { return nil }
+        let chapter = segments[index].chapterIndex
+        return segments.indices.first { $0 > index && segments[$0].chapterIndex != chapter }
+    }
+
+    /// Restarts this chapter, or goes back one when already at (or just past) its start.
+    func previousChapterStart(from index: Int) -> Int {
+        guard segments.indices.contains(index) else { return 0 }
+        let chapter = segments[index].chapterIndex
+        let start = segments.firstIndex { $0.chapterIndex == chapter } ?? 0
+        if index - start > 1 || chapter == 0 { return start }
+        return segments.firstIndex { $0.chapterIndex == chapter - 1 } ?? start
+    }
+
+    var chapterCount: Int { (segments.last?.chapterIndex ?? -1) + 1 }
+
+    /// Maps the web speed (1 = normal) onto AVSpeechUtterance's 0…1 scale, where
+    /// 0.5 is normal and the scale is steeper above it.
+    static func utteranceRate(for rate: Double, defaultRate: Float = 0.5, min minRate: Float = 0, max maxRate: Float = 1) -> Float {
+        let r = Float(rate)
+        let mapped = r >= 1 ? defaultRate + (r - 1) * 0.2 : defaultRate * r
+        return Swift.min(Swift.max(mapped, minRate), maxRate)
+    }
+}

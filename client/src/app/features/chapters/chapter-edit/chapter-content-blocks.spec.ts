@@ -1,4 +1,4 @@
-import { parseContentBlocks, insertHtmlAtAnchor } from './chapter-content-blocks';
+import { parseContentBlocks, insertHtmlAtAnchor, collectContentBlocks, blockRange, blockIndexOf } from './chapter-content-blocks';
 
 describe('parseContentBlocks', () => {
   it('lists flat top-level paragraphs', () => {
@@ -78,5 +78,33 @@ describe('insertHtmlAtAnchor', () => {
   it('appends at the end when the anchor no longer resolves', () => {
     const stale = { startPath: [9, 9], endPath: [9, 9] };
     expect(insertHtmlAtAnchor('<p>One</p>', '<p>X</p>', stale, 'before')).toBe('<p>One</p><p>X</p>');
+  });
+});
+
+describe('live block helpers', () => {
+  function root(html: string): HTMLElement {
+    const el = document.createElement('div');
+    el.innerHTML = html;
+    return el;
+  }
+
+  it('collects blocks from a live root and ranges over them', () => {
+    const el = root('<div><p>One</p><p>Two</p></div>tail <b>run</b>');
+    const blocks = collectContentBlocks(el);
+    expect(blocks.map(b => b.text)).toEqual(['One', 'Two', 'tail run']);
+    expect(blockRange(el, blocks[1]!.anchor)?.toString()).toBe('Two');
+    expect(blockRange(el, blocks[2]!.anchor)?.toString()).toBe('tail run');
+  });
+
+  it('returns null for an anchor that no longer resolves', () => {
+    expect(blockRange(root('<p>x</p>'), { startPath: [4], endPath: [4] })).toBeNull();
+  });
+
+  it('finds the block holding a node, or -1', () => {
+    const el = root('<p>One</p><p>Two <i>it</i></p>');
+    const blocks = collectContentBlocks(el);
+    const italic = el.querySelector('i')!.firstChild!;
+    expect(blockIndexOf(el, blocks, italic)).toBe(1);
+    expect(blockIndexOf(el, blocks, document.createTextNode('elsewhere'))).toBe(-1);
   });
 });

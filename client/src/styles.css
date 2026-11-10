@@ -145,3 +145,8 @@ body.resizing-col, body.resizing-col * {
 :is(span, p)[data-ai-generated="modified"] {
   color: #ECAD63;
 }
+
+/* Paragraph being read aloud (CSS Custom Highlight API; see read-aloud-highlight.ts). */
+::highlight(read-aloud) {
+  background-color: color-mix(in srgb, var(--mat-sys-primary, #6750a4) 22%, transparent);
+}

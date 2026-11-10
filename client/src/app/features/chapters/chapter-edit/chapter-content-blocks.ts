@@ -31,9 +31,31 @@ const BLOCK_SELECTOR = 'p, div, ul, ol, h1, h2, h3, h4, h5, h6, blockquote, pre'
 export function parseContentBlocks(content: string): ContentBlock[] {
   const container = document.createElement('div');
   container.innerHTML = content;
+  return collectContentBlocks(container);
+}
+
+/** Same as parseContentBlocks, for an already-parsed root such as a live
+ *  editor element, so anchors resolve against that exact DOM. */
+export function collectContentBlocks(root: Node): ContentBlock[] {
   const blocks: ContentBlock[] = [];
-  collectBlocks(container, [], blocks);
+  collectBlocks(root, [], blocks);
   return blocks.filter(b => b.text.length > 0);
+}
+
+/** A Range covering the anchored block within root, or null if it no longer resolves. */
+export function blockRange(root: Node, anchor: BlockAnchor): Range | null {
+  const start = resolvePath(root, anchor.startPath);
+  const end = resolvePath(root, anchor.endPath);
+  if (!start || !end) return null;
+  const range = (root.ownerDocument ?? document).createRange();
+  range.setStartBefore(start);
+  range.setEndAfter(end);
+  return range;
+}
+
+/** Index of the block containing node (e.g. the caret), or -1. */
+export function blockIndexOf(root: Node, blocks: readonly ContentBlock[], node: Node): number {
+  return blocks.findIndex(b => blockRange(root, b.anchor)?.intersectsNode(node));
 }
 
 function collectBlocks(parent: Node, path: number[], out: ContentBlock[]): void {

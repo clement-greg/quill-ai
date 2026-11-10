@@ -50,6 +50,11 @@
 			</array>
 		</dict>
 	</array>
+	<!-- Read-aloud keeps speaking with the screen locked or the app in the background. -->
+	<key>UIBackgroundModes</key>
+	<array>
+		<string>audio</string>
+	</array>
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
 	<key>UILaunchScreen</key>

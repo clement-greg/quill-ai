@@ -9,15 +9,18 @@
 /* Begin PBXBuildFile section */
 		06A1FEB7C632A139FD1D279A /* StatsEntry.swift in Sources */ = {isa = PBXBuildFile; fileRef = 885BD4CC82482C322372E288 /* StatsEntry.swift */; };
 		0B0D27829A42BE1C7B7A9055 /* WidgetSnapshotTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = FED9A4E6DEA599D7A2CC352D /* WidgetSnapshotTests.swift */; };
+		1BC5E1DB0BFA12044EC1CDC6 /* SpeechTimelineTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C80DA50CAAFBA5578CDB1575 /* SpeechTimelineTests.swift */; };
 		1CF9E1B7E2F9001E28F5748B /* QuillIntents.swift in Sources */ = {isa = PBXBuildFile; fileRef = A90EC633E83383A25B27FDF9 /* QuillIntents.swift */; };
 		25FCF47FD7AE575C66751C3B /* Conversation.swift in Sources */ = {isa = PBXBuildFile; fileRef = DB6606E0D11274E0F4AC7DE3 /* Conversation.swift */; };
 		3C820FA8A44AACDA7FA97212 /* WebView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5137CFAA2F0B9ABC30F62D12 /* WebView.swift */; };
 		3FA1FD9A65E5743C04CBDC53 /* StatsWidgetProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = BA2AFF14D54DCC25BDD6EC13 /* StatsWidgetProvider.swift */; };
+		497D05E6FD26A64FAC1D810C /* SpeechController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1AB479006F9620EE858017C1 /* SpeechController.swift */; };
 		56646605A67758747C5386BB /* StatsWidgetViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = C6D8D436DC7D3998E8A46BEB /* StatsWidgetViews.swift */; };
 		61B9F9E45A73364F27949819 /* WritingStats.swift in Sources */ = {isa = PBXBuildFile; fileRef = E57C4584E59AFF2F8C54899A /* WritingStats.swift */; };
 		6547E6694746D18539799E31 /* SessionStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = FB90415E13D33C27C0F3B487 /* SessionStore.swift */; };
 		6C69823FD5100A8064AC925F /* AppConfig.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2ED2749A18B001EFF16383B8 /* AppConfig.swift */; };
 		6FB2CFFB9B0E5DE041342D6B /* QuillTasks.swift in Sources */ = {isa = PBXBuildFile; fileRef = B838582674BDCC192C22A0F0 /* QuillTasks.swift */; };
+		915574168193FC39A9256420 /* SpeechTimeline.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B5C6800A4EC2737E416CB55 /* SpeechTimeline.swift */; };
 		93146E22098238A25D134A28 /* QuillAITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = E43D65CD5014B5E050ED3CC2 /* QuillAITests.swift */; };
 		97283B579F55399F89AEC35D /* TaskSpeechTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0AF75BAC8A19640C0B531026 /* TaskSpeechTests.swift */; };
 		980170CCBD09455A4C93EEBD /* QuillAIApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = F08D2D498DE9040FF29121C5 /* QuillAIApp.swift */; };
@@ -70,6 +73,8 @@
 /* Begin PBXFileReference section */
 		0AF75BAC8A19640C0B531026 /* TaskSpeechTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TaskSpeechTests.swift; sourceTree = "<group>"; };
 		19B785A138249F18C652D78A /* QuillAI.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = QuillAI.entitlements; sourceTree = "<group>"; };
+		1AB479006F9620EE858017C1 /* SpeechController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SpeechController.swift; sourceTree = "<group>"; };
+		1B5C6800A4EC2737E416CB55 /* SpeechTimeline.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SpeechTimeline.swift; sourceTree = "<group>"; };
 		276436283B098196162BBC71 /* QuillAITests.xctest */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.cfbundle; path = QuillAITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		2A98BFE85F390884560CC377 /* GoogleSignIn.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GoogleSignIn.swift; sourceTree = "<group>"; };
 		2ED2749A18B001EFF16383B8 /* AppConfig.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppConfig.swift; sourceTree = "<group>"; };
@@ -86,6 +91,7 @@
 		BA2AFF14D54DCC25BDD6EC13 /* StatsWidgetProvider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StatsWidgetProvider.swift; sourceTree = "<group>"; };
 		BD24F852D3A4DC0CCED360AC /* QuillAI.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = QuillAI.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		C6D8D436DC7D3998E8A46BEB /* StatsWidgetViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StatsWidgetViews.swift; sourceTree = "<group>"; };
+		C80DA50CAAFBA5578CDB1575 /* SpeechTimelineTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SpeechTimelineTests.swift; sourceTree = "<group>"; };
 		DB6606E0D11274E0F4AC7DE3 /* Conversation.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Conversation.swift; sourceTree = "<group>"; };
 		E43D65CD5014B5E050ED3CC2 /* QuillAITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QuillAITests.swift; sourceTree = "<group>"; };
 		E57C4584E59AFF2F8C54899A /* WritingStats.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WritingStats.swift; sourceTree = "<group>"; };
@@ -115,6 +121,7 @@
 			isa = PBXGroup;
 			children = (
 				E43D65CD5014B5E050ED3CC2 /* QuillAITests.swift */,
+				C80DA50CAAFBA5578CDB1575 /* SpeechTimelineTests.swift */,
 				0AF75BAC8A19640C0B531026 /* TaskSpeechTests.swift */,
 				FED9A4E6DEA599D7A2CC352D /* WidgetSnapshotTests.swift */,
 			);
@@ -130,6 +137,8 @@
 				19B785A138249F18C652D78A /* QuillAI.entitlements */,
 				F08D2D498DE9040FF29121C5 /* QuillAIApp.swift */,
 				A90EC633E83383A25B27FDF9 /* QuillIntents.swift */,
+				1AB479006F9620EE858017C1 /* SpeechController.swift */,
+				1B5C6800A4EC2737E416CB55 /* SpeechTimeline.swift */,
 				5137CFAA2F0B9ABC30F62D12 /* WebView.swift */,
 			);
 			path = QuillAI;
@@ -293,6 +302,8 @@
 				1CF9E1B7E2F9001E28F5748B /* QuillIntents.swift in Sources */,
 				C1B9D5FF1E5BF0A026A94C76 /* QuillTasks.swift in Sources */,
 				B5D559C9AEC3A9A21190AC0C /* SessionStore.swift in Sources */,
+				497D05E6FD26A64FAC1D810C /* SpeechController.swift in Sources */,
+				915574168193FC39A9256420 /* SpeechTimeline.swift in Sources */,
 				06A1FEB7C632A139FD1D279A /* StatsEntry.swift in Sources */,
 				9F391F4B9306FCE3DA64EB97 /* StatsWidgetViews.swift in Sources */,
 				3C820FA8A44AACDA7FA97212 /* WebView.swift in Sources */,
@@ -322,6 +333,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				93146E22098238A25D134A28 /* QuillAITests.swift in Sources */,
+				1BC5E1DB0BFA12044EC1CDC6 /* SpeechTimelineTests.swift in Sources */,
 				97283B579F55399F89AEC35D /* TaskSpeechTests.swift in Sources */,
 				0B0D27829A42BE1C7B7A9055 /* WidgetSnapshotTests.swift in Sources */,
 			);

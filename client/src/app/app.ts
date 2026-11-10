@@ -1,3 +1,4 @@
+import { ReadAloudPlayerComponent } from './shared/read-aloud-player/read-aloud-player';
 import { Component, inject, computed, OnInit, OnDestroy, effect, signal } from '@angular/core';
 import { toSignal } from '@angular/core/rxjs-interop';
 import { RouterOutlet, RouterLink, Router, NavigationEnd } from '@angular/router';
@@ -21,7 +22,7 @@ import { UnsavedDraftsMenuComponent } from '@app/shared/unsaved-drafts-menu/unsa
 
 @Component({
   selector: 'app-root',
-  imports: [RouterOutlet, RouterLink, MatToolbarModule, MatButtonModule, MatIconModule, AiAssistantComponent, BreadcrumbDropdownComponent, AppExplorerComponent, QuickChatComponent, UnsavedDraftsMenuComponent],
+  imports: [RouterOutlet, RouterLink, MatToolbarModule, MatButtonModule, MatIconModule, AiAssistantComponent, BreadcrumbDropdownComponent, AppExplorerComponent, QuickChatComponent, UnsavedDraftsMenuComponent, ReadAloudPlayerComponent],
   templateUrl: './app.html',
   styleUrl: './app.scss',
   host: {

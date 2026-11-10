@@ -1,0 +1,79 @@
+@if (ra.active()) {
+  <section class="ra-bar" aria-label="Read aloud player">
+    <div class="ra-info">
+      <div class="ra-title" [title]="title()">{{ title() }}</div>
+      <div class="ra-sub">{{ subtitle() }}</div>
+      @if (ra.error(); as error) {
+        <div class="ra-error" role="alert">{{ error }}</div>
+      }
+    </div>
+
+    <div class="ra-controls" role="group" aria-label="Playback">
+      @if (multiChapter()) {
+        <button mat-icon-button type="button" (click)="ra.previousChapter()" [disabled]="atStart()"
+          aria-label="Previous chapter" matTooltip="Previous chapter">
+          <mat-icon>skip_previous</mat-icon>
+        </button>
+      }
+      <button mat-icon-button type="button" (click)="ra.previousParagraph()" [disabled]="atStart()"
+        aria-label="Previous paragraph" matTooltip="Previous paragraph">
+        <mat-icon>fast_rewind</mat-icon>
+      </button>
+      <button mat-flat-button type="button" class="ra-play" (click)="ra.playPause()"
+        [attr.aria-label]="playing() ? 'Pause' : 'Play'">
+        <mat-icon>{{ playing() ? 'pause' : 'play_arrow' }}</mat-icon>
+      </button>
+      <button mat-icon-button type="button" (click)="ra.nextParagraph()" [disabled]="atEnd()"
+        aria-label="Next paragraph" matTooltip="Next paragraph">
+        <mat-icon>fast_forward</mat-icon>
+      </button>
+      @if (multiChapter()) {
+        <button mat-icon-button type="button" (click)="ra.nextChapter()" [disabled]="!hasNextChapter()"
+          aria-label="Next chapter" matTooltip="Next chapter">
+          <mat-icon>skip_next</mat-icon>
+        </button>
+      }
+    </div>
+
+    <div class="ra-settings">
+      <button mat-button type="button" class="ra-rate" [matMenuTriggerFor]="rateMenu"
+        [attr.aria-label]="'Speed ' + rateLabel(ra.rate())" matTooltip="Speed">
+        {{ rateLabel(ra.rate()) }}
+      </button>
+      <mat-menu #rateMenu="matMenu">
+        @for (rate of rates; track rate) {
+          <button mat-menu-item type="button" (click)="ra.setRate(rate)" [attr.aria-checked]="rate === ra.rate()" role="menuitemradio">
+            <mat-icon>{{ rate === ra.rate() ? 'check' : '' }}</mat-icon>
+            {{ rateLabel(rate) }}
+          </button>
+        }
+      </mat-menu>
+
+      <button mat-icon-button type="button" [matMenuTriggerFor]="voiceMenu" (menuOpened)="ra.loadVoices()"
+        [attr.aria-label]="'Voice: ' + selectedVoiceName()" [matTooltip]="'Voice: ' + selectedVoiceName()">
+        <mat-icon>record_voice_over</mat-icon>
+      </button>
+      <mat-menu #voiceMenu="matMenu" class="ra-voice-menu">
+        <button mat-menu-item type="button" (click)="ra.setVoice(null)" role="menuitemradio" [attr.aria-checked]="!ra.voiceId()">
+          <mat-icon>{{ !ra.voiceId() ? 'check' : '' }}</mat-icon>
+          System default
+        </button>
+        @for (voice of ra.voices(); track voice.id) {
+          <button mat-menu-item type="button" (click)="ra.setVoice(voice.id)" role="menuitemradio"
+            [attr.aria-checked]="voice.id === ra.voiceId()">
+            <mat-icon>{{ voice.id === ra.voiceId() ? 'check' : '' }}</mat-icon>
+            <span>{{ voice.name }}</span>
+            <span class="ra-voice-meta">{{ voice.lang }}@if (qualityLabel[voice.quality]) { · {{ qualityLabel[voice.quality] }}}</span>
+          </button>
+        }
+        @if (voiceHint()) {
+          <p class="ra-voice-hint">{{ voiceHint() }}</p>
+        }
+      </mat-menu>
+
+      <button mat-icon-button type="button" (click)="ra.stop()" aria-label="Close player" matTooltip="Stop and close">
+        <mat-icon>close</mat-icon>
+      </button>
+    </div>
+  </section>
+}
