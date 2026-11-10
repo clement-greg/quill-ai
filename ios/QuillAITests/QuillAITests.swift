@@ -33,5 +33,27 @@ final class SiriCommandTests: XCTestCase {
         print("ASK QUILL ANSWER: \(answer)")
         XCTAssertFalse(answer.isEmpty)
         XCTAssertNotNil(SessionStore.refreshToken, "Rotated refresh token should be stored")
+
+        // A follow-up only makes sense with the first turn as context.
+        let history = [VoiceTurn(role: .user, content: intent.question), VoiceTurn(role: .assistant, content: answer)]
+        let followUp = try await QuillAPI.ask("Which one is untitled?", history: history)
+        print("FOLLOW-UP ANSWER: \(followUp)")
+        XCTAssertFalse(followUp.isEmpty)
+    }
+}
+
+final class ConversationTests: XCTestCase {
+    func testClosingRepliesEndTheConversation() {
+        for reply in ["No", "no.", "Nope!", "No, thanks", "no thank you", "That's all", "That’s it.", "I'm done",
+                      "nothing else", "Thanks", "Thank you, Quill", "Bye", "no, I'm good", "Never mind", "", "  "] {
+            XCTAssertTrue(Conversation.isClosing(reply), "\(reply) should end the conversation")
+        }
+    }
+
+    func testFollowUpQuestionsContinue() {
+        for reply in ["And her sister?", "No wait, what about Mara?", "Thanks, and who is Elara?",
+                      "Is that all of them?", "Stop the war chapter: when does it start?", "nobody else?"] {
+            XCTAssertFalse(Conversation.isClosing(reply), "\(reply) should be sent as a question")
+        }
     }
 }

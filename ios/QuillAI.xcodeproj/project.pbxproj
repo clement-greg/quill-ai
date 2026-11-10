@@ -7,6 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		15CDA2A857A90FAACDEB8BEE /* Conversation.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9FB1A679E7BAF00FEB34D364 /* Conversation.swift */; };
 		1CF9E1B7E2F9001E28F5748B /* QuillIntents.swift in Sources */ = {isa = PBXBuildFile; fileRef = A90EC633E83383A25B27FDF9 /* QuillIntents.swift */; };
 		3C820FA8A44AACDA7FA97212 /* WebView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5137CFAA2F0B9ABC30F62D12 /* WebView.swift */; };
 		6D38E0E0FA439EB7724721B2 /* AppConfig.swift in Sources */ = {isa = PBXBuildFile; fileRef = DCFD1FF2EB4765E10B735C20 /* AppConfig.swift */; };
@@ -37,6 +38,7 @@
 		587D0AE9E8A8DA3E9D0265EC /* QuillAPI.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QuillAPI.swift; sourceTree = "<group>"; };
 		7735F5D7AF8B8DDBC3EAF5FA /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		996FCDD69EADAC0C99CBD489 /* SessionStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionStore.swift; sourceTree = "<group>"; };
+		9FB1A679E7BAF00FEB34D364 /* Conversation.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Conversation.swift; sourceTree = "<group>"; };
 		A90EC633E83383A25B27FDF9 /* QuillIntents.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QuillIntents.swift; sourceTree = "<group>"; };
 		BD24F852D3A4DC0CCED360AC /* QuillAI.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = QuillAI.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		DCFD1FF2EB4765E10B735C20 /* AppConfig.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppConfig.swift; sourceTree = "<group>"; };
@@ -58,6 +60,7 @@
 			children = (
 				DCFD1FF2EB4765E10B735C20 /* AppConfig.swift */,
 				7735F5D7AF8B8DDBC3EAF5FA /* Assets.xcassets */,
+				9FB1A679E7BAF00FEB34D364 /* Conversation.swift */,
 				2A98BFE85F390884560CC377 /* GoogleSignIn.swift */,
 				4D9570B9B2B5ED699775A40E /* Info.plist */,
 				19B785A138249F18C652D78A /* QuillAI.entitlements */,
@@ -183,6 +186,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				6D38E0E0FA439EB7724721B2 /* AppConfig.swift in Sources */,
+				15CDA2A857A90FAACDEB8BEE /* Conversation.swift in Sources */,
 				EC1EF49A277FDCB23C6B19F8 /* GoogleSignIn.swift in Sources */,
 				980170CCBD09455A4C93EEBD /* QuillAIApp.swift in Sources */,
 				88A5A3650ADDC94B63CA798C /* QuillAPI.swift in Sources */,

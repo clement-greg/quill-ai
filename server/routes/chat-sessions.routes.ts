@@ -124,7 +124,8 @@ const VOICE_GUIDANCE =
   'plain sentences that sound natural read aloud. No markdown, lists, links, bracketed citation numbers, ' +
   'or emoji. When naming several things, join them in a sentence (e.g. "You have two: Character Quirk, ' +
   'and one about a French perfume commercial."). Say a thought\'s title, or describe an untitled one in ' +
-  'a few words, instead of linking it. Keep facts ' +
+  'a few words, instead of linking it. The author may ask follow-up questions; read them in the context of ' +
+  'the conversation so far. Keep facts ' +
   'grounded in your tools exactly as in a typed chat.';
 
 /** Collects a chat turn's SSE stream into the final answer text, for callers that don't stream. */
@@ -3023,21 +3024,54 @@ router.post('/:id/chat', async (req: Request, res: Response) => {
 // editor), it instead grounds the answer in the current chapter — book-scoped
 // RAG, character voice, and the text surrounding the cursor — so the answer is
 // suitable for inserting at the cursor, mirroring the old inline AI Insert.
-// POST /voice — one spoken question, answered in full as plain text (for Siri).
-// Body: { question: string }. Response: { answer: string }. Uses the read-only
-// research tools plus save/find thoughts; nothing that needs a screen.
-router.post('/voice', async (req: Request, res: Response) => {
-  const question = typeof req.body?.question === 'string' ? req.body.question.trim() : '';
-  if (!question) {
-    res.status(400).json({ error: 'question is required' });
-    return;
+/** Longest single message /voice accepts. */
+const VOICE_MAX_MESSAGE_CHARS = 2000;
+/** Earlier turns /voice keeps for context; older ones are dropped. */
+const VOICE_MAX_MESSAGES = 12;
+
+type VoiceMessage = { role: 'user' | 'assistant'; content: string };
+
+/**
+ * Reads a /voice request body into the conversation to answer: the earlier
+ * turns in `messages` (optional) plus the new `question`. Returns an error
+ * message instead when the body is malformed.
+ */
+export function parseVoiceConversation(body: unknown): VoiceMessage[] | string {
+  const b = (body && typeof body === 'object' ? body : {}) as { question?: unknown; messages?: unknown };
+  const question = typeof b.question === 'string' ? b.question.trim() : '';
+  if (!question) return 'question is required';
+  if (question.length > VOICE_MAX_MESSAGE_CHARS) return 'question is too long';
+
+  const history: VoiceMessage[] = [];
+  if (b.messages !== undefined) {
+    if (!Array.isArray(b.messages)) return 'messages must be an array';
+    for (const m of b.messages) {
+      const role = (m as { role?: unknown })?.role;
+      const content = (m as { content?: unknown })?.content;
+      if ((role !== 'user' && role !== 'assistant') || typeof content !== 'string') {
+        return 'each message needs a role of user or assistant and text content';
+      }
+      const text = content.trim();
+      if (!text) continue;
+      if (text.length > VOICE_MAX_MESSAGE_CHARS) return 'a message is too long';
+      history.push({ role, content: text });
+    }
   }
-  if (question.length > 2000) {
-    res.status(400).json({ error: 'question is too long' });
+  return [...history.slice(-VOICE_MAX_MESSAGES), { role: 'user', content: question }];
+}
+
+// POST /voice — a spoken question, answered in full as plain text (for Siri).
+// Body: { question: string, messages?: {role, content}[] } where `messages` is
+// the conversation so far, for follow-ups. Response: { answer: string }. Uses
+// the read-only research tools plus save/find thoughts; nothing that needs a screen.
+router.post('/voice', async (req: Request, res: Response) => {
+  const parsed = parseVoiceConversation(req.body);
+  if (typeof parsed === 'string') {
+    res.status(400).json({ error: parsed });
     return;
   }
   try {
-    const messages = [{ role: 'user' as const, content: question }];
+    const messages = parsed;
     const { systemPrompt, citations } = await buildRagSystemPrompt(messages, {}, req);
     const tools: Record<string, ChatTool> = {
       research_entity: getResearchEntityTool(req),
