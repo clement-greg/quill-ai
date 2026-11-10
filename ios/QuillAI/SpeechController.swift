@@ -1,6 +1,9 @@
 import AVFoundation
 import MediaPlayer
 import UIKit
+import os
+
+private let log = Logger(subsystem: "com.elevatehomescriptions.quillai", category: "ReadAloud")
 
 /// Reads the web app's queue aloud with the iPhone's own voices. Plays in the
 /// background and publishes Now Playing info and remote commands, so the lock
@@ -33,6 +36,12 @@ final class SpeechController: NSObject {
     /// Bumped whenever playback jumps, so buffers and callbacks from an older segment are dropped.
     private var generation = 0
     private var endScheduled = false
+    /// Buffers scheduled for the current paragraph that haven't finished playing.
+    private var pendingBuffers = 0
+    /// The synthesizer has delivered all of the current paragraph's audio.
+    private var renderingDone = false
+    /// The paragraph finished while paused; resume moves on to the next one.
+    private var advancePending = false
     /// The utterance being rendered, to match the synthesizer's didFinish callback.
     private var currentUtterance: ObjectIdentifier?
     /// The position changed (or the engine reset) while paused: resume re-renders from `index`.
@@ -94,6 +103,7 @@ final class SpeechController: NSObject {
     func resume() {
         guard state == .paused, !segments.isEmpty else { return }
         if needsRestart { speak(at: index); return }
+        if advancePending { speak(at: index + 1); return }
         activateSession()
         do {
             try engine.start()
@@ -123,6 +133,7 @@ final class SpeechController: NSObject {
         } else {
             halt()
             needsRestart = true
+            advancePending = false
             index = clamped
             segmentStartedAt = Date()
             onEvent?(["type": "progress", "index": index])
@@ -145,6 +156,9 @@ final class SpeechController: NSObject {
         index = i
         needsRestart = false
         endScheduled = false
+        pendingBuffers = 0
+        renderingDone = false
+        advancePending = false
         activateSession()
         let utterance = AVSpeechUtterance(string: segments[i].text)
         if let voiceId, let voice = AVSpeechSynthesisVoice(identifier: voiceId) { utterance.voice = voice }
@@ -159,40 +173,50 @@ final class SpeechController: NSObject {
             // Main queue is FIFO, so buffers are scheduled in order.
             DispatchQueue.main.async { MainActor.assumeIsolated { self?.receive(pcm, generation: gen) } }
         }
+        log.info("Speaking segment \(i, privacy: .public) (\(self.segments[i].text.count, privacy: .public) chars)")
         onEvent?(["type": "progress", "index": i])
         setState(.playing)
     }
 
     private func receive(_ pcm: AVAudioPCMBuffer, generation gen: Int) {
         guard gen == generation else { return }
-        // An empty buffer marks the end of the utterance.
-        guard pcm.frameLength > 0 else { scheduleEnd(generation: gen); return }
+        // iOS also sends empty buffers partway through an utterance, so they
+        // can't mark its end; only didFinish (renderingFinished) does.
+        guard pcm.frameLength > 0 else { return }
         guard let buffer = floatBuffer(pcm), prepareEngine(for: buffer.format) else { return }
-        player.scheduleBuffer(buffer)
-        if state == .playing && !player.isPlaying { player.play() }
-    }
-
-    /// Queues a short silence after the paragraph (a longer one after chapter
-    /// titles); when it has played, moves on to the next segment.
-    fileprivate func scheduleEnd(generation gen: Int) {
-        guard gen == generation, !endScheduled else { return }
-        endScheduled = true
-        let isTitle = segments.indices.contains(index) && segments[index].text == segments[index].chapterTitle
-        guard let format = playerFormat,
-              let silence = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: AVAudioFrameCount(format.sampleRate * (isTitle ? 0.6 : 0.25))) else {
-            speak(at: index + 1)
-            return
-        }
-        silence.frameLength = silence.frameCapacity
-        player.scheduleBuffer(silence, completionCallbackType: .dataPlayedBack) { [weak self] _ in
+        pendingBuffers += 1
+        player.scheduleBuffer(buffer, completionCallbackType: .dataPlayedBack) { [weak self] _ in
             DispatchQueue.main.async {
                 MainActor.assumeIsolated {
                     guard let self, gen == self.generation else { return }
-                    self.speak(at: self.index + 1)
+                    self.pendingBuffers -= 1
+                    self.advanceIfDone()
                 }
             }
         }
         if state == .playing && !player.isPlaying { player.play() }
+    }
+
+    /// The synthesizer delivered the paragraph's last buffer.
+    fileprivate func renderingFinished(generation gen: Int) {
+        guard gen == generation else { return }
+        renderingDone = true
+        advanceIfDone()
+    }
+
+    /// Once the whole paragraph has been rendered and played, pauses briefly
+    /// (longer after chapter titles) and moves on to the next segment.
+    private func advanceIfDone() {
+        guard renderingDone, pendingBuffers <= 0, !endScheduled else { return }
+        endScheduled = true
+        let gen = generation
+        let isTitle = segments.indices.contains(index) && segments[index].text == segments[index].chapterTitle
+        DispatchQueue.main.asyncAfter(deadline: .now() + (isTitle ? 0.6 : 0.25)) { [weak self] in
+            MainActor.assumeIsolated {
+                guard let self, gen == self.generation else { return }
+                if self.state == .playing { self.speak(at: self.index + 1) } else { self.advancePending = true }
+            }
+        }
     }
 
     /// The player node needs float samples; some voices render 16-bit integers.
@@ -349,15 +373,15 @@ final class SpeechController: NSObject {
 }
 
 extension SpeechController: AVSpeechSynthesizerDelegate {
-    /// Fallback end-of-utterance signal in case a voice doesn't send an empty final buffer.
-    /// Hops through the main queue so it lands after the buffers already queued there.
+    /// Rendering is done. Hops through the main queue so it lands after the
+    /// buffers already queued there.
     nonisolated func speechSynthesizer(_ synthesizer: AVSpeechSynthesizer, didFinish utterance: AVSpeechUtterance) {
         let id = ObjectIdentifier(utterance)
         DispatchQueue.main.async {
             MainActor.assumeIsolated {
                 let me = SpeechController.shared
                 guard me.currentUtterance == id else { return }
-                me.scheduleEnd(generation: me.generation)
+                me.renderingFinished(generation: me.generation)
             }
         }
     }
