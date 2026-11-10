@@ -81,6 +81,7 @@ describe('BookAudioService', () => {
     expect(req.segments.map((s: { text: string }) => s.text)).toEqual(['One', 'Draft', 'Two', 'B1', 'B2', 'Three']);
     expect(svc.nowPlaying()).toEqual({
       bookId: 'b1',
+      seriesId: 's',
       title: 'The Book',
       coverUrl: '/api/image/cover.png',
       // Full image preferred, thumbnail when that's all there is, none for c1.

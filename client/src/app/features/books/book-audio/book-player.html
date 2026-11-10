@@ -3,40 +3,27 @@
     <button mat-icon-button type="button" (click)="audio.minimize()" aria-label="Minimize player" matTooltip="Minimize">
       <mat-icon>keyboard_arrow_down</mat-icon>
     </button>
-    <h2 class="bp-head-title" mat-dialog-title>{{ audio.nowPlaying()?.title }}</h2>
+    <h2 class="bp-head-title" mat-dialog-title>
+      <button type="button" class="bp-books-toggle" #booksToggle
+        [class.is-open]="showBooks()" (click)="toggleBooks()"
+        aria-controls="bp-books-panel" [attr.aria-expanded]="showBooks()"
+        [matTooltip]="showBooks() ? '' : 'Change book'">
+        <span class="bp-books-toggle-text">{{ audio.nowPlaying()?.title }}</span>
+        <mat-icon aria-hidden="true">{{ showBooks() ? 'expand_less' : 'expand_more' }}</mat-icon>
+      </button>
+    </h2>
     <button mat-icon-button type="button" (click)="audio.stop()" aria-label="Stop and close player" matTooltip="Stop and close">
       <mat-icon>close</mat-icon>
     </button>
   </header>
 
-  @if (showChapters()) {
-    <nav class="bp-chapters" aria-label="Chapters">
-      <ol>
-        @for (c of chapters(); track c.chapterId) {
-          <li>
-            <button type="button" class="bp-chapter" [class.is-current]="c.chapterIndex === chapter()?.chapterIndex"
-              [attr.aria-current]="c.chapterIndex === chapter()?.chapterIndex ? 'true' : null"
-              (click)="playChapter(c.start)">
-              <span class="bp-chapter-num">{{ c.chapterIndex + 1 }}</span>
-              <span class="bp-chapter-title">{{ c.title }}</span>
-              <span class="bp-chapter-len">{{ chapterLength(c) }}</span>
-              @if (c.chapterIndex === chapter()?.chapterIndex) {
-                <mat-icon class="bp-chapter-now" aria-hidden="true">{{ playing() ? 'pause' : 'play_arrow' }}</mat-icon>
-              }
-            </button>
-          </li>
-        }
-      </ol>
-    </nav>
-  } @else {
-    <div class="bp-art">
-      @if (artwork(); as art) {
-        <img [src]="art" alt="" />
-      } @else {
-        <mat-icon aria-hidden="true">auto_stories</mat-icon>
-      }
-    </div>
-  }
+  <div class="bp-art">
+    @if (artwork(); as art) {
+      <img [src]="art" alt="" />
+    } @else {
+      <mat-icon aria-hidden="true">auto_stories</mat-icon>
+    }
+  </div>
 
   <div class="bp-now">
     <div class="bp-chapter-heading" aria-live="polite">{{ chapter()?.title }}</div>
@@ -98,10 +85,100 @@
     <div class="bp-settings">
       <app-read-aloud-settings />
     </div>
-    <button mat-button type="button" (click)="showChapters.set(!showChapters())"
-      [attr.aria-pressed]="showChapters()">
-      <mat-icon>list</mat-icon>
+    <button mat-button type="button" class="bp-chapters-toggle" #chaptersToggle
+      [class.is-open]="showChapters()" (click)="toggleChapters()"
+      aria-controls="bp-chapters-panel" [attr.aria-expanded]="showChapters()">
+      <mat-icon>{{ showChapters() ? 'keyboard_arrow_down' : 'list' }}</mat-icon>
       Chapters
     </button>
   </div>
+
+  <!-- Drops down from the book title, its tab; pressing the title again folds it back. -->
+  @if (showBooks()) {
+    <nav id="bp-books-panel" class="bp-panel bp-books" aria-label="Choose a book"
+      animate.enter="bp-books--enter" animate.leave="bp-books--leave"
+      (keydown.escape)="closeBooks($event)">
+      @if (library(); as groups) {
+        @for (group of groups; track group.id) {
+          @let open = openSeries().has(group.id);
+          <section class="bp-series-group">
+            <button type="button" class="bp-series" (click)="toggleSeries(group.id)"
+              [attr.aria-expanded]="open" [attr.aria-controls]="'bp-series-' + group.id">
+              <mat-icon class="bp-series-chevron" [class.is-open]="open" aria-hidden="true">chevron_right</mat-icon>
+              <span class="bp-series-title">{{ group.title }}</span>
+              <span class="bp-series-count">{{ group.books.length }} {{ group.books.length === 1 ? 'book' : 'books' }}</span>
+            </button>
+            @if (open) {
+              <ul [id]="'bp-series-' + group.id" class="bp-book-list">
+                @for (book of group.books; track book.id) {
+                  @let current = book.id === audio.nowPlaying()?.bookId;
+                  <li>
+                    <button type="button" class="bp-book" [class.is-current]="current"
+                      [attr.aria-current]="current ? 'true' : null"
+                      [disabled]="audio.loading() === book.id" (click)="pickBook(book.id)">
+                      <span class="bp-book-cover">
+                        @if (book.coverUrl) {
+                          <img [src]="book.coverUrl" alt="" />
+                        } @else {
+                          <mat-icon aria-hidden="true">book</mat-icon>
+                        }
+                      </span>
+                      <span class="bp-book-text">
+                        <span class="bp-book-title">{{ book.title }}</span>
+                        <span class="bp-book-status">{{ bookStatus(book.id) }}</span>
+                      </span>
+                      @if (audio.loading() === book.id) {
+                        <mat-progress-spinner mode="indeterminate" diameter="20" aria-label="Loading book" />
+                      } @else if (current) {
+                        <mat-icon class="bp-book-now" aria-hidden="true">headphones</mat-icon>
+                      }
+                    </button>
+                    @if (audio.error(); as err) {
+                      @if (err.bookId === book.id) {
+                        <p class="bp-book-error" role="alert">{{ err.message }}</p>
+                      }
+                    }
+                  </li>
+                }
+              </ul>
+            }
+          </section>
+        } @empty {
+          <p class="bp-panel-note">No books yet.</p>
+        }
+      } @else if (libraryFailed()) {
+        <p class="bp-panel-note" role="alert">Couldn’t load your books. Close this and try again.</p>
+      } @else {
+        <div class="bp-panel-note">
+          <mat-progress-spinner mode="indeterminate" diameter="24" aria-label="Loading your books" />
+        </div>
+      }
+    </nav>
+  }
+
+  <!-- Grows out of the Chapters button and covers the player; the button is
+       its tab, so pressing it again folds the list back into it. -->
+  @if (showChapters()) {
+    <nav id="bp-chapters-panel" class="bp-panel bp-chapters" aria-label="Chapters"
+      animate.enter="bp-chapters--enter" animate.leave="bp-chapters--leave"
+      (keydown.escape)="closeChapters($event)">
+      <ol>
+        @for (c of chapters(); track c.chapterId) {
+          @let current = c.chapterIndex === chapter()?.chapterIndex;
+          <li>
+            <button type="button" class="bp-chapter" [class.is-current]="current"
+              [attr.aria-current]="current ? 'true' : null"
+              (click)="playChapter(c.start)">
+              <span class="bp-chapter-num">{{ c.chapterIndex + 1 }}</span>
+              <span class="bp-chapter-title">{{ c.title }}</span>
+              <span class="bp-chapter-len">{{ chapterLength(c) }}</span>
+              @if (current) {
+                <mat-icon class="bp-chapter-now" aria-hidden="true">{{ playing() ? 'pause' : 'play_arrow' }}</mat-icon>
+              }
+            </button>
+          </li>
+        }
+      </ol>
+    </nav>
+  }
 </div>
