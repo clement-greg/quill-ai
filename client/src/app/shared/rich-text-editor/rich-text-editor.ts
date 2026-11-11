@@ -1869,7 +1869,7 @@ export class RichTextEditorComponent implements OnInit, AfterViewInit, OnDestroy
           const textNode = document.createTextNode(event.key);
           node.after(textNode);
           const nr = document.createRange();
-          nr.setStartAfter(textNode);
+          nr.setStart(textNode, textNode.length); // text-node caret survives pagination
           nr.collapse(true);
           sel.removeAllRanges();
           sel.addRange(nr);
@@ -2014,8 +2014,12 @@ export class RichTextEditorComponent implements OnInit, AfterViewInit, OnDestroy
     range.insertNode(span);
     const space = document.createTextNode('\u00A0');
     span.after(space);
+    // Anchor the caret inside the trailing space's text node, not as a child
+    // offset of the paragraph: book-mode pagination re-inserts page spacers
+    // (splitting sibling text nodes) right after this, and a parent-offset
+    // caret can drift to before or inside the reference.
     const nr = document.createRange();
-    nr.setStartAfter(space);
+    nr.setStart(space, space.length);
     nr.collapse(true);
     const sel = window.getSelection();
     if (sel) { sel.removeAllRanges(); sel.addRange(nr); }
