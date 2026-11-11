@@ -102,6 +102,14 @@ describe('POST /voice-note', () => {
     });
   });
 
+  it('pins the note to the word being read when the app knows it', async () => {
+    await post({ text: 'Which nets?', playerActive: true, playhead: { ...nativePlayhead, wordOffset: 22, word: 'nets' } });
+    expect(notesOf('ch2')[0]).toMatchObject({
+      selectedText: 'nets',
+      anchor: { blockIndex: 7, text: 'Gulls fought over the nets.', wordOffset: 22, word: 'nets' },
+    });
+  });
+
   it('uses the saved listening position when the app says a book is loaded, however old', async () => {
     seedListening(60 * 60_000);
     const res = await post({ text: 'Check the harbor log count', playerActive: true });

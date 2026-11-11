@@ -17,6 +17,9 @@ export interface Playhead {
   blockIndex: number;
   /** The paragraph's text, when known. */
   text?: string;
+  /** The word being read (offset into the paragraph's text), when the player knows it. */
+  wordOffset?: number;
+  word?: string;
 }
 
 /**
@@ -37,6 +40,9 @@ export function parseClientPlayhead(raw: unknown): Playhead | null {
   const blockIndex = p['blockIndex'];
   if (!Number.isInteger(blockIndex) || (blockIndex as number) < -1) return null;
   const paragraph = text(p['text'], BLOCK_TEXT_MAX);
+  const word = text(p['word'], 100);
+  const wordOffset = p['wordOffset'];
+  const hasWord = !!word && Number.isInteger(wordOffset) && (wordOffset as number) >= 0 && (wordOffset as number) < 100_000;
   return {
     bookId: p['bookId'],
     bookTitle: text(p['bookTitle'], 500),
@@ -44,6 +50,7 @@ export function parseClientPlayhead(raw: unknown): Playhead | null {
     chapterTitle: text(p['chapterTitle'], 500),
     blockIndex: blockIndex as number,
     ...(paragraph ? { text: paragraph } : {}),
+    ...(hasWord ? { wordOffset: wordOffset as number, word } : {}),
   };
 }
 
@@ -87,7 +94,11 @@ export async function currentPlayhead(
 /** The anchor for a note at this play head; none while the chapter title is being read. */
 export function playheadAnchor(playhead: Playhead): ChapterNoteAnchor | undefined {
   if (playhead.blockIndex < 0) return undefined;
-  return { blockIndex: playhead.blockIndex, ...(playhead.text ? { text: playhead.text } : {}) };
+  return {
+    blockIndex: playhead.blockIndex,
+    ...(playhead.text ? { text: playhead.text } : {}),
+    ...(playhead.word && playhead.wordOffset !== undefined ? { wordOffset: playhead.wordOffset, word: playhead.word } : {}),
+  };
 }
 
 /** The chapter, if the user owns it or collaborates on its series; null otherwise. */
@@ -129,7 +140,8 @@ export async function addChapterNote(
   const note: ChapterNote = {
     id: randomUUID(),
     noteText,
-    selectedText: anchor ? noteAnchorExcerpt(anchor.text) : '',
+    // The editor replaces this with the word it highlights.
+    selectedText: anchor ? anchor.word ?? noteAnchorExcerpt(anchor.text) : '',
     createdAt: now,
     createdBy: email,
     ...(anchor ? { anchor } : {}),

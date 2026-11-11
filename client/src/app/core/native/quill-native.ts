@@ -37,6 +37,9 @@ export interface NativeSpeechStatus {
   count?: number;
   /** The book being read, when it's a whole book. */
   bookId?: string;
+  /** The word being spoken: its UTF-16 offset and length in the segment's text. */
+  wordOffset?: number;
+  wordLength?: number;
 }
 
 export interface QuillNativeSpeech {

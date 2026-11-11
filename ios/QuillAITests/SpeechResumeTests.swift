@@ -38,3 +38,36 @@ final class SpeechResumeTests: XCTestCase {
         XCTAssertNil(SpeechController.trimmed(buffer, dropping: 6))
     }
 }
+
+/// Telling which word is being spoken from the synthesizer's word markers.
+final class WordTimelineTests: XCTestCase {
+    private func mark(_ byte: Int, _ location: Int, _ length: Int) -> WordTimeline.Mark {
+        WordTimeline.Mark(byteOffset: byte, location: location, length: length)
+    }
+
+    func testFindsTheWordThatHasStarted() {
+        var words = WordTimeline()
+        [mark(0, 0, 3), mark(4000, 4, 10), mark(8000, 15, 6)].forEach { words.add($0) }
+        // Markers count bytes; Float32 mono audio is 4 bytes a frame.
+        XCTAssertEqual(words.word(atFrame: 0, bytesPerFrame: 4)?.location, 0)
+        XCTAssertEqual(words.word(atFrame: 999, bytesPerFrame: 4)?.location, 0)
+        XCTAssertEqual(words.word(atFrame: 1000, bytesPerFrame: 4)?.location, 4)
+        XCTAssertEqual(words.word(atFrame: 50_000, bytesPerFrame: 4)?.location, 15)
+        XCTAssertEqual(WordTimeline.startFrame(of: mark(8000, 15, 6), bytesPerFrame: 4), 2000)
+        XCTAssertEqual(WordTimeline.startFrame(of: mark(8000, 15, 6), bytesPerFrame: 2), 4000)
+    }
+
+    func testNoWordWithoutMarkersOrBeforeTheFirst() {
+        XCTAssertNil(WordTimeline().word(atFrame: 100, bytesPerFrame: 4))
+        var words = WordTimeline()
+        words.add(mark(400, 0, 3))
+        XCTAssertNil(words.word(atFrame: 50, bytesPerFrame: 4))
+        XCTAssertNil(words.word(atFrame: 500, bytesPerFrame: 0))
+    }
+
+    func testKeepsMarkersInOrder() {
+        var words = WordTimeline()
+        [mark(8000, 15, 6), mark(0, 0, 3), mark(4000, 4, 10)].forEach { words.add($0) }
+        XCTAssertEqual(words.marks.map(\.location), [0, 4, 15])
+    }
+}

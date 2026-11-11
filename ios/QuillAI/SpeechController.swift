@@ -56,6 +56,17 @@ final class SpeechController: NSObject {
     private var resumeFrames: AVAudioFramePosition = 0
     /// Leading audio of the paragraph still to drop while re-rendering it.
     private var skip = FrameSkip(frames: 0)
+    /// Where each word of the current paragraph starts in its audio.
+    private var words = WordTimeline()
+    /// Bytes per frame of the audio as the synthesizer renders it (what its
+    /// word markers count in), before conversion for the player.
+    private var renderBytesPerFrame = 0
+    /// Frames of the paragraph's audio handed to the player since it last started.
+    private var scheduledFrames: AVAudioFramePosition = 0
+    /// Where the player node's own clock started counting in the paragraph.
+    private var playerBaseFrame: AVAudioFramePosition = 0
+    /// How far into the paragraph playback was when it paused.
+    private var heardAtPause: AVAudioFramePosition?
     /// Playback was going when another app (Siri, a call) interrupted it.
     private var resumeAfterInterruption = false
     private var interruptedAt: Date?
@@ -97,6 +108,10 @@ final class SpeechController: NSObject {
     var status: [String: Any] {
         var status: [String: Any] = ["index": index, "state": state.rawValue, "count": segments.count]
         if let bookId { status["bookId"] = bookId }
+        if let word = currentWord() {
+            status["wordOffset"] = word.location
+            status["wordLength"] = word.length
+        }
         return status
     }
 
@@ -106,7 +121,7 @@ final class SpeechController: NSObject {
         guard state != .idle, let bookId, segments.indices.contains(index),
               let chapterId = segments[index].chapterId, let blockIndex = segments[index].blockIndex else { return nil }
         let segment = segments[index]
-        return [
+        var playhead: [String: Any] = [
             "bookId": bookId,
             "bookTitle": bookTitle,
             "chapterId": chapterId,
@@ -114,6 +129,33 @@ final class SpeechController: NSObject {
             "blockIndex": blockIndex,
             "text": blockIndex >= 0 ? String(segment.text.prefix(300)) : "",
         ]
+        // The word being spoken, when the synthesizer said where its words are.
+        if blockIndex >= 0, let word = currentWord() {
+            playhead["wordOffset"] = word.location
+            playhead["word"] = (segment.text as NSString).substring(with: NSRange(location: word.location, length: word.length))
+        }
+        return playhead
+    }
+
+    /// How far into the current paragraph playback is, in frames: exact while
+    /// playing (from the player's clock), else where it paused.
+    private func heardFrames() -> AVAudioFramePosition {
+        if let heardAtPause { return heardAtPause }
+        guard state == .playing, let nodeTime = player.lastRenderTime,
+              let time = player.playerTime(forNodeTime: nodeTime), time.sampleTime >= 0 else { return playedFrames }
+        let upper = playerBaseFrame + scheduledFrames
+        return min(max(playerBaseFrame + time.sampleTime, playedFrames), upper)
+    }
+
+    private func currentWord() -> WordTimeline.Mark? {
+        words.word(atFrame: heardFrames(), bytesPerFrame: renderBytesPerFrame)
+    }
+
+    /// Where to pick the paragraph back up: the start of the word being spoken,
+    /// so it doesn't resume mid-word; else exactly where it stopped.
+    private func resumePoint() -> AVAudioFramePosition {
+        guard let word = currentWord() else { return heardFrames() }
+        return WordTimeline.startFrame(of: word, bytesPerFrame: renderBytesPerFrame)
     }
 
     // MARK: Controls
@@ -132,6 +174,7 @@ final class SpeechController: NSObject {
 
     func pause() {
         guard state == .playing else { return }
+        heardAtPause = heardFrames()
         player.pause()
         engine.pause()
         setState(.paused)
@@ -142,13 +185,15 @@ final class SpeechController: NSObject {
         resumeAfterInterruption = false
         if needsRestart { speak(at: index, from: resumeFrames); return }
         if advancePending { speak(at: index + 1); return }
+        let pausedAt = heardFrames()
         activateSession()
         do {
             try engine.start()
             player.play()
+            heardAtPause = nil
             setState(.playing)
         } catch {
-            speak(at: index, from: playedFrames)
+            speak(at: index, from: pausedAt)
         }
     }
 
@@ -161,8 +206,9 @@ final class SpeechController: NSObject {
         // Already set to restart (after a seek) or to move on (paragraph done): keep that.
         if !needsRestart && !advancePending {
             needsRestart = true
-            resumeFrames = playedFrames
+            resumeFrames = resumePoint()
         }
+        heardAtPause = heardFrames()
         halt()
         engine.pause()
         if wasPlaying { setState(.paused) }
@@ -189,6 +235,9 @@ final class SpeechController: NSObject {
             needsRestart = true
             resumeFrames = 0
             advancePending = false
+            // The new paragraph hasn't been rendered: no word timing for it yet.
+            words = WordTimeline()
+            heardAtPause = 0
             index = clamped
             segmentStartedAt = Date()
             onEvent?(["type": "progress", "index": index])
@@ -215,6 +264,11 @@ final class SpeechController: NSObject {
         playedFrames = max(0, frames)
         resumeFrames = 0
         skip = FrameSkip(frames: playedFrames)
+        words = WordTimeline()
+        renderBytesPerFrame = 0
+        scheduledFrames = 0
+        playerBaseFrame = playedFrames
+        heardAtPause = nil
         endScheduled = false
         pendingBuffers = 0
         renderingDone = false
@@ -228,11 +282,22 @@ final class SpeechController: NSObject {
         let gen = generation
         currentUtterance = ObjectIdentifier(utterance)
         segmentStartedAt = Date()
-        synth.write(utterance) { [weak self] buffer in
+        synth.write(utterance, toBufferCallback: { [weak self] buffer in
             guard let pcm = buffer as? AVAudioPCMBuffer else { return }
             // Main queue is FIFO, so buffers are scheduled in order.
             DispatchQueue.main.async { MainActor.assumeIsolated { self?.receive(pcm, generation: gen) } }
-        }
+        }, toMarkerCallback: { [weak self] markers in
+            let marks = markers.filter { $0.mark == .word }.map {
+                WordTimeline.Mark(byteOffset: Int($0.byteSampleOffset), location: $0.textRange.location, length: $0.textRange.length)
+            }
+            guard !marks.isEmpty else { return }
+            DispatchQueue.main.async {
+                MainActor.assumeIsolated {
+                    guard let self, gen == self.generation else { return }
+                    marks.forEach { self.words.add($0) }
+                }
+            }
+        })
         log.info("Speaking segment \(i, privacy: .public) (\(self.segments[i].text.count, privacy: .public) chars) from frame \(frames, privacy: .public)")
         onEvent?(["type": "progress", "index": i])
         setState(.playing)
@@ -243,6 +308,7 @@ final class SpeechController: NSObject {
         // iOS also sends empty buffers partway through an utterance, so they
         // can't mark its end; only didFinish (renderingFinished) does.
         guard pcm.frameLength > 0 else { return }
+        if renderBytesPerFrame == 0 { renderBytesPerFrame = Int(pcm.format.streamDescription.pointee.mBytesPerFrame) }
         // Resuming partway: drop the audio that was already heard.
         let drop = skip.take(AVAudioFramePosition(pcm.frameLength))
         guard drop < AVAudioFramePosition(pcm.frameLength) else { return }
@@ -250,6 +316,7 @@ final class SpeechController: NSObject {
               prepareEngine(for: buffer.format) else { return }
         pendingBuffers += 1
         let frames = AVAudioFramePosition(buffer.frameLength)
+        scheduledFrames += frames
         player.scheduleBuffer(buffer, completionCallbackType: .dataPlayedBack) { [weak self] _ in
             DispatchQueue.main.async {
                 MainActor.assumeIsolated {
@@ -476,11 +543,11 @@ final class SpeechController: NSObject {
 
     @objc private func engineConfigurationChanged(_ note: Notification) {
         if state == .playing {
-            speak(at: index, from: playedFrames)
+            speak(at: index, from: resumePoint())
         } else if state == .paused, !needsRestart, !advancePending {
             // (A finished paragraph needs no replay: resume moves on to the next.)
             needsRestart = true
-            resumeFrames = playedFrames
+            resumeFrames = resumePoint()
         }
     }
 

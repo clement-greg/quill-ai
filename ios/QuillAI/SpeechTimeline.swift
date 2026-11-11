@@ -109,3 +109,42 @@ struct FrameSkip: Equatable {
         return drop
     }
 }
+
+/// Where each word of a paragraph starts in its rendered audio, from the
+/// synthesizer's word markers, so the player can tell which word is being
+/// spoken at a given point.
+struct WordTimeline: Equatable {
+    struct Mark: Equatable {
+        /// Byte offset into the paragraph's audio, as the synthesizer reports it.
+        let byteOffset: Int
+        /// The word's UTF-16 range in the paragraph text.
+        let location: Int
+        let length: Int
+    }
+
+    private(set) var marks: [Mark] = []
+
+    mutating func add(_ mark: Mark) {
+        // Markers arrive in order; keep them sorted in case a batch doesn't.
+        if let last = marks.last, last.byteOffset > mark.byteOffset {
+            marks.append(mark)
+            marks.sort { $0.byteOffset < $1.byteOffset }
+        } else {
+            marks.append(mark)
+        }
+    }
+
+    /// The word being spoken `frame` frames into the paragraph (the last one
+    /// that has started), given the audio's bytes per frame; nil before the
+    /// first word or when there are no markers.
+    func word(atFrame frame: Int64, bytesPerFrame: Int) -> Mark? {
+        guard bytesPerFrame > 0 else { return nil }
+        let byte = frame * Int64(bytesPerFrame)
+        return marks.last { Int64($0.byteOffset) <= byte }
+    }
+
+    /// Where `mark` starts, in frames.
+    static func startFrame(of mark: Mark, bytesPerFrame: Int) -> Int64 {
+        bytesPerFrame > 0 ? Int64(mark.byteOffset / bytesPerFrame) : 0
+    }
+}

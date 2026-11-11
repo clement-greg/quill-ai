@@ -54,7 +54,10 @@ export class NativeSpeechEngine implements SpeechEngine {
     try {
       const s = await this.speech.status();
       if (typeof s.count !== 'number') return null;
-      return { index: s.index, state: s.state, count: s.count, bookId: s.bookId ?? null };
+      const word = Number.isInteger(s.wordOffset) && Number.isInteger(s.wordLength) && s.wordLength! > 0
+        ? { offset: s.wordOffset!, length: s.wordLength! }
+        : undefined;
+      return { index: s.index, state: s.state, count: s.count, bookId: s.bookId ?? null, ...(word ? { word } : {}) };
     } catch {
       return null;
     }

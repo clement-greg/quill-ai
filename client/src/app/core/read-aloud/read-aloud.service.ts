@@ -103,6 +103,19 @@ export class ReadAloudService {
     this.engine?.prime?.();
   }
 
+  /** playhead(), plus the word being spoken when the engine can say (the
+   *  iPhone app can; a browser can't, and the note goes on the paragraph's last word). */
+  async livePlayhead(): Promise<ReadAloudPlayhead | null> {
+    const playhead = this.playhead();
+    if (!playhead || playhead.blockIndex < 0) return playhead;
+    const status = await this.engineStatus().catch(() => null);
+    const segment = this.current();
+    const word = status?.word;
+    if (!word || !segment || status.index !== this.index()) return playhead;
+    const text = segment.text.slice(word.offset, word.offset + word.length);
+    return text.trim() ? { ...playhead, wordOffset: word.offset, word: text } : playhead;
+  }
+
   /** What the engine is playing on its own (the iPhone app), if it can say. */
   engineStatus(): Promise<EngineStatus | null> {
     return this.engine?.status?.() ?? Promise.resolve(null);

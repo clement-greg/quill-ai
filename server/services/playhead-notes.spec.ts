@@ -13,6 +13,13 @@ describe('parseClientPlayhead', () => {
     expect(parseClientPlayhead({ ...valid, text: 'x'.repeat(400) })!.text).toHaveLength(300);
   });
 
+  it('keeps the word being read, or drops it when it doesn\'t add up', () => {
+    expect(parseClientPlayhead({ ...valid, wordOffset: 4, word: 'keeper' })).toMatchObject({ wordOffset: 4, word: 'keeper' });
+    expect(parseClientPlayhead({ ...valid, wordOffset: -1, word: 'keeper' })).not.toHaveProperty('word');
+    expect(parseClientPlayhead({ ...valid, wordOffset: 2.5, word: 'keeper' })).not.toHaveProperty('wordOffset');
+    expect(parseClientPlayhead({ ...valid, wordOffset: 4, word: ' ' })).not.toHaveProperty('wordOffset');
+  });
+
   it('rejects anything malformed', () => {
     expect(parseClientPlayhead(undefined)).toBeNull();
     expect(parseClientPlayhead('b1')).toBeNull();
@@ -28,6 +35,8 @@ describe('playheadAnchor', () => {
     expect(playheadAnchor({ ...valid, text: 'Para' })).toEqual({ blockIndex: 2, text: 'Para' });
     expect(playheadAnchor({ ...valid, text: undefined })).toEqual({ blockIndex: 2 });
     expect(playheadAnchor({ ...valid, blockIndex: -1 })).toBeUndefined();
+    expect(playheadAnchor({ ...valid, text: 'Para', wordOffset: 0, word: 'Para' }))
+      .toEqual({ blockIndex: 2, text: 'Para', wordOffset: 0, word: 'Para' });
   });
 });
 

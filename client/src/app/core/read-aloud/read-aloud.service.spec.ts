@@ -159,6 +159,22 @@ describe('ReadAloudService', () => {
     expect(engine.pause).toHaveBeenCalled();
   });
 
+  it('adds the word being spoken when the engine knows it', async () => {
+    const { engine } = fakeEngine();
+    const status = vi.fn();
+    const svc = setup({ ...engine, status });
+    svc.start(BOOK, { bookTitle: 'Book', bookId: 'b1' });
+    svc.seek(2); // "A2"
+    status.mockResolvedValue({ index: 2, state: 'paused', count: 6, bookId: 'b1', word: { offset: 0, length: 2 } });
+    expect(await svc.livePlayhead()).toMatchObject({ blockIndex: 1, wordOffset: 0, word: 'A2' });
+
+    // A stale answer about another paragraph, or none: paragraph only.
+    status.mockResolvedValue({ index: 4, state: 'paused', count: 6, bookId: 'b1', word: { offset: 0, length: 2 } });
+    expect(await svc.livePlayhead()).not.toHaveProperty('word');
+    status.mockResolvedValue(null);
+    expect(await svc.livePlayhead()).not.toHaveProperty('word');
+  });
+
   it('refuses to take over a queue that doesn\'t match or isn\'t playing', () => {
     const svc = setup();
     expect(svc.attach(BOOK, { bookTitle: 'B' }, { index: 0, state: 'playing', count: 5, bookId: null })).toBe(false);

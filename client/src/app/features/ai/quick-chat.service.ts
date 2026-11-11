@@ -150,7 +150,7 @@ export class QuickChatService {
       : undefined;
 
     // While a book is being read aloud, a note the author asks for lands where they're listening.
-    const playhead = this.readAloud.playhead();
+    const playhead = await this.readAloud.livePlayhead();
 
     this.abortController = new AbortController();
 
