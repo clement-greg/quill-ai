@@ -1,4 +1,4 @@
-import { parseClientPlayhead, playheadAnchor, playheadGuidance } from './playhead-notes';
+import { parseClientPlayhead, playheadAnchor, playheadGuidance, spokenNoteText } from './playhead-notes';
 import { noteAnchorExcerpt } from '../../shared/models/chapter.model';
 
 const valid = { bookId: 'b1', bookTitle: 'Book', chapterId: 'c1', chapterTitle: 'One', blockIndex: 2, text: ' Para ' };
@@ -45,5 +45,22 @@ describe('noteAnchorExcerpt', () => {
     expect(noteAnchorExcerpt('  a   b ')).toBe('a b');
     expect(noteAnchorExcerpt(undefined)).toBe('');
     expect(noteAnchorExcerpt('alpha beta gamma delta', 12)).toBe('alpha beta…');
+  });
+});
+
+describe('spokenNoteText', () => {
+  it('drops a spoken "add a note" lead-in and capitalizes what is left', () => {
+    expect(spokenNoteText('Add a note that says the existence of exiles is unclear'))
+      .toBe('The existence of exiles is unclear');
+    expect(spokenNoteText('please make a note: Mara knew already')).toBe('Mara knew already');
+    expect(spokenNoteText('take a quick note saying check the dates')).toBe('Check the dates');
+    expect(spokenNoteText('add a note here, too slow')).toBe('Too slow');
+    expect(spokenNoteText('Note to self: fix the ending')).toBe('Note to self: fix the ending');
+  });
+
+  it('keeps the text when there is no lead-in or nothing after it', () => {
+    expect(spokenNoteText('  The bell rings twice  ')).toBe('The bell rings twice');
+    expect(spokenNoteText('add a note')).toBe('add a note');
+    expect(spokenNoteText('Notebook pages are missing')).toBe('Notebook pages are missing');
   });
 });

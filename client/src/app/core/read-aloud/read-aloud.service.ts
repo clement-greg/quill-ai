@@ -3,7 +3,7 @@ import { computed, inject, Injectable, InjectionToken, signal } from '@angular/c
 import { getQuillNative } from '@app/core/native/quill-native';
 import { NativeSpeechEngine } from './native-speech-engine';
 import {
-  PLAYHEAD_TEXT_MAX, ReadAloudChapter, ReadAloudPlayhead, ReadAloudSegment, ReadAloudState, ReadAloudVoice, SpeechEngine,
+  EngineStatus, PLAYHEAD_TEXT_MAX, ReadAloudChapter, ReadAloudPlayhead, ReadAloudSegment, ReadAloudState, ReadAloudVoice, SpeechEngine,
 } from './read-aloud.model';
 import { buildSegments, findSegmentIndex, nextChapterStart, previousChapterStart, sortVoices } from './read-aloud-segments';
 import { WebSpeechEngine } from './web-speech-engine';
@@ -101,6 +101,33 @@ export class ReadAloudService {
   /** Call from the click handler before any await that precedes start(). */
   prime(): void {
     this.engine?.prime?.();
+  }
+
+  /** What the engine is playing on its own (the iPhone app), if it can say. */
+  engineStatus(): Promise<EngineStatus | null> {
+    return this.engine?.status?.() ?? Promise.resolve(null);
+  }
+
+  /**
+   * Takes over a book the engine is already reading (the page reloaded while
+   * the iPhone app kept going) without restarting it, so play and pause carry
+   * on from exactly where it is. Returns false if the chapters don't line up
+   * with what's queued.
+   */
+  attach(chapters: readonly ReadAloudChapter[], options: ReadAloudStartOptions, status: EngineStatus): boolean {
+    if (!this.engine || status.state === 'idle') return false;
+    const segments = buildSegments(chapters);
+    if (!segments.length || segments.length !== status.count || !segments[status.index]) return false;
+    this.bookTitle = options.bookTitle;
+    this.bookId.set(options.bookId ?? null);
+    this.segments.set(segments);
+    this.index.set(status.index);
+    this.error.set(null);
+    this.finished.set(false);
+    this.restartOnResume = false;
+    this.state.set(status.state);
+    void this.loadVoices();
+    return true;
   }
 
   /** Loads the chapters and starts reading at the requested place. */

@@ -75,4 +75,16 @@ export interface SpeechEngine {
   pause(): void;
   resume(): void;
   stop(): void;
+  /** What the engine is playing on its own, for engines that outlive this page
+   *  (the iPhone app keeps reading while the page reloads). */
+  status?(): Promise<EngineStatus | null>;
+}
+
+/** What an engine that outlives the page is playing. */
+export interface EngineStatus {
+  index: number;
+  state: ReadAloudState;
+  /** Segments queued. */
+  count: number;
+  bookId: string | null;
 }

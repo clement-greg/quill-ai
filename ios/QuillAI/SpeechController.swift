@@ -45,8 +45,23 @@ final class SpeechController: NSObject {
     private var advancePending = false
     /// The utterance being rendered, to match the synthesizer's didFinish callback.
     private var currentUtterance: ObjectIdentifier?
-    /// The position changed (or the engine reset) while paused: resume re-renders from `index`.
+    /// The position changed (or the engine reset) while paused: resume re-renders from `index`,
+    /// skipping `resumeFrames` of it.
     private var needsRestart = false
+    /// Audio of the current paragraph already heard, in frames. Counted per
+    /// buffer as it finishes playing, so a restart lands at most one short
+    /// buffer early rather than at the top of the paragraph.
+    private var playedFrames: AVAudioFramePosition = 0
+    /// Where in `index` a restart picks up (0 after a seek).
+    private var resumeFrames: AVAudioFramePosition = 0
+    /// Leading audio of the paragraph still to drop while re-rendering it.
+    private var skip = FrameSkip(frames: 0)
+    /// Playback was going when another app (Siri, a call) interrupted it.
+    private var resumeAfterInterruption = false
+    private var interruptedAt: Date?
+    /// Interruptions shorter than this resume on their own even when iOS
+    /// doesn't say to, which is how Siri finishes.
+    private static let briefInterruption: TimeInterval = 120
     private var segmentStartedAt = Date()
     private var commandsRegistered = false
     private static let skipSeconds = 15.0
@@ -79,7 +94,11 @@ final class SpeechController: NSObject {
             }
     }
 
-    var status: [String: Any] { ["index": index, "state": state.rawValue] }
+    var status: [String: Any] {
+        var status: [String: Any] = ["index": index, "state": state.rawValue, "count": segments.count]
+        if let bookId { status["bookId"] = bookId }
+        return status
+    }
 
     /// Where a book is being read (playing, or paused while Siri listens), in the
     /// shape the server's `playhead` takes; nil when no whole book is loaded.
@@ -120,7 +139,8 @@ final class SpeechController: NSObject {
 
     func resume() {
         guard state == .paused, !segments.isEmpty else { return }
-        if needsRestart { speak(at: index); return }
+        resumeAfterInterruption = false
+        if needsRestart { speak(at: index, from: resumeFrames); return }
         if advancePending { speak(at: index + 1); return }
         activateSession()
         do {
@@ -128,8 +148,24 @@ final class SpeechController: NSObject {
             player.play()
             setState(.playing)
         } catch {
-            speak(at: index)
+            speak(at: index, from: playedFrames)
         }
+    }
+
+    /// Stops sound for another app (Siri, a call) and remembers exactly where
+    /// it was. The engine and synthesizer may be reset meanwhile, so resuming
+    /// re-renders the paragraph and skips what was already heard.
+    private func suspend() {
+        guard state == .playing || state == .paused else { return }
+        let wasPlaying = state == .playing
+        // Already set to restart (after a seek) or to move on (paragraph done): keep that.
+        if !needsRestart && !advancePending {
+            needsRestart = true
+            resumeFrames = playedFrames
+        }
+        halt()
+        engine.pause()
+        if wasPlaying { setState(.paused) }
     }
 
     func stop() {
@@ -151,6 +187,7 @@ final class SpeechController: NSObject {
         } else {
             halt()
             needsRestart = true
+            resumeFrames = 0
             advancePending = false
             index = clamped
             segmentStartedAt = Date()
@@ -168,11 +205,16 @@ final class SpeechController: NSObject {
         player.stop()
     }
 
-    private func speak(at i: Int) {
+    /// Starts reading segment `i`, skipping its first `frames` of audio.
+    private func speak(at i: Int, from frames: AVAudioFramePosition = 0) {
         halt()
         guard segments.indices.contains(i) else { finish(); return }
         index = i
         needsRestart = false
+        resumeAfterInterruption = false
+        playedFrames = max(0, frames)
+        resumeFrames = 0
+        skip = FrameSkip(frames: playedFrames)
         endScheduled = false
         pendingBuffers = 0
         renderingDone = false
@@ -191,7 +233,7 @@ final class SpeechController: NSObject {
             // Main queue is FIFO, so buffers are scheduled in order.
             DispatchQueue.main.async { MainActor.assumeIsolated { self?.receive(pcm, generation: gen) } }
         }
-        log.info("Speaking segment \(i, privacy: .public) (\(self.segments[i].text.count, privacy: .public) chars)")
+        log.info("Speaking segment \(i, privacy: .public) (\(self.segments[i].text.count, privacy: .public) chars) from frame \(frames, privacy: .public)")
         onEvent?(["type": "progress", "index": i])
         setState(.playing)
     }
@@ -201,13 +243,19 @@ final class SpeechController: NSObject {
         // iOS also sends empty buffers partway through an utterance, so they
         // can't mark its end; only didFinish (renderingFinished) does.
         guard pcm.frameLength > 0 else { return }
-        guard let buffer = floatBuffer(pcm), prepareEngine(for: buffer.format) else { return }
+        // Resuming partway: drop the audio that was already heard.
+        let drop = skip.take(AVAudioFramePosition(pcm.frameLength))
+        guard drop < AVAudioFramePosition(pcm.frameLength) else { return }
+        guard let converted = floatBuffer(pcm), let buffer = Self.trimmed(converted, dropping: drop),
+              prepareEngine(for: buffer.format) else { return }
         pendingBuffers += 1
+        let frames = AVAudioFramePosition(buffer.frameLength)
         player.scheduleBuffer(buffer, completionCallbackType: .dataPlayedBack) { [weak self] _ in
             DispatchQueue.main.async {
                 MainActor.assumeIsolated {
                     guard let self, gen == self.generation else { return }
                     self.pendingBuffers -= 1
+                    self.playedFrames += frames
                     self.advanceIfDone()
                 }
             }
@@ -235,6 +283,21 @@ final class SpeechController: NSObject {
                 if self.state == .playing { self.speak(at: self.index + 1) } else { self.advancePending = true }
             }
         }
+    }
+
+    /// The buffer without its first `drop` frames (itself when there's nothing to drop).
+    static func trimmed(_ buffer: AVAudioPCMBuffer, dropping drop: AVAudioFramePosition) -> AVAudioPCMBuffer? {
+        guard drop > 0 else { return buffer }
+        let length = AVAudioFramePosition(buffer.frameLength)
+        guard drop < length, let source = buffer.floatChannelData,
+              let out = AVAudioPCMBuffer(pcmFormat: buffer.format, frameCapacity: AVAudioFrameCount(length - drop)),
+              let target = out.floatChannelData else { return nil }
+        let count = Int(length - drop)
+        for channel in 0..<Int(buffer.format.channelCount) {
+            target[channel].update(from: source[channel].advanced(by: Int(drop)), count: count)
+        }
+        out.frameLength = AVAudioFrameCount(count)
+        return out
     }
 
     /// The player node needs float samples; some voices render 16-bit integers.
@@ -371,15 +434,54 @@ final class SpeechController: NSObject {
         guard let raw = note.userInfo?[AVAudioSessionInterruptionTypeKey] as? UInt,
               let type = AVAudioSession.InterruptionType(rawValue: raw) else { return }
         if type == .began {
-            pause()
-        } else if let opts = note.userInfo?[AVAudioSessionInterruptionOptionKey] as? UInt,
-                  AVAudioSession.InterruptionOptions(rawValue: opts).contains(.shouldResume) {
-            resume()
+            if state == .playing {
+                resumeAfterInterruption = true
+                interruptedAt = Date()
+            }
+            suspend()
+            log.info("Interrupted at segment \(self.index, privacy: .public), frame \(self.resumeFrames, privacy: .public)")
+        } else {
+            let opts = AVAudioSession.InterruptionOptions(
+                rawValue: note.userInfo?[AVAudioSessionInterruptionOptionKey] as? UInt ?? 0)
+            let brief = interruptedAt.map { Date().timeIntervalSince($0) < Self.briefInterruption } ?? false
+            log.info("Interruption ended (shouldResume: \(opts.contains(.shouldResume), privacy: .public), brief: \(brief, privacy: .public))")
+            if resumeAfterInterruption, opts.contains(.shouldResume) || brief { resume() }
         }
     }
 
+    /// Siri doesn't always end its interruption with a notification, so after a
+    /// Siri command finishes, keep trying to pick up where reading left off
+    /// until Siri lets go of the audio (or the reader resumes or moves on).
+    func resumeAfterSiri() {
+        guard resumeAfterInterruption else { return }
+        let started = Date()
+        func attempt(after delay: TimeInterval) {
+            DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
+                MainActor.assumeIsolated {
+                    guard let self, self.resumeAfterInterruption, self.state == .paused else { return }
+                    guard Date().timeIntervalSince(started) < 30 else { self.resumeAfterInterruption = false; return }
+                    // Fails while Siri still holds the audio; try again shortly.
+                    let session = AVAudioSession.sharedInstance()
+                    if !session.secondaryAudioShouldBeSilencedHint, (try? session.setActive(true)) != nil {
+                        log.info("Resuming after Siri")
+                        self.resume()
+                    } else {
+                        attempt(after: 1)
+                    }
+                }
+            }
+        }
+        attempt(after: 2)
+    }
+
     @objc private func engineConfigurationChanged(_ note: Notification) {
-        if state == .playing { speak(at: index) } else if state == .paused { needsRestart = true }
+        if state == .playing {
+            speak(at: index, from: playedFrames)
+        } else if state == .paused, !needsRestart, !advancePending {
+            // (A finished paragraph needs no replay: resume moves on to the next.)
+            needsRestart = true
+            resumeFrames = playedFrames
+        }
     }
 
     /// Pause when headphones are unplugged or the car disconnects, like other audio apps.

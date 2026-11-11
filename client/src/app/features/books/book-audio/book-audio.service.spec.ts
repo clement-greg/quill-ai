@@ -226,6 +226,57 @@ describe('BookAudioService', () => {
     await p;
     expect(svc.resumable()).toBeNull();
   });
+  describe('when the iPhone app is still reading a book after the page reloads', () => {
+    function nativeEngine(status: unknown) {
+      const { engine, emit } = fakeEngine();
+      const native = { ...engine, kind: 'native' as const, status: vi.fn().mockResolvedValue(status) };
+      return { engine: native, emit };
+    }
+
+    async function answerAdopt(http: HttpTestingController) {
+      await vi.waitFor(() => http.expectOne('/api/books/b1').flush(BOOK));
+      http.expectOne('/api/chapters/book/b1').flush(CHAPTERS);
+      await vi.waitFor(() => expect(TestBed.inject(ReadAloudService).active()).toBe(true));
+    }
+
+    it('takes over at the app\'s exact place without restarting it', async () => {
+      const { engine } = nativeEngine({ index: 3, state: 'paused', count: 6, bookId: 'b1' });
+      const { svc, http, ra } = setup(engine);
+      await answerAdopt(http);
+
+      expect(ra.current()).toMatchObject({ chapterId: 'c2', blockIndex: 0 });
+      expect(ra.state()).toBe('paused');
+      expect(svc.nowPlaying()?.title).toBe('The Book');
+      expect(engine.play).not.toHaveBeenCalled();
+
+      // Pressing play resumes the app where it is, rather than the saved position.
+      await svc.listen('b1');
+      expect(engine.resume).toHaveBeenCalled();
+      expect(engine.play).not.toHaveBeenCalled();
+      http.match(() => true).forEach(req => req.flush({}));
+    });
+
+    it('starts normally when the app\'s queue doesn\'t match the book any more', async () => {
+      const { engine } = nativeEngine({ index: 3, state: 'paused', count: 9, bookId: 'b1' });
+      const { svc, http, ra } = setup(engine);
+      await vi.waitFor(() => http.expectOne('/api/books/b1').flush(BOOK));
+      http.expectOne('/api/chapters/book/b1').flush(CHAPTERS);
+      await new Promise(r => setTimeout(r));
+      expect(ra.active()).toBe(false);
+      expect(svc.nowPlaying()).toBeNull();
+    });
+
+    it('leaves things alone when the app is idle or can\'t say', async () => {
+      for (const status of [{ index: 0, state: 'idle', count: 6, bookId: 'b1' }, null]) {
+        TestBed.resetTestingModule();
+        const { engine } = nativeEngine(status);
+        const { http, ra } = setup(engine);
+        await new Promise(r => setTimeout(r));
+        http.expectNone('/api/books/b1');
+        expect(ra.active()).toBe(false);
+      }
+    });
+  });
 });
 
 describe('proxyImageUrl', () => {
@@ -234,4 +285,5 @@ describe('proxyImageUrl', () => {
     expect(proxyImageUrl(undefined)).toBeNull();
     expect(proxyImageUrl('')).toBeNull();
   });
+
 });

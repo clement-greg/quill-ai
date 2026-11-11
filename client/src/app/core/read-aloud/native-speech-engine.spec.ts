@@ -61,4 +61,15 @@ describe('NativeSpeechEngine', () => {
     const { engine } = setup({ voices: vi.fn().mockRejectedValue(new Error('x')) });
     expect(await engine.getVoices()).toEqual([]);
   });
+
+  it('reports what the app is playing, or null when an older app can\'t say', async () => {
+    const { engine } = setup({ status: vi.fn().mockResolvedValue({ index: 4, state: 'paused', count: 9, bookId: 'b1' }) });
+    expect(await engine.status()).toEqual({ index: 4, state: 'paused', count: 9, bookId: 'b1' });
+
+    const old = setup();
+    expect(await old.engine.status()).toBeNull();
+
+    const broken = setup({ status: vi.fn().mockRejectedValue(new Error('no bridge')) });
+    expect(await broken.engine.status()).toBeNull();
+  });
 });

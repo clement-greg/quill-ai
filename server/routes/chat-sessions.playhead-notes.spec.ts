@@ -149,6 +149,11 @@ describe('POST /voice-note', () => {
     expect(note!['selectedText']).toBe('');
   });
 
+  it('drops a spoken "add a note that says" from the note', async () => {
+    await post({ text: 'Add a note that says gulls are a motif', playerActive: true, playhead: nativePlayhead });
+    expect(notesOf('ch2')[0]).toMatchObject({ noteText: 'Gulls are a motif' });
+  });
+
   it('rejects an empty or oversized note', async () => {
     expect((await post({ text: '  ' })).status).toBe(400);
     expect((await post({ text: 'x'.repeat(2001) })).status).toBe(400);

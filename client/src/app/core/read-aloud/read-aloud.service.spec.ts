@@ -146,6 +146,27 @@ describe('ReadAloudService', () => {
     expect(svc.playhead()).toBeNull();
   });
 
+  it('takes over a queue the engine is already playing, without restarting it', () => {
+    const { engine } = fakeEngine();
+    const svc = setup(engine);
+    // BOOK has 6 segments: two titles and four paragraphs.
+    expect(svc.attach(BOOK, { bookTitle: 'Book', bookId: 'b1' }, { index: 2, state: 'playing', count: 6, bookId: 'b1' })).toBe(true);
+    expect(svc.current()).toMatchObject({ chapterId: 'a', blockIndex: 1 });
+    expect(svc.state()).toBe('playing');
+    expect(svc.playhead()?.bookId).toBe('b1');
+    expect(engine.play).not.toHaveBeenCalled();
+    svc.playPause();
+    expect(engine.pause).toHaveBeenCalled();
+  });
+
+  it('refuses to take over a queue that doesn\'t match or isn\'t playing', () => {
+    const svc = setup();
+    expect(svc.attach(BOOK, { bookTitle: 'B' }, { index: 0, state: 'playing', count: 5, bookId: null })).toBe(false);
+    expect(svc.attach(BOOK, { bookTitle: 'B' }, { index: 9, state: 'paused', count: 6, bookId: null })).toBe(false);
+    expect(svc.attach(BOOK, { bookTitle: 'B' }, { index: 0, state: 'idle', count: 6, bookId: null })).toBe(false);
+    expect(svc.active()).toBe(false);
+  });
+
   it('remembers speed and voice, replaying from the current paragraph', () => {
     const { engine, emit } = fakeEngine();
     const svc = setup(engine);

@@ -1,5 +1,5 @@
 import { NATIVE_SPEECH_EVENT, NativeSpeechEvent, QuillNativeSpeech } from '@app/core/native/quill-native';
-import { ReadAloudVoice, SpeechEngine, SpeechEngineListener, SpeechPlayRequest } from './read-aloud.model';
+import { EngineStatus, ReadAloudVoice, SpeechEngine, SpeechEngineListener, SpeechPlayRequest } from './read-aloud.model';
 
 const NOOP_LISTENER: SpeechEngineListener = { progress: () => {}, state: () => {}, error: () => {} };
 
@@ -48,6 +48,17 @@ export class NativeSpeechEngine implements SpeechEngine {
   pause(): void { this.speech.pause(); }
   resume(): void { this.speech.resume(); }
   stop(): void { this.speech.stop(); }
+
+  /** What the app is playing, or null when it can't say (older app build). */
+  async status(): Promise<EngineStatus | null> {
+    try {
+      const s = await this.speech.status();
+      if (typeof s.count !== 'number') return null;
+      return { index: s.index, state: s.state, count: s.count, bookId: s.bookId ?? null };
+    } catch {
+      return null;
+    }
+  }
 
   async resync(): Promise<void> {
     try {

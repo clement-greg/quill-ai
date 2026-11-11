@@ -29,6 +29,16 @@ export interface NativeSpeechSegment {
   blockIndex: number;
 }
 
+/** Where the app's player is. `count` and `bookId` come from app builds that report them. */
+export interface NativeSpeechStatus {
+  index: number;
+  state: 'idle' | 'playing' | 'paused';
+  /** How many segments are queued. */
+  count?: number;
+  /** The book being read, when it's a whole book. */
+  bookId?: string;
+}
+
 export interface QuillNativeSpeech {
   voices(): Promise<{ id: string; name: string; lang: string; quality: 'default' | 'enhanced' | 'premium' }[]>;
   play(request: {
@@ -43,7 +53,7 @@ export interface QuillNativeSpeech {
   resume(): void;
   stop(): void;
   /** Where playback is now (events may be missed while the app is in the background). */
-  status(): Promise<{ index: number; state: 'idle' | 'playing' | 'paused' }>;
+  status(): Promise<NativeSpeechStatus>;
 }
 
 export type NativeSpeechEvent =
