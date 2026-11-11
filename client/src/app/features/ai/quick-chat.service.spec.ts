@@ -12,6 +12,8 @@ import { AiAssistantService } from './ai-assistant.service';
 import { ChapterSyncService } from '@app/features/chapters/chapter-sync.service';
 import { EditorReviewService } from '@app/features/chapters/editor-review.service';
 import { AuthFetchService } from '@app/core/services/auth-fetch.service';
+import { ReadAloudService } from '@app/core/read-aloud/read-aloud.service';
+import { ReadAloudPlayhead } from '@app/core/read-aloud/read-aloud.model';
 
 function assistantMessage(overrides: Partial<ChatSessionMessage> = {}): ChatSessionMessage {
   return { role: 'assistant', text: 'Here is my answer.', ...overrides };
@@ -39,8 +41,10 @@ describe('QuickChatService', () => {
   let bridgeStub: Record<string, ReturnType<typeof vi.fn>>;
   let fetchStub: ReturnType<typeof vi.fn>;
   let aiAssistantStub: Record<string, ReturnType<typeof vi.fn>>;
+  let playhead: ReadAloudPlayhead | null;
 
   beforeEach(() => {
+    playhead = null;
     localStorage.clear();
     bridgeStub = {
       applyChapterEdit: vi.fn(() => true),
@@ -61,6 +65,7 @@ describe('QuickChatService', () => {
         { provide: ChapterSyncService, useValue: {} },
         { provide: EditorReviewService, useValue: {} },
         { provide: AuthFetchService, useValue: { fetch: fetchStub } },
+        { provide: ReadAloudService, useValue: { playhead: () => playhead } },
       ],
     });
     service = TestBed.inject(QuickChatService);
@@ -348,6 +353,27 @@ describe('QuickChatService', () => {
 
       const chatCall = fetchStub.mock.calls.find(c => c[0] === '/api/chat-sessions/quick-chat')!;
       expect(bodyOf(chatCall)).not.toHaveProperty('entityId');
+    });
+
+    it('sends where a book is being read aloud, so a note lands there', async () => {
+      service.activeSessionId.set('sess-1');
+      playhead = { bookId: 'b1', bookTitle: 'Book', chapterId: 'c1', chapterTitle: 'One', blockIndex: 2, text: 'Para' };
+      fetchStub.mockResolvedValue(new Response('data: [DONE]\n\n', { status: 200 }));
+
+      await service.sendMessage('add a note: too slow');
+
+      const chatCall = fetchStub.mock.calls.find(c => c[0] === '/api/chat-sessions/quick-chat')!;
+      expect(bodyOf(chatCall).playhead).toEqual(playhead);
+    });
+
+    it('sends no play head when nothing is being read', async () => {
+      service.activeSessionId.set('sess-1');
+      fetchStub.mockResolvedValue(new Response('data: [DONE]\n\n', { status: 200 }));
+
+      await service.sendMessage('Hello');
+
+      const chatCall = fetchStub.mock.calls.find(c => c[0] === '/api/chat-sessions/quick-chat')!;
+      expect(bodyOf(chatCall)).not.toHaveProperty('playhead');
     });
 
     it('sends the chat model, Luna by default', async () => {

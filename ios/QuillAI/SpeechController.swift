@@ -33,6 +33,7 @@ final class SpeechController: NSObject {
     private var rate = 1.0
     private var voiceId: String?
     private var bookTitle = ""
+    private var bookId: String?
     /// Bumped whenever playback jumps, so buffers and callbacks from an older segment are dropped.
     private var generation = 0
     private var endScheduled = false
@@ -80,6 +81,22 @@ final class SpeechController: NSObject {
 
     var status: [String: Any] { ["index": index, "state": state.rawValue] }
 
+    /// Where a book is being read (playing, or paused while Siri listens), in the
+    /// shape the server's `playhead` takes; nil when no whole book is loaded.
+    var playhead: [String: Any]? {
+        guard state != .idle, let bookId, segments.indices.contains(index),
+              let chapterId = segments[index].chapterId, let blockIndex = segments[index].blockIndex else { return nil }
+        let segment = segments[index]
+        return [
+            "bookId": bookId,
+            "bookTitle": bookTitle,
+            "chapterId": chapterId,
+            "chapterTitle": segment.chapterTitle,
+            "blockIndex": blockIndex,
+            "text": blockIndex >= 0 ? String(segment.text.prefix(300)) : "",
+        ]
+    }
+
     // MARK: Controls
 
     func play(_ request: SpeechPlayRequest) {
@@ -88,6 +105,7 @@ final class SpeechController: NSObject {
         rate = request.rate
         voiceId = request.voiceId
         bookTitle = request.bookTitle
+        bookId = request.bookId
         timeline = SpeechTimeline(segments: segments, rate: rate)
         registerRemoteCommands()
         speak(at: min(max(request.startIndex, 0), segments.count - 1))

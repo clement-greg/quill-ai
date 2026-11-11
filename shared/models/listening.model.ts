@@ -6,6 +6,8 @@ export interface ListeningPosition {
   chapterTitle: string;
   /** Paragraph within the chapter; -1 for the chapter title. */
   blockIndex: number;
+  /** Start of the paragraph being read, so a note added by voice can find it. */
+  blockText?: string;
   /** How far through the whole book, 0–1. */
   progress: number;
   /** Cover image (blob URL as stored on the book). */

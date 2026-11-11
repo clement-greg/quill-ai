@@ -9,6 +9,7 @@ import { EditorReviewService } from '@app/features/chapters/editor-review.servic
 import { AuthFetchService } from '@app/core/services/auth-fetch.service';
 import { SeriesContextService } from '@app/core/services/series-context.service';
 import { UserSettingsService } from '@app/core/services/user-settings.service';
+import { ReadAloudService } from '@app/core/read-aloud/read-aloud.service';
 
 /** Remembers the last active session so a page refresh reopens it. */
 const LAST_SESSION_KEY = 'quill_last_chat_session_id';
@@ -29,6 +30,7 @@ export class QuickChatService {
   private readonly authFetchService = inject(AuthFetchService);
   private readonly seriesContext = inject(SeriesContextService);
   private readonly userSettings = inject(UserSettingsService);
+  private readonly readAloud = inject(ReadAloudService);
 
   /** Emits the message index when the assistant drafts a new entity, so the
    *  panel can open the entity form for the author to review and save. */
@@ -147,6 +149,9 @@ export class QuickChatService {
         }
       : undefined;
 
+    // While a book is being read aloud, a note the author asks for lands where they're listening.
+    const playhead = this.readAloud.playhead();
+
     this.abortController = new AbortController();
 
     try {
@@ -160,6 +165,7 @@ export class QuickChatService {
           // Lets the assistant resolve "Friday" and "overdue" for tasks in the author's own time zone.
           tz: Intl.DateTimeFormat().resolvedOptions().timeZone,
           ...(chapterContext ? { chapterContext } : {}),
+          ...(playhead ? { playhead } : {}),
           // Grounds the answer in the entity this chat is attached to.
           ...(this.attachedEntityId() ? { entityId: this.attachedEntityId() } : {}),
           // Lets a drafted entity land in the series in view and use the

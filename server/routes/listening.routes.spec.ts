@@ -41,6 +41,18 @@ describe('listening routes', () => {
     expect(list.body.map((p: { bookId: string }) => p.bookId)).toEqual(['b1']);
   });
 
+  it('keeps the start of the paragraph being read, for notes added by voice', async () => {
+    const long = `  ${'word '.repeat(100)}`;
+    const res = await request(app).put('/api/listening/b1').set('x-test-user', USER_A).send(position({ blockText: long }));
+    expect(res.body.blockText).toBe(long.trim().slice(0, 300));
+
+    const none = await request(app).put('/api/listening/b1').set('x-test-user', USER_A).send(position({ blockText: '  ' }));
+    expect(none.body.blockText).toBeUndefined();
+
+    const bad = await request(app).put('/api/listening/b1').set('x-test-user', USER_A).send(position({ blockText: 5 }));
+    expect(bad.status).toBe(400);
+  });
+
   it('keeps one position per book and lists the most recent first', async () => {
     await request(app).put('/api/listening/b1').set('x-test-user', USER_A).send(position());
     await new Promise(r => setTimeout(r, 2));

@@ -31,23 +31,37 @@ async function readDoc(sub: string): Promise<ListeningDoc> {
   }
 }
 
+/** Most of a paragraph is enough to find it again. */
+export const BLOCK_TEXT_MAX = 300;
+
 const isText = (v: unknown, max: number) => typeof v === 'string' && v.length <= max;
+
+/** The book the user played most recently and hasn't finished, or null. */
+export async function latestListeningPosition(sub: string): Promise<ListeningPosition | null> {
+  const doc = await readDoc(sub);
+  return Object.values(doc.books)
+    .filter(p => !p.finished)
+    .sort((a, b) => b.updatedAt - a.updatedAt)[0] ?? null;
+}
 
 /** Builds a stored position from a request body, or null if it's malformed. */
 function parsePosition(bookId: string, body: any): ListeningPosition | null {
   if (!body || typeof body !== 'object') return null;
-  const { bookTitle, chapterId, chapterTitle, blockIndex, progress, coverUrl, finished } = body;
+  const { bookTitle, chapterId, chapterTitle, blockIndex, blockText, progress, coverUrl, finished } = body;
   if (!isText(bookTitle, 500) || !isText(chapterId, 200) || !chapterId || !isText(chapterTitle, 500)) return null;
   if (!Number.isInteger(blockIndex) || blockIndex < -1) return null;
   if (typeof progress !== 'number' || !Number.isFinite(progress)) return null;
   if (coverUrl !== undefined && !isText(coverUrl, 2000)) return null;
   if (finished !== undefined && typeof finished !== 'boolean') return null;
+  if (blockText !== undefined && typeof blockText !== 'string') return null;
+  const text = typeof blockText === 'string' ? blockText.trim().slice(0, BLOCK_TEXT_MAX) : '';
   return {
     bookId,
     bookTitle,
     chapterId,
     chapterTitle,
     blockIndex,
+    ...(text ? { blockText: text } : {}),
     progress: Math.min(1, Math.max(0, progress)),
     ...(coverUrl ? { coverUrl } : {}),
     ...(finished ? { finished: true } : {}),

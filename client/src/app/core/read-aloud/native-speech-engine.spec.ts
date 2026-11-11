@@ -19,16 +19,16 @@ describe('NativeSpeechEngine', () => {
     return { speech, engine, listener };
   }
 
-  it('sends the queue to the app without editor-only fields', () => {
+  it('sends the queue to the app, with where each paragraph is in the book', () => {
     const { speech, engine } = setup();
     const segments = buildSegments([{ id: 'a', title: 'T', html: '<p>Hello</p>' }]);
-    engine.play({ segments, startIndex: 1, voiceId: 'ava', rate: 1.5, bookTitle: 'Book' });
+    engine.play({ segments, startIndex: 1, voiceId: 'ava', rate: 1.5, bookTitle: 'Book', bookId: 'b1' });
     expect(speech.play).toHaveBeenCalledWith({
       segments: [
-        { text: 'T', chapterTitle: 'T', chapterIndex: 0 },
-        { text: 'Hello', chapterTitle: 'T', chapterIndex: 0 },
+        { text: 'T', chapterTitle: 'T', chapterIndex: 0, chapterId: 'a', blockIndex: -1 },
+        { text: 'Hello', chapterTitle: 'T', chapterIndex: 0, chapterId: 'a', blockIndex: 0 },
       ],
-      startIndex: 1, voiceId: 'ava', rate: 1.5, bookTitle: 'Book',
+      startIndex: 1, voiceId: 'ava', rate: 1.5, bookTitle: 'Book', bookId: 'b1',
     });
     engine.pause(); engine.resume(); engine.stop();
     expect(speech.pause).toHaveBeenCalled();

@@ -176,6 +176,8 @@ describe('BookAudioService', () => {
     const put = http.expectOne('/api/listening/b1');
     expect(put.request.method).toBe('PUT');
     expect(put.request.body).toMatchObject({ chapterId: 'c2', blockIndex: 0, bookTitle: 'The Book', coverUrl: BOOK.thumnailUrl });
+    expect(typeof put.request.body.blockText).toBe('string');
+    expect(put.request.body.blockText.length).toBeGreaterThan(0);
     expect(put.request.body.progress).toBeGreaterThan(0);
     put.flush({});
 

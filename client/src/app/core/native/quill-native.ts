@@ -24,6 +24,9 @@ export interface NativeSpeechSegment {
   text: string;
   chapterTitle: string;
   chapterIndex: number;
+  /** With blockIndex, where in the book this is, so Siri can add a note at the play head. */
+  chapterId: string;
+  blockIndex: number;
 }
 
 export interface QuillNativeSpeech {
@@ -34,6 +37,7 @@ export interface QuillNativeSpeech {
     voiceId: string | null;
     rate: number;
     bookTitle: string;
+    bookId: string | null;
   }): void;
   pause(): void;
   resume(): void;
