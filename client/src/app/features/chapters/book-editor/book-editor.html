@@ -104,6 +104,12 @@
   </div>
 
   @if (currentPosition(); as pos) {
-    <div class="book-page-indicator" aria-hidden="true">Page {{ pos.page }} of {{ pos.totalPages }}</div>
+    <div class="book-page-indicator" aria-hidden="true">
+      @if (currentChapterWords() !== null) {
+        <span class="book-page-indicator-words">Ch. {{ pos.chapterIndex + 1 }} · {{ currentChapterWords() | number }} words</span>
+        <span class="book-page-indicator-sep">|</span>
+      }
+      Page {{ pos.page }} of {{ pos.totalPages }}
+    </div>
   }
 </div>

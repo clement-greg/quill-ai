@@ -2,6 +2,7 @@ import {
   AfterViewInit, ChangeDetectionStrategy, Component, ElementRef, Injector, OnDestroy,
   afterNextRender, computed, effect, inject, input, output, signal, untracked, viewChild, viewChildren,
 } from '@angular/core';
+import { DecimalPipe } from '@angular/common';
 import { RichTextEditorComponent, SuggestedEntityCard } from '@app/shared/rich-text-editor/rich-text-editor';
 import { Entity } from '@shared/models/entity.model';
 import { UserSettingsService } from '@app/core/services/user-settings.service';
@@ -63,7 +64,7 @@ const DEFAULT_CHARS_PER_PAGE = 2400;
  */
 @Component({
   selector: 'app-book-editor',
-  imports: [RichTextEditorComponent],
+  imports: [RichTextEditorComponent, DecimalPipe],
   templateUrl: './book-editor.html',
   styleUrl: './book-editor.scss',
   changeDetection: ChangeDetectionStrategy.OnPush,
@@ -493,6 +494,16 @@ export class BookEditorComponent implements AfterViewInit, OnDestroy {
   readonly currentPosition = computed(() => {
     const v = this.viewport();
     return this.positionAt(v.top + v.clientHeight / 3);
+  });
+
+  /** Word count of the chapter under the reading line: live from its editor
+   *  when mounted, otherwise counted from the chapter's saved/draft HTML. */
+  readonly currentChapterWords = computed(() => {
+    const pos = this.currentPosition();
+    const ch = pos ? this.chapters()[pos.chapterIndex] : undefined;
+    if (!ch) return null;
+    const editor = this.editorFor(ch.id);
+    return editor ? editor.wordCount() : this.wordCountOf(ch);
   });
 
   private scrubTo(event: MouseEvent): void {
@@ -1010,6 +1021,17 @@ export class BookEditorComponent implements AfterViewInit, OnDestroy {
 
   private indexOf(id: string): number {
     return this.chapters().findIndex(c => c.id === id);
+  }
+
+  private wordCounts = new WeakMap<BookChapter, number>();
+  private wordCountOf(ch: BookChapter): number {
+    let n = this.wordCounts.get(ch);
+    if (n === undefined) {
+      const text = (ch.content || '').replace(/<[^>]*>/g, ' ').replace(/&nbsp;|&#160;/g, ' ').trim();
+      n = text ? text.split(/\s+/).length : 0;
+      this.wordCounts.set(ch, n);
+    }
+    return n;
   }
 
   private textLengths = new WeakMap<BookChapter, number>();
