@@ -75,7 +75,7 @@ export const FOUNDRY_API_VERSION_DEFAULT = '2025-04-01-preview';
  * deployments are named differently.
  */
 /** Region of the Quill AI Speech resource, used when none is configured. */
-export const SPEECH_SERVICE_REGION_DEFAULT = 'westus';
+export const SPEECH_SERVICE_REGION_DEFAULT = 'eastus';
 
 export const FOUNDRY_CHAT_TIER_DEFAULTS = {
   lowModel: 'gpt-6-luna',
