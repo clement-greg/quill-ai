@@ -80,3 +80,36 @@ export function textCaretBefore(node: Node): { node: Node; offset: number } {
   const parent = node.parentNode!;
   return { node: parent, offset: Array.prototype.indexOf.call(parent.childNodes, node) };
 }
+
+/** A caret position just after `node`: the start of the following text node
+ *  when there is one, else a parent child-offset. Prefer it over
+ *  `setStartAfter` for the same reason as `textCaretBefore`. Never uses the
+ *  end of `node`'s own text, so typing doesn't land inside an inserted span. */
+export function textCaretAfter(node: Node): { node: Node; offset: number } {
+  const next = node.nextSibling;
+  if (next?.nodeType === Node.TEXT_NODE) return { node: next, offset: 0 };
+  const parent = node.parentNode!;
+  return { node: parent, offset: Array.prototype.indexOf.call(parent.childNodes, node) + 1 };
+}
+
+/** Collapses the window selection to `pos`. */
+export function placeCaret(pos: { node: Node; offset: number }): void {
+  const range = document.createRange();
+  range.setStart(pos.node, pos.offset);
+  range.collapse(true);
+  const sel = window.getSelection();
+  if (sel) { sel.removeAllRanges(); sel.addRange(range); }
+}
+
+/** The entity-reference span that ends exactly at the caret (`container`,
+ *  `offset`), if any. Chrome inserts typed text at such a boundary into the
+ *  end of the span, so callers redirect the keystroke past it. */
+export function entityReferenceBeforeCaret(container: Node, offset: number): HTMLElement | null {
+  let prev: Node | null = null;
+  if (container.nodeType === Node.TEXT_NODE) {
+    if (offset === 0) prev = container.previousSibling;
+  } else if (offset > 0) {
+    prev = container.childNodes[offset - 1] ?? null;
+  }
+  return prev instanceof HTMLElement && prev.classList.contains('entity-reference') ? prev : null;
+}

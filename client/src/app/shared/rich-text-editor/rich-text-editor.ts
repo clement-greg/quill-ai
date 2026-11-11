@@ -22,7 +22,7 @@ import {
 import { UserSettingsService } from '@app/core/services/user-settings.service';
 import { disableSpellcheckOnEntityReferences } from '@app/shared/entity-references';
 import { AI_BLOCK_SELECTOR, clearAiMarkOnEmptyBlocks } from './ai-authorship';
-import { restoreCursor, saveCursor, textCaretBefore } from './cursor-anchor';
+import { entityReferenceBeforeCaret, placeCaret, restoreCursor, saveCursor, textCaretAfter, textCaretBefore } from './cursor-anchor';
 import { cleanEditorHtml } from './editor-html-clean';
 
 /** Minimal shape the editor needs to decorate/act on a Quill Editor suggestion.
@@ -460,11 +460,7 @@ export class RichTextEditorComponent implements OnInit, AfterViewInit, OnDestroy
 
     range.insertNode(wrapper);
 
-    const ar = document.createRange();
-    ar.setStartAfter(wrapper);
-    ar.collapse(true);
-    const sel = window.getSelection();
-    if (sel) { sel.removeAllRanges(); sel.addRange(ar); }
+    placeCaret(textCaretAfter(wrapper));
 
     // Arm the eject guard so the user's next keystroke after the span isn't
     // snapped back into it (mirrors the old accept path).
@@ -1847,10 +1843,7 @@ export class RichTextEditorComponent implements OnInit, AfterViewInit, OnDestroy
         range.deleteContents();
         const tab = document.createTextNode('\t');
         range.insertNode(tab);
-        range.setStartAfter(tab);
-        range.collapse(true);
-        sel.removeAllRanges();
-        sel.addRange(range);
+        placeCaret({ node: tab, offset: tab.length });
         if (this.editorRef) { this.editorContent = this.editorRef.nativeElement.innerHTML; this.scheduleEmit(); }
       }
       return;
@@ -1862,9 +1855,13 @@ export class RichTextEditorComponent implements OnInit, AfterViewInit, OnDestroy
     if (event.key.length === 1 && !event.ctrlKey && !event.metaKey && !event.altKey) {
       const sel = window.getSelection();
       if (sel && sel.rangeCount > 0 && sel.isCollapsed) {
-        const { startContainer } = sel.getRangeAt(0);
-        const node = startContainer.nodeType === Node.TEXT_NODE ? startContainer.parentElement : startContainer as HTMLElement;
-        if (node?.classList.contains('entity-reference')) {
+        const { startContainer, startOffset } = sel.getRangeAt(0);
+        const parent = startContainer.nodeType === Node.TEXT_NODE ? startContainer.parentElement : startContainer as HTMLElement;
+        // Inside a reference, or right after one (Chrome would append to it).
+        const node = parent?.classList.contains('entity-reference')
+          ? parent
+          : entityReferenceBeforeCaret(startContainer, startOffset);
+        if (node) {
           event.preventDefault();
           const textNode = document.createTextNode(event.key);
           node.after(textNode);
@@ -2313,11 +2310,7 @@ export class RichTextEditorComponent implements OnInit, AfterViewInit, OnDestroy
     span.textContent = selectedText;
     range.deleteContents();
     range.insertNode(span);
-    const nr = document.createRange();
-    nr.setStartAfter(span);
-    nr.collapse(true);
-    const sel = window.getSelection();
-    if (sel) { sel.removeAllRanges(); sel.addRange(nr); }
+    placeCaret(textCaretAfter(span));
     if (this.editorRef) { this.editorContent = this.editorRef.nativeElement.innerHTML; this.scheduleEmit(); }
   }
 
@@ -2446,11 +2439,7 @@ export class RichTextEditorComponent implements OnInit, AfterViewInit, OnDestroy
       img.setAttribute('aria-hidden', 'true');
       span.appendChild(img);
       range.insertNode(span);
-      const nr = document.createRange();
-      nr.setStartAfter(span);
-      nr.collapse(true);
-      const sel = window.getSelection();
-      if (sel) { sel.removeAllRanges(); sel.addRange(nr); }
+      placeCaret(textCaretAfter(span));
     }
     this.editorContent = editorEl.innerHTML;
     this.scheduleEmit();

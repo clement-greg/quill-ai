@@ -1,4 +1,4 @@
-import { restoreCursor, saveCursor, textCaretBefore } from './cursor-anchor';
+import { entityReferenceBeforeCaret, placeCaret, restoreCursor, saveCursor, textCaretAfter, textCaretBefore } from './cursor-anchor';
 
 describe('saveCursor / restoreCursor', () => {
   let editor: HTMLElement;
@@ -185,5 +185,72 @@ describe('textCaretBefore', () => {
     probe.setStart(p, 0);
     probe.setEnd(range.startContainer, range.startOffset);
     expect(probe.toString()).toBe('before text ');
+  });
+});
+
+describe('textCaretAfter', () => {
+  const para = (html: string): HTMLElement => {
+    const p = document.createElement('p');
+    p.innerHTML = html;
+    return p;
+  };
+
+  it('uses the start of the following text node', () => {
+    const p = para('a <span class="entity-reference">Hector</span> asked');
+    const span = p.querySelector('span')!;
+    expect(textCaretAfter(span)).toEqual({ node: span.nextSibling, offset: 0 });
+  });
+
+  it('uses the parent offset after the node when nothing follows', () => {
+    const p = para('a <span class="entity-reference">Hector</span>');
+    const span = p.querySelector('span')!;
+    expect(textCaretAfter(span)).toEqual({ node: p, offset: 2 });
+  });
+
+  it('never points inside the node itself', () => {
+    const p = para('<span data-ai-generated="true">inserted</span><b>x</b>');
+    const span = p.querySelector('span')!;
+    expect(textCaretAfter(span).node).not.toBe(span.firstChild);
+  });
+});
+
+describe('placeCaret', () => {
+  it('collapses the selection at the position', () => {
+    const p = document.createElement('p');
+    p.textContent = 'hello';
+    document.body.appendChild(p);
+    placeCaret({ node: p.firstChild!, offset: 2 });
+    const sel = window.getSelection()!;
+    expect(sel.isCollapsed).toBe(true);
+    expect(sel.anchorNode).toBe(p.firstChild);
+    expect(sel.anchorOffset).toBe(2);
+    p.remove();
+  });
+});
+
+describe('entityReferenceBeforeCaret', () => {
+  const para = (html: string): HTMLElement => {
+    const p = document.createElement('p');
+    p.innerHTML = html;
+    return p;
+  };
+
+  it('finds a reference ending at the start of the following text node', () => {
+    const p = para('a <span class="entity-reference">Hector</span>. Then');
+    const span = p.querySelector('span')!;
+    expect(entityReferenceBeforeCaret(span.nextSibling!, 0)).toBe(span);
+    expect(entityReferenceBeforeCaret(span.nextSibling!, 1)).toBeNull();
+  });
+
+  it('finds a reference just before a parent child-offset', () => {
+    const p = para('a <span class="entity-reference">Hector</span>');
+    expect(entityReferenceBeforeCaret(p, 2)).toBe(p.querySelector('span'));
+    expect(entityReferenceBeforeCaret(p, 1)).toBeNull();
+    expect(entityReferenceBeforeCaret(p, 0)).toBeNull();
+  });
+
+  it('ignores other inline elements', () => {
+    const p = para('<b>bold</b>text');
+    expect(entityReferenceBeforeCaret(p.lastChild!, 0)).toBeNull();
   });
 });
