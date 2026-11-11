@@ -14,6 +14,22 @@ enum QuillAPIError: LocalizedError {
     }
 }
 
+/// The read-aloud player's state, sent with Siri requests so notes land where the
+/// author is listening.
+struct ReadAloudPlayer {
+    /// A book is loaded (playing, or paused while Siri listens).
+    var active: Bool
+    /// The paragraph being read, as the server's `playhead` (nil if unknown).
+    var playhead: [String: Any]?
+
+    static let none = ReadAloudPlayer(active: false, playhead: nil)
+
+    func add(to body: inout [String: Any]) {
+        body["playerActive"] = active
+        if let playhead { body["playhead"] = playhead }
+    }
+}
+
 /// The few API calls Siri commands make, outside the web view.
 enum QuillAPI {
     private struct TokenPair: Decodable {
@@ -39,14 +55,17 @@ enum QuillAPI {
 
     /// Asks Quill a question and returns the spoken-style answer. `history` is
     /// the conversation so far, so follow-ups are answered in context.
-    static func ask(_ question: String, history: [VoiceTurn] = []) async throws -> String {
+    /// `player` is the read-aloud player's state, so a note asked for lands where
+    /// the author is listening.
+    static func ask(_ question: String, history: [VoiceTurn] = [], player: ReadAloudPlayer = .none) async throws -> String {
         struct Answer: Decodable { let answer: String }
-        let body: [String: Any] = [
+        var body: [String: Any] = [
             "question": question,
             "messages": history.map { ["role": $0.role.rawValue, "content": $0.content] },
             // So "what's due Friday" and new tasks' due dates use the phone's calendar.
             "tz": TimeZone.current.identifier,
         ]
+        player.add(to: &body)
         let data = try await authorizedPOST("/api/chat-sessions/voice", body: body)
         return try JSONDecoder().decode(Answer.self, from: data).answer
     }
@@ -59,6 +78,18 @@ enum QuillAPI {
         if let bookName { body["bookName"] = bookName }
         let data = try await authorizedPOST("/api/tasks/voice", body: body)
         return try JSONDecoder().decode(SpokenTaskResult.self, from: data)
+    }
+
+    /// Adds a note dictated to Siri. While the read-aloud player has a book loaded
+    /// the server pins it to the paragraph being read; otherwise it's a book note,
+    /// and when the server can't tell the book it returns `needsBook` with the
+    /// choices, and the caller asks and retries with `bookName`.
+    static func addNote(_ text: String, bookName: String? = nil, player: ReadAloudPlayer) async throws -> SpokenNoteResult {
+        var body: [String: Any] = ["text": text]
+        player.add(to: &body)
+        if let bookName { body["bookName"] = bookName }
+        let data = try await authorizedPOST("/api/chat-sessions/voice-note", body: body)
+        return try JSONDecoder().decode(SpokenNoteResult.self, from: data)
     }
 
     /// Open-task counts and the most pressing few, in the phone's time zone.

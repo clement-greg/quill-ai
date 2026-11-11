@@ -46,6 +46,49 @@ struct AddTaskIntent: AppIntent {
     }
 }
 
+/// "Hey Siri, add a note in Quill AI" → Siri asks for the note. While a book is
+/// being read aloud it's pinned to the paragraph being read (Siri pauses the
+/// reading to listen); otherwise it's a book note, and Siri asks which book when
+/// it can't tell.
+struct AddNoteIntent: AppIntent {
+    static let title: LocalizedStringResource = "Add a Note"
+    static let description = IntentDescription(
+        "Adds a note to your book. While Quill is reading a book aloud, the note goes where you're listening."
+    )
+    static let openAppWhenRun = false
+
+    @Parameter(title: "Note", requestValueDialog: "What's the note?")
+    var text: String
+
+    @Parameter(title: "Book")
+    var bookName: String?
+
+    func perform() async throws -> some IntentResult & ProvidesDialog {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return .result(dialog: "There was nothing to note.") }
+
+        let player = await ReadAloudStatus.current()
+        var result = try await QuillAPI.addNote(trimmed, bookName: bookName, player: player)
+        if !result.saved, result.needsBook == true {
+            let book = try await $bookName.requestValue(IntentDialog(stringLiteral: TaskSpeech.whichBook(result.books ?? [])))
+            result = try await QuillAPI.addNote(trimmed, bookName: book, player: player)
+            if !result.saved, result.needsBook == true {
+                return .result(dialog: "I couldn't find that book, so the note wasn't added.")
+            }
+        }
+        return .result(dialog: IntentDialog(stringLiteral: result.spoken))
+    }
+}
+
+/// The read-aloud player as Siri finds it. Intents run in the app's process, so
+/// this is the live player, which is exact even while the web view is asleep.
+enum ReadAloudStatus {
+    @MainActor static func current() -> ReadAloudPlayer {
+        let speech = SpeechController.shared
+        return ReadAloudPlayer(active: speech.state != .idle, playhead: speech.playhead)
+    }
+}
+
 /// "Hey Siri, what's on my Quill AI task list" → reads the open-task count and the next few.
 struct ListTasksIntent: AppIntent {
     static let title: LocalizedStringResource = "Open Tasks"
@@ -78,7 +121,8 @@ struct AskQuillIntent: AppIntent {
         var answer = ""
 
         for turn in 1...Conversation.maxTurns {
-            answer = try await QuillAPI.ask(current, history: history)
+            let player = await ReadAloudStatus.current()
+            answer = try await QuillAPI.ask(current, history: history, player: player)
             history += [VoiceTurn(role: .user, content: current), VoiceTurn(role: .assistant, content: answer)]
             if turn == Conversation.maxTurns { break }
 
@@ -128,6 +172,18 @@ struct QuillShortcuts: AppShortcutsProvider {
             ],
             shortTitle: "Add a Task",
             systemImageName: "checklist"
+        )
+        AppShortcut(
+            intent: AddNoteIntent(),
+            phrases: [
+                "Add a note in \(.applicationName)",
+                "Add a note to \(.applicationName)",
+                "New \(.applicationName) note",
+                "Make a note in \(.applicationName)",
+                "Take a note in \(.applicationName)",
+            ],
+            shortTitle: "Add a Note",
+            systemImageName: "note.text.badge.plus"
         )
         AppShortcut(
             intent: ListTasksIntent(),

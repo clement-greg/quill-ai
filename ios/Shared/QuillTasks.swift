@@ -11,6 +11,9 @@ struct SpokenTaskResult: Decodable {
     let spoken: String
 }
 
+/// What the server says after a note is dictated: same shape as a dictated task.
+typealias SpokenNoteResult = SpokenTaskResult
+
 /// One task as the summary endpoint returns it (only the fields Siri reads).
 struct QuillTaskItem: Decodable {
     let id: String

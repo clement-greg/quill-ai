@@ -127,6 +127,25 @@ describe('ReadAloudService', () => {
     expect(svc.bookId()).toBeNull();
   });
 
+  it('reports where a whole book is being read, for notes', () => {
+    const { engine, emit } = fakeEngine();
+    const svc = setup(engine);
+    expect(svc.playhead()).toBeNull();
+    svc.start(BOOK, { bookTitle: 'Book', bookId: 'b1' });
+    expect(svc.playhead()).toEqual({
+      bookId: 'b1', bookTitle: 'Book', chapterId: 'a', chapterTitle: 'One', blockIndex: -1, text: '',
+    });
+    expect(engine.play).toHaveBeenLastCalledWith(expect.objectContaining({ bookId: 'b1' }));
+    emit().progress(2);
+    expect(svc.playhead()).toMatchObject({ chapterId: 'a', blockIndex: 1, text: 'A2' });
+    emit().state('paused');
+    expect(svc.playhead()).not.toBeNull();
+    emit().state('idle'); // read to the end
+    expect(svc.playhead()).toBeNull();
+    svc.start(BOOK, { bookTitle: 'Chapter only' });
+    expect(svc.playhead()).toBeNull();
+  });
+
   it('remembers speed and voice, replaying from the current paragraph', () => {
     const { engine, emit } = fakeEngine();
     const svc = setup(engine);

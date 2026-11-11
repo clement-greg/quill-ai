@@ -12,6 +12,29 @@ export interface ChapterNote {
     createdBy?: string;
     createdByName?: string;
     createdByAvatar?: string;  // legacy: base64 data URL; prefer createdBy for new records
+    /** Set on a note added at the read-aloud play head (AI chat or Siri) and not
+     *  yet pinned into the chapter text: the paragraph it belongs to. The chapter
+     *  editor wraps that paragraph in the note's span the next time it has the
+     *  chapter open, then clears this. */
+    anchor?: ChapterNoteAnchor;
+}
+
+/** A paragraph of a chapter, as the read-aloud player counts them. */
+export interface ChapterNoteAnchor {
+    /** Index in parseContentBlocks() order (the player's paragraph index). */
+    blockIndex: number;
+    /** The paragraph's text when the note was added, to find it again if the
+     *  chapter has changed since. */
+    text?: string;
+}
+
+/** A short quote of an anchored paragraph, for a note's "on …" line. */
+export function noteAnchorExcerpt(paragraph: string | undefined, max = 120): string {
+    const clean = (paragraph ?? '').replace(/\s+/g, ' ').trim();
+    if (clean.length <= max) return clean;
+    const cut = clean.slice(0, max);
+    const space = cut.lastIndexOf(' ');
+    return `${(space > max / 2 ? cut.slice(0, space) : cut).trimEnd()}…`;
 }
 
 import { AuditedRecord } from './audited-record';

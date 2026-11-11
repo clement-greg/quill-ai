@@ -5,6 +5,10 @@ struct SpeechSegment: Decodable, Equatable {
     let text: String
     let chapterTitle: String
     let chapterIndex: Int
+    /// Where the paragraph is in the book (blockIndex -1 is the chapter title),
+    /// so a note added through Siri lands here. Older web builds don't send them.
+    var chapterId: String? = nil
+    var blockIndex: Int? = nil
 }
 
 /// What `window.quillNative.speech.play()` sends.
@@ -14,6 +18,8 @@ struct SpeechPlayRequest: Decodable {
     let voiceId: String?
     let rate: Double
     let bookTitle: String
+    /// The book being read, when it's a whole book.
+    var bookId: String? = nil
 }
 
 /// Pure timing and navigation math for the read-aloud queue. Speech has no real

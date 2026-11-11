@@ -21,7 +21,7 @@ import { ChapterService } from '../chapter.service';
 import { ContentFilterWarning } from '@shared/models/chapter-chunk.model';
 import { ChapterDraftService } from './chapter-draft.service';
 import { ChapterVersionService } from './chapter-version.service';
-import { Chapter, ChapterNote, OutlineItem } from '@shared/models/chapter.model';
+import { Chapter, ChapterNote, noteAnchorExcerpt, OutlineItem } from '@shared/models/chapter.model';
 import { ChatSessionSummary } from '@shared/models';
 import { Entity } from '@shared/models/entity.model';
 import { EntityQuote } from '@shared/models';
@@ -442,6 +442,7 @@ export class ChapterEditComponent implements OnInit, OnDestroy {
             this.editorRef.setContent(content);
             this.editorBridge.register(this.editorRef);
             this.editorBridge.setChapterContext({ chapterId: data.id, seriesId: this.seriesId() || null });
+            this.pinAnchoredNotes();
             // If the Ask Quill "edit chapter" tool navigated us here, kick off the
             // editorial pass now that the editor has content. A nested timeout
             // lets the freshly-set content settle before we extract blocks.
@@ -502,7 +503,10 @@ export class ChapterEditComponent implements OnInit, OnDestroy {
       const current = this.chapter();
       if (!current || current.id !== update.id) return;
       if (update.outline !== undefined) this.outline.set(update.outline);
-      if (update.notes !== undefined) this.notes.set(update.notes);
+      if (update.notes !== undefined) {
+        this.notes.set(update.notes);
+        this.pinAnchoredNotes();
+      }
       // Persist the externally-applied change into the draft so a subsequent
       // page refresh also shows the new data instead of the stale draft.
       const content = this.editorRef?.getContent() ?? current.content ?? '';
@@ -710,6 +714,7 @@ export class ChapterEditComponent implements OnInit, OnDestroy {
     this.mentionContent.set(slot.content);
     this.pendingSuggestions.set([]);
     this.registerActiveEditor();
+    this.pinAnchoredNotes();
     this.updateHeader();
     this.recordRecentChapter();
     this.scheduleUrlSync(id);
@@ -738,6 +743,7 @@ export class ChapterEditComponent implements OnInit, OnDestroy {
   onBookEditorMounted(id: string): void {
     if (id !== this.chapter()?.id) return;
     this.registerActiveEditor();
+    this.pinAnchoredNotes();
     if (this.editorReview.consumeAutoRun(id)) setTimeout(() => this.startQuillReview());
   }
 
@@ -1596,6 +1602,23 @@ export class ChapterEditComponent implements OnInit, OnDestroy {
     };
     this.notes.update(ns => [...ns, note]);
     this.startEditNote(note);
+  }
+
+  /** Wraps notes added at the read-aloud play head (from AI chat or Siri)
+   *  around their paragraph, so they work like any in-text note. A note whose
+   *  paragraph can't be found becomes a general chapter note. Works on the
+   *  chapter in scope; in full-book mode that's the active chapter, once its
+   *  editor has mounted. */
+  private pinAnchoredNotes(): void {
+    const editor = this.editorRef;
+    if (!editor || !this.notes().some(n => n.anchor)) return;
+    this.notes.update(ns => ns.map(n => {
+      if (!n.anchor) return n;
+      const wrapped = editor.wrapAnchoredNote(n.id, n.anchor);
+      const { anchor: _pinned, ...rest } = n;
+      return { ...rest, selectedText: n.selectedText || noteAnchorExcerpt(wrapped ?? '') };
+    }));
+    this.scheduleNotesDraftSave();
   }
 
   /** Debounced draft save reflecting the current notes and outline. */

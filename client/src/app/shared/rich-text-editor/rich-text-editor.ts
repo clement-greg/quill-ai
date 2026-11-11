@@ -10,6 +10,8 @@ import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
 import { MatTooltipModule } from '@angular/material/tooltip';
 import { Entity, EntityReference, isVideoUrl } from '@shared/models/entity.model';
 import { ChapterEditProposal, EntityLinkGroup } from '@shared/models/chat-session.model';
+import { ChapterNoteAnchor } from '@shared/models/chapter.model';
+import { wrapAnchoredBlock } from '@app/features/chapters/chapter-edit/note-anchor';
 import { EntityService } from '@app/features/entities/entity.service';
 import { GrammarCheckService, GrammarError, SuggestedEntity } from './grammar-check.service';
 import {
@@ -574,6 +576,20 @@ export class RichTextEditorComponent implements OnInit, AfterViewInit, OnDestroy
     this.scheduleEmit();
     this.scheduleMinimap();
     return selectedText;
+  }
+
+  /** Pins a note added at the read-aloud play head to its paragraph (see
+   *  wrapAnchoredBlock). Returns the wrapped text, or null if the paragraph
+   *  can't be found or the note already has a span. */
+  wrapAnchoredNote(noteId: string, anchor: ChapterNoteAnchor): string | null {
+    const editor = this.editorRef?.nativeElement;
+    if (!editor || editor.querySelector(`[data-note-id="${CSS.escape(noteId)}"]`)) return null;
+    const text = wrapAnchoredBlock(editor, noteId, anchor);
+    if (text === null) return null;
+    this.editorContent = editor.innerHTML;
+    this.scheduleEmit();
+    this.scheduleMinimap();
+    return text;
   }
 
   // ── Move text to another chapter ─────────────────────────────────────────

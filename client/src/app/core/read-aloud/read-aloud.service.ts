@@ -2,7 +2,9 @@ import { DOCUMENT } from '@angular/common';
 import { computed, inject, Injectable, InjectionToken, signal } from '@angular/core';
 import { getQuillNative } from '@app/core/native/quill-native';
 import { NativeSpeechEngine } from './native-speech-engine';
-import { ReadAloudChapter, ReadAloudSegment, ReadAloudState, ReadAloudVoice, SpeechEngine } from './read-aloud.model';
+import {
+  PLAYHEAD_TEXT_MAX, ReadAloudChapter, ReadAloudPlayhead, ReadAloudSegment, ReadAloudState, ReadAloudVoice, SpeechEngine,
+} from './read-aloud.model';
 import { buildSegments, findSegmentIndex, nextChapterStart, previousChapterStart, sortVoices } from './read-aloud-segments';
 import { WebSpeechEngine } from './web-speech-engine';
 
@@ -65,6 +67,22 @@ export class ReadAloudService {
   });
 
   private bookTitle = '';
+
+  /** Where a book is being read (playing or paused), or null when no book is
+   *  loaded or it was read to the end. */
+  playhead(): ReadAloudPlayhead | null {
+    const bookId = this.bookId();
+    const current = this.current();
+    if (!bookId || !current || this.finished()) return null;
+    return {
+      bookId,
+      bookTitle: this.bookTitle,
+      chapterId: current.chapterId,
+      chapterTitle: current.chapterTitle,
+      blockIndex: current.blockIndex,
+      text: current.blockIndex >= 0 ? current.text.slice(0, PLAYHEAD_TEXT_MAX) : '',
+    };
+  }
   /** Set when the position, voice or speed changed while paused, so resume replays from `index`. */
   private restartOnResume = false;
   private voicesLoaded = false;
@@ -184,6 +202,7 @@ export class ReadAloudService {
       voiceId: this.voiceId(),
       rate: this.rate(),
       bookTitle: this.bookTitle,
+      bookId: this.bookId(),
     });
   }
 

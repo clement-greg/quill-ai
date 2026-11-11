@@ -4,7 +4,24 @@ import XCTest
 
 final class SiriCommandTests: XCTestCase {
     func testAllSiriCommandsAreRegistered() {
-        XCTAssertEqual(QuillShortcuts.appShortcuts.count, 4)
+        XCTAssertEqual(QuillShortcuts.appShortcuts.count, 5)
+    }
+
+    func testPlayerStateIsSentWithSiriRequests() {
+        var body: [String: Any] = [:]
+        ReadAloudPlayer.none.add(to: &body)
+        XCTAssertEqual(body["playerActive"] as? Bool, false)
+        XCTAssertNil(body["playhead"])
+
+        ReadAloudPlayer(active: true, playhead: ["chapterId": "c1", "blockIndex": 4]).add(to: &body)
+        XCTAssertEqual(body["playerActive"] as? Bool, true)
+        XCTAssertEqual((body["playhead"] as? [String: Any])?["chapterId"] as? String, "c1")
+    }
+
+    @MainActor
+    func testNoPlayheadWhenNothingIsPlaying() {
+        XCTAssertNil(SpeechController.shared.playhead)
+        XCTAssertFalse(ReadAloudStatus.current().active)
     }
 
     func testSignedOutAskExplainsWhatToDo() async throws {

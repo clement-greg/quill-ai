@@ -17,6 +17,21 @@ export interface ReadAloudSegment {
   text: string;
 }
 
+/** Where a whole book is being read, sent with chat requests so a note lands there. */
+export interface ReadAloudPlayhead {
+  bookId: string;
+  bookTitle: string;
+  chapterId: string;
+  chapterTitle: string;
+  /** -1 while the chapter title is being read. */
+  blockIndex: number;
+  /** The paragraph's text, cut to PLAYHEAD_TEXT_MAX characters. */
+  text: string;
+}
+
+/** Enough of a paragraph to find it again. */
+export const PLAYHEAD_TEXT_MAX = 300;
+
 export type VoiceQuality = 'default' | 'enhanced' | 'premium';
 
 export interface ReadAloudVoice {
@@ -36,6 +51,8 @@ export interface SpeechPlayRequest {
   /** 1 = normal speed. */
   rate: number;
   bookTitle: string;
+  /** The book being read, when it's a whole book (lets Siri add a note at the play head). */
+  bookId?: string | null;
 }
 
 export interface SpeechEngineListener {

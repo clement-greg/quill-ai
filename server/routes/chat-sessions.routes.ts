@@ -28,6 +28,7 @@ import { downloadBlob } from '../services/storage';
 import { buildChapterContextPrompt } from '../services/chapter-ai-context';
 import { buildChapterDraftingContext, generateChapterBeatSheet } from '../services/chapter-drafting-context';
 import { taskChatTools, taskGuidance } from './task-chat-tools';
+import { addChapterNote, currentPlayhead, Playhead, playheadAnchor, playheadGuidance } from '../services/playhead-notes';
 
 /** True when the author is asking to draft a whole chapter (vs. a small inline
  * edit/insert), e.g. "write the chapter based on the outline and notes" or
@@ -710,6 +711,28 @@ async function resolveEntityCandidates(name: string, req: Request): Promise<{ id
     if (score > 0) scored.push({ id: e.id, name: entityDisplayName(e), score, record: e });
   }
   return scored.sort((a, b) => b.score - a.score);
+}
+
+/** Adds a note to the end of a book's notes. */
+async function createBookNote(req: Request, bookId: string, content: string): Promise<void> {
+  const now = new Date().toISOString();
+  const email = req.user!.email;
+  const { resources: existing } = await getContainer('book-notes').items
+    .query({ query: 'SELECT VALUE MAX(c.sortOrder) FROM c WHERE c.bookId = @bookId', parameters: [{ name: '@bookId', value: bookId }] })
+    .fetchAll();
+  const maxSort = typeof existing[0] === 'number' ? existing[0] : -1;
+  const note: BookNote = {
+    id: randomUUID(),
+    bookId,
+    content,
+    sortOrder: maxSort + 1,
+    owner: email,
+    createdBy: email,
+    createdAt: now,
+    modifiedBy: email,
+    modifiedAt: now,
+  };
+  await getContainer('book-notes').items.create<BookNote>(note);
 }
 
 /** Lists the user's (non-hidden) books as {id, title}. */
@@ -2144,6 +2167,8 @@ function quickChatTools(
   req: Request,
   scope: { seriesId?: string; bookId?: string; chapterId?: string },
   citations: ChapterCitation[],
+  /** Where the read-aloud player is, if it's going: notes default to that spot. */
+  playhead: Playhead | null = null,
 ): Record<string, ChatTool> {
   return {
     research_entity: getResearchEntityTool(req),
@@ -2396,25 +2421,7 @@ function quickChatTools(
           };
         }
 
-        const now = new Date().toISOString();
-        const email = req.user!.email;
-        const { resources: existing } = await getContainer('book-notes').items
-          .query({ query: 'SELECT VALUE MAX(c.sortOrder) FROM c WHERE c.bookId = @bookId', parameters: [{ name: '@bookId', value: book.id }] })
-          .fetchAll();
-        const maxSort = typeof existing[0] === 'number' ? existing[0] : -1;
-
-        const note: BookNote = {
-          id: randomUUID(),
-          bookId: book.id,
-          content: noteContent,
-          sortOrder: maxSort + 1,
-          owner: email,
-          createdBy: email,
-          createdAt: now,
-          modifiedBy: email,
-          modifiedAt: now,
-        };
-        await getContainer('book-notes').items.create<BookNote>(note);
+        await createBookNote(req, book.id, noteContent);
 
         return {
           toolResult: { added: true, book: book.title, message: `Note added to "${book.title}" successfully.` },
@@ -2433,7 +2440,9 @@ function quickChatTools(
             'e.g. "add a note to the chapter Archimedes Fire that says tacos are the best", or when they ' +
             'clarify that a name they gave is a chapter (not a book). Extract "chapterName" from the chapter ' +
             'they mention and "note" from the content they want to save. If the chapter is not specified, ask ' +
-            'the user which chapter. If the note content is not specified, ask for it before calling.',
+            'the user which chapter — unless the read-aloud player is going (see READ-ALOUD PLAYER), in which ' +
+            'case call WITHOUT chapterName and the note is pinned to the spot being read. If the note content ' +
+            'is not specified, ask for it before calling.',
           parameters: {
             type: 'object',
             properties: {
@@ -2458,8 +2467,11 @@ function quickChatTools(
           };
         }
 
-        const chapter = chapterName ? await resolveByTitle('chapter', chapterName, req) : null;
-        if (!chapter) {
+        // No chapter named: the one being listened to. A named chapter that is the
+        // one being listened to still gets pinned to the play head.
+        const named = chapterName ? await resolveByTitle('chapter', chapterName, req) : null;
+        const chapterId = named?.id ?? (chapterName ? undefined : playhead?.chapterId);
+        if (!chapterId) {
           return {
             toolResult: {
               added: false,
@@ -2470,38 +2482,30 @@ function quickChatTools(
             },
           };
         }
+        const atPlayhead = !!playhead && playhead.chapterId === chapterId;
+        const anchor = atPlayhead ? playheadAnchor(playhead!) : undefined;
 
-        const { resource: fullChapter } = await getContainer('chapters').item(chapter.id, chapter.id).read<Chapter>();
-        if (!fullChapter) {
-          return { toolResult: { added: false, message: 'Could not load the chapter.' } };
-        }
-
-        const now = new Date().toISOString();
-        const email = req.user!.email;
-        const newNote: ChapterNote = {
-          id: randomUUID(),
-          noteText: noteContent,
-          selectedText: '',
-          createdAt: now,
-          createdBy: email,
-        };
-        const updated: Chapter = {
-          ...fullChapter,
-          notes: [...(fullChapter.notes ?? []), newNote],
-          modifiedBy: email,
-          modifiedAt: now,
-        };
-        delete (updated as { contentVector?: unknown }).contentVector;
+        let saved;
         try {
-          await getContainer('chapters').item(chapter.id, chapter.id).replace<Chapter>(updated);
+          saved = await addChapterNote(req, chapterId, noteContent, anchor);
         } catch (err) {
           console.error('add_chapter_note replace failed:', err);
           return { toolResult: { added: false, message: 'Failed to save the note. Please try again.' } };
         }
+        if (!saved) {
+          return { toolResult: { added: false, message: 'Could not load the chapter.' } };
+        }
 
         return {
-          toolResult: { added: true, chapter: chapter.title, message: `Note added to "${chapter.title}" successfully.` },
-          sse: { chapterUpdated: { id: chapter.id, notes: updated.notes } },
+          toolResult: {
+            added: true,
+            chapter: saved.title,
+            ...(atPlayhead ? { atPlayhead: true } : {}),
+            message: atPlayhead
+              ? `Note added to "${saved.title}" where the author is listening.`
+              : `Note added to "${saved.title}" successfully.`,
+          },
+          sse: { chapterUpdated: { id: saved.chapterId, notes: saved.notes } },
           success: true,
         };
       },
@@ -3064,9 +3068,12 @@ export function parseVoiceConversation(body: unknown): VoiceMessage[] | string {
 }
 
 // POST /voice — a spoken question, answered in full as plain text (for Siri).
-// Body: { question: string, messages?: {role, content}[] } where `messages` is
-// the conversation so far, for follow-ups. Response: { answer: string }. Uses
-// the read-only research tools plus save/find thoughts; nothing that needs a screen.
+// Body: { question: string, messages?: {role, content}[], playerActive?: boolean, playhead? }
+// where `messages` is the conversation so far, for follow-ups, `playerActive`
+// says whether the phone's read-aloud player has a book loaded, and `playhead`
+// is where it is (see currentPlayhead). Response:
+// { answer: string }. Uses the read-only research tools plus thoughts, tasks and
+// notes (pinned to the play head while listening); nothing that needs a screen.
 router.post('/voice', async (req: Request, res: Response) => {
   const parsed = parseVoiceConversation(req.body);
   if (typeof parsed === 'string') {
@@ -3075,17 +3082,23 @@ router.post('/voice', async (req: Request, res: Response) => {
   }
   try {
     const messages = parsed;
-    const { systemPrompt, citations } = await buildRagSystemPrompt(messages, {}, req);
+    const [{ systemPrompt, citations }, playhead] = await Promise.all([
+      buildRagSystemPrompt(messages, {}, req),
+      currentPlayhead(req, { client: req.body?.playhead, playerActive: req.body?.playerActive }),
+    ]);
+    const { add_chapter_note, add_book_note } = quickChatTools(req, {}, citations, playhead);
     const tools: Record<string, ChatTool> = {
       research_entity: getResearchEntityTool(req),
       search_chapter_text: getSearchChapterTextTool({}, citations, req),
       save_thought: getSaveThoughtTool(req),
       find_thoughts: getFindThoughtsTool(req),
+      add_chapter_note: add_chapter_note!,
+      add_book_note: add_book_note!,
       ...taskChatTools(req),
     };
     const guidance =
       ENTITY_RESEARCH_GUIDANCE + SEARCH_CHAPTER_TEXT_GUIDANCE + SAVE_THOUGHT_GUIDANCE + FIND_THOUGHTS_GUIDANCE + taskGuidance(req) +
-      VOICE_GUIDANCE;
+      playheadGuidance(playhead) + VOICE_GUIDANCE;
     const collector = createAnswerCollector();
     await streamChatResponse(collector.sink, systemPrompt + guidance, messages, citations, tools, await chatModelFor(req.user, undefined));
 
@@ -3103,6 +3116,53 @@ router.post('/voice', async (req: Request, res: Response) => {
   }
 });
 
+// POST /voice-note — a note dictated to Siri. Body: { text, bookName?, playerActive?, playhead? }.
+// While the read-aloud player is going the note is pinned to the paragraph being
+// read; otherwise it's a book note, for the named book (or the only one).
+// Response: { saved: true, spoken, chapter? | book? } or
+// { saved: false, needsBook: true, books: string[], spoken }.
+router.post('/voice-note', async (req: Request, res: Response) => {
+  const text = typeof req.body?.text === 'string' ? req.body.text.trim() : '';
+  if (!text) {
+    res.status(400).json({ error: 'text is required' });
+    return;
+  }
+  if (text.length > VOICE_MAX_MESSAGE_CHARS) {
+    res.status(400).json({ error: 'text is too long' });
+    return;
+  }
+  const bookName = typeof req.body?.bookName === 'string' ? req.body.bookName.trim() : '';
+  try {
+    if (!bookName) {
+      const playhead = await currentPlayhead(req, { client: req.body?.playhead, playerActive: req.body?.playerActive });
+      const saved = playhead ? await addChapterNote(req, playhead.chapterId, text, playheadAnchor(playhead)) : null;
+      if (saved) {
+        console.log('[voice-note] owner="%s" chapter=%s at play head', req.user!.email, saved.chapterId);
+        res.json({ saved: true, chapter: saved.title, spoken: `Added a note to ${saved.title}, where you're listening.` });
+        return;
+      }
+    }
+
+    const books = await listBooks(req);
+    if (!books.length) {
+      res.json({ saved: false, needsBook: false, books: [], spoken: 'You don\'t have any books yet. Create one in Quill first.' });
+      return;
+    }
+    const match = bookName ? await resolveByTitle('book', bookName, req) : null;
+    const book = match ?? (!bookName && books.length === 1 ? books[0]! : null);
+    if (!book) {
+      res.json({ saved: false, needsBook: true, books: books.map(b => b.title), spoken: 'Which book is the note for?' });
+      return;
+    }
+    await createBookNote(req, book.id, text);
+    console.log('[voice-note] owner="%s" book=%s', req.user!.email, book.id);
+    res.json({ saved: true, book: book.title, spoken: `Added a note to ${book.title}.` });
+  } catch (err) {
+    console.error('Voice note error:', err);
+    res.status(500).json({ error: 'Failed to save the note' });
+  }
+});
+
 router.post('/quick-chat', async (req: Request, res: Response) => {
   const messages: { role: 'user' | 'assistant'; content: string }[] = req.body.messages;
   const chapterContext = req.body.chapterContext as
@@ -3112,6 +3172,8 @@ router.post('/quick-chat', async (req: Request, res: Response) => {
   const entityOptions = req.body.entityOptions as ProposeEntityContext['options'] | undefined;
   const chatImages = sanitizeChatImages(req.body.sessionImages);
   const attachedEntityId = typeof req.body.entityId === 'string' ? req.body.entityId : undefined;
+  // The read-aloud player's position, when it's going: notes default to that spot.
+  const playhead = await currentPlayhead(req, { client: req.body.playhead, playerActive: !!req.body.playhead });
 
   if (!messages || !Array.isArray(messages)) {
     res.status(400).json({ error: 'messages array required' });
@@ -3248,17 +3310,17 @@ router.post('/quick-chat', async (req: Request, res: Response) => {
   const taskTools = taskChatTools(req, { defaultBookId: chapterBookId });
   const tools = chapterContext?.chapterId
     ? {
-        ...quickChatTools(req, {}, citations),
+        ...quickChatTools(req, {}, citations, playhead),
         ...taskTools,
         ...entityTools,
         get_chapter_text: getChapterTextTool(chapterContext.chapterId, req),
         link_entity_references: getLinkEntityReferencesTool(req),
         propose_chapter_edit: getProposeChapterEditTool(chapterContext.chapterId, req),
       }
-    : { ...quickChatTools(req, {}, citations), ...taskTools, ...entityTools };
+    : { ...quickChatTools(req, {}, citations, playhead), ...taskTools, ...entityTools };
   const guidance =
     IMAGE_TOOL_GUIDANCE + ENTITY_RESEARCH_GUIDANCE + ENTITY_DESCRIPTION_GUIDANCE + SEARCH_CHAPTER_TEXT_GUIDANCE + SAVE_THOUGHT_GUIDANCE + FIND_THOUGHTS_GUIDANCE +
-    taskGuidance(req) +
+    taskGuidance(req) + playheadGuidance(playhead) +
     ENTITY_CREATION_GUIDANCE + chatImagesGuidance(chatImages) +
     (chapterContext?.chapterId ? LINK_REFERENCES_GUIDANCE + SMART_EDIT_GUIDANCE : '');
   await streamChatResponse(res, systemPrompt + guidance, messages, citations, tools, await chatModelFor(req.user, req.body.model));

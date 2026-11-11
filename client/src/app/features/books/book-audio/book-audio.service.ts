@@ -4,7 +4,7 @@ import { computed, effect, inject, Injectable, signal, untracked } from '@angula
 import { MatDialog, MatDialogRef } from '@angular/material/dialog';
 import { firstValueFrom } from 'rxjs';
 import { ReadAloudService } from '@app/core/read-aloud/read-aloud.service';
-import { ReadAloudChapter } from '@app/core/read-aloud/read-aloud.model';
+import { PLAYHEAD_TEXT_MAX, ReadAloudChapter } from '@app/core/read-aloud/read-aloud.model';
 import { BookService } from '@app/features/books/book.service';
 import { ChapterService } from '@app/features/chapters/chapter.service';
 import { ChapterDraftService } from '@app/features/chapters/chapter-edit/chapter-draft.service';
@@ -231,6 +231,8 @@ export class BookAudioService {
       chapterId: current.chapterId,
       chapterTitle: current.chapterTitle,
       blockIndex: current.blockIndex,
+      // Lets a note added by voice find the paragraph being read.
+      ...(current.blockIndex >= 0 ? { blockText: current.text.slice(0, PLAYHEAD_TEXT_MAX) } : {}),
       progress: finished ? 1 : before / total,
       ...(this.coverUrl ? { coverUrl: this.coverUrl } : {}),
       ...(finished ? { finished: true } : {}),
