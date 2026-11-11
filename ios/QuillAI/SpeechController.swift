@@ -78,8 +78,13 @@ final class SpeechController: NSObject {
     private static let skipSeconds = 15.0
     /// Fetch of the current paragraph's Microsoft voice audio, cancelled on a jump.
     private var azureTask: Task<Void, Never>?
-    /// The next paragraph's audio, fetched while this one plays so there's no gap.
-    private var azurePrefetch: (key: String, task: Task<Data, Error>)?
+    /// Audio of pieces being or already fetched (the one playing and the next few), by voice, speed and text.
+    private var azureFetches: [String: Task<Data, Error>] = [:]
+    /// Keys of `azureFetches`, oldest first, to drop the oldest beyond `azureCacheLimit`.
+    private var azureFetchOrder: [String] = []
+    private static let azureCacheLimit = 16
+    /// Pieces fetched ahead of the one playing.
+    private static let azureLookahead = 3
 
     override init() {
         super.init()
@@ -223,8 +228,9 @@ final class SpeechController: NSObject {
 
     func stop() {
         halt()
-        azurePrefetch?.task.cancel()
-        azurePrefetch = nil
+        azureFetches.values.forEach { $0.cancel() }
+        azureFetches = [:]
+        azureFetchOrder = []
         engine.stop()
         segments = []
         index = 0
@@ -320,36 +326,42 @@ final class SpeechController: NSObject {
 
     // MARK: Microsoft (Azure) voices
 
-    /// Fetches the paragraph's audio from the server, decodes it and feeds it
-    /// through the same player as device voices, so skipping, interruptions and
-    /// the lock screen all work the same. (No word timing: Azure's REST API
-    /// doesn't return it, so notes land at the paragraph.)
+    /// Speaks the paragraph a sentence or two at a time: each piece's audio is
+    /// fetched from the server (a few ahead of the one playing), decoded and
+    /// queued on the same player as device voices, so skipping, interruptions
+    /// and the lock screen all work the same. Pieces keep slow HD voices, which
+    /// take about as long to generate as the audio lasts, from leaving long
+    /// silences. (No word timing: Azure's REST API doesn't return it, so notes
+    /// land at the paragraph.)
     private func speakAzure(at i: Int, voice: String) {
         let gen = generation
-        let text = segments[i].text
         let rate = self.rate
+        let pieces = Self.pieces(of: segments[i].text)
+        // Then the start of the next paragraphs, to fetch ahead into them.
+        var following: [String] = []
+        for next in segments.indices where next > i && following.count < Self.azureLookahead {
+            following += Self.pieces(of: segments[next].text).prefix(Self.azureLookahead - following.count)
+        }
         // No utterance for this paragraph: a late didFinish from an earlier one mustn't end it.
         currentUtterance = nil
-        let audio = azureAudio(text: text, voice: voice, rate: rate)
-        // Fetch the next paragraph while this one plays.
-        if segments.indices.contains(i + 1) {
-            let next = segments[i + 1].text
-            let key = Self.azureKey(text: next, voice: voice, rate: rate)
-            if azurePrefetch?.key != key {
-                azurePrefetch = (key, Task { try await QuillAPI.speechAudio(text: next, voice: voice, rate: rate) })
-            }
-        }
         segmentStartedAt = Date()
-        log.info("Speaking segment \(i, privacy: .public) with Microsoft voice")
+        log.info("Speaking segment \(i, privacy: .public) with Microsoft voice (\(pieces.count, privacy: .public) pieces)")
         onEvent?(["type": "progress", "index": i])
         setState(.playing)
         azureTask = Task { [weak self] in
             do {
-                let data = try await audio.value
-                let buffers = try await Task.detached { try Self.decode(mp3: data) }.value
-                guard let self, gen == self.generation else { return }
-                buffers.forEach { self.receive($0, generation: gen) }
-                self.renderingFinished(generation: gen)
+                for (n, piece) in pieces.enumerated() {
+                    guard let me = self, gen == me.generation else { return }
+                    let current = me.azureAudio(text: piece, voice: voice, rate: rate)
+                    let ahead = Array((pieces.dropFirst(n + 1) + following).prefix(Self.azureLookahead))
+                    ahead.forEach { _ = me.azureAudio(text: $0, voice: voice, rate: rate) }
+                    let data = try await current.value
+                    let buffers = try await Task.detached { try Self.decode(mp3: data) }.value
+                    guard let me = self, gen == me.generation else { return }
+                    buffers.forEach { me.receive($0, generation: gen) }
+                }
+                guard let me = self, gen == me.generation else { return }
+                me.renderingFinished(generation: gen)
             } catch {
                 guard let self, gen == self.generation, !(error is CancellationError) else { return }
                 log.error("Microsoft voice failed: \(error.localizedDescription, privacy: .public)")
@@ -363,18 +375,61 @@ final class SpeechController: NSObject {
         }
     }
 
-    /// The paragraph's audio: the prefetched fetch when it's the one, else a new one.
+    /// A piece's audio: the fetch already under way (or done) for it, else a new one.
     private func azureAudio(text: String, voice: String, rate: Double) -> Task<Data, Error> {
-        let key = Self.azureKey(text: text, voice: voice, rate: rate)
-        if let prefetch = azurePrefetch, prefetch.key == key {
-            azurePrefetch = nil
-            return prefetch.task
+        let key = "\(voice)|\(rate)|\(text)"
+        if let task = azureFetches[key] { return task }
+        let task = Task { try await QuillAPI.speechAudio(text: text, voice: voice, rate: rate) }
+        azureFetches[key] = task
+        azureFetchOrder.append(key)
+        while azureFetchOrder.count > Self.azureCacheLimit {
+            azureFetches.removeValue(forKey: azureFetchOrder.removeFirst())
         }
-        return Task { try await QuillAPI.speechAudio(text: text, voice: voice, rate: rate) }
+        return task
     }
 
-    private static func azureKey(text: String, voice: String, rate: Double) -> String {
-        "\(voice)|\(rate)|\(text)"
+    /// Sentence-sized pieces of a paragraph, each at most `max` characters:
+    /// whole sentences, joined while they fit; a longer sentence breaks at a
+    /// comma or semicolon, else at a space. (Same rule as the web player.)
+    nonisolated static func pieces(of text: String, max: Int = 250) -> [String] {
+        let clean = text.split(whereSeparator: \.isWhitespace).joined(separator: " ")
+        guard !clean.isEmpty else { return [] }
+        var sentences: [String] = []
+        clean.enumerateSubstrings(in: clean.startIndex..., options: .bySentences) { sub, _, _, _ in
+            if let sub = sub?.trimmingCharacters(in: .whitespaces), !sub.isEmpty { sentences.append(sub) }
+        }
+        if sentences.isEmpty { sentences = [clean] }
+        var pieces: [String] = []
+        for sentence in sentences.flatMap({ splitLong($0, max: max) }) {
+            if let last = pieces.last, last.count + 1 + sentence.count <= max {
+                pieces[pieces.count - 1] = last + " " + sentence
+            } else {
+                pieces.append(sentence)
+            }
+        }
+        return pieces
+    }
+
+    private nonisolated static func splitLong(_ sentence: String, max: Int) -> [String] {
+        var out: [String] = []
+        var rest = Substring(sentence)
+        while rest.count > max {
+            let window = rest.prefix(max + 1)
+            var cut: String.Index?
+            for mark in [", ", "; ", ": "] {
+                if let r = window.range(of: mark, options: .backwards),
+                   window.distance(from: window.startIndex, to: r.lowerBound) > max / 3,
+                   cut.map({ r.lowerBound > $0 }) ?? true {
+                    cut = window.index(after: r.lowerBound)
+                }
+            }
+            if cut == nil, let space = window.lastIndex(of: " "), space > window.startIndex { cut = space }
+            let end = cut ?? rest.index(rest.startIndex, offsetBy: max)
+            out.append(rest[..<end].trimmingCharacters(in: .whitespaces))
+            rest = rest[end...].drop(while: { $0 == " " })
+        }
+        if !rest.isEmpty { out.append(String(rest)) }
+        return out
     }
 
     /// Decodes MP3 into float buffers of about half a second each, so a

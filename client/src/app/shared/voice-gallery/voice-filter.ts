@@ -17,7 +17,9 @@ export interface VoiceFilter {
 /** Tag chip for voices that speak other languages too. */
 export const MULTILINGUAL_TAG = 'Multilingual';
 
-export const EMPTY_FILTER: VoiceFilter = { search: '', language: 'mine', gender: 'any', type: 'any', tags: [] };
+/** Where the gallery starts (and "Clear filters" returns): standard voices in the reader's language.
+ *  HD voices sound richer but take seconds to start speaking, so they're one click away. */
+export const DEFAULT_FILTER: VoiceFilter = { search: '', language: 'mine', gender: 'any', type: 'standard', tags: [] };
 
 /** The voice's tags as the filter chips name them. */
 export function voiceTags(voice: AzureVoice): string[] {
@@ -108,6 +110,7 @@ export function previewText(voice: Pick<AzureVoice, 'name'>): string {
   return `Hi, I'm ${first}. This is how your story will sound when I read it aloud.`;
 }
 
-export function filterIsEmpty(filter: VoiceFilter): boolean {
-  return !filter.search.trim() && filter.language === 'mine' && filter.gender === 'any' && filter.type === 'any' && !filter.tags.length;
+export function filterIsDefault(filter: VoiceFilter): boolean {
+  return !filter.search.trim() && filter.language === DEFAULT_FILTER.language && filter.gender === DEFAULT_FILTER.gender
+    && filter.type === DEFAULT_FILTER.type && !filter.tags.length;
 }

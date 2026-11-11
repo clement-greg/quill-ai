@@ -130,4 +130,46 @@ describe('AzureSpeechEngine', () => {
     expect(audio.src).toMatch(/^blob:/);
     expect(audio.play).toHaveBeenCalled();
   });
+
+  it('speaks a long paragraph a few sentences at a time, fetching ahead', async () => {
+    vi.useFakeTimers();
+    const sentence = (n: number) => `Sentence ${n} ${'word '.repeat(20).trim()}.`;
+    const long = [1, 2, 3, 4, 5, 6].map(sentence).join(' ');
+    const { engine, audio, source, listener } = setup();
+    engine.play(request({ segments: [seg(long), seg('After')], startIndex: 0 }));
+    await vi.advanceTimersByTimeAsync(0);
+    const texts = source.mock.calls.map(c => c[0] as string);
+    // The first piece plus the next three, all requested before the first plays.
+    expect(texts).toHaveLength(4);
+    expect(texts.every(t => t.length <= 250)).toBe(true);
+    expect(texts[0]).toMatch(/^Sentence 1/);
+    expect(listener.progress).toHaveBeenLastCalledWith(0);
+    // Each piece ends and the next plays, still on the same paragraph.
+    const pieces = texts.length;
+    audio.onended!();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(listener.progress).toHaveBeenLastCalledWith(0);
+    expect(audio.src).toBe('blob:2');
+    for (let i = 0; i < 10 && listener.progress.mock.lastCall?.[0] === 0; i++) {
+      audio.onended!();
+      await vi.advanceTimersByTimeAsync(300);
+    }
+    expect(listener.progress).toHaveBeenLastCalledWith(1);
+    expect(source.mock.calls.map(c => c[0])).toContain('After');
+    expect(pieces).toBeGreaterThan(1);
+  });
+
+  it('moves on when resumed in the gap after a paragraph', async () => {
+    vi.useFakeTimers();
+    const { engine, audio, listener } = setup();
+    engine.play(request());
+    await vi.advanceTimersByTimeAsync(0);
+    audio.onended!();
+    engine.pause();
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(listener.progress).toHaveBeenLastCalledWith(1);
+    engine.resume();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(listener.progress).toHaveBeenLastCalledWith(2);
+  });
 });

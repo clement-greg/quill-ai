@@ -82,6 +82,17 @@ describe('VoiceGalleryComponent', () => {
     expect(cards()).toHaveLength(2);
   });
 
+  it('starts on standard voices, with HD one click away', () => {
+    const { component, fixture, cards } = setup([voice('Jane'), voice('Ava', { hd: true })]);
+    expect(component.filter().type).toBe('standard');
+    expect(cards().map(c => c.querySelector('.vg-name')?.textContent)).toEqual(['Jane']);
+    component.setType('any');
+    fixture.detectChanges();
+    expect(cards()).toHaveLength(2);
+    component.clearFilters();
+    expect(component.filter().type).toBe('standard');
+  });
+
   it('pages long lists', () => {
     const many = Array.from({ length: 60 }, (_, i) => voice(`V${String(i).padStart(2, '0')}`));
     const { component, fixture, cards, el } = setup(many);

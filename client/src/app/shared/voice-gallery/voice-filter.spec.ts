@@ -1,6 +1,6 @@
 import { AzureVoice } from '@app/core/read-aloud/azure-speech-client';
 import {
-  displayName, EMPTY_FILTER, filterIsEmpty, filterVoices, languageOptions, MULTILINGUAL_TAG, previewText, tagOptions, VoiceFilter, voiceTags,
+  DEFAULT_FILTER, displayName, filterIsDefault, filterVoices, languageOptions, MULTILINGUAL_TAG, previewText, tagOptions, VoiceFilter, voiceTags,
 } from './voice-filter';
 
 function voice(id: string, over: Partial<AzureVoice> = {}): AzureVoice {
@@ -20,16 +20,23 @@ const VOICES = [
 ];
 
 const names = (vs: AzureVoice[]) => vs.map(v => v.name);
-const f = (over: Partial<VoiceFilter>): VoiceFilter => ({ ...EMPTY_FILTER, ...over });
+/** No filtering at all (the gallery's default also limits to standard voices). */
+const ANY: VoiceFilter = { ...DEFAULT_FILTER, type: 'any' };
+const f = (over: Partial<VoiceFilter>): VoiceFilter => ({ ...ANY, ...over });
 
 describe('voice filters', () => {
   it('shows the reader\'s language by default, own accent first, then HD, then by name', () => {
-    expect(names(filterVoices(VOICES, EMPTY_FILTER, 'en-US'))).toEqual(['Ava HD', 'Andrew', 'Jane', 'Sky', 'Sonia']);
-    expect(names(filterVoices(VOICES, EMPTY_FILTER, 'en-GB'))[0]).toBe('Sonia');
+    expect(names(filterVoices(VOICES, ANY, 'en-US'))).toEqual(['Ava HD', 'Andrew', 'Jane', 'Sky', 'Sonia']);
+    expect(names(filterVoices(VOICES, ANY, 'en-GB'))[0]).toBe('Sonia');
+  });
+
+  it('starts with standard voices only', () => {
+    expect(DEFAULT_FILTER.type).toBe('standard');
+    expect(names(filterVoices(VOICES, DEFAULT_FILTER, 'en-US'))).not.toContain('Ava HD');
   });
 
   it('puts pinned voices first', () => {
-    expect(names(filterVoices(VOICES, EMPTY_FILTER, 'en-US', ['azure:Sonia', 'azure:Jane']))).toEqual(['Jane', 'Sonia', 'Ava HD', 'Andrew', 'Sky']);
+    expect(names(filterVoices(VOICES, ANY, 'en-US', ['azure:Sonia', 'azure:Jane']))).toEqual(['Jane', 'Sonia', 'Ava HD', 'Andrew', 'Sky']);
   });
 
   it('filters by language: all, or one locale', () => {
@@ -57,10 +64,10 @@ describe('voice filters', () => {
   });
 
   it('offers the most common tags among what the other filters leave, keeping selected ones', () => {
-    expect(tagOptions(VOICES, EMPTY_FILTER, 'en-US').slice(0, 3)).toEqual(['Audiobook', 'Narration', 'Warm']);
+    expect(tagOptions(VOICES, ANY, 'en-US').slice(0, 3)).toEqual(['Audiobook', 'Narration', 'Warm']);
     expect(tagOptions(VOICES, f({ gender: 'Male' }), 'en-US')).toEqual(['Audiobook', 'Narration']);
     expect(tagOptions(VOICES, f({ gender: 'Male', tags: ['Calm'] }), 'en-US')).toEqual(['Calm', 'Audiobook', 'Narration']);
-    expect(tagOptions(VOICES, EMPTY_FILTER, 'en-US', 1)).toEqual(['Audiobook']);
+    expect(tagOptions(VOICES, ANY, 'en-US', 1)).toEqual(['Audiobook']);
   });
 
   it('lists each locale once, by name', () => {
@@ -81,8 +88,9 @@ describe('voice filters', () => {
   it('builds tags, preview text and knows an empty filter', () => {
     expect(voiceTags(VOICES[1]!)).toEqual(['Narration', 'Warm', 'Bright', MULTILINGUAL_TAG]);
     expect(previewText({ name: 'Ava Dragon HD Latest' })).toMatch(/^Hi, I'm Ava\./);
-    expect(filterIsEmpty(EMPTY_FILTER)).toBe(true);
-    expect(filterIsEmpty(f({ search: ' ' }))).toBe(true);
-    expect(filterIsEmpty(f({ gender: 'Male' }))).toBe(false);
+    expect(filterIsDefault(DEFAULT_FILTER)).toBe(true);
+    expect(filterIsDefault({ ...DEFAULT_FILTER, search: ' ' })).toBe(true);
+    expect(filterIsDefault({ ...DEFAULT_FILTER, gender: 'Male' })).toBe(false);
+    expect(filterIsDefault(ANY)).toBe(false);
   });
 });
