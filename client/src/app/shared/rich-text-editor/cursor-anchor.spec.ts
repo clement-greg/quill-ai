@@ -1,4 +1,4 @@
-import { restoreCursor, saveCursor } from './cursor-anchor';
+import { restoreCursor, saveCursor, textCaretBefore } from './cursor-anchor';
 
 describe('saveCursor / restoreCursor', () => {
   let editor: HTMLElement;
@@ -143,5 +143,47 @@ describe('saveCursor / restoreCursor', () => {
 
   it('is a no-op for a null save', () => {
     expect(() => restoreCursor(editor, null)).not.toThrow();
+  });
+});
+
+describe('textCaretBefore', () => {
+  const para = (html: string): HTMLElement => {
+    const p = document.createElement('p');
+    p.innerHTML = html;
+    return p;
+  };
+
+  it('uses the end of the preceding text node', () => {
+    const p = para('family." <span class="entity-reference">al-Harbi</span>');
+    const span = p.querySelector('span')!;
+    expect(textCaretBefore(span)).toEqual({ node: p.firstChild, offset: 'family." '.length });
+  });
+
+  it('falls back to the start of the following text node', () => {
+    const p = para('<span class="entity-reference">Hector</span> asked');
+    const span = p.querySelector('span')!;
+    expect(textCaretBefore(span)).toEqual({ node: span.nextSibling, offset: 0 });
+  });
+
+  it('uses the parent offset when no text node is adjacent', () => {
+    const p = para('<b>x</b><span class="entity-reference">Hector</span><i>y</i>');
+    const span = p.querySelector('span')!;
+    expect(textCaretBefore(span)).toEqual({ node: p, offset: 1 });
+  });
+
+  it('stays before the removed node when a sibling is later split in front of it', () => {
+    const p = para('before text <span class="entity-reference">al-Harbi</span>');
+    const span = p.querySelector('span')!;
+    const pos = textCaretBefore(span);
+    span.remove();
+    const range = document.createRange();
+    range.setStart(pos.node, pos.offset);
+    // A page spacer splits the text node earlier in the paragraph.
+    const tail = (p.firstChild as Text).splitText(3);
+    p.insertBefore(document.createElement('span'), tail);
+    const probe = document.createRange();
+    probe.setStart(p, 0);
+    probe.setEnd(range.startContainer, range.startOffset);
+    expect(probe.toString()).toBe('before text ');
   });
 });

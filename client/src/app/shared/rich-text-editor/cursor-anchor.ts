@@ -65,3 +65,18 @@ function locate(editor: HTMLElement, point: CursorPoint): { node: Node; offset: 
   // caret at the end of what the block holds.
   return last ? { node: last, offset: last.length } : { node: point.block, offset: 0 };
 }
+
+/** A caret position just before `node`, expressed inside a neighbouring text
+ *  node when there is one (end of the previous text, else start of the next)
+ *  rather than as a child offset of the parent. Text-node positions stay put
+ *  when siblings are inserted or split around them (book-mode page spacers),
+ *  whereas a parent offset can drift onto a different child. Compute it before
+ *  removing `node`. */
+export function textCaretBefore(node: Node): { node: Node; offset: number } {
+  const prev = node.previousSibling;
+  if (prev?.nodeType === Node.TEXT_NODE) return { node: prev, offset: (prev as Text).length };
+  const next = node.nextSibling;
+  if (next?.nodeType === Node.TEXT_NODE) return { node: next, offset: 0 };
+  const parent = node.parentNode!;
+  return { node: parent, offset: Array.prototype.indexOf.call(parent.childNodes, node) };
+}

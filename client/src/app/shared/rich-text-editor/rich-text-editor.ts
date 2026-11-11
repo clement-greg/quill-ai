@@ -22,7 +22,7 @@ import {
 import { UserSettingsService } from '@app/core/services/user-settings.service';
 import { disableSpellcheckOnEntityReferences } from '@app/shared/entity-references';
 import { AI_BLOCK_SELECTOR, clearAiMarkOnEmptyBlocks } from './ai-authorship';
-import { restoreCursor, saveCursor } from './cursor-anchor';
+import { restoreCursor, saveCursor, textCaretBefore } from './cursor-anchor';
 import { cleanEditorHtml } from './editor-html-clean';
 
 /** Minimal shape the editor needs to decorate/act on a Quill Editor suggestion.
@@ -1904,10 +1904,12 @@ export class RichTextEditorComponent implements OnInit, AfterViewInit, OnDestroy
         }
         if (spanToDelete) {
           event.preventDefault();
-          const nr = document.createRange();
-          nr.setStartBefore(spanToDelete);
-          nr.collapse(true);
+          // Text-node caret, so book-mode page spacers can't shift it.
+          const pos = textCaretBefore(spanToDelete);
           spanToDelete.remove();
+          const nr = document.createRange();
+          nr.setStart(pos.node, pos.offset);
+          nr.collapse(true);
           sel.removeAllRanges();
           sel.addRange(nr);
           if (this.editorRef) { this.editorContent = this.editorRef.nativeElement.innerHTML; this.scheduleEmit(); }
