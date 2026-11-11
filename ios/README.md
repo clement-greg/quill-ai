@@ -3,7 +3,7 @@
 A thin native wrapper around the Quill AI web app. The app itself is the
 website in a `WKWebView`; the Swift code only adds what a web page can't do:
 
-- **Siri.** Four commands, available as soon as the app is installed with no
+- **Siri.** Five commands, available as soon as the app is installed with no
   setup in the Shortcuts app:
   - *"Hey Siri, save a thought in Quill AI"*: Siri asks "What's the thought?" and
     saves your answer to Thoughts.
@@ -14,6 +14,11 @@ website in a `WKWebView`; the Swift code only adds what a web page can't do:
     it. Say the book and due date in the same breath ("tighten the flood scene in
     Lithium by Friday"). With no book named, it goes under the book you last
     edited; Siri only asks which book if you haven't edited one yet.
+  - *"Hey Siri, add a note in Quill AI"*: Siri asks "What's the note?". While
+    Quill is reading a book aloud (playing, or paused because Siri is
+    listening), the note is pinned to the paragraph being read and shows up
+    highlighted in that chapter. Otherwise it's a book note, and Siri asks which
+    book if you have more than one. "Ask Quill AI" can add notes the same way.
   - *"Hey Siri, what's on my Quill AI task list?"*: reads how many tasks are open,
     how many are overdue, and the next few. "Ask Quill AI" also answers task
     questions ("what's due this week?", "I finished the flood scene").
@@ -39,8 +44,9 @@ website in a `WKWebView`; the Swift code only adds what a web page can't do:
 | Siri commands | `QuillAI/QuillIntents.swift` |
 | Widgets: data, layouts | `QuillAIWidgets/`, `Shared/StatsWidgetViews.swift`, `Shared/WritingStats.swift` (`GET /api/user-stats/writing`) |
 | Code used by both the app and the widget extension | `Shared/` |
-| API calls outside the web view | `Shared/QuillAPI.swift`: `POST /api/thoughts`, `POST /api/chat-sessions/voice`, `POST /api/tasks/voice`, `GET /api/tasks/summary`, `GET /api/user-stats/writing` |
+| API calls outside the web view | `Shared/QuillAPI.swift`: `POST /api/thoughts`, `POST /api/chat-sessions/voice`, `POST /api/chat-sessions/voice-note`, `POST /api/tasks/voice`, `GET /api/tasks/summary`, `GET /api/user-stats/writing` |
 | Task replies and how Siri reads them | `Shared/QuillTasks.swift` |
+| Where the read-aloud player is, sent with Siri requests so notes land there | `SpeechController.playhead`, `ReadAloudStatus` in `QuillAI/QuillIntents.swift`, `ReadAloudPlayer` in `Shared/QuillAPI.swift` |
 
 When you sign in, the web app passes its refresh token to the native side.
 Siri commands exchange it for a fresh access token at `/api/auth/refresh` and
