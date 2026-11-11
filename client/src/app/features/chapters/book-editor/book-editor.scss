@@ -215,18 +215,15 @@
   right: 96px;
   bottom: 10px;
   padding: 3px 10px;
-  border-radius: 12px;
+  border-radius: 10px;
   font-size: 0.75rem;
   background: color-mix(in srgb, var(--mat-sys-surface, #fff) 85%, transparent);
   color: var(--mat-sys-on-surface-variant, #555);
   box-shadow: 0 1px 3px color-mix(in srgb, #000 15%, transparent);
   pointer-events: none;
   white-space: nowrap;
-}
-
-.book-page-indicator-sep {
-  margin: 0 6px;
-  opacity: 0.5;
+  text-align: right;
+  line-height: 1.35;
 }
 
 /* ── New-chapter call-outs ───────────────────────────── */

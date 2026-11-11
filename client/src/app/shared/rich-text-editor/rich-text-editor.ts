@@ -1652,7 +1652,13 @@ export class RichTextEditorComponent implements OnInit, AfterViewInit, OnDestroy
       }
     }
 
-    this.checkAutocomplete();
+    // Only suggest entities while typing forward; deleting shouldn't pop the list.
+    if ((event as InputEvent).inputType?.startsWith('delete')) {
+      this.autocompleteItems.set([]);
+      this.currentWordRange = null;
+    } else {
+      this.checkAutocomplete();
+    }
     this.scheduleMinimap();
     this.scheduleEmit();
     this.scheduleGrammarCheck();
