@@ -2,7 +2,7 @@ import request from 'supertest';
 import config from '../config';
 import speechRoutes from './speech.routes';
 import { makeTestApp } from '../testing/test-app';
-import { buildSsml, clearSpeechCaches, prosodyRate, splitForSynthesis } from '../services/azure-speech';
+import { buildSsml, clearSpeechCaches, normalizeTags, prosodyRate, splitForSynthesis } from '../services/azure-speech';
 
 const app = makeTestApp('/api/speech', speechRoutes);
 const cfg = config as typeof config & { speechService?: { apiKey?: string; region?: string } };
@@ -36,7 +36,15 @@ describe('speech routes', () => {
 
   it('lists neural voices with Jane as the default', async () => {
     fetchMock.mockResolvedValue(new Response(JSON.stringify([
-      { ShortName: 'en-US-JaneNeural', DisplayName: 'Jane', Locale: 'en-US', Gender: 'Female', VoiceType: 'Neural', Status: 'GA' },
+      {
+        ShortName: 'en-US-JaneNeural', DisplayName: 'Jane', Locale: 'en-US', LocaleName: 'English (United States)',
+        Gender: 'Female', VoiceType: 'Neural', Status: 'GA',
+        VoiceTag: { VoicePersonalities: ['Serious', 'warm', 'Warm'], TailoredScenarios: ['Audiobooks', 'Meditation'] },
+      },
+      {
+        ShortName: 'en-US-Ava:DragonHDLatestNeural', DisplayName: 'Ava Dragon HD Latest', Locale: 'en-US',
+        Gender: 'Female', VoiceType: 'NeuralHD', Status: 'GA', SecondaryLocaleList: ['fr-FR'],
+      },
       { ShortName: 'en-US-OldStandard', DisplayName: 'Old', Locale: 'en-US', Gender: 'Male', VoiceType: 'Standard' },
     ]), { status: 200 }));
     const res = await request(app).get('/api/speech/voices');
@@ -44,7 +52,16 @@ describe('speech routes', () => {
     expect(res.body).toEqual({
       enabled: true,
       defaultVoice: 'en-US-JaneNeural',
-      voices: [{ id: 'en-US-JaneNeural', name: 'Jane', lang: 'en-US', gender: 'Female' }],
+      voices: [
+        {
+          id: 'en-US-JaneNeural', name: 'Jane', lang: 'en-US', localeName: 'English (United States)', gender: 'Female',
+          hd: false, multilingual: false, personalities: ['Serious', 'Warm'], scenarios: ['Audiobook', 'Meditation'],
+        },
+        {
+          id: 'en-US-Ava:DragonHDLatestNeural', name: 'Ava Dragon HD Latest', lang: 'en-US', localeName: 'en-US', gender: 'Female',
+          hd: true, multilingual: true, personalities: [], scenarios: [],
+        },
+      ],
     });
     const [url, init] = fetchMock.mock.calls[0]!;
     expect(url).toBe('https://westus.tts.speech.microsoft.com/cognitiveservices/voices/list');
@@ -67,6 +84,12 @@ describe('speech routes', () => {
 
     await request(app).post('/api/speech/synthesize').send(body);
     expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('accepts HD voice names', async () => {
+    fetchMock.mockImplementation(async () => audioResponse([5]));
+    const res = await request(app).post('/api/speech/synthesize').send({ text: 'Hi', voice: 'en-AU-Isla:MAI-Voice-2.1' });
+    expect(res.status).toBe(200);
   });
 
   it('defaults to Jane at normal speed', async () => {
@@ -111,6 +134,11 @@ describe('azure speech helpers', () => {
     const pieces = splitForSynthesis(text, 20);
     expect(pieces.every(p => p.length <= 20)).toBe(true);
     expect(pieces.join(' ')).toBe(text);
+  });
+
+  it('tidies Azure\'s tags', () => {
+    expect(normalizeTags(['warm', 'Warm', 'light-hearted', 'Audiobooks', ' '])).toEqual(['Warm', 'Light-Hearted', 'Audiobook']);
+    expect(normalizeTags(undefined)).toEqual([]);
   });
 
   it('escapes quotes in the voice name', () => {

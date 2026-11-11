@@ -22,7 +22,17 @@ export interface AzureVoice {
   name: string;
   /** BCP 47 locale, e.g. "en-US". */
   lang: string;
-  gender: string;
+  /** The locale spelled out, e.g. "English (United States)". */
+  localeName: string;
+  gender: 'Female' | 'Male' | 'Neutral';
+  /** Azure's newest, most expressive voices (Dragon HD, MAI). */
+  hd: boolean;
+  /** Speaks other languages as well as its own. */
+  multilingual: boolean;
+  /** What it sounds like, e.g. "Warm", "Calm". */
+  personalities: string[];
+  /** What it suits, e.g. "Audiobook", "Narration". */
+  scenarios: string[];
 }
 
 /** The fields of Azure's voices/list entries that the player uses. */
@@ -30,9 +40,40 @@ interface AzureVoiceListEntry {
   ShortName: string;
   DisplayName: string;
   Locale: string;
+  LocaleName?: string;
   Gender: string;
   VoiceType: string;
   Status?: string;
+  SecondaryLocaleList?: string[];
+  VoiceTag?: { VoicePersonalities?: string[]; TailoredScenarios?: string[] };
+}
+
+/** Azure spells some tags several ways ("warm"/"Warm", "Audiobooks"/"Audiobook"). */
+const TAG_ALIASES: Record<string, string> = { Audiobooks: 'Audiobook', 'Call Center': 'Customer Service' };
+
+/** Title-cased, de-duplicated tags. */
+export function normalizeTags(tags: readonly string[] | undefined): string[] {
+  const out = new Set<string>();
+  for (const tag of tags ?? []) {
+    const title = tag.trim().toLowerCase().replace(/(^|[\s-])\p{L}/gu, c => c.toUpperCase());
+    if (title) out.add(TAG_ALIASES[title] ?? title);
+  }
+  return [...out];
+}
+
+function toVoice(v: AzureVoiceListEntry): AzureVoice {
+  const gender = v.Gender === 'Female' || v.Gender === 'Male' ? v.Gender : 'Neutral';
+  return {
+    id: v.ShortName,
+    name: v.DisplayName,
+    lang: v.Locale,
+    localeName: v.LocaleName ?? v.Locale,
+    gender,
+    hd: v.VoiceType === 'NeuralHD',
+    multilingual: (v.SecondaryLocaleList?.length ?? 0) > 0,
+    personalities: normalizeTags(v.VoiceTag?.VoicePersonalities),
+    scenarios: normalizeTags(v.VoiceTag?.TailoredScenarios),
+  };
 }
 
 export class SpeechServiceError extends Error {
@@ -63,7 +104,7 @@ export async function listVoices(): Promise<AzureVoice[]> {
   const entries = (await res.json()) as AzureVoiceListEntry[];
   const voices = entries
     .filter(v => v.VoiceType?.startsWith('Neural') && v.Status !== 'Deprecated')
-    .map(v => ({ id: v.ShortName, name: v.DisplayName, lang: v.Locale, gender: v.Gender }));
+    .map(toVoice);
   voiceCache = { at: Date.now(), voices };
   return voices;
 }

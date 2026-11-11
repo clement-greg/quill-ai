@@ -2,7 +2,9 @@ import { ChangeDetectionStrategy, Component, computed, inject } from '@angular/c
 import { MatButtonModule } from '@angular/material/button';
 import { MatIconModule } from '@angular/material/icon';
 import { MatMenuModule } from '@angular/material/menu';
+import { MatDialog } from '@angular/material/dialog';
 import { MatTooltipModule } from '@angular/material/tooltip';
+import { VoiceGalleryDialogComponent } from '@app/shared/voice-gallery/voice-gallery-dialog';
 import { READ_ALOUD_RATES, ReadAloudService } from '@app/core/read-aloud/read-aloud.service';
 import { VoiceQuality } from '@app/core/read-aloud/read-aloud.model';
 
@@ -55,21 +57,25 @@ const QUALITY_LABEL: Record<VoiceQuality, string> = { premium: 'Premium', enhanc
       <mat-icon>record_voice_over</mat-icon>
     </button>
     <mat-menu #voiceMenu="matMenu" class="ra-voice-menu">
-      @if (ra.azureVoices().length) {
+      @if (ra.azureCatalog().length) {
         <div role="group" aria-label="Microsoft voices">
           <div class="ra-voice-group-label" aria-hidden="true">Microsoft voices</div>
-          @for (voice of ra.azureVoices(); track voice.id) {
+          @for (voice of quickVoices(); track voice.id) {
             <button mat-menu-item type="button" (click)="ra.setVoice(voice.id)" role="menuitemradio"
               [attr.aria-checked]="voice.id === ra.voiceId()">
               <mat-icon>{{ voice.id === ra.voiceId() ? 'check' : '' }}</mat-icon>
               <span>{{ voice.name }}</span>
-              <span class="ra-voice-meta">{{ voice.lang }}</span>
+              <span class="ra-voice-meta">{{ voice.lang }}@if (isPinned(voice.id)) { · Pinned}</span>
             </button>
           }
+          <button mat-menu-item type="button" (click)="browse()">
+            <mat-icon>library_music</mat-icon>
+            Browse all voices…
+          </button>
         </div>
       }
       <div role="group" aria-label="Device voices">
-        @if (ra.azureVoices().length) {
+        @if (ra.azureCatalog().length) {
           <div class="ra-voice-group-label" aria-hidden="true">Device voices</div>
         }
         <button mat-menu-item type="button" (click)="ra.setVoice(null)" role="menuitemradio" [attr.aria-checked]="!ra.voiceId()">
@@ -93,15 +99,29 @@ const QUALITY_LABEL: Record<VoiceQuality, string> = { premium: 'Premium', enhanc
 })
 export class ReadAloudSettingsComponent {
   readonly ra = inject(ReadAloudService);
+  private readonly dialog = inject(MatDialog);
   readonly rates = READ_ALOUD_RATES;
+
+  /** The Microsoft voices worth listing in a menu: pinned ones, the current one and the default. */
+  readonly quickVoices = computed(() => {
+    const catalog = this.ra.azureCatalog();
+    const ids = [...this.ra.pinnedVoices(), this.ra.voiceId(), this.ra.azureDefaultId()];
+    const seen = new Set<string>();
+    return ids.flatMap(id => {
+      if (!id || seen.has(id)) return [];
+      seen.add(id);
+      const voice = catalog.find(v => v.id === id);
+      return voice ? [voice] : [];
+    });
+  });
   readonly qualityLabel = QUALITY_LABEL;
 
   readonly selectedVoiceName = computed(() => {
     const id = this.ra.voiceId();
-    return [...this.ra.azureVoices(), ...this.ra.voices()].find(v => v.id === id)?.name ?? 'System default';
+    return [...this.ra.azureCatalog(), ...this.ra.voices()].find(v => v.id === id)?.name ?? 'System default';
   });
   readonly hasGoodVoice = computed(() =>
-    this.ra.azureVoices().length > 0 || this.ra.voices().some(v => v.quality !== 'default'));
+    this.ra.azureCatalog().length > 0 || this.ra.voices().some(v => v.quality !== 'default'));
   /** Points the reader at free higher-quality voices for their platform. */
   readonly voiceHint = computed(() => {
     if (this.ra.engineKind === 'native') {
@@ -110,6 +130,14 @@ export class ReadAloudSettingsComponent {
     if (!this.hasGoodVoice()) return 'Microsoft Edge includes natural-sounding voices for free.';
     return '';
   });
+
+  isPinned(id: string): boolean {
+    return this.ra.pinnedVoices().includes(id);
+  }
+
+  browse(): void {
+    VoiceGalleryDialogComponent.open(this.dialog);
+  }
 
   rateLabel(rate: number): string {
     return `${rate}×`;

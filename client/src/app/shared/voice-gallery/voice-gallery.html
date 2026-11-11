@@ -1,0 +1,101 @@
+<div class="vg-filters">
+  <mat-form-field class="vg-search" appearance="outline" subscriptSizing="dynamic">
+    <mat-label>Search voices</mat-label>
+    <mat-icon matPrefix>search</mat-icon>
+    <input matInput type="search" [value]="filter().search" (input)="setSearch($any($event.target).value)" />
+  </mat-form-field>
+
+  <mat-form-field class="vg-language" appearance="outline" subscriptSizing="dynamic">
+    <mat-label>Language</mat-label>
+    <mat-select [value]="filter().language" (selectionChange)="setLanguage($event.value)">
+      <mat-option value="mine">{{ myLanguageName() }} (all accents)</mat-option>
+      <mat-option value="all">All languages</mat-option>
+      @for (lang of languages(); track lang.value) {
+        <mat-option [value]="lang.value">{{ lang.label }}</mat-option>
+      }
+    </mat-select>
+  </mat-form-field>
+
+  <mat-button-toggle-group class="vg-toggle" [value]="filter().gender" (change)="setGender($event.value)"
+    aria-label="Gender" hideSingleSelectionIndicator>
+    <mat-button-toggle value="any">Any</mat-button-toggle>
+    <mat-button-toggle value="Female">Female</mat-button-toggle>
+    <mat-button-toggle value="Male">Male</mat-button-toggle>
+    <mat-button-toggle value="Neutral">Neutral</mat-button-toggle>
+  </mat-button-toggle-group>
+
+  <mat-button-toggle-group class="vg-toggle" [value]="filter().type" (change)="setType($event.value)"
+    aria-label="Voice type" hideSingleSelectionIndicator>
+    <mat-button-toggle value="any">All types</mat-button-toggle>
+    <mat-button-toggle value="hd" matTooltip="Azure's newest, most expressive voices">HD</mat-button-toggle>
+    <mat-button-toggle value="standard">Standard</mat-button-toggle>
+  </mat-button-toggle-group>
+</div>
+
+@if (tags().length) {
+  <mat-chip-listbox class="vg-tags" multiple aria-label="Filter by style or use">
+    @for (tag of tags(); track tag) {
+      <mat-chip-option [selected]="filter().tags.includes(tag)" (click)="toggleTag(tag)">{{ tag }}</mat-chip-option>
+    }
+  </mat-chip-listbox>
+}
+
+<div class="vg-summary" aria-live="polite">
+  <span>{{ matches().length }} {{ matches().length === 1 ? 'voice' : 'voices' }}</span>
+  @if (filtered()) {
+    <button mat-button type="button" (click)="clearFilters()">Clear filters</button>
+  }
+</div>
+
+@if (previewError(); as error) {
+  <p class="vg-error" role="alert">{{ error }}</p>
+}
+
+@if (!ra.azureCatalog().length) {
+  <p class="vg-empty">Loading voices…</p>
+} @else if (!matches().length) {
+  <p class="vg-empty">No voices match these filters.</p>
+}
+
+<ul class="vg-grid">
+  @for (voice of shown(); track voice.id) {
+    @let selected = voice.id === ra.voiceId();
+    @let pinned = ra.pinnedVoices().includes(voice.id);
+    @let tags = cardTags(voice);
+    <li class="vg-card" [class.selected]="selected">
+      <button type="button" class="vg-choose" (click)="choose(voice)" [attr.aria-pressed]="selected"
+        [attr.aria-label]="'Use ' + voice.name + ', ' + voice.gender + ', ' + voice.localeName" [title]="voice.name">
+        <span class="vg-avatar" [class]="'vg-' + voice.gender.toLowerCase()" aria-hidden="true">{{ initial(voice) }}</span>
+        <span class="vg-heading">
+          <span class="vg-name">{{ displayName(voice) }}@if (voice.hd) {<span class="vg-badge">HD</span>}</span>
+          <span class="vg-meta">{{ voice.gender }} · {{ voice.localeName }}</span>
+        </span>
+        @if (tags.shown.length) {
+          <span class="vg-card-tags">
+            @for (tag of tags.shown; track tag) { <span class="vg-tag">{{ tag }}</span> }
+            @if (tags.more) { <span class="vg-more">+{{ tags.more }}</span> }
+          </span>
+        }
+        @if (selected) { <span class="vg-selected"><mat-icon>check_circle</mat-icon> Selected</span> }
+      </button>
+      <div class="vg-actions">
+        <button mat-icon-button type="button" (click)="ra.togglePin(voice.id)" [attr.aria-pressed]="pinned"
+          [class.pinned]="pinned" [attr.aria-label]="(pinned ? 'Unpin ' : 'Pin ') + voice.name + ' in the player'"
+          [matTooltip]="pinned ? 'Pinned to the player\'s voice menu' : 'Pin to the player\'s voice menu'">
+          <mat-icon>push_pin</mat-icon>
+        </button>
+        <button mat-icon-button type="button" class="vg-play" (click)="preview(voice)"
+          [attr.aria-label]="(previewing() === voice.id ? 'Stop preview of ' : 'Preview ') + voice.name"
+          [attr.aria-busy]="previewing() === voice.id && previewLoading()">
+          <mat-icon>{{ previewing() === voice.id ? 'stop' : 'play_arrow' }}</mat-icon>
+        </button>
+      </div>
+    </li>
+  }
+</ul>
+
+@if (remaining()) {
+  <div class="vg-more-row">
+    <button mat-stroked-button type="button" (click)="showMore()">Show more ({{ remaining() }} left)</button>
+  </div>
+}
