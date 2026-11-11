@@ -29,6 +29,7 @@
 		A96F3A8938313E6F3AD2D5C1 /* QuillAPI.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5FEB03FAEF072A4EFA508EF9 /* QuillAPI.swift */; };
 		AA01922B297FB36207BBE1B0 /* WritingStats.swift in Sources */ = {isa = PBXBuildFile; fileRef = E57C4584E59AFF2F8C54899A /* WritingStats.swift */; };
 		B5D559C9AEC3A9A21190AC0C /* SessionStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = FB90415E13D33C27C0F3B487 /* SessionStore.swift */; };
+		C10B31B957D0AB09EF4561FC /* AzurePiecesTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 51094BBD14510734A50EAE97 /* AzurePiecesTests.swift */; };
 		C1B9D5FF1E5BF0A026A94C76 /* QuillTasks.swift in Sources */ = {isa = PBXBuildFile; fileRef = B838582674BDCC192C22A0F0 /* QuillTasks.swift */; };
 		D031E00D50D0CB60159513E6 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 7735F5D7AF8B8DDBC3EAF5FA /* Assets.xcassets */; };
 		D405DEB21DC139451D0E4296 /* QuillAIWidgets.swift in Sources */ = {isa = PBXBuildFile; fileRef = 76A02DCB735475574A3140D6 /* QuillAIWidgets.swift */; };
@@ -81,6 +82,7 @@
 		2ED2749A18B001EFF16383B8 /* AppConfig.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppConfig.swift; sourceTree = "<group>"; };
 		49E9066C32E83B4C63EDC048 /* QuillAIWidgets.appex */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = "wrapper.app-extension"; path = QuillAIWidgets.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 		4D9570B9B2B5ED699775A40E /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
+		51094BBD14510734A50EAE97 /* AzurePiecesTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AzurePiecesTests.swift; sourceTree = "<group>"; };
 		5137CFAA2F0B9ABC30F62D12 /* WebView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WebView.swift; sourceTree = "<group>"; };
 		5FEB03FAEF072A4EFA508EF9 /* QuillAPI.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QuillAPI.swift; sourceTree = "<group>"; };
 		76A02DCB735475574A3140D6 /* QuillAIWidgets.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QuillAIWidgets.swift; sourceTree = "<group>"; };
@@ -122,6 +124,7 @@
 		28C439DD6D85C684C7E5A408 /* QuillAITests */ = {
 			isa = PBXGroup;
 			children = (
+				51094BBD14510734A50EAE97 /* AzurePiecesTests.swift */,
 				E43D65CD5014B5E050ED3CC2 /* QuillAITests.swift */,
 				BBEBBFF7D29B4682BD956DB8 /* SpeechResumeTests.swift */,
 				C80DA50CAAFBA5578CDB1575 /* SpeechTimelineTests.swift */,
@@ -335,6 +338,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				C10B31B957D0AB09EF4561FC /* AzurePiecesTests.swift in Sources */,
 				93146E22098238A25D134A28 /* QuillAITests.swift in Sources */,
 				74DCE3562D5347D07A2492D1 /* SpeechResumeTests.swift in Sources */,
 				1BC5E1DB0BFA12044EC1CDC6 /* SpeechTimelineTests.swift in Sources */,
