@@ -221,6 +221,12 @@
   color: var(--mat-sys-on-surface-variant, #555);
   box-shadow: 0 1px 3px color-mix(in srgb, #000 15%, transparent);
   pointer-events: none;
+  white-space: nowrap;
+}
+
+.book-page-indicator-sep {
+  margin: 0 6px;
+  opacity: 0.5;
 }
 
 /* ── New-chapter call-outs ───────────────────────────── */
