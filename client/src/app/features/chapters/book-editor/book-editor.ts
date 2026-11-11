@@ -359,6 +359,8 @@ export class BookEditorComponent implements AfterViewInit, OnDestroy {
   // ── Template handlers ─────────────────────────────────────────────────────
 
   onScroll(): void {
+    // Mid-backspace scrolls are transient (spacers removed); don't anchor to them.
+    if (this.scrollHold !== null) return;
     // Record the reader's place right away, not on the next frame: a layout
     // change in the same frame (e.g. a new page while typing) restores the
     // anchor, and a stale one would undo the browser's caret-into-view scroll.
@@ -441,7 +443,12 @@ export class BookEditorComponent implements AfterViewInit, OnDestroy {
     if (event.key === 'Backspace' || event.key === 'Delete') {
       // A spacer sits beside the caret at every page break; let the key act on
       // the text, not the spacer. Spacers come back on the next frame.
-      if (removePageSpacers(editorEl)) this.schedulePaginate(id);
+      if (removePageSpacers(editorEl)) {
+        // With the spacers gone the caret briefly sits on the previous page and
+        // the browser scrolls up to it. Hold the view until they're back.
+        this.scrollHold ??= this.scroller().nativeElement.scrollTop;
+        this.schedulePaginate(id);
+      }
     }
   }
 
@@ -760,11 +767,38 @@ export class BookEditorComponent implements AfterViewInit, OnDestroy {
     if (this.paginateFrame !== null) return;
     this.paginateFrame = requestAnimationFrame(() => {
       this.paginateFrame = null;
-      if (this.composing || this.destroyed) return;
+      if (this.composing || this.destroyed) { this.scrollHold = null; return; }
       const ids = [...this.pendingPaginate];
       this.pendingPaginate.clear();
       for (const cid of ids) this.paginateNow(cid);
+      this.releaseScrollHold();
     });
+  }
+
+  /** Scroll position to return to once page spacers are rebuilt (set while a
+   *  Backspace/Delete has them temporarily removed). */
+  private scrollHold: number | null = null;
+
+  /** Puts the view back where it was before the spacers came out, nudged just
+   *  enough to keep the caret on screen, then resumes normal anchoring. */
+  private releaseScrollHold(): void {
+    const hold = this.scrollHold;
+    if (hold === null) return;
+    this.scrollHold = null;
+    const scroller = this.scroller().nativeElement;
+    scroller.scrollTop = hold;
+    const sel = window.getSelection();
+    if (sel && sel.rangeCount > 0 && scroller.contains(sel.anchorNode)) {
+      const caret = sel.getRangeAt(0).getBoundingClientRect();
+      if (caret.height > 0) {
+        const view = scroller.getBoundingClientRect();
+        const margin = 60; // matches scroll-padding-bottom (Ask Quill bar)
+        if (caret.bottom > view.bottom - margin) scroller.scrollTop += caret.bottom - (view.bottom - margin);
+        else if (caret.top < view.top) scroller.scrollTop -= view.top - caret.top;
+      }
+    }
+    this.captureAnchor();
+    this.updateViewport();
   }
 
   private paginateNow(id: string): void {
