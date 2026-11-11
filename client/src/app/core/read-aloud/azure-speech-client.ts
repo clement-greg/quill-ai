@@ -6,7 +6,24 @@ import { AZURE_VOICE_PREFIX, ReadAloudVoice } from './read-aloud.model';
 interface VoicesResponse {
   enabled: boolean;
   defaultVoice: string | null;
-  voices: { id: string; name: string; lang: string; gender?: string }[];
+  voices: {
+    id: string; name: string; lang: string; localeName?: string; gender?: string;
+    hd?: boolean; multilingual?: boolean; personalities?: string[]; scenarios?: string[];
+  }[];
+}
+
+/** A Microsoft voice, with what the voice gallery filters on. */
+export interface AzureVoice extends ReadAloudVoice {
+  provider: 'azure';
+  localeName: string;
+  gender: 'Female' | 'Male' | 'Neutral';
+  /** Azure's newest, most expressive voices (Dragon HD, MAI). */
+  hd: boolean;
+  multilingual: boolean;
+  /** What it sounds like, e.g. "Warm". */
+  personalities: string[];
+  /** What it suits, e.g. "Audiobook". */
+  scenarios: string[];
 }
 
 export interface AzureVoices {
@@ -14,7 +31,8 @@ export interface AzureVoices {
   enabled: boolean;
   /** Player voice id of the default Microsoft voice (Jane), when enabled. */
   defaultVoiceId: string | null;
-  voices: ReadAloudVoice[];
+  /** Every language's voices. */
+  voices: AzureVoice[];
 }
 
 const DISABLED: AzureVoices = { enabled: false, defaultVoiceId: null, voices: [] };
@@ -60,8 +78,18 @@ export class AzureSpeechClient {
       return {
         enabled: true,
         defaultVoiceId: body.defaultVoice ? AZURE_VOICE_PREFIX + body.defaultVoice : null,
-        voices: body.voices.map(v => ({
-          id: AZURE_VOICE_PREFIX + v.id, name: v.name, lang: v.lang, quality: 'premium' as const, provider: 'azure' as const,
+        voices: body.voices.map((v): AzureVoice => ({
+          id: AZURE_VOICE_PREFIX + v.id,
+          name: v.name,
+          lang: v.lang,
+          quality: 'premium',
+          provider: 'azure',
+          localeName: v.localeName ?? v.lang,
+          gender: v.gender === 'Female' || v.gender === 'Male' ? v.gender : 'Neutral',
+          hd: v.hd ?? false,
+          multilingual: v.multilingual ?? false,
+          personalities: v.personalities ?? [],
+          scenarios: v.scenarios ?? [],
         })),
       };
     } catch {

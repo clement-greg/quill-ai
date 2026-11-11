@@ -1,7 +1,7 @@
 import { DOCUMENT } from '@angular/common';
 import { computed, inject, Injectable, InjectionToken, signal } from '@angular/core';
 import { getQuillNative } from '@app/core/native/quill-native';
-import { AzureSpeechClient } from './azure-speech-client';
+import { AzureSpeechClient, AzureVoice } from './azure-speech-client';
 import { AzureSpeechEngine } from './azure-speech-engine';
 import { NativeSpeechEngine } from './native-speech-engine';
 import {
@@ -34,6 +34,7 @@ export const SPEECH_ENGINE = new InjectionToken<SpeechEngine | null>('SPEECH_ENG
 export const READ_ALOUD_RATES = [0.75, 1, 1.25, 1.5, 1.75, 2] as const;
 const RATE_KEY = 'quill_read_aloud_rate';
 const VOICE_KEY = 'quill_read_aloud_voice';
+const PINNED_KEY = 'quill_read_aloud_pinned_voices';
 /** Saved when the reader picks "System default", so it isn't replaced by the Microsoft default. */
 const SYSTEM_VOICE = 'system';
 
@@ -63,8 +64,16 @@ export class ReadAloudService {
   readonly voiceId = signal<string | null>(readVoice(this.storage, this.voiceKey()));
   /** Device voices (and Microsoft voices in `azureVoices`), for the voice picker. */
   readonly voices = signal<ReadAloudVoice[]>([]);
-  /** Microsoft Azure neural voices, when the server offers them and this engine can play them. */
+  /** Microsoft Azure neural voices in the reader's language, when the server offers them and this engine can play them. */
   readonly azureVoices = signal<ReadAloudVoice[]>([]);
+  /** The Microsoft voice used until the reader picks one (Jane), when Microsoft voices are on. */
+  readonly azureDefaultId = signal<string | null>(null);
+  /** Every Microsoft voice, in all languages, for the voice gallery. */
+  readonly azureCatalog = signal<AzureVoice[]>([]);
+  /** Microsoft voices the reader pinned, so the player's voice menu lists them. */
+  readonly pinnedVoices = signal<readonly string[]>(readPinned(this.storage));
+  /** The reader's language, e.g. "en-US". */
+  readonly language = this.storage ? navigatorLanguage() : 'en-US';
   readonly error = signal<string | null>(null);
   /** The book loaded in the player (null when it isn't a whole book, or nothing is loaded). */
   readonly bookId = signal<string | null>(null);
@@ -235,6 +244,13 @@ export class ReadAloudService {
     this.applySettingChange();
   }
 
+  togglePin(id: string): void {
+    const pinned = this.pinnedVoices();
+    const next = pinned.includes(id) ? pinned.filter(p => p !== id) : [...pinned, id];
+    this.pinnedVoices.set(next);
+    this.storage?.setItem(PINNED_KEY, JSON.stringify(next));
+  }
+
   async loadVoices(): Promise<void> {
     if (!this.engine || this.voicesLoaded) return;
     const language = this.storage ? navigatorLanguage() : 'en-US';
@@ -251,6 +267,8 @@ export class ReadAloudService {
     if (!this.engine?.supportsAzure) return;
     const azure = await this.azure.voices();
     const language = this.storage ? navigatorLanguage() : 'en-US';
+    this.azureCatalog.set(azure.voices);
+    this.azureDefaultId.set(azure.defaultVoiceId);
     this.azureVoices.set(sortVoices(azure.voices, language));
     const current = this.voiceId();
     if (this.voiceUnset && !current && azure.defaultVoiceId) {
@@ -293,6 +311,15 @@ export class ReadAloudService {
 function readVoice(storage: Storage | null, key: string): string | null {
   const saved = storage?.getItem(key) ?? null;
   return saved === SYSTEM_VOICE ? null : saved;
+}
+
+function readPinned(storage: Storage | null): string[] {
+  try {
+    const value: unknown = JSON.parse(storage?.getItem(PINNED_KEY) ?? '[]');
+    return Array.isArray(value) ? value.filter((v): v is string => typeof v === 'string') : [];
+  } catch {
+    return [];
+  }
 }
 
 function readRate(storage: Storage | null): number {

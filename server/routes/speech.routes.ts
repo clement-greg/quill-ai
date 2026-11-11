@@ -5,8 +5,9 @@ import {
 
 const router = Router();
 
-/** Azure short names: letters, digits, dashes (and a colon in some HD voices). */
-const VOICE_PATTERN = /^[A-Za-z0-9:-]{3,100}$/;
+/** Azure short names: letters, digits, dashes, and in HD voices a colon and dots
+ *  ("en-US-Ava:DragonHDLatestNeural", "en-AU-Isla:MAI-Voice-2.1"). */
+const VOICE_PATTERN = /^[A-Za-z0-9:.-]{3,100}$/;
 
 function sendError(res: Response, err: unknown, what: string): void {
   if (err instanceof SpeechServiceError) {

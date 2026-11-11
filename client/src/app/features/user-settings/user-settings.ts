@@ -12,7 +12,7 @@ import { UserSettingsService, GhostCompleteItem, DEFAULT_GENDER_OPTIONS, DEFAULT
 import { HeaderService } from '@app/core/services/header.service';
 import { AppUpdateService } from '@app/core/services/app-update.service';
 import { ContentFilterService } from './content-filter.service';
-import { ReadAloudVoiceSettingsComponent } from './read-aloud-voice-settings';
+import { VoicePickerComponent } from '@app/shared/voice-gallery/voice-picker';
 import { AI_MODELS, AI_OPERATIONS, AiModelKey, AiOperation } from '@shared/models/ai-model.model';
 
 export interface ColorThemeOption {
@@ -60,7 +60,7 @@ export const SETTINGS_TABS: { id: SettingsTabId; label: string; icon: string }[]
     MatFormFieldModule,
     MatButtonToggleModule,
     MatSlideToggleModule,
-    ReadAloudVoiceSettingsComponent,
+    VoicePickerComponent,
   ],
   templateUrl: './user-settings.html',
   styleUrl: './user-settings.scss',

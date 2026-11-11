@@ -205,8 +205,8 @@ describe('ReadAloudService', () => {
       enabled: true,
       defaultVoiceId: JANE,
       voices: [
-        { id: 'azure:fr-FR-DeniseNeural', name: 'Denise', lang: 'fr-FR', quality: 'premium', provider: 'azure' },
-        { id: JANE, name: 'Jane', lang: 'en-US', quality: 'premium', provider: 'azure' },
+        { id: 'azure:fr-FR-DeniseNeural', name: 'Denise', lang: 'fr-FR', quality: 'premium', provider: 'azure', localeName: 'x', gender: 'Female' as const, hd: false, multilingual: false, personalities: [], scenarios: [] },
+        { id: JANE, name: 'Jane', lang: 'en-US', quality: 'premium', provider: 'azure', localeName: 'x', gender: 'Female' as const, hd: false, multilingual: false, personalities: [], scenarios: [] },
       ],
     };
 
@@ -251,6 +251,29 @@ describe('ReadAloudService', () => {
       await svc.loadVoices();
       expect(svc.voiceId()).toBeNull();
       expect(svc.azureVoices()).toEqual([]);
+    });
+
+    it('keeps every language for the gallery and remembers the default', async () => {
+      const { svc } = setupAzure(ENABLED);
+      await svc.loadVoices();
+      expect(svc.azureCatalog()).toHaveLength(2);
+      expect(svc.azureDefaultId()).toBe(JANE);
+    });
+
+    it('pins and unpins voices, remembering them', () => {
+      const { svc } = setupAzure(ENABLED);
+      svc.togglePin(JANE);
+      svc.togglePin('azure:en-GB-SoniaNeural');
+      expect(svc.pinnedVoices()).toEqual([JANE, 'azure:en-GB-SoniaNeural']);
+      svc.togglePin(JANE);
+      expect(JSON.parse(localStorage.getItem('quill_read_aloud_pinned_voices')!)).toEqual(['azure:en-GB-SoniaNeural']);
+    });
+
+    it('ignores a corrupt pin list', () => {
+      localStorage.clear();
+      localStorage.setItem('quill_read_aloud_pinned_voices', '{nope');
+      TestBed.configureTestingModule({ providers: [{ provide: SPEECH_ENGINE, useValue: null }] });
+      expect(TestBed.inject(ReadAloudService).pinnedVoices()).toEqual([]);
     });
 
     it('doesn\'t ask the server when the engine can\'t play them', async () => {
