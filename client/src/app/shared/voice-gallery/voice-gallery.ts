@@ -13,7 +13,7 @@ import { MatTooltipModule } from '@angular/material/tooltip';
 import { AzureSpeechClient, AzureVoice } from '@app/core/read-aloud/azure-speech-client';
 import { ReadAloudService } from '@app/core/read-aloud/read-aloud.service';
 import {
-  displayName, EMPTY_FILTER, filterIsEmpty, filterVoices, GenderFilter, languageOptions, LanguageFilter, previewText, tagOptions,
+  displayName, DEFAULT_FILTER, filterIsDefault, filterVoices, GenderFilter, languageOptions, LanguageFilter, previewText, tagOptions,
   TypeFilter, VoiceFilter, voiceTags,
 } from './voice-filter';
 
@@ -48,7 +48,7 @@ export class VoiceGalleryComponent implements OnInit, OnDestroy {
   private readonly audio = inject(PREVIEW_AUDIO)();
 
   readonly displayName = displayName;
-  readonly filter = signal<VoiceFilter>(EMPTY_FILTER);
+  readonly filter = signal<VoiceFilter>(DEFAULT_FILTER);
   readonly limit = signal(PAGE);
   /** Voice whose preview is playing, or loading when `previewLoading`. */
   readonly previewing = signal<string | null>(null);
@@ -66,7 +66,7 @@ export class VoiceGalleryComponent implements OnInit, OnDestroy {
   readonly shown = computed(() => this.matches().slice(0, this.limit()));
   readonly remaining = computed(() => Math.max(0, this.matches().length - this.limit()));
   readonly tags = computed(() => tagOptions(this.ra.azureCatalog(), this.filter(), this.ra.language));
-  readonly filtered = computed(() => !filterIsEmpty(this.filter()));
+  readonly filtered = computed(() => !filterIsDefault(this.filter()));
 
   private readonly previewUrls = new Map<string, string>();
   private previewRequest = 0;
@@ -97,7 +97,7 @@ export class VoiceGalleryComponent implements OnInit, OnDestroy {
   }
 
   clearFilters(): void {
-    this.filter.set(EMPTY_FILTER);
+    this.filter.set(DEFAULT_FILTER);
     this.limit.set(PAGE);
   }
 
