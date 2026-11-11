@@ -49,11 +49,14 @@ function matchesBasics(voice: AzureVoice, filter: VoiceFilter, myLanguage: strin
 }
 
 /**
- * The voices matching `filter`: the reader's own locale first (en-US for an
- * American reader), then HD voices, then by name.
+ * The voices matching `filter`: pinned ones first, then the reader's own
+ * locale (en-US for an American reader), then HD voices, then by name.
  */
-export function filterVoices(voices: readonly AzureVoice[], filter: VoiceFilter, myLanguage: string): AzureVoice[] {
+export function filterVoices(
+  voices: readonly AzureVoice[], filter: VoiceFilter, myLanguage: string, pinned: readonly string[] = [],
+): AzureVoice[] {
   const exact = myLanguage.toLowerCase();
+  const isPinned = (v: AzureVoice) => Number(pinned.includes(v.id));
   return voices
     .filter(v => matchesBasics(v, filter, myLanguage))
     .filter(v => {
@@ -61,6 +64,7 @@ export function filterVoices(voices: readonly AzureVoice[], filter: VoiceFilter,
       return filter.tags.every(t => tags.includes(t));
     })
     .sort((a, b) =>
+      isPinned(b) - isPinned(a) ||
       Number(b.lang.toLowerCase() === exact) - Number(a.lang.toLowerCase() === exact) ||
       Number(b.hd) - Number(a.hd) ||
       a.name.localeCompare(b.name));

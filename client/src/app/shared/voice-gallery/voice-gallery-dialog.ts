@@ -2,12 +2,12 @@ import { ChangeDetectionStrategy, Component } from '@angular/core';
 import { MatButtonModule } from '@angular/material/button';
 import { MatDialog, MatDialogModule } from '@angular/material/dialog';
 import { MatIconModule } from '@angular/material/icon';
-import { VoiceGalleryComponent } from './voice-gallery';
+import { VoicePickerComponent } from './voice-picker';
 
-/** The voice gallery in a dialog, opened from the player's voice menu. */
+/** The voice picker (gallery plus device voices) in a dialog, opened from the player's voice button. */
 @Component({
   selector: 'app-voice-gallery-dialog',
-  imports: [MatButtonModule, MatDialogModule, MatIconModule, VoiceGalleryComponent],
+  imports: [MatButtonModule, MatDialogModule, MatIconModule, VoicePickerComponent],
   changeDetection: ChangeDetectionStrategy.OnPush,
   styles: `
     .vgd-header {
@@ -26,7 +26,7 @@ import { VoiceGalleryComponent } from './voice-gallery';
       </button>
     </div>
     <mat-dialog-content>
-      <app-voice-gallery />
+      <app-voice-picker />
     </mat-dialog-content>
   `,
 })
@@ -36,6 +36,8 @@ export class VoiceGalleryDialogComponent {
       width: '1100px',
       maxWidth: '96vw',
       maxHeight: '92vh',
+      // Full screen on phones (styles.css).
+      panelClass: 'vg-dialog-panel',
       autoFocus: 'first-tabbable',
       ariaLabel: 'Choose a voice',
     });

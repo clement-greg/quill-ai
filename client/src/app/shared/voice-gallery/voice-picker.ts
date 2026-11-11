@@ -3,14 +3,15 @@ import { MatFormFieldModule } from '@angular/material/form-field';
 import { MatSelectModule } from '@angular/material/select';
 import { isAzureVoice } from '@app/core/read-aloud/read-aloud.model';
 import { ReadAloudService } from '@app/core/read-aloud/read-aloud.service';
-import { VoiceGalleryComponent } from '@app/shared/voice-gallery/voice-gallery';
+import { VoiceGalleryComponent } from './voice-gallery';
 
 /** Value the select uses for "System default" (a null voice id). */
 const SYSTEM = '';
 
-/** Settings page section: which voice the read-aloud player uses. */
+/** Which voice the read-aloud player uses: the Microsoft voice gallery, then device voices.
+ *  Used on the Settings page and in the player's voice dialog. */
 @Component({
-  selector: 'app-read-aloud-voice-settings',
+  selector: 'app-voice-picker',
   imports: [MatFormFieldModule, MatSelectModule, VoiceGalleryComponent],
   changeDetection: ChangeDetectionStrategy.OnPush,
   styles: `
@@ -31,7 +32,7 @@ const SYSTEM = '';
         <h4>Microsoft voices</h4>
         <p class="voice-note">
           Natural-sounding voices from Microsoft Azure. Press play to hear one, pick a card to use it, and pin
-          favorites to keep them in the player's voice menu. They need a connection.
+          favorites to keep them at the top. They need a connection.
         </p>
         <app-voice-gallery />
         <h4>Device voices</h4>
@@ -51,12 +52,15 @@ const SYSTEM = '';
         </mat-select>
       </mat-form-field>
       @if (ra.engineKind === 'native') {
-        <p class="voice-note">The iPhone app remembers its own choice.</p>
+        <p class="voice-note">
+          The iPhone app remembers its own choice. For more natural device voices, download an Enhanced or Premium
+          voice in Settings → Accessibility → Spoken Content → Voices.
+        </p>
       }
     }
   `,
 })
-export class ReadAloudVoiceSettingsComponent implements OnInit {
+export class VoicePickerComponent implements OnInit {
   readonly ra = inject(ReadAloudService);
   readonly system = SYSTEM;
   readonly usingMicrosoft = computed(() => isAzureVoice(this.ra.voiceId()));

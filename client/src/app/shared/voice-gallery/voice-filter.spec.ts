@@ -28,6 +28,10 @@ describe('voice filters', () => {
     expect(names(filterVoices(VOICES, EMPTY_FILTER, 'en-GB'))[0]).toBe('Sonia');
   });
 
+  it('puts pinned voices first', () => {
+    expect(names(filterVoices(VOICES, EMPTY_FILTER, 'en-US', ['azure:Sonia', 'azure:Jane']))).toEqual(['Jane', 'Sonia', 'Ava HD', 'Andrew', 'Sky']);
+  });
+
   it('filters by language: all, or one locale', () => {
     expect(filterVoices(VOICES, f({ language: 'all' }), 'en-US')).toHaveLength(6);
     expect(names(filterVoices(VOICES, f({ language: 'fr-FR' }), 'en-US'))).toEqual(['Denise']);

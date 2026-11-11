@@ -1,15 +1,15 @@
 import { Component, signal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
 import { ReadAloudService } from '@app/core/read-aloud/read-aloud.service';
-import { VoiceGalleryComponent } from '@app/shared/voice-gallery/voice-gallery';
-import { ReadAloudVoiceSettingsComponent } from './read-aloud-voice-settings';
+import { VoiceGalleryComponent } from './voice-gallery';
+import { VoicePickerComponent } from './voice-picker';
 
 @Component({ selector: 'app-voice-gallery', template: '<div class="fake-gallery"></div>' })
 class FakeGalleryComponent {}
 
 const JANE = { id: 'azure:en-US-JaneNeural', name: 'Jane', lang: 'en-US', quality: 'premium', provider: 'azure' };
 
-describe('ReadAloudVoiceSettingsComponent', () => {
+describe('VoicePickerComponent', () => {
   function setup(azure = true, voiceId: string | null = JANE.id) {
     const ra = {
       supported: true,
@@ -21,14 +21,14 @@ describe('ReadAloudVoiceSettingsComponent', () => {
       setVoice: vi.fn(),
     };
     TestBed.configureTestingModule({
-      imports: [ReadAloudVoiceSettingsComponent],
+      imports: [VoicePickerComponent],
       providers: [{ provide: ReadAloudService, useValue: ra }],
     });
-    TestBed.overrideComponent(ReadAloudVoiceSettingsComponent, {
+    TestBed.overrideComponent(VoicePickerComponent, {
       remove: { imports: [VoiceGalleryComponent] },
       add: { imports: [FakeGalleryComponent] },
     });
-    const fixture = TestBed.createComponent(ReadAloudVoiceSettingsComponent);
+    const fixture = TestBed.createComponent(VoicePickerComponent);
     fixture.detectChanges();
     return { fixture, ra, el: fixture.nativeElement as HTMLElement };
   }

@@ -80,8 +80,8 @@
       </button>
       <div class="vg-actions">
         <button mat-icon-button type="button" (click)="ra.togglePin(voice.id)" [attr.aria-pressed]="pinned"
-          [class.pinned]="pinned" [attr.aria-label]="(pinned ? 'Unpin ' : 'Pin ') + voice.name + ' in the player'"
-          [matTooltip]="pinned ? 'Pinned to the player\'s voice menu' : 'Pin to the player\'s voice menu'">
+          [class.pinned]="pinned" [attr.aria-label]="(pinned ? 'Unpin ' : 'Pin ') + voice.name"
+          [matTooltip]="pinned ? 'Pinned to the top' : 'Pin to the top'">
           <mat-icon>push_pin</mat-icon>
         </button>
         <button mat-icon-button type="button" class="vg-play" (click)="preview(voice)"

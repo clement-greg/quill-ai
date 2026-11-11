@@ -56,8 +56,16 @@ describe('VoiceGalleryComponent', () => {
     const { cards, ra } = setup();
     (cards()[0]!.querySelector('.vg-choose') as HTMLElement).click();
     expect(ra.setVoice).toHaveBeenCalledWith('azure:Andrew');
-    (cards()[0]!.querySelector('[aria-label^="Pin"]') as HTMLElement).click();
+    (cards()[0]!.querySelector('[aria-label="Pin Andrew"]') as HTMLElement).click();
     expect(ra.togglePin).toHaveBeenCalledWith('azure:Andrew');
+  });
+
+  it('shows pinned voices first', () => {
+    const { ra, fixture, cards } = setup();
+    ra.pinnedVoices.set(['azure:Jane']);
+    fixture.detectChanges();
+    expect(cards()[0]!.querySelector('.vg-name')?.textContent).toBe('Jane');
+    expect(cards()[0]!.querySelector('[aria-label="Unpin Jane"]')).not.toBeNull();
   });
 
   it('filters, then clears', () => {

@@ -61,7 +61,8 @@ export class VoiceGalleryComponent implements OnInit, OnDestroy {
     return match ? match.localeName.replace(/\s*\(.*\)$/, '') : 'My language';
   });
   readonly languages = computed(() => languageOptions(this.ra.azureCatalog()));
-  readonly matches = computed(() => filterVoices(this.ra.azureCatalog(), this.filter(), this.ra.language));
+  readonly matches = computed(() =>
+    filterVoices(this.ra.azureCatalog(), this.filter(), this.ra.language, this.ra.pinnedVoices()));
   readonly shown = computed(() => this.matches().slice(0, this.limit()));
   readonly remaining = computed(() => Math.max(0, this.matches().length - this.limit()));
   readonly tags = computed(() => tagOptions(this.ra.azureCatalog(), this.filter(), this.ra.language));
