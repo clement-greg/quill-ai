@@ -283,6 +283,18 @@
             </button>
           </section>
         }
+        @case ('read-aloud') {
+          <section class="settings-section">
+            <div class="section-header">
+              <h3>Read Aloud</h3>
+              <p class="section-desc">
+                The voice the player reads your chapters and books in. You can also change it from the
+                player's voice button.
+              </p>
+            </div>
+            <app-read-aloud-voice-settings />
+          </section>
+        }
         @case ('characters') {
           <!-- Character Attributes Section -->
           <section class="settings-section">

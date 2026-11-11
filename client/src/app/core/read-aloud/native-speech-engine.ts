@@ -10,9 +10,12 @@ const NOOP_LISTENER: SpeechEngineListener = { progress: () => {}, state: () => {
  */
 export class NativeSpeechEngine implements SpeechEngine {
   readonly kind = 'native' as const;
+  /** App builds that can fetch and play Microsoft voices say so on the bridge. */
+  readonly supportsAzure: boolean;
   private listener = NOOP_LISTENER;
 
   constructor(private readonly speech: QuillNativeSpeech, private readonly win: Window) {
+    this.supportsAzure = speech.azure === true;
     win.addEventListener(NATIVE_SPEECH_EVENT, event => this.onEvent((event as CustomEvent<NativeSpeechEvent>).detail));
     // Events can be missed while the app is backgrounded; catch up on return.
     win.document.addEventListener('visibilitychange', () => {

@@ -76,6 +76,10 @@ final class SpeechController: NSObject {
     private var segmentStartedAt = Date()
     private var commandsRegistered = false
     private static let skipSeconds = 15.0
+    /// Fetch of the current paragraph's Microsoft voice audio, cancelled on a jump.
+    private var azureTask: Task<Void, Never>?
+    /// The next paragraph's audio, fetched while this one plays so there's no gap.
+    private var azurePrefetch: (key: String, task: Task<Data, Error>)?
 
     override init() {
         super.init()
@@ -89,6 +93,9 @@ final class SpeechController: NSObject {
     }
 
     // MARK: Voices
+
+    /// Voice ids the web app uses for Microsoft Azure voices: this prefix plus the Azure short name.
+    static let azurePrefix = "azure:"
 
     static func voices() -> [[String: Any]] {
         AVSpeechSynthesisVoice.speechVoices()
@@ -216,6 +223,8 @@ final class SpeechController: NSObject {
 
     func stop() {
         halt()
+        azurePrefetch?.task.cancel()
+        azurePrefetch = nil
         engine.stop()
         segments = []
         index = 0
@@ -251,6 +260,8 @@ final class SpeechController: NSObject {
     private func halt() {
         generation += 1
         synth.stopSpeaking(at: .immediate)
+        azureTask?.cancel()
+        azureTask = nil
         player.stop()
     }
 
@@ -274,6 +285,10 @@ final class SpeechController: NSObject {
         renderingDone = false
         advancePending = false
         activateSession()
+        if let voiceId, voiceId.hasPrefix(Self.azurePrefix) {
+            speakAzure(at: i, voice: String(voiceId.dropFirst(Self.azurePrefix.count)))
+            return
+        }
         let utterance = AVSpeechUtterance(string: segments[i].text)
         if let voiceId, let voice = AVSpeechSynthesisVoice(identifier: voiceId) { utterance.voice = voice }
         utterance.rate = SpeechTimeline.utteranceRate(
@@ -301,6 +316,84 @@ final class SpeechController: NSObject {
         log.info("Speaking segment \(i, privacy: .public) (\(self.segments[i].text.count, privacy: .public) chars) from frame \(frames, privacy: .public)")
         onEvent?(["type": "progress", "index": i])
         setState(.playing)
+    }
+
+    // MARK: Microsoft (Azure) voices
+
+    /// Fetches the paragraph's audio from the server, decodes it and feeds it
+    /// through the same player as device voices, so skipping, interruptions and
+    /// the lock screen all work the same. (No word timing: Azure's REST API
+    /// doesn't return it, so notes land at the paragraph.)
+    private func speakAzure(at i: Int, voice: String) {
+        let gen = generation
+        let text = segments[i].text
+        let rate = self.rate
+        // No utterance for this paragraph: a late didFinish from an earlier one mustn't end it.
+        currentUtterance = nil
+        let audio = azureAudio(text: text, voice: voice, rate: rate)
+        // Fetch the next paragraph while this one plays.
+        if segments.indices.contains(i + 1) {
+            let next = segments[i + 1].text
+            let key = Self.azureKey(text: next, voice: voice, rate: rate)
+            if azurePrefetch?.key != key {
+                azurePrefetch = (key, Task { try await QuillAPI.speechAudio(text: next, voice: voice, rate: rate) })
+            }
+        }
+        segmentStartedAt = Date()
+        log.info("Speaking segment \(i, privacy: .public) with Microsoft voice")
+        onEvent?(["type": "progress", "index": i])
+        setState(.playing)
+        azureTask = Task { [weak self] in
+            do {
+                let data = try await audio.value
+                let buffers = try await Task.detached { try Self.decode(mp3: data) }.value
+                guard let self, gen == self.generation else { return }
+                buffers.forEach { self.receive($0, generation: gen) }
+                self.renderingFinished(generation: gen)
+            } catch {
+                guard let self, gen == self.generation, !(error is CancellationError) else { return }
+                log.error("Microsoft voice failed: \(error.localizedDescription, privacy: .public)")
+                self.halt()
+                // Play tries this paragraph again.
+                self.needsRestart = true
+                self.resumeFrames = 0
+                self.onEvent?(["type": "error", "message": "Microsoft voice stopped: \(error.localizedDescription)"])
+                self.setState(.paused)
+            }
+        }
+    }
+
+    /// The paragraph's audio: the prefetched fetch when it's the one, else a new one.
+    private func azureAudio(text: String, voice: String, rate: Double) -> Task<Data, Error> {
+        let key = Self.azureKey(text: text, voice: voice, rate: rate)
+        if let prefetch = azurePrefetch, prefetch.key == key {
+            azurePrefetch = nil
+            return prefetch.task
+        }
+        return Task { try await QuillAPI.speechAudio(text: text, voice: voice, rate: rate) }
+    }
+
+    private static func azureKey(text: String, voice: String, rate: Double) -> String {
+        "\(voice)|\(rate)|\(text)"
+    }
+
+    /// Decodes MP3 into float buffers of about half a second each, so a
+    /// restart lands close to where playback stopped.
+    nonisolated static func decode(mp3 data: Data) throws -> [AVAudioPCMBuffer] {
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent("quill-speech-\(UUID().uuidString).mp3")
+        try data.write(to: url)
+        defer { try? FileManager.default.removeItem(at: url) }
+        let file = try AVAudioFile(forReading: url)
+        let format = file.processingFormat
+        let chunk = AVAudioFrameCount(max(1024, format.sampleRate / 2))
+        var buffers: [AVAudioPCMBuffer] = []
+        while file.framePosition < file.length {
+            guard let buffer = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: chunk) else { break }
+            try file.read(into: buffer, frameCount: chunk)
+            guard buffer.frameLength > 0 else { break }
+            buffers.append(buffer)
+        }
+        return buffers
     }
 
     private func receive(_ pcm: AVAudioPCMBuffer, generation gen: Int) {

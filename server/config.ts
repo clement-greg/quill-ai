@@ -19,6 +19,15 @@ interface AppConfig {
    * unconfigured rather than failing at the network when this is unset.
    */
   photoExportUrl?: string;
+  /**
+   * Azure AI Speech, for the read-aloud player's Microsoft neural voices.
+   * Optional — the player only offers device voices when no key is set.
+   */
+  speechService?: {
+    apiKey?: string;
+    /** Azure region the Speech resource lives in (e.g. "westus"). */
+    region?: string;
+  };
   foundry: {
     projectId: string;
     endpoint: string;
@@ -65,6 +74,9 @@ export const FOUNDRY_API_VERSION_DEFAULT = '2025-04-01-preview';
  * with FOUNDRY_LOW_MODEL / FOUNDRY_MID_MODEL / FOUNDRY_HIGH_MODEL when the
  * deployments are named differently.
  */
+/** Region of the Quill AI Speech resource, used when none is configured. */
+export const SPEECH_SERVICE_REGION_DEFAULT = 'eastus';
+
 export const FOUNDRY_CHAT_TIER_DEFAULTS = {
   lowModel: 'gpt-6-luna',
   midModel: 'gpt-5.6-terra',
@@ -81,6 +93,7 @@ function loadConfig(): AppConfig {
     local.foundry.lowModel ||= FOUNDRY_CHAT_TIER_DEFAULTS.lowModel;
     local.foundry.midModel ||= FOUNDRY_CHAT_TIER_DEFAULTS.midModel;
     local.foundry.highModel ||= FOUNDRY_CHAT_TIER_DEFAULTS.highModel;
+    if (local.speechService) local.speechService.region ||= SPEECH_SERVICE_REGION_DEFAULT;
     return local;
   }
 
@@ -96,6 +109,10 @@ function loadConfig(): AppConfig {
     storageAccountKey: process.env['STORAGE_ACCOUNT_KEY']!,
     googleMapsApiKey: process.env['GOOGLE_MAPS_API_KEY']!,
     photoExportUrl: process.env['PHOTO_EXPORT_URL'],
+    speechService: {
+      apiKey: process.env['SPEECH_SERVICE_API_KEY'],
+      region: process.env['SPEECH_SERVICE_REGION'] || SPEECH_SERVICE_REGION_DEFAULT,
+    },
     foundry: {
       projectId: process.env['FOUNDRY_PROJECT_ID']!,
       endpoint: process.env['FOUNDRY_ENDPOINT']!,

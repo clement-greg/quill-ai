@@ -12,6 +12,7 @@ import { UserSettingsService, GhostCompleteItem, DEFAULT_GENDER_OPTIONS, DEFAULT
 import { HeaderService } from '@app/core/services/header.service';
 import { AppUpdateService } from '@app/core/services/app-update.service';
 import { ContentFilterService } from './content-filter.service';
+import { ReadAloudVoiceSettingsComponent } from './read-aloud-voice-settings';
 import { AI_MODELS, AI_OPERATIONS, AiModelKey, AiOperation } from '@shared/models/ai-model.model';
 
 export interface ColorThemeOption {
@@ -37,13 +38,14 @@ export const COLOR_THEMES: ColorThemeOption[] = [
   { id: 'minimalist',  label: 'Minimalist', primaryColor: '#E0E0E0', surfaceColor: '#FFFFFF' },
 ];
 
-export type SettingsTabId = 'profile' | 'appearance' | 'writing' | 'ai-models' | 'characters' | 'advanced';
+export type SettingsTabId = 'profile' | 'appearance' | 'writing' | 'ai-models' | 'read-aloud' | 'characters' | 'advanced';
 
 export const SETTINGS_TABS: { id: SettingsTabId; label: string; icon: string }[] = [
   { id: 'profile',    label: 'Profile',    icon: 'person' },
   { id: 'appearance', label: 'Appearance', icon: 'palette' },
   { id: 'writing',    label: 'Writing',    icon: 'edit_note' },
   { id: 'ai-models',  label: 'AI Models',  icon: 'auto_awesome' },
+  { id: 'read-aloud', label: 'Read Aloud', icon: 'record_voice_over' },
   { id: 'characters', label: 'Characters', icon: 'groups' },
   { id: 'advanced',   label: 'Advanced',   icon: 'tune' },
 ];
@@ -58,6 +60,7 @@ export const SETTINGS_TABS: { id: SettingsTabId; label: string; icon: string }[]
     MatFormFieldModule,
     MatButtonToggleModule,
     MatSlideToggleModule,
+    ReadAloudVoiceSettingsComponent,
   ],
   templateUrl: './user-settings.html',
   styleUrl: './user-settings.scss',

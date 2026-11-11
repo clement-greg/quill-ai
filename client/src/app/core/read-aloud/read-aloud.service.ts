@@ -1,20 +1,31 @@
 import { DOCUMENT } from '@angular/common';
 import { computed, inject, Injectable, InjectionToken, signal } from '@angular/core';
 import { getQuillNative } from '@app/core/native/quill-native';
+import { AzureSpeechClient } from './azure-speech-client';
+import { AzureSpeechEngine } from './azure-speech-engine';
 import { NativeSpeechEngine } from './native-speech-engine';
 import {
-  EngineStatus, PLAYHEAD_TEXT_MAX, ReadAloudChapter, ReadAloudPlayhead, ReadAloudSegment, ReadAloudState, ReadAloudVoice, SpeechEngine,
+  EngineStatus, isAzureVoice, PLAYHEAD_TEXT_MAX, ReadAloudChapter, ReadAloudPlayhead, ReadAloudSegment, ReadAloudState, ReadAloudVoice, SpeechEngine,
 } from './read-aloud.model';
 import { buildSegments, findSegmentIndex, nextChapterStart, previousChapterStart, sortVoices } from './read-aloud-segments';
+import { RoutedSpeechEngine } from './routed-speech-engine';
 import { WebSpeechEngine } from './web-speech-engine';
 
-/** The iPhone app's voices when available, else the browser's; null if neither exists. */
+/** The iPhone app's voices when available, else the browser's (plus Microsoft
+ *  voices through the server); null if neither exists. */
 export const SPEECH_ENGINE = new InjectionToken<SpeechEngine | null>('SPEECH_ENGINE', {
   providedIn: 'root',
   factory: () => {
     const win = inject(DOCUMENT).defaultView;
     const native = getQuillNative()?.speech;
     if (native && win) return new NativeSpeechEngine(native, win);
+    if (win?.speechSynthesis && typeof win.Audio === 'function') {
+      const azure = inject(AzureSpeechClient);
+      return new RoutedSpeechEngine(
+        new WebSpeechEngine(win.speechSynthesis),
+        new AzureSpeechEngine(new win.Audio(), (text, voice, rate, signal) => azure.synthesize(text, voice, rate, signal)),
+      );
+    }
     if (win?.speechSynthesis) return new WebSpeechEngine(win.speechSynthesis);
     return null;
   },
@@ -23,6 +34,8 @@ export const SPEECH_ENGINE = new InjectionToken<SpeechEngine | null>('SPEECH_ENG
 export const READ_ALOUD_RATES = [0.75, 1, 1.25, 1.5, 1.75, 2] as const;
 const RATE_KEY = 'quill_read_aloud_rate';
 const VOICE_KEY = 'quill_read_aloud_voice';
+/** Saved when the reader picks "System default", so it isn't replaced by the Microsoft default. */
+const SYSTEM_VOICE = 'system';
 
 export interface ReadAloudStartOptions {
   bookTitle: string;
@@ -38,6 +51,7 @@ export interface ReadAloudStartOptions {
 @Injectable({ providedIn: 'root' })
 export class ReadAloudService {
   private readonly engine = inject(SPEECH_ENGINE);
+  private readonly azure = inject(AzureSpeechClient);
   private readonly storage = safeStorage(inject(DOCUMENT).defaultView);
 
   readonly supported = this.engine !== null;
@@ -46,8 +60,11 @@ export class ReadAloudService {
   readonly segments = signal<readonly ReadAloudSegment[]>([]);
   readonly index = signal(0);
   readonly rate = signal(readRate(this.storage));
-  readonly voiceId = signal<string | null>(this.storage?.getItem(this.voiceKey()) ?? null);
+  readonly voiceId = signal<string | null>(readVoice(this.storage, this.voiceKey()));
+  /** Device voices (and Microsoft voices in `azureVoices`), for the voice picker. */
   readonly voices = signal<ReadAloudVoice[]>([]);
+  /** Microsoft Azure neural voices, when the server offers them and this engine can play them. */
+  readonly azureVoices = signal<ReadAloudVoice[]>([]);
   readonly error = signal<string | null>(null);
   /** The book loaded in the player (null when it isn't a whole book, or nothing is loaded). */
   readonly bookId = signal<string | null>(null);
@@ -86,8 +103,12 @@ export class ReadAloudService {
   /** Set when the position, voice or speed changed while paused, so resume replays from `index`. */
   private restartOnResume = false;
   private voicesLoaded = false;
+  /** The reader has never picked a voice (so the Microsoft default may apply). */
+  private voiceUnset = this.storage?.getItem(this.voiceKey()) == null;
 
   constructor() {
+    // Learn early whether Microsoft voices are on, so the first play already uses Jane.
+    if (this.engine?.supportsAzure) void this.loadAzureVoices();
     this.engine?.setListener({
       progress: index => this.index.set(index),
       state: state => {
@@ -209,19 +230,35 @@ export class ReadAloudService {
 
   setVoice(id: string | null): void {
     this.voiceId.set(id);
-    if (id) this.storage?.setItem(this.voiceKey(), id);
-    else this.storage?.removeItem(this.voiceKey());
+    this.voiceUnset = false;
+    this.storage?.setItem(this.voiceKey(), id ?? SYSTEM_VOICE);
     this.applySettingChange();
   }
 
   async loadVoices(): Promise<void> {
     if (!this.engine || this.voicesLoaded) return;
     const language = this.storage ? navigatorLanguage() : 'en-US';
-    const voices = sortVoices(await this.engine.getVoices(), language);
+    const [device] = await Promise.all([this.engine.getVoices(), this.loadAzureVoices()]);
+    const voices = sortVoices(device, language);
     this.voicesLoaded = voices.length > 0;
     this.voices.set(voices);
     const saved = this.voiceId();
-    if (saved && voices.length && !voices.some(v => v.id === saved)) this.voiceId.set(null);
+    if (saved && !isAzureVoice(saved) && voices.length && !voices.some(v => v.id === saved)) this.voiceId.set(null);
+  }
+
+  /** Fetches the Microsoft voices (once) and makes Jane the voice for readers who never picked one. */
+  private async loadAzureVoices(): Promise<void> {
+    if (!this.engine?.supportsAzure) return;
+    const azure = await this.azure.voices();
+    const language = this.storage ? navigatorLanguage() : 'en-US';
+    this.azureVoices.set(sortVoices(azure.voices, language));
+    const current = this.voiceId();
+    if (this.voiceUnset && !current && azure.defaultVoiceId) {
+      this.voiceId.set(azure.defaultVoiceId);
+    } else if (isAzureVoice(current) && !azure.enabled) {
+      // Microsoft voices were switched off on the server: fall back to the device.
+      this.voiceId.set(null);
+    }
   }
 
   private applySettingChange(): void {
@@ -250,6 +287,12 @@ export class ReadAloudService {
   private voiceKey(): string {
     return `${VOICE_KEY}_${this.engineKind ?? 'none'}`;
   }
+}
+
+/** The saved voice: null for the device default (picked, or never picked). */
+function readVoice(storage: Storage | null, key: string): string | null {
+  const saved = storage?.getItem(key) ?? null;
+  return saved === SYSTEM_VOICE ? null : saved;
 }
 
 function readRate(storage: Storage | null): number {
