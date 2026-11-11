@@ -359,10 +359,13 @@ export class BookEditorComponent implements AfterViewInit, OnDestroy {
   // ── Template handlers ─────────────────────────────────────────────────────
 
   onScroll(): void {
+    // Record the reader's place right away, not on the next frame: a layout
+    // change in the same frame (e.g. a new page while typing) restores the
+    // anchor, and a stale one would undo the browser's caret-into-view scroll.
+    this.captureAnchor();
     if (this.scrollFrame !== null) return;
     this.scrollFrame = requestAnimationFrame(() => {
       this.scrollFrame = null;
-      this.captureAnchor();
       this.updateViewport();
       this.updateActiveChapter(false);
     });
