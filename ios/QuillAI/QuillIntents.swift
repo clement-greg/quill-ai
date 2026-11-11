@@ -10,6 +10,7 @@ struct SaveThoughtIntent: AppIntent {
     var text: String
 
     func perform() async throws -> some IntentResult & ProvidesDialog {
+        defer { ReadAloudStatus.resumeWhenSiriIsDone() }
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return .result(dialog: "There was nothing to save.") }
         try await QuillAPI.saveThought(trimmed)
@@ -31,6 +32,7 @@ struct AddTaskIntent: AppIntent {
     var bookName: String?
 
     func perform() async throws -> some IntentResult & ProvidesDialog {
+        defer { ReadAloudStatus.resumeWhenSiriIsDone() }
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return .result(dialog: "There was no task to add.") }
 
@@ -64,6 +66,7 @@ struct AddNoteIntent: AppIntent {
     var bookName: String?
 
     func perform() async throws -> some IntentResult & ProvidesDialog {
+        defer { ReadAloudStatus.resumeWhenSiriIsDone() }
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return .result(dialog: "There was nothing to note.") }
 
@@ -87,6 +90,12 @@ enum ReadAloudStatus {
         let speech = SpeechController.shared
         return ReadAloudPlayer(active: speech.state != .idle, playhead: speech.playhead)
     }
+
+    /// Siri paused the reading to listen; pick it back up once Siri is done,
+    /// if it was playing.
+    static func resumeWhenSiriIsDone() {
+        Task { @MainActor in SpeechController.shared.resumeAfterSiri() }
+    }
 }
 
 /// "Hey Siri, what's on my Quill AI task list" → reads the open-task count and the next few.
@@ -96,6 +105,7 @@ struct ListTasksIntent: AppIntent {
     static let openAppWhenRun = false
 
     func perform() async throws -> some IntentResult & ProvidesDialog {
+        defer { ReadAloudStatus.resumeWhenSiriIsDone() }
         let summary = try await QuillAPI.taskSummary(limit: 3)
         return .result(dialog: IntentDialog(stringLiteral: TaskSpeech.summary(summary)))
     }
@@ -116,6 +126,7 @@ struct AskQuillIntent: AppIntent {
     var question: String
 
     func perform() async throws -> some IntentResult & ProvidesDialog & ReturnsValue<String> {
+        defer { ReadAloudStatus.resumeWhenSiriIsDone() }
         var history: [VoiceTurn] = []
         var current = question
         var answer = ""

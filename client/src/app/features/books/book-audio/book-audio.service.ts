@@ -8,6 +8,7 @@ import { PLAYHEAD_TEXT_MAX, ReadAloudChapter } from '@app/core/read-aloud/read-a
 import { BookService } from '@app/features/books/book.service';
 import { ChapterService } from '@app/features/chapters/chapter.service';
 import { ChapterDraftService } from '@app/features/chapters/chapter-edit/chapter-draft.service';
+import { Book } from '@shared/models/book.model';
 import { ListeningPosition, ListeningPositionUpdate } from '@shared/models/listening.model';
 import { BookPlayerComponent } from './book-player';
 
@@ -64,6 +65,8 @@ export class BookAudioService {
   private positionsLoaded: Promise<void> | null = null;
   /** The playing book's cover as stored, saved with its position. */
   private coverUrl: string | undefined;
+  /** Settles once a book the iPhone app was already reading has been taken over. */
+  private readonly adopted: Promise<void>;
 
   constructor() {
     effect(() => {
@@ -73,6 +76,7 @@ export class BookAudioService {
       const playing = this.ra.state() === 'playing';
       untracked(() => this.track(bookId, finished, playing, current !== null));
     });
+    this.adopted = this.adoptRunningBook();
     const flush = () => this.flush();
     this.doc.defaultView?.addEventListener('pagehide', flush);
     this.doc.addEventListener('visibilitychange', () => {
@@ -106,6 +110,10 @@ export class BookAudioService {
    */
   async listen(bookId: string, options: { fromStart?: boolean } = {}): Promise<void> {
     if (!this.ra.supported) return;
+    // The iPhone app may still be reading this book from before the page
+    // reloaded: carry on from exactly there instead of the saved position.
+    // (Only the app's engine waits; a browser needs play() inside the click.)
+    if (this.ra.engineKind === 'native') await this.adopted;
     if (this.isLoaded(bookId) && !options.fromStart) {
       if (this.ra.state() !== 'playing') this.ra.playPause();
       this.open();
@@ -127,14 +135,7 @@ export class BookAudioService {
       }
       const resume = saved && !saved.finished && !options.fromStart ? saved : null;
       this.flush();
-      this.nowPlaying.set({
-        bookId,
-        seriesId: book.seriesId,
-        title: book.title,
-        coverUrl: proxyImageUrl(book.originalUrl ?? book.thumnailUrl),
-        chapterArt: art,
-      });
-      this.coverUrl = book.thumnailUrl ?? book.originalUrl;
+      this.showNowPlaying(bookId, book, art);
       this.ra.start(chapters, {
         bookTitle: book.title,
         bookId,
@@ -148,6 +149,38 @@ export class BookAudioService {
     } finally {
       if (this.loading() === bookId) this.loading.set(null);
     }
+  }
+
+  /**
+   * When the page (re)loads while the iPhone app is still reading a book —
+   * the web view can be reloaded under it in the background — shows that book
+   * as playing, at the app's exact place, rather than nothing.
+   */
+  private async adoptRunningBook(): Promise<void> {
+    try {
+      const status = await this.ra.engineStatus();
+      if (!status?.bookId || status.state === 'idle' || this.ra.active()) return;
+      const bookId = status.bookId;
+      const [book, { chapters, art }] = await Promise.all([
+        firstValueFrom(this.books.getById(bookId)),
+        this.loadChapters(bookId),
+      ]);
+      if (this.ra.active()) return; // something else started meanwhile
+      if (this.ra.attach(chapters, { bookTitle: book.title, bookId }, status)) this.showNowPlaying(bookId, book, art);
+    } catch {
+      // Nothing to take over; listen() starts from the saved position.
+    }
+  }
+
+  private showNowPlaying(bookId: string, book: Book, art: Record<string, string>): void {
+    this.nowPlaying.set({
+      bookId,
+      seriesId: book.seriesId,
+      title: book.title,
+      coverUrl: proxyImageUrl(book.originalUrl ?? book.thumnailUrl),
+      chapterArt: art,
+    });
+    this.coverUrl = book.thumnailUrl ?? book.originalUrl;
   }
 
   /** Opens the full player for what's loaded. */

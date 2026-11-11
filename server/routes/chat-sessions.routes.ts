@@ -28,7 +28,7 @@ import { downloadBlob } from '../services/storage';
 import { buildChapterContextPrompt } from '../services/chapter-ai-context';
 import { buildChapterDraftingContext, generateChapterBeatSheet } from '../services/chapter-drafting-context';
 import { taskChatTools, taskGuidance } from './task-chat-tools';
-import { addChapterNote, currentPlayhead, Playhead, playheadAnchor, playheadGuidance } from '../services/playhead-notes';
+import { addChapterNote, currentPlayhead, Playhead, playheadAnchor, playheadGuidance, spokenNoteText } from '../services/playhead-notes';
 
 /** True when the author is asking to draft a whole chapter (vs. a small inline
  * edit/insert), e.g. "write the chapter based on the outline and notes" or
@@ -3122,7 +3122,7 @@ router.post('/voice', async (req: Request, res: Response) => {
 // Response: { saved: true, spoken, chapter? | book? } or
 // { saved: false, needsBook: true, books: string[], spoken }.
 router.post('/voice-note', async (req: Request, res: Response) => {
-  const text = typeof req.body?.text === 'string' ? req.body.text.trim() : '';
+  const text = typeof req.body?.text === 'string' ? spokenNoteText(req.body.text) : '';
   if (!text) {
     res.status(400).json({ error: 'text is required' });
     return;

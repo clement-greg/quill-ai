@@ -94,3 +94,18 @@ struct SpeechTimeline {
         return Swift.min(Swift.max(mapped, minRate), maxRate)
     }
 }
+
+/// Leading audio to drop while re-rendering a paragraph to resume partway
+/// through it: takes from each rendered buffer in turn until it's used up.
+struct FrameSkip: Equatable {
+    private(set) var remaining: Int64
+
+    init(frames: Int64) { remaining = max(0, frames) }
+
+    /// How many of the next buffer's `length` frames to drop.
+    mutating func take(_ length: Int64) -> Int64 {
+        let drop = min(remaining, max(0, length))
+        remaining -= drop
+        return drop
+    }
+}

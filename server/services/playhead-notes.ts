@@ -145,6 +145,19 @@ export async function addChapterNote(
   return { chapterId: chapter.id, title: chapter.title, notes: updated.notes! };
 }
 
+const NOTE_LEAD_IN =
+  /^(?:(?:please|ok(?:ay)?|hey quill)[\s,]+)*(?:(?:add|make|take|save|create|write|put)\s+(?:down\s+)?(?:a|an|the|this|my)?\s*(?:quick\s+)?note\b(?:\s+(?:here|in\s+quill(?:\s+ai)?))?)\s*(?:(?:that|which)\s+(?:says|reads)|saying|that|to\s+say|reading|of)?\s*[:,\-–—]?\s*/i;
+
+/** The note an author dictated, without the "add a note that says" they led
+ *  with (Siri passes the whole sentence when it's said in one breath). Keeps
+ *  the text as is if nothing would be left. */
+export function spokenNoteText(text: string): string {
+  const trimmed = text.trim();
+  const stripped = trimmed.replace(NOTE_LEAD_IN, '').trim();
+  if (!stripped || stripped === trimmed) return trimmed;
+  return stripped.charAt(0).toUpperCase() + stripped.slice(1);
+}
+
 /** System-prompt guidance telling the assistant that notes go at the play head. */
 export function playheadGuidance(playhead: Playhead | null): string {
   if (!playhead) return '';
