@@ -26,6 +26,11 @@ export interface ChapterNoteAnchor {
     /** The paragraph's text when the note was added, to find it again if the
      *  chapter has changed since. */
     text?: string;
+    /** The word being read when the note was added: its UTF-16 offset in the
+     *  paragraph's text, and the word itself. Without them (or if the word can't
+     *  be found), the note goes on the paragraph's last word. */
+    wordOffset?: number;
+    word?: string;
 }
 
 /** A short quote of an anchored paragraph, for a note's "on …" line. */

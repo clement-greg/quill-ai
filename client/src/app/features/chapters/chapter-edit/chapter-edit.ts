@@ -1605,8 +1605,9 @@ export class ChapterEditComponent implements OnInit, OnDestroy {
   }
 
   /** Wraps notes added at the read-aloud play head (from AI chat or Siri)
-   *  around their paragraph, so they work like any in-text note. A note whose
-   *  paragraph can't be found becomes a general chapter note. Works on the
+   *  around the word being read (else their paragraph's last word), so they
+   *  work like any in-text note. A note whose paragraph can't be found
+   *  becomes a general chapter note. Works on the
    *  chapter in scope; in full-book mode that's the active chapter, once its
    *  editor has mounted. */
   private pinAnchoredNotes(): void {
@@ -1616,7 +1617,8 @@ export class ChapterEditComponent implements OnInit, OnDestroy {
       if (!n.anchor) return n;
       const wrapped = editor.wrapAnchoredNote(n.id, n.anchor);
       const { anchor: _pinned, ...rest } = n;
-      return { ...rest, selectedText: n.selectedText || noteAnchorExcerpt(wrapped ?? '') };
+      // The highlighted word is what the note is "on"; keep the stored quote if nothing was found.
+      return { ...rest, selectedText: wrapped ? noteAnchorExcerpt(wrapped) : n.selectedText };
     }));
     this.scheduleNotesDraftSave();
   }

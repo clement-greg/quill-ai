@@ -27,6 +27,9 @@ export interface ReadAloudPlayhead {
   blockIndex: number;
   /** The paragraph's text, cut to PLAYHEAD_TEXT_MAX characters. */
   text: string;
+  /** The word being spoken, when the engine knows it: offset into the paragraph's full text. */
+  wordOffset?: number;
+  word?: string;
 }
 
 /** Enough of a paragraph to find it again. */
@@ -87,4 +90,6 @@ export interface EngineStatus {
   /** Segments queued. */
   count: number;
   bookId: string | null;
+  /** The word being spoken in segment `index`, when the engine knows it. */
+  word?: { offset: number; length: number };
 }

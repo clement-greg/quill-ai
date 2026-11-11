@@ -65,7 +65,7 @@ describe('QuickChatService', () => {
         { provide: ChapterSyncService, useValue: {} },
         { provide: EditorReviewService, useValue: {} },
         { provide: AuthFetchService, useValue: { fetch: fetchStub } },
-        { provide: ReadAloudService, useValue: { playhead: () => playhead } },
+        { provide: ReadAloudService, useValue: { livePlayhead: async () => playhead } },
       ],
     });
     service = TestBed.inject(QuickChatService);
@@ -357,7 +357,7 @@ describe('QuickChatService', () => {
 
     it('sends where a book is being read aloud, so a note lands there', async () => {
       service.activeSessionId.set('sess-1');
-      playhead = { bookId: 'b1', bookTitle: 'Book', chapterId: 'c1', chapterTitle: 'One', blockIndex: 2, text: 'Para' };
+      playhead = { bookId: 'b1', bookTitle: 'Book', chapterId: 'c1', chapterTitle: 'One', blockIndex: 2, text: 'Para', wordOffset: 0, word: 'Para' };
       fetchStub.mockResolvedValue(new Response('data: [DONE]\n\n', { status: 200 }));
 
       await service.sendMessage('add a note: too slow');
