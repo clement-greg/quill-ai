@@ -22,6 +22,12 @@ const QUALITY_LABEL: Record<VoiceQuality, string> = { premium: 'Premium', enhanc
       font-size: 12px;
       color: var(--mat-sys-on-surface-variant);
     }
+    .ra-voice-group-label {
+      padding: 8px 16px 4px;
+      font-size: 12px;
+      font-weight: 500;
+      color: var(--mat-sys-on-surface-variant);
+    }
     .ra-voice-hint {
       margin: 4px 16px 8px;
       max-width: 280px;
@@ -49,18 +55,36 @@ const QUALITY_LABEL: Record<VoiceQuality, string> = { premium: 'Premium', enhanc
       <mat-icon>record_voice_over</mat-icon>
     </button>
     <mat-menu #voiceMenu="matMenu" class="ra-voice-menu">
-      <button mat-menu-item type="button" (click)="ra.setVoice(null)" role="menuitemradio" [attr.aria-checked]="!ra.voiceId()">
-        <mat-icon>{{ !ra.voiceId() ? 'check' : '' }}</mat-icon>
-        System default
-      </button>
-      @for (voice of ra.voices(); track voice.id) {
-        <button mat-menu-item type="button" (click)="ra.setVoice(voice.id)" role="menuitemradio"
-          [attr.aria-checked]="voice.id === ra.voiceId()">
-          <mat-icon>{{ voice.id === ra.voiceId() ? 'check' : '' }}</mat-icon>
-          <span>{{ voice.name }}</span>
-          <span class="ra-voice-meta">{{ voice.lang }}@if (qualityLabel[voice.quality]) { · {{ qualityLabel[voice.quality] }}}</span>
-        </button>
+      @if (ra.azureVoices().length) {
+        <div role="group" aria-label="Microsoft voices">
+          <div class="ra-voice-group-label" aria-hidden="true">Microsoft voices</div>
+          @for (voice of ra.azureVoices(); track voice.id) {
+            <button mat-menu-item type="button" (click)="ra.setVoice(voice.id)" role="menuitemradio"
+              [attr.aria-checked]="voice.id === ra.voiceId()">
+              <mat-icon>{{ voice.id === ra.voiceId() ? 'check' : '' }}</mat-icon>
+              <span>{{ voice.name }}</span>
+              <span class="ra-voice-meta">{{ voice.lang }}</span>
+            </button>
+          }
+        </div>
       }
+      <div role="group" aria-label="Device voices">
+        @if (ra.azureVoices().length) {
+          <div class="ra-voice-group-label" aria-hidden="true">Device voices</div>
+        }
+        <button mat-menu-item type="button" (click)="ra.setVoice(null)" role="menuitemradio" [attr.aria-checked]="!ra.voiceId()">
+          <mat-icon>{{ !ra.voiceId() ? 'check' : '' }}</mat-icon>
+          System default
+        </button>
+        @for (voice of ra.voices(); track voice.id) {
+          <button mat-menu-item type="button" (click)="ra.setVoice(voice.id)" role="menuitemradio"
+            [attr.aria-checked]="voice.id === ra.voiceId()">
+            <mat-icon>{{ voice.id === ra.voiceId() ? 'check' : '' }}</mat-icon>
+            <span>{{ voice.name }}</span>
+            <span class="ra-voice-meta">{{ voice.lang }}@if (qualityLabel[voice.quality]) { · {{ qualityLabel[voice.quality] }}}</span>
+          </button>
+        }
+      </div>
       @if (voiceHint()) {
         <p class="ra-voice-hint">{{ voiceHint() }}</p>
       }
@@ -72,9 +96,12 @@ export class ReadAloudSettingsComponent {
   readonly rates = READ_ALOUD_RATES;
   readonly qualityLabel = QUALITY_LABEL;
 
-  readonly selectedVoiceName = computed(() =>
-    this.ra.voices().find(v => v.id === this.ra.voiceId())?.name ?? 'System default');
-  readonly hasGoodVoice = computed(() => this.ra.voices().some(v => v.quality !== 'default'));
+  readonly selectedVoiceName = computed(() => {
+    const id = this.ra.voiceId();
+    return [...this.ra.azureVoices(), ...this.ra.voices()].find(v => v.id === id)?.name ?? 'System default';
+  });
+  readonly hasGoodVoice = computed(() =>
+    this.ra.azureVoices().length > 0 || this.ra.voices().some(v => v.quality !== 'default'));
   /** Points the reader at free higher-quality voices for their platform. */
   readonly voiceHint = computed(() => {
     if (this.ra.engineKind === 'native') {

@@ -84,6 +84,7 @@ struct WebView: UIViewRepresentable {
               post({ type: 'setSession', refreshToken: refreshToken == null ? null : String(refreshToken) });
             },
             speech: Object.freeze({
+              azure: true,
               voices: function () { return call('speechVoices'); },
               status: function () { return call('speechStatus'); },
               play: function (request) { post({ type: 'speechPlay', request: request }); },

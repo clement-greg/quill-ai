@@ -39,6 +39,7 @@ import thoughtsRoutes from './routes/thoughts.routes';
 import tasksRoutes from './routes/tasks.routes';
 import appSettingsRoutes from './routes/app-settings.routes';
 import diagnosticsRoutes from './routes/diagnostics.routes';
+import speechRoutes from './routes/speech.routes';
 import { clientRoutes, findClientDir } from './client-static';
 
 const app = express();
@@ -112,6 +113,7 @@ app.use('/api/thoughts', thoughtsRoutes);
 app.use('/api/tasks', tasksRoutes);
 app.use('/api/app-settings', appSettingsRoutes);
 app.use('/api/diagnostics', diagnosticsRoutes);
+app.use('/api/speech', speechRoutes);
 
 // Serve the Angular build, with index.html as the fallback for client-side routes
 app.use(clientRoutes(findClientDir(__dirname)));

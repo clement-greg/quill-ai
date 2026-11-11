@@ -118,6 +118,54 @@ enum QuillAPI {
         return try JSONDecoder().decode(WritingStatsResponse.self, from: data)
     }
 
+    /// MP3 of `text` spoken by a Microsoft Azure voice (its short name, e.g.
+    /// "en-US-JaneNeural") at `rate` (1 = normal), for the read-aloud player.
+    static func speechAudio(text: String, voice: String, rate: Double) async throws -> Data {
+        let token = try await speechTokens.token()
+        let body: [String: Any] = ["text": text, "voice": voice, "rate": rate]
+        var (data, response) = try await post("/api/speech/synthesize", body: body, token: token)
+        if response.statusCode == 401 {
+            // The cached token was revoked or expired early: get a fresh one and retry once.
+            await speechTokens.invalidate()
+            (data, response) = try await post("/api/speech/synthesize", body: body, token: try await speechTokens.token())
+        }
+        guard (200..<300).contains(response.statusCode) else {
+            throw QuillAPIError.server(message(from: data, fallback: "Couldn't load the Microsoft voice."))
+        }
+        return data
+    }
+
+    /// Read-aloud fetches a paragraph every few seconds, so it reuses an access
+    /// token (they last an hour) instead of refreshing for every request.
+    private static let speechTokens = TokenCache()
+
+    private actor TokenCache {
+        private var token: String?
+        private var expires = Date.distantPast
+        /// The refresh token the cached access token came with: a sign-out or a
+        /// new sign-in replaces it, and the cached token goes with it.
+        private var session: String?
+        private var inFlight: Task<String, Error>?
+
+        func token() async throws -> String {
+            if let token, Date() < expires, session == SessionStore.refreshToken { return token }
+            if let inFlight { return try await inFlight.value }
+            // One refresh at a time: refresh tokens rotate, so a second concurrent one would fail.
+            let task = Task { try await QuillAPI.accessToken() }
+            inFlight = task
+            defer { inFlight = nil }
+            let fresh = try await task.value
+            token = fresh
+            expires = Date().addingTimeInterval(45 * 60)
+            session = SessionStore.refreshToken
+            return fresh
+        }
+
+        func invalidate() {
+            token = nil
+        }
+    }
+
     // MARK: - Plumbing
 
     /// Trades the stored refresh token for a short-lived access token, storing

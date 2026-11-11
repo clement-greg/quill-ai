@@ -72,4 +72,9 @@ describe('NativeSpeechEngine', () => {
     const broken = setup({ status: vi.fn().mockRejectedValue(new Error('no bridge')) });
     expect(await broken.engine.status()).toBeNull();
   });
+
+  it('offers Microsoft voices only when the app says it can play them', () => {
+    expect(setup().engine.supportsAzure).toBe(false);
+    expect(setup({ azure: true }).engine.supportsAzure).toBe(true);
+  });
 });

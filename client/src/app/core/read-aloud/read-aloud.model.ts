@@ -43,6 +43,15 @@ export interface ReadAloudVoice {
   /** BCP 47 tag, e.g. "en-US". */
   lang: string;
   quality: VoiceQuality;
+  /** Set for Microsoft Azure neural voices (spoken by the server, not the device). */
+  provider?: 'azure';
+}
+
+/** Voice ids of Microsoft Azure voices are their Azure short name behind this prefix. */
+export const AZURE_VOICE_PREFIX = 'azure:';
+
+export function isAzureVoice(id: string | null | undefined): boolean {
+  return !!id?.startsWith(AZURE_VOICE_PREFIX);
 }
 
 export type ReadAloudState = 'idle' | 'playing' | 'paused';
@@ -68,6 +77,8 @@ export interface SpeechEngineListener {
 /** Where speech actually comes from: the browser or the iPhone app. */
 export interface SpeechEngine {
   readonly kind: 'web' | 'native';
+  /** Can speak Microsoft Azure voices (ids starting with AZURE_VOICE_PREFIX). */
+  readonly supportsAzure?: boolean;
   setListener(listener: SpeechEngineListener): void;
   getVoices(): Promise<ReadAloudVoice[]>;
   /** Called synchronously from a click so a later async play() is still allowed

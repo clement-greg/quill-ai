@@ -1,5 +1,6 @@
 import { TestBed } from '@angular/core/testing';
 import { ReadAloudService, SPEECH_ENGINE } from './read-aloud.service';
+import { AzureSpeechClient, AzureVoices } from './azure-speech-client';
 import { SpeechEngine, SpeechEngineListener } from './read-aloud.model';
 
 const BOOK = [
@@ -195,7 +196,73 @@ describe('ReadAloudService', () => {
     expect(localStorage.getItem('quill_read_aloud_rate')).toBe('1.5');
     expect(localStorage.getItem('quill_read_aloud_voice_web')).toBe('ava');
     svc.setVoice(null);
-    expect(localStorage.getItem('quill_read_aloud_voice_web')).toBeNull();
+    expect(localStorage.getItem('quill_read_aloud_voice_web')).toBe('system');
+  });
+
+  describe('Microsoft voices', () => {
+    const JANE = 'azure:en-US-JaneNeural';
+    const ENABLED: AzureVoices = {
+      enabled: true,
+      defaultVoiceId: JANE,
+      voices: [
+        { id: 'azure:fr-FR-DeniseNeural', name: 'Denise', lang: 'fr-FR', quality: 'premium', provider: 'azure' },
+        { id: JANE, name: 'Jane', lang: 'en-US', quality: 'premium', provider: 'azure' },
+      ],
+    };
+
+    function setupAzure(azure: AzureVoices, saved?: string) {
+      const { engine, emit } = fakeEngine();
+      const azureEngine = { ...engine, supportsAzure: true };
+      localStorage.clear();
+      if (saved) localStorage.setItem('quill_read_aloud_voice_web', saved);
+      const client = { voices: vi.fn().mockResolvedValue(azure) };
+      TestBed.configureTestingModule({
+        providers: [{ provide: SPEECH_ENGINE, useValue: azureEngine }, { provide: AzureSpeechClient, useValue: client }],
+      });
+      return { svc: TestBed.inject(ReadAloudService), engine: azureEngine, client, emit };
+    }
+
+    it('uses Jane until the reader picks a voice', async () => {
+      const { svc, engine } = setupAzure(ENABLED);
+      await vi.waitFor(() => expect(svc.voiceId()).toBe(JANE));
+      expect(svc.azureVoices().map(v => v.id)).toEqual([JANE]);
+      svc.start(BOOK, { bookTitle: '' });
+      expect(engine.play).toHaveBeenLastCalledWith(expect.objectContaining({ voiceId: JANE }));
+    });
+
+    it('keeps a reader\'s choice of the system default, or of a device voice', async () => {
+      const system = setupAzure(ENABLED, 'system');
+      await system.svc.loadVoices();
+      expect(system.svc.voiceId()).toBeNull();
+      TestBed.resetTestingModule();
+      const device = setupAzure(ENABLED, 'ava');
+      await device.svc.loadVoices();
+      expect(device.svc.voiceId()).toBe('ava');
+    });
+
+    it('keeps a saved Microsoft voice through device voice cleanup', async () => {
+      const { svc } = setupAzure(ENABLED, 'azure:en-US-AndrewNeural');
+      await svc.loadVoices();
+      expect(svc.voiceId()).toBe('azure:en-US-AndrewNeural');
+    });
+
+    it('falls back to the device when the server has no Microsoft voices', async () => {
+      const { svc } = setupAzure({ enabled: false, defaultVoiceId: null, voices: [] }, JANE);
+      await svc.loadVoices();
+      expect(svc.voiceId()).toBeNull();
+      expect(svc.azureVoices()).toEqual([]);
+    });
+
+    it('doesn\'t ask the server when the engine can\'t play them', async () => {
+      const { engine } = fakeEngine();
+      const client = { voices: vi.fn() };
+      localStorage.clear();
+      TestBed.configureTestingModule({
+        providers: [{ provide: SPEECH_ENGINE, useValue: engine }, { provide: AzureSpeechClient, useValue: client }],
+      });
+      await TestBed.inject(ReadAloudService).loadVoices();
+      expect(client.voices).not.toHaveBeenCalled();
+    });
   });
 
   it('loads voices in the reader language and drops a saved voice that no longer exists', async () => {

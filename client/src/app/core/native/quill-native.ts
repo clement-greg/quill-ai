@@ -43,6 +43,8 @@ export interface NativeSpeechStatus {
 }
 
 export interface QuillNativeSpeech {
+  /** The app can speak Microsoft Azure voices (fetched from the server); absent in older builds. */
+  azure?: boolean;
   voices(): Promise<{ id: string; name: string; lang: string; quality: 'default' | 'enhanced' | 'premium' }[]>;
   play(request: {
     segments: NativeSpeechSegment[];
