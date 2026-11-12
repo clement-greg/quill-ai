@@ -69,6 +69,7 @@ describe('voicedParts', () => {
 describe('voiceRateOf', () => {
   it('keeps listed speeds other than normal', () => {
     expect(voiceRateOf(1.25)).toBe(1.25);
+    expect(voiceRateOf(1.15)).toBe(1.15);
     expect(voiceRateOf(1)).toBeUndefined();
     expect(voiceRateOf(3)).toBeUndefined();
     expect(voiceRateOf('fast')).toBeUndefined();
