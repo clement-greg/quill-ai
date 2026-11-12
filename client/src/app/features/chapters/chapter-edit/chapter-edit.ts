@@ -59,6 +59,7 @@ import { ConfirmDialogComponent } from '@app/shared/confirm-dialog/confirm-dialo
 import { MoveTextDialogComponent, MoveTextDialogData, MoveTextDialogResult } from './move-text-dialog';
 import { insertHtmlAtAnchor } from './chapter-content-blocks';
 import { ReadAloudService } from '@app/core/read-aloud/read-aloud.service';
+import { DialogueHighlightsService } from '@app/shared/rich-text-editor/dialogue-highlights';
 import { ReadAloudSegment } from '@app/core/read-aloud/read-aloud.model';
 import { findReadAloudRange, revealRange, setReadAloudHighlight } from '@app/core/read-aloud/read-aloud-highlight';
 import { TasksService } from '@app/features/tasks/tasks.service';
@@ -128,6 +129,7 @@ export class ChapterEditComponent implements OnInit, OnDestroy {
   private factCheckService = inject(FactCheckService);
   private factCheckReports = inject(FactCheckReportService);
   private readonly readAloud = inject(ReadAloudService);
+  readonly dialogueHighlights = inject(DialogueHighlightsService);
   /** Public so the template can read the streamed review suggestions. */
   readonly editorReview = inject(EditorReviewService);
   private routeSub?: Subscription;

@@ -151,6 +151,58 @@ body.resizing-col, body.resizing-col * {
   background-color: color-mix(in srgb, var(--mat-sys-primary, #6750a4) 22%, transparent);
 }
 
+/* Who speaks each line of dialogue in the chapter editor (CSS Custom Highlight
+   API; see dialogue-highlights.ts, whose SPEAKER_COLORS must match). */
+::highlight(dialogue-0) {
+  background-color: color-mix(in srgb, #1e88e5 14%, transparent);
+  text-decoration: underline solid #1e88e5 2px;
+}
+
+::highlight(dialogue-1) {
+  background-color: color-mix(in srgb, #e53935 14%, transparent);
+  text-decoration: underline solid #e53935 2px;
+}
+
+::highlight(dialogue-2) {
+  background-color: color-mix(in srgb, #43a047 14%, transparent);
+  text-decoration: underline solid #43a047 2px;
+}
+
+::highlight(dialogue-3) {
+  background-color: color-mix(in srgb, #8e24aa 14%, transparent);
+  text-decoration: underline solid #8e24aa 2px;
+}
+
+::highlight(dialogue-4) {
+  background-color: color-mix(in srgb, #f4511e 14%, transparent);
+  text-decoration: underline solid #f4511e 2px;
+}
+
+::highlight(dialogue-5) {
+  background-color: color-mix(in srgb, #00897b 14%, transparent);
+  text-decoration: underline solid #00897b 2px;
+}
+
+::highlight(dialogue-6) {
+  background-color: color-mix(in srgb, #d81b60 14%, transparent);
+  text-decoration: underline solid #d81b60 2px;
+}
+
+::highlight(dialogue-7) {
+  background-color: color-mix(in srgb, #6d4c41 14%, transparent);
+  text-decoration: underline solid #6d4c41 2px;
+}
+
+/* Read in the narration voice. */
+::highlight(dialogue-none) {
+  text-decoration: underline dotted #79747e 2px;
+}
+
+/* Not attributed yet (new or edited since the last save). */
+::highlight(dialogue-pending) {
+  text-decoration: underline dashed #b0abb5 1px;
+}
+
 /* Full book player (book-player.ts): a centered card on wide screens, the
    whole screen on phones. */
 .book-player-dialog .mat-mdc-dialog-surface {

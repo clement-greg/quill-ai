@@ -105,6 +105,37 @@ describe('POST /api/chapters/:id/dialogue', () => {
   });
 });
 
+describe('PATCH /api/chapters/:id/dialogue', () => {
+  const patch = (body: unknown, user = USER_A) =>
+    request(app).patch('/api/chapters/ch-a/dialogue').set('x-test-user', user).send(body as object);
+
+  it('changes one line\'s speaker and leaves the rest', async () => {
+    fake.container('chapters').seed({ id: 'ch-a', title: 'One', bookId: 'b-a', owner: USER_A, dialogue: { k: ['ann', 'bob'] } });
+    const res = await patch({ key: 'k', index: 1, entityId: 'ann' });
+    expect(res.status).toBe(200);
+    expect(res.body.dialogue).toEqual({ k: ['ann', 'ann'] });
+    expect((fake.container('chapters').get('ch-a') as unknown as { dialogue: unknown }).dialogue).toEqual({ k: ['ann', 'ann'] });
+    expect(create).not.toHaveBeenCalled();
+  });
+
+  it('can set a line to the narration voice', async () => {
+    const res = await patch({ key: 'kept', index: 0, entityId: null });
+    expect(res.body.dialogue.kept).toEqual([null]);
+  });
+
+  it('refuses lines that are not attributed, out-of-range indexes and non-characters', async () => {
+    expect((await patch({ key: 'nope', index: 0, entityId: 'ann' })).status).toBe(409);
+    expect((await patch({ key: 'kept', index: 3, entityId: 'ann' })).status).toBe(409);
+    expect((await patch({ key: 'kept', index: 0, entityId: 'town' })).status).toBe(400);
+    expect((await patch({ key: 'kept', index: 0, entityId: 'missing' })).status).toBe(400);
+    expect((await patch({ key: 'kept', index: -1, entityId: 'ann' })).status).toBe(400);
+  });
+
+  it('hides other users’ chapters', async () => {
+    expect((await patch({ key: 'kept', index: 0, entityId: 'ann' }, USER_B)).status).toBe(404);
+  });
+});
+
 describe('PUT /api/chapters/:id keeps stored dialogue', () => {
   it('ignores the client’s copy', async () => {
     const res = await request(app).put('/api/chapters/ch-a').set('x-test-user', USER_A)
