@@ -1,5 +1,4 @@
-import { Component, inject, signal, effect, computed, ElementRef, ViewChild, OnDestroy } from '@angular/core';
-import { DatePipe, DecimalPipe } from '@angular/common';
+import { Component, inject, signal, effect, computed, ElementRef, ViewChild } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { MatButtonModule } from '@angular/material/button';
 import { MatIconModule } from '@angular/material/icon';
@@ -13,7 +12,8 @@ import { UserSettingsService, GhostCompleteItem, DEFAULT_GENDER_OPTIONS, DEFAULT
 import { HeaderService } from '@app/core/services/header.service';
 import { AppUpdateService } from '@app/core/services/app-update.service';
 import { ContentFilterService } from './content-filter.service';
-import { DatabaseBackupService } from './database-backup.service';
+import { SaAccessService } from '@app/core/services/sa-access.service';
+import { AdminSettingsComponent } from './admin-settings/admin-settings';
 import { VoicePickerComponent } from '@app/shared/voice-gallery/voice-picker';
 import { AI_MODELS, AI_OPERATIONS, AiModelKey, AiOperation } from '@shared/models/ai-model.model';
 
@@ -40,7 +40,7 @@ export const COLOR_THEMES: ColorThemeOption[] = [
   { id: 'minimalist',  label: 'Minimalist', primaryColor: '#E0E0E0', surfaceColor: '#FFFFFF' },
 ];
 
-export type SettingsTabId = 'profile' | 'appearance' | 'writing' | 'ai-models' | 'read-aloud' | 'characters' | 'advanced';
+export type SettingsTabId = 'profile' | 'appearance' | 'writing' | 'ai-models' | 'read-aloud' | 'characters' | 'advanced' | 'admin';
 
 export const SETTINGS_TABS: { id: SettingsTabId; label: string; icon: string }[] = [
   { id: 'profile',    label: 'Profile',    icon: 'person' },
@@ -50,6 +50,8 @@ export const SETTINGS_TABS: { id: SettingsTabId; label: string; icon: string }[]
   { id: 'read-aloud', label: 'Read Aloud', icon: 'record_voice_over' },
   { id: 'characters', label: 'Characters', icon: 'groups' },
   { id: 'advanced',   label: 'Advanced',   icon: 'tune' },
+  // SA users only — see visibleTabs.
+  { id: 'admin',      label: 'Admin',      icon: 'admin_panel_settings' },
 ];
 
 @Component({
@@ -63,26 +65,26 @@ export const SETTINGS_TABS: { id: SettingsTabId; label: string; icon: string }[]
     MatButtonToggleModule,
     MatSlideToggleModule,
     VoicePickerComponent,
-    DatePipe,
-    DecimalPipe,
+    AdminSettingsComponent,
   ],
   templateUrl: './user-settings.html',
   styleUrl: './user-settings.scss',
 })
-export class UserSettingsComponent implements OnDestroy {
+export class UserSettingsComponent {
   private settingsService = inject(UserSettingsService);
   private snackBar = inject(MatSnackBar);
   private headerService = inject(HeaderService);
   private contentFilterService = inject(ContentFilterService);
   private appUpdateService = inject(AppUpdateService);
-  private backupService = inject(DatabaseBackupService);
+  private saAccess = inject(SaAccessService);
   private router = inject(Router);
   private route = inject(ActivatedRoute);
 
   @ViewChild('avatarFileInput') avatarFileInput!: ElementRef<HTMLInputElement>;
   @ViewChild('avatarVideoInput') avatarVideoInput!: ElementRef<HTMLInputElement>;
 
-  readonly tabs = SETTINGS_TABS;
+  readonly isSa = this.saAccess.isSa;
+  readonly tabs = computed(() => SETTINGS_TABS.filter(t => t.id !== 'admin' || this.isSa()));
   readonly activeTab = signal<SettingsTabId>(this.tabFromUrl());
 
   readonly items = this.settingsService.ghostCompleteItems;
@@ -126,11 +128,7 @@ export class UserSettingsComponent implements OnDestroy {
       }
     });
     this.contentFilterService.loadFromServer();
-    void this.backupService.load();
-  }
-
-  ngOnDestroy(): void {
-    this.backupService.stopPolling();
+    void this.saAccess.load();
   }
 
   /** Keeps the tab in ?tab= so a refresh or shared link lands on the same section. */
@@ -423,26 +421,5 @@ export class UserSettingsComponent implements OnDestroy {
     if (this.updatingApp()) return;
     this.updatingApp.set(true);
     void this.appUpdateService.forceUpdate();
-  }
-
-  // Database backups
-  readonly backupStatus = this.backupService.status;
-  readonly backupLoadError = this.backupService.loadError;
-  readonly startingBackup = signal(false);
-  readonly backupTotalDocuments = computed(() => {
-    const counts = this.backupStatus()?.lastRun?.documentCounts;
-    return counts ? Object.values(counts).reduce((a, b) => a + b, 0) : null;
-  });
-
-  async runBackupNow(): Promise<void> {
-    if (this.startingBackup() || this.backupStatus()?.running) return;
-    this.startingBackup.set(true);
-    const error = await this.backupService.runNow();
-    this.startingBackup.set(false);
-    this.snackBar.open(error ?? 'Backup started', 'OK', { duration: 3000 });
-  }
-
-  backupFileLabel(name: string): string {
-    return name.replace(/^backups\//, '');
   }
 }

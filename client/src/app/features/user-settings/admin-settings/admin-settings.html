@@ -1,0 +1,139 @@
+<!-- SA Users -->
+<section class="settings-section">
+  <div class="section-header">
+    <h3>SA Users</h3>
+    <p class="section-desc">
+      SA users can manage database backups and decide who else is an SA. You can't remove
+      your own access, and there is always at least one SA.
+    </p>
+  </div>
+
+  <ul class="row-list">
+    @for (email of saEmails(); track email) {
+      <li>
+        <mat-icon>admin_panel_settings</mat-icon>
+        <span class="row-name">{{ email }}</span>
+        @if (email === myEmail()) {
+          <span class="row-meta">you</span>
+        } @else {
+          <button mat-icon-button class="row-action" (click)="revokeSa(email)" matTooltip="Remove SA access"
+            [attr.aria-label]="'Remove SA access for ' + email">
+            <mat-icon>close</mat-icon>
+          </button>
+        }
+      </li>
+    }
+  </ul>
+
+  <div class="add-row">
+    <mat-form-field appearance="outline" class="add-field">
+      <mat-label>Email to give SA access</mat-label>
+      <input matInput type="email" [value]="newSaEmail()" [matAutocomplete]="saAuto"
+        (input)="newSaEmail.set($any($event.target).value)"
+        (keyup.enter)="grantSa()" />
+      <mat-autocomplete #saAuto="matAutocomplete" (optionSelected)="newSaEmail.set($event.option.value)">
+        @for (user of saSuggestions(); track user.email) {
+          <mat-option [value]="user.email">
+            {{ user.email }}@if (user.displayName) { <span class="option-name"> · {{ user.displayName }}</span> }
+          </mat-option>
+        }
+      </mat-autocomplete>
+    </mat-form-field>
+    <button mat-flat-button [disabled]="!newSaEmail().trim() || savingSa()" (click)="grantSa()">
+      <mat-icon>person_add</mat-icon> Grant
+    </button>
+  </div>
+</section>
+
+<!-- Database Backups -->
+<section class="settings-section">
+  <div class="section-header">
+    <h3>Database Backups</h3>
+    <p class="section-desc">
+      The whole database is zipped to blob storage once a week, one JSON-lines file per container.
+      Backups older than a month are deleted automatically. Restoring only adds records that are
+      missing — existing records are never overwritten.
+    </p>
+  </div>
+
+  @if (backupLoadError() && !backupStatus()) {
+    <p class="meta">Couldn't load backup status.</p>
+  }
+  @if (backupStatus(); as status) {
+    <div class="meta">
+      @if (status.running) {
+        <span class="state"><mat-icon>schedule</mat-icon> Backup in progress…</span>
+      } @else if (status.lastRun?.status === 'failed') {
+        <span class="state failed">
+          <mat-icon>error</mat-icon>
+          Last backup failed {{ status.lastRun?.finishedAt | date: 'medium' }}: {{ status.lastRun?.error }}
+        </span>
+      }
+      @if (status.restore; as restore) {
+        @if (restore.status === 'running') {
+          <span class="state">
+            <mat-icon>schedule</mat-icon>
+            Restoring {{ backupFileName(restore.backupName) }}…
+            @if (restoreProgress(); as p) { {{ p.done | number }} / {{ p.total | number }} records checked }
+          </span>
+        } @else if (restore.status === 'succeeded') {
+          <span class="state">
+            <mat-icon>check_circle</mat-icon>
+            Restore from {{ backupFileName(restore.backupName) }} finished {{ restore.finishedAt | date: 'medium' }}:
+            {{ restore.created | number }} added, {{ restore.skipped | number }} already existed
+          </span>
+        } @else {
+          <span class="state failed">
+            <mat-icon>error</mat-icon>
+            Restore from {{ backupFileName(restore.backupName) }} failed after adding {{ restore.created | number }}: {{ restore.error }}
+          </span>
+        }
+      }
+      <div>
+        Last successful backup:
+        <strong>{{ status.lastSuccessAt ? (status.lastSuccessAt | date: 'medium') : 'never' }}</strong>
+        @if (status.lastRun?.status === 'succeeded' && backupTotalDocuments() !== null) {
+          ({{ backupTotalDocuments() | number }} documents)
+        }
+      </div>
+      <div>
+        Next automatic backup:
+        <strong>{{ status.nextScheduledAt ? (status.nextScheduledAt | date: 'medium') : 'within the hour' }}</strong>
+      </div>
+    </div>
+
+    @if (status.backups.length) {
+      <ul class="row-list">
+        @for (backup of status.backups; track backup.name) {
+          <li>
+            <mat-icon>history</mat-icon>
+            <span class="row-name">{{ backupFileName(backup.name) }}</span>
+            @if (backup.sizeBytes !== null) {
+              <span class="row-meta">{{ backup.sizeBytes / 1048576 | number: '1.1-1' }} MB</span>
+            }
+            <button mat-icon-button class="row-action" matTooltip="Download"
+              [disabled]="busyBackup() === backup.name" (click)="downloadBackup(backup.name)"
+              [attr.aria-label]="'Download ' + backup.name">
+              <mat-icon>download</mat-icon>
+            </button>
+            <button mat-icon-button class="row-action" matTooltip="Restore missing records"
+              [disabled]="restoreRunning() || busyBackup() === backup.name" (click)="restoreBackup(backup.name)"
+              [attr.aria-label]="'Restore from ' + backup.name">
+              <mat-icon>settings_backup_restore</mat-icon>
+            </button>
+            <button mat-icon-button class="row-action" matTooltip="Delete"
+              [disabled]="restoreRunning() || busyBackup() === backup.name" (click)="deleteBackup(backup.name)"
+              [attr.aria-label]="'Delete ' + backup.name">
+              <mat-icon>delete</mat-icon>
+            </button>
+          </li>
+        }
+      </ul>
+    }
+  }
+
+  <button mat-flat-button [disabled]="startingBackup() || backupStatus()?.running" (click)="runBackupNow()">
+    <mat-icon>cloud_upload</mat-icon>
+    {{ backupStatus()?.running ? 'Backing up…' : 'Back up now' }}
+  </button>
+</section>

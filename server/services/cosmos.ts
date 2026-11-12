@@ -166,6 +166,12 @@ export async function listContainerDefinitions(): Promise<ContainerDefinition[]>
   return resources;
 }
 
+/** Creates a container from a full definition (e.g. one read from a backup) if it doesn't exist. */
+export async function createContainerIfMissing(def: ContainerDefinition): Promise<Container> {
+  const { container } = await database.containers.createIfNotExists(def as any);
+  return container;
+}
+
 export async function initDatabase(): Promise<void> {
   await client.databases.createIfNotExists({
     id: config.cosmosDatabase,

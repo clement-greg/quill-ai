@@ -64,6 +64,10 @@ export class FakeContainer {
 
   items = {
     create: async (doc: FakeDoc) => {
+      // Like Cosmos: create never replaces an existing document.
+      if (this.docs.has(doc.id)) {
+        throw Object.assign(new Error('Entity with the specified id already exists'), { code: 409 });
+      }
       this.docs.set(doc.id, clone(doc));
       return { resource: clone(doc) };
     },

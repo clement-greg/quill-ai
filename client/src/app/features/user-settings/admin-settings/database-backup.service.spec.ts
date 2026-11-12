@@ -10,6 +10,7 @@ const idle: DatabaseBackupStatus = {
   nextScheduledAt: '2026-11-08T00:00:00.000Z',
   lastRun: null,
   backups: [],
+  restore: null,
 };
 
 describe('DatabaseBackupService', () => {
@@ -63,5 +64,21 @@ describe('DatabaseBackupService', () => {
     await Promise.resolve();
     httpMock.expectOne('/api/backups').flush({ ...idle, running: true });
     expect(await run).toBe('A backup is already running');
+  });
+
+  it('addresses backups by file name for delete and restore', async () => {
+    const del = service.delete('backups/quill-backup-2026-11-12T15-44-20Z.zip');
+    const req = httpMock.expectOne('/api/backups/quill-backup-2026-11-12T15-44-20Z.zip');
+    expect(req.request.method).toBe('DELETE');
+    req.flush(null, { status: 204, statusText: 'No Content' });
+    await Promise.resolve();
+    await Promise.resolve();
+    httpMock.expectOne('/api/backups').flush(idle);
+    expect(await del).toBeNull();
+
+    const restore = service.restore('backups/quill-backup-2026-11-12T15-44-20Z.zip');
+    httpMock.expectOne('/api/backups/quill-backup-2026-11-12T15-44-20Z.zip/restore')
+      .flush({ error: 'A restore is already running' }, { status: 409, statusText: 'Conflict' });
+    expect(await restore).toBe('A restore is already running');
   });
 });

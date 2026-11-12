@@ -13,16 +13,9 @@
  *
  * Get the zip from the storage account's backups/ folder.
  */
-import readline from 'readline';
-import yauzl from 'yauzl';
 import { CosmosClient } from '@azure/cosmos';
 import config from '../server/config';
-
-interface ManifestContainer {
-  file: string;
-  documentCount: number;
-  definition: { id: string; [key: string]: unknown };
-}
+import { openBackupArchive } from '../server/services/backup-archive';
 
 function parseArgs(argv: string[]) {
   const args = { zip: '', database: '', containers: null as string[] | null, dryRun: false };
@@ -40,37 +33,10 @@ function parseArgs(argv: string[]) {
   return args;
 }
 
-function openZip(path: string): Promise<yauzl.ZipFile> {
-  return new Promise((resolve, reject) =>
-    yauzl.open(path, { lazyEntries: true, autoClose: false }, (err, zip) => (err || !zip ? reject(err) : resolve(zip))));
-}
-
-async function entriesOf(zip: yauzl.ZipFile): Promise<Map<string, yauzl.Entry>> {
-  const entries = new Map<string, yauzl.Entry>();
-  await new Promise<void>((resolve, reject) => {
-    zip.on('entry', (e: yauzl.Entry) => { entries.set(e.fileName, e); zip.readEntry(); });
-    zip.on('end', resolve);
-    zip.on('error', reject);
-    zip.readEntry();
-  });
-  return entries;
-}
-
-function streamOf(zip: yauzl.ZipFile, entry: yauzl.Entry): Promise<NodeJS.ReadableStream> {
-  return new Promise((resolve, reject) =>
-    zip.openReadStream(entry, (err, s) => (err || !s ? reject(err) : resolve(s))));
-}
-
 async function main() {
   const args = parseArgs(process.argv.slice(2));
-  const zip = await openZip(args.zip);
-  const entries = await entriesOf(zip);
-
-  const manifestEntry = entries.get('manifest.json');
-  if (!manifestEntry) throw new Error('manifest.json not found — not a Quill AI backup?');
-  let manifestText = '';
-  for await (const chunk of await streamOf(zip, manifestEntry)) manifestText += chunk;
-  const manifest = JSON.parse(manifestText) as { createdAt: string; database: string; containers: ManifestContainer[] };
+  const archive = await openBackupArchive(args.zip);
+  const { manifest } = archive;
 
   console.log(`Backup of '${manifest.database}' taken ${manifest.createdAt}`);
   console.log(`Restoring into '${args.database}'${args.dryRun ? ' (dry run)' : ''}`);
@@ -82,18 +48,14 @@ async function main() {
 
   for (const c of manifest.containers) {
     if (args.containers && !args.containers.includes(c.definition.id)) continue;
-    const entry = entries.get(c.file);
-    if (!entry) { console.warn(`  ${c.definition.id}: ${c.file} missing from zip, skipped`); continue; }
     if (!database) { console.log(`  ${c.definition.id}: ${c.documentCount} documents`); continue; }
 
     const { container } = await database.containers.createIfNotExists(c.definition as any);
     let created = 0;
     let skipped = 0;
-    const lines = readline.createInterface({ input: await streamOf(zip, entry), crlfDelay: Infinity });
-    for await (const line of lines) {
-      if (!line.trim()) continue;
+    for await (const doc of archive.documents(c.file)) {
       try {
-        await container.items.create(JSON.parse(line));
+        await container.items.create(doc);
         created++;
       } catch (err: any) {
         if (err.code !== 409) throw err; // 409: already exists — never overwrite
@@ -104,7 +66,7 @@ async function main() {
     }
     console.log(`\r  ${c.definition.id}: ${created} created, ${skipped} skipped (already existed) of ${c.documentCount}`);
   }
-  zip.close();
+  archive.close();
 }
 
 main().catch(err => { console.error(err); process.exit(1); });
