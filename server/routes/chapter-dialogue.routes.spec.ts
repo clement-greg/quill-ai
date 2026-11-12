@@ -95,6 +95,20 @@ describe('POST /api/chapters/:id/dialogue', () => {
     expect(res.body.dialogue).toEqual({ kept: ['ann'] });
   });
 
+  it('retries a content-filtered batch paragraph by paragraph, reading refused ones as narration', async () => {
+    const filtered = Object.assign(new Error('filtered'), { code: 'content_filter' });
+    create
+      .mockRejectedValueOnce(filtered) // the batch
+      .mockResolvedValueOnce({ choices: [{ message: { content: JSON.stringify({ paragraphs: [{ id: 'P1', speakers: ['C1', 'C2'] }] }) } }] })
+      .mockRejectedValueOnce(filtered); // the second paragraph on its own
+    const res = await request(app).post('/api/chapters/ch-a/dialogue').set('x-test-user', USER_A).send({
+      keys: ['a', 'b'],
+      pending: [{ key: 'a', text: PARA, spans: SPANS }, { key: 'b', text: PARA, spans: SPANS }],
+    });
+    expect(res.body.dialogue).toEqual({ a: ['ann', 'bob'], b: [null, null] });
+    expect(create).toHaveBeenCalledTimes(3);
+  });
+
   it('rejects malformed spans and hides other users’ chapters', async () => {
     const bad = await request(app).post('/api/chapters/ch-a/dialogue').set('x-test-user', USER_A)
       .send({ keys: ['x'], pending: [{ key: 'x', text: 'short', spans: [{ start: 0, end: 99 }] }] });

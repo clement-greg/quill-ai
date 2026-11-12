@@ -79,6 +79,15 @@ describe('DialogueSpeakersComponent', () => {
     expect(groups.get('dialogue-pending')!.map(r => r.toString())).toEqual(['"New line,"']);
   });
 
+  it('marks lines without a speaker as being worked out while tagging runs', () => {
+    const { update, tagging } = setup({ [key(0)]: ['ann', null] });
+    tagging.tagging.set(new Set(['ch']));
+    TestBed.tick();
+    const groups = update.mock.calls.at(-1)![1] as Map<string, Range[]>;
+    expect(groups.get('dialogue-working')!.map(r => r.toString())).toEqual(['"New line,"']);
+    expect(groups.has('dialogue-pending')).toBe(false);
+  });
+
   it('paints nothing when dialogue colors are off, but still finds lines for the card', () => {
     const { update, remove, cmp, caretIn } = setup({ [key(0)]: ['ann', null] }, false);
     expect(update).not.toHaveBeenCalled();

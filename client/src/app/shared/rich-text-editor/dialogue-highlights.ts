@@ -12,7 +12,9 @@ export const SPEAKER_COLORS = ['#1e88e5', '#e53935', '#43a047', '#8e24aa', '#f45
 export const speakerHighlight = (slot: number) => `dialogue-${slot % SPEAKER_COLORS.length}`;
 export const NARRATION_HIGHLIGHT = 'dialogue-none';
 export const PENDING_HIGHLIGHT = 'dialogue-pending';
-const NAMES = [...SPEAKER_COLORS.map((_, i) => speakerHighlight(i)), NARRATION_HIGHLIGHT, PENDING_HIGHLIGHT];
+/** Not attributed yet, and being worked out right now. */
+export const WORKING_HIGHLIGHT = 'dialogue-working';
+const NAMES = [...SPEAKER_COLORS.map((_, i) => speakerHighlight(i)), NARRATION_HIGHLIGHT, PENDING_HIGHLIGHT, WORKING_HIGHLIGHT];
 
 interface HighlightRegistry { set(name: string, value: unknown): void; delete(name: string): void }
 type HighlightCtor = new (...ranges: Range[]) => { priority: number };
