@@ -1,4 +1,4 @@
-import { AzureSpeechEngine } from './azure-speech-engine';
+import { AzureSpeechEngine, segmentPieces } from './azure-speech-engine';
 import { ReadAloudSegment, SpeechEngineListener, SpeechPlayRequest } from './read-aloud.model';
 
 const seg = (text: string, blockIndex = 0): ReadAloudSegment =>
@@ -172,4 +172,45 @@ describe('AzureSpeechEngine', () => {
     await vi.advanceTimersByTimeAsync(0);
     expect(listener.progress).toHaveBeenLastCalledWith(2);
   });
+
+  it('speaks a character\'s dialogue in their voice and the rest in the narration voice', async () => {
+    vi.useFakeTimers();
+    const { engine, audio, source } = setup();
+    const voiced: ReadAloudSegment = {
+      ...seg('"Hi," Ann said.'),
+      parts: [{ text: '"Hi,"', voiceId: 'azure:en-US-AnnNeural' }, { text: ' Ann said.', voiceId: null }],
+    };
+    engine.play(request({ segments: [voiced], startIndex: 0 }));
+    await vi.advanceTimersByTimeAsync(0);
+    expect(source).toHaveBeenNthCalledWith(1, '"Hi,"', 'azure:en-US-AnnNeural', 1.25, expect.any(AbortSignal));
+    expect(source).toHaveBeenNthCalledWith(2, 'Ann said.', 'azure:en-US-JaneNeural', 1.25, expect.any(AbortSignal));
+    audio.onended!();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(audio.src).toBe('blob:2');
+    expect(source).toHaveBeenCalledTimes(2);
+  });
 });
+
+describe('segmentPieces', () => {
+  it('splits each voiced part into chunks and drops punctuation-only leftovers', () => {
+    const s: ReadAloudSegment = {
+      ...seg('"Go." He sighed. Fine.'),
+      parts: [
+        { text: '"Go."', voiceId: 'azure:Bob' },
+        { text: ' He sighed. ', voiceId: null },
+        { text: 'Fine', voiceId: 'azure:Bob' },
+        { text: '.', voiceId: null },
+      ],
+    };
+    expect(segmentPieces(s, 'azure:Jane')).toEqual([
+      { text: '"Go."', voiceId: 'azure:Bob' },
+      { text: 'He sighed.', voiceId: 'azure:Jane' },
+      { text: 'Fine', voiceId: 'azure:Bob' },
+    ]);
+  });
+
+  it('reads a plain paragraph in the narration voice', () => {
+    expect(segmentPieces(seg('Just this.'), 'azure:Jane')).toEqual([{ text: 'Just this.', voiceId: 'azure:Jane' }]);
+  });
+});
+

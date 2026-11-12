@@ -1,9 +1,21 @@
+import { ChapterDialogue, VoicedPart } from '@shared/models/dialogue.model';
+
 /** A chapter handed to the read-aloud player. */
 export interface ReadAloudChapter {
   id: string;
   title: string;
   /** The chapter's HTML (live editor content when it's open). */
   html: string;
+  /** Who speaks each line of dialogue (stored on the chapter after a save). */
+  dialogue?: ChapterDialogue;
+}
+
+/** Voices of a series' characters, for reading their dialogue in their own voice. */
+export interface ReadAloudCast {
+  /** The narrator's voice: used for narration instead of the reader's voice. */
+  narratorVoiceId?: string | null;
+  /** Entity id → Microsoft voice id, for characters that have one. */
+  voices: Readonly<Record<string, string>>;
 }
 
 /** One spoken unit: a chapter title or one paragraph of a chapter. */
@@ -15,6 +27,9 @@ export interface ReadAloudSegment {
   /** The paragraph's index in parseContentBlocks() order; -1 for the chapter title. */
   blockIndex: number;
   text: string;
+  /** The paragraph split by voice when some dialogue has a character's voice
+   *  (null voice = the narration voice); the parts' text joins to `text`. */
+  parts?: VoicedPart[];
 }
 
 /** Where a whole book is being read, sent with chat requests so a note lands there. */

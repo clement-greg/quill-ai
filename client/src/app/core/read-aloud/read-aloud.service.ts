@@ -5,7 +5,7 @@ import { AzureSpeechClient, AzureVoice } from './azure-speech-client';
 import { AzureSpeechEngine } from './azure-speech-engine';
 import { NativeSpeechEngine } from './native-speech-engine';
 import {
-  EngineStatus, isAzureVoice, PLAYHEAD_TEXT_MAX, ReadAloudChapter, ReadAloudPlayhead, ReadAloudSegment, ReadAloudState, ReadAloudVoice, SpeechEngine,
+  EngineStatus, isAzureVoice, PLAYHEAD_TEXT_MAX, ReadAloudCast, ReadAloudChapter, ReadAloudPlayhead, ReadAloudSegment, ReadAloudState, ReadAloudVoice, SpeechEngine,
 } from './read-aloud.model';
 import { buildSegments, findSegmentIndex, nextChapterStart, previousChapterStart, sortVoices } from './read-aloud-segments';
 import { RoutedSpeechEngine } from './routed-speech-engine';
@@ -46,6 +46,9 @@ export interface ReadAloudStartOptions {
   chapterId?: string;
   /** Paragraph to start at within that chapter; omitted or -1 starts with the chapter title. */
   blockIndex?: number | null;
+  /** The series' character voices (Microsoft voices only). The narrator's voice
+   *  replaces the reader's for narration; characters' dialogue uses theirs. */
+  cast?: ReadAloudCast | null;
 }
 
 /** App-wide read-aloud player: the queue, where it is, and the controls. */
@@ -79,6 +82,14 @@ export class ReadAloudService {
   readonly bookId = signal<string | null>(null);
   /** Reading reached the end of the queue. */
   readonly finished = signal(false);
+  /** Character voices of what's loaded, when this engine can play them. */
+  readonly cast = signal<ReadAloudCast | null>(null);
+  /** The narrator's own voice, which reads narration in place of `voiceId` while
+   *  set (and Microsoft voices are available). */
+  readonly narratorVoiceId = computed(() => {
+    const id = this.cast()?.narratorVoiceId;
+    return id && isAzureVoice(id) && this.azureCatalog().length ? id : null;
+  });
 
   /** True while a queue is loaded (the player bar is showing). */
   readonly active = computed(() => this.segments().length > 0);
@@ -159,10 +170,12 @@ export class ReadAloudService {
    */
   attach(chapters: readonly ReadAloudChapter[], options: ReadAloudStartOptions, status: EngineStatus): boolean {
     if (!this.engine || status.state === 'idle') return false;
-    const segments = buildSegments(chapters);
+    const cast = this.usableCast(options.cast);
+    const segments = buildSegments(chapters, cast);
     if (!segments.length || segments.length !== status.count || !segments[status.index]) return false;
     this.bookTitle = options.bookTitle;
     this.bookId.set(options.bookId ?? null);
+    this.cast.set(cast);
     this.segments.set(segments);
     this.index.set(status.index);
     this.error.set(null);
@@ -176,10 +189,12 @@ export class ReadAloudService {
   /** Loads the chapters and starts reading at the requested place. */
   start(chapters: readonly ReadAloudChapter[], options: ReadAloudStartOptions): void {
     if (!this.engine) return;
-    const segments = buildSegments(chapters);
+    const cast = this.usableCast(options.cast);
+    const segments = buildSegments(chapters, cast);
     if (!segments.length) return;
     this.bookTitle = options.bookTitle;
     this.bookId.set(options.bookId ?? null);
+    this.cast.set(cast);
     this.segments.set(segments);
     const index = options.chapterId ? findSegmentIndex(segments, options.chapterId, options.blockIndex) : 0;
     this.playFrom(index);
@@ -204,6 +219,7 @@ export class ReadAloudService {
     this.restartOnResume = false;
     this.finished.set(false);
     this.bookId.set(null);
+    this.cast.set(null);
   }
 
   seek(index: number): void {
@@ -294,11 +310,19 @@ export class ReadAloudService {
     this.engine.play({
       segments: this.segments(),
       startIndex: index,
-      voiceId: this.voiceId(),
+      voiceId: this.narratorVoiceId() ?? this.voiceId(),
       rate: this.rate(),
       bookTitle: this.bookTitle,
       bookId: this.bookId(),
     });
+  }
+
+  /** Character voices are Microsoft voices, so only engines that play those get them. */
+  private usableCast(cast: ReadAloudCast | null | undefined): ReadAloudCast | null {
+    if (!cast || !this.engine?.supportsAzure) return null;
+    const voices = Object.fromEntries(Object.entries(cast.voices).filter(([, id]) => isAzureVoice(id)));
+    const narratorVoiceId = isAzureVoice(cast.narratorVoiceId) ? cast.narratorVoiceId : null;
+    return Object.keys(voices).length || narratorVoiceId ? { narratorVoiceId, voices } : null;
   }
 
   /** Voices differ between the iPhone app and browsers, so each remembers its own. */

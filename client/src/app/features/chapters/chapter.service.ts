@@ -4,6 +4,7 @@ import { Observable, tap } from 'rxjs';
 import { Chapter } from '@shared/models/chapter.model';
 import { ContentFilterWarning } from '@shared/models/chapter-chunk.model';
 import { WritingStatsCacheService } from '@app/features/writing-stats/writing-stats-cache.service';
+import { DialogueTaggingService } from './dialogue-tagging.service';
 
 /** A chapter save response, optionally carrying paragraphs the content filter
  * kept out of the search index. */
@@ -13,6 +14,7 @@ export type ChapterSaveResult = Chapter & { contentWarnings?: ContentFilterWarni
 export class ChapterService {
   private http = inject(HttpClient);
   private writingStatsCache = inject(WritingStatsCacheService);
+  private dialogue = inject(DialogueTaggingService);
   private readonly apiUrl = '/api/chapters';
 
   getAll(): Observable<Chapter[]> {
@@ -29,12 +31,18 @@ export class ChapterService {
 
   create(chapter: Chapter): Observable<ChapterSaveResult> {
     return this.http.post<ChapterSaveResult>(this.apiUrl, chapter)
-      .pipe(tap(() => this.writingStatsCache.invalidate()));
+      .pipe(tap(saved => this.afterSave(saved)));
   }
 
   update(chapter: Chapter): Observable<ChapterSaveResult> {
     return this.http.put<ChapterSaveResult>(`${this.apiUrl}/${chapter.id}`, chapter)
-      .pipe(tap(() => this.writingStatsCache.invalidate()));
+      .pipe(tap(saved => this.afterSave(saved)));
+  }
+
+  /** Stats are stale, and new dialogue needs its speakers worked out (in the background). */
+  private afterSave(saved: Chapter): void {
+    this.writingStatsCache.invalidate();
+    this.dialogue.tag(saved);
   }
 
   delete(id: string): Observable<void> {

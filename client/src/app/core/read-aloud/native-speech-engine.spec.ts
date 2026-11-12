@@ -36,6 +36,19 @@ describe('NativeSpeechEngine', () => {
     expect(speech.stop).toHaveBeenCalled();
   });
 
+  it('sends each paragraph\'s voiced parts when dialogue has a character\'s voice', () => {
+    const { speech, engine } = setup();
+    const parts = [{ text: '"Hi,"', voiceId: 'azure:Ann' }, { text: ' Ann said.', voiceId: null }];
+    const segments = [
+      { chapterId: 'a', chapterIndex: 0, chapterTitle: 'T', blockIndex: 0, text: '"Hi," Ann said.', parts },
+      { chapterId: 'a', chapterIndex: 0, chapterTitle: 'T', blockIndex: 1, text: 'Plain.' },
+    ];
+    engine.play({ segments, startIndex: 0, voiceId: 'azure:Jane', rate: 1, bookTitle: 'Book' });
+    const sent = vi.mocked(speech.play).mock.calls[0]![0].segments;
+    expect(sent[0].parts).toEqual(parts);
+    expect('parts' in sent[1]).toBe(false);
+  });
+
   it('relays events dispatched by the app', () => {
     const { listener } = setup();
     const fire = (detail: unknown) => window.dispatchEvent(new CustomEvent(NATIVE_SPEECH_EVENT, { detail }));

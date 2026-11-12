@@ -1,4 +1,4 @@
-import { ReadAloudVoice, SpeechEngine, SpeechEngineListener, SpeechPlayRequest } from './read-aloud.model';
+import { ReadAloudSegment, ReadAloudVoice, SpeechEngine, SpeechEngineListener, SpeechPlayRequest } from './read-aloud.model';
 import { splitIntoChunks } from './read-aloud-segments';
 
 /** Fetches a paragraph's audio: MP3 of `text` in `voiceId` at `rate`. */
@@ -25,6 +25,25 @@ interface CachedAudio {
   controller: AbortController;
 }
 
+/** A piece of a paragraph to fetch and play: up to AZURE_PIECE_CHARS in one voice. */
+export interface AzurePiece {
+  text: string;
+  voiceId: string;
+}
+
+/**
+ * A paragraph's pieces: its voiced parts (a character's dialogue in their
+ * voice, the rest in `narrationVoice`), each split into sentence-sized chunks.
+ */
+export function segmentPieces(segment: ReadAloudSegment, narrationVoice: string): AzurePiece[] {
+  const parts = segment.parts ?? [{ text: segment.text, voiceId: null }];
+  return parts.flatMap(part =>
+    splitIntoChunks(part.text, AZURE_PIECE_CHARS)
+      // A part can be left with just punctuation (the full stop after a thought): nothing to say.
+      .filter(text => !segment.parts || /[\p{L}\p{N}]/u.test(text))
+      .map(text => ({ text, voiceId: part.voiceId ?? narrationVoice })));
+}
+
 /**
  * Plays Microsoft Azure neural voices in the browser: each paragraph is split
  * into sentence-sized pieces, the server turns each into MP3, and they play in
@@ -38,7 +57,7 @@ export class AzureSpeechEngine implements SpeechEngine {
   private request: SpeechPlayRequest | null = null;
   private index = 0;
   /** The current paragraph's pieces, and which one is playing. */
-  private pieces: string[] = [];
+  private pieces: AzurePiece[] = [];
   private piece = 0;
   /** Bumped on every jump/stop so late fetches and events from older paragraphs are ignored. */
   private generation = 0;
@@ -136,7 +155,7 @@ export class AzureSpeechEngine implements SpeechEngine {
     }
     this.generation++;
     this.index = index;
-    this.pieces = splitIntoChunks(segments[index]!.text, AZURE_PIECE_CHARS);
+    this.pieces = segmentPieces(segments[index]!, request.voiceId ?? '');
     this.piece = 0;
     this.loaded = false;
     this.listener.progress(index);
@@ -156,7 +175,7 @@ export class AzureSpeechEngine implements SpeechEngine {
     this.listener.state('playing');
     const current = this.fetch(this.pieces[piece]!, request);
     // Download what comes next alongside, so slow voices stay ahead.
-    for (const text of this.upcoming(request)) this.fetch(text, request).catch(() => {});
+    for (const next of this.upcoming(request)) this.fetch(next, request).catch(() => {});
     let url: string;
     try {
       url = await current;
@@ -192,10 +211,10 @@ export class AzureSpeechEngine implements SpeechEngine {
   }
 
   /** The next LOOKAHEAD pieces after the one playing, into the following paragraphs. */
-  private upcoming(request: SpeechPlayRequest): string[] {
+  private upcoming(request: SpeechPlayRequest): AzurePiece[] {
     const out = this.pieces.slice(this.piece + 1, this.piece + 1 + LOOKAHEAD);
     for (let i = this.index + 1; out.length < LOOKAHEAD && i < request.segments.length; i++) {
-      out.push(...splitIntoChunks(request.segments[i]!.text, AZURE_PIECE_CHARS).slice(0, LOOKAHEAD - out.length));
+      out.push(...segmentPieces(request.segments[i]!, request.voiceId ?? '').slice(0, LOOKAHEAD - out.length));
     }
     return out;
   }
@@ -212,9 +231,8 @@ export class AzureSpeechEngine implements SpeechEngine {
   }
 
   /** Object URL of a piece's audio, fetched once per voice and speed. */
-  private fetch(text: string, request: SpeechPlayRequest): Promise<string> {
-    const voiceId = request.voiceId ?? '';
-    const key = text;
+  private fetch({ text, voiceId }: AzurePiece, request: SpeechPlayRequest): Promise<string> {
+    const key = `${voiceId}\n${text}`;
     const hit = this.cache.get(key);
     if (hit) {
       this.cache.delete(key);

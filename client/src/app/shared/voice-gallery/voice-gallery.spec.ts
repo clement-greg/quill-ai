@@ -52,6 +52,20 @@ describe('VoiceGalleryComponent', () => {
     expect(jane.textContent).toContain('Audiobook');
   });
 
+  it('in pick mode, marks and emits the chosen voice without changing the reader\'s', () => {
+    const { fixture, cards, ra, component } = setup();
+    fixture.componentRef.setInput('mode', 'pick');
+    fixture.componentRef.setInput('selectedId', 'azure:Andrew');
+    fixture.detectChanges();
+    expect(cards()[0]!.classList).toContain('selected');
+    expect(cards()[1]!.classList).not.toContain('selected');
+    const picked = vi.fn();
+    component.picked.subscribe(picked);
+    (cards()[1]!.querySelector('.vg-choose') as HTMLElement).click();
+    expect(picked).toHaveBeenCalledWith(expect.objectContaining({ id: 'azure:Jane' }));
+    expect(ra.setVoice).not.toHaveBeenCalled();
+  });
+
   it('picks and pins a voice', () => {
     const { cards, ra } = setup();
     (cards()[0]!.querySelector('.vg-choose') as HTMLElement).click();

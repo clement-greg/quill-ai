@@ -2,6 +2,7 @@ import { TestBed } from '@angular/core/testing';
 import { ReadAloudService, SPEECH_ENGINE } from './read-aloud.service';
 import { AzureSpeechClient, AzureVoices } from './azure-speech-client';
 import { SpeechEngine, SpeechEngineListener } from './read-aloud.model';
+import { dialogueBlocks } from './dialogue-paragraphs';
 
 const BOOK = [
   { id: 'a', title: 'One', html: '<p>A1</p><p>A2</p><p>A3</p>' },
@@ -199,6 +200,14 @@ describe('ReadAloudService', () => {
     expect(localStorage.getItem('quill_read_aloud_voice_web')).toBe('system');
   });
 
+  it('ignores character voices on an engine without Microsoft voices', () => {
+    const { engine } = fakeEngine();
+    const svc = setup(engine);
+    svc.start(BOOK, { bookTitle: '', cast: { narratorVoiceId: 'azure:x', voices: { a: 'azure:y' } } });
+    expect(svc.cast()).toBeNull();
+    expect(engine.play).toHaveBeenLastCalledWith(expect.objectContaining({ voiceId: null }));
+  });
+
   describe('Microsoft voices', () => {
     const JANE = 'azure:en-US-JaneNeural';
     const ENABLED: AzureVoices = {
@@ -258,6 +267,30 @@ describe('ReadAloudService', () => {
       await svc.loadVoices();
       expect(svc.azureCatalog()).toHaveLength(2);
       expect(svc.azureDefaultId()).toBe(JANE);
+    });
+
+    it('reads narration in the narrator\'s voice, falling back to the reader\'s', async () => {
+      const { svc, engine } = setupAzure(ENABLED, 'azure:en-US-AndrewNeural');
+      await svc.loadVoices();
+      svc.start(BOOK, { bookTitle: '', cast: { narratorVoiceId: JANE, voices: {} } });
+      expect(svc.narratorVoiceId()).toBe(JANE);
+      expect(engine.play).toHaveBeenLastCalledWith(expect.objectContaining({ voiceId: JANE }));
+      svc.start(BOOK, { bookTitle: '', cast: { narratorVoiceId: null, voices: { ann: JANE } } });
+      expect(engine.play).toHaveBeenLastCalledWith(expect.objectContaining({ voiceId: 'azure:en-US-AndrewNeural' }));
+      svc.stop();
+      expect(svc.cast()).toBeNull();
+    });
+
+    it('gives character voices to the segments', async () => {
+      const { svc } = setupAzure(ENABLED);
+      await svc.loadVoices();
+      const html = '<p>"Hi," Ann said.</p>';
+      const key = dialogueBlocks(html)[0]!.key!;
+      svc.start([{ id: 'c', title: 'C', html, dialogue: { [key]: ['ann'] } }], {
+        bookTitle: '', cast: { voices: { ann: JANE, bob: 'not-azure' } },
+      });
+      expect(svc.cast()).toEqual({ narratorVoiceId: null, voices: { ann: JANE } });
+      expect(svc.segments()[1]!.parts?.[0]).toEqual({ text: '"Hi,"', voiceId: JANE });
     });
 
     it('pins and unpins voices, remembering them', () => {

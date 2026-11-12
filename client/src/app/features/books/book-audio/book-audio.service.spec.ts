@@ -57,11 +57,17 @@ describe('BookAudioService', () => {
     return { svc, http, ra, dialog, dialogRef };
   }
 
-  /** Answers the requests listen() makes. */
-  async function answerListen(http: HttpTestingController, saved: ListeningPosition[] = []) {
+  /** Answers the book request and then its series' characters (for voices). */
+  async function flushBook(http: HttpTestingController, entities: unknown[] = []) {
     http.expectOne('/api/books/b1').flush(BOOK);
+    await vi.waitFor(() => http.expectOne('/api/entities/series/s').flush(entities));
+  }
+
+  /** Answers the requests listen() makes. */
+  async function answerListen(http: HttpTestingController, saved: ListeningPosition[] = [], entities: unknown[] = []) {
     http.expectOne('/api/chapters/book/b1').flush(CHAPTERS);
     http.expectOne('/api/listening').flush(saved);
+    await flushBook(http, entities);
     await new Promise(r => setTimeout(r));
     TestBed.tick();
   }
@@ -92,6 +98,21 @@ describe('BookAudioService', () => {
     expect(svc.loading()).toBeNull();
   });
 
+  it('passes the series\' character and narrator voices to the player', async () => {
+    const { engine } = fakeEngine();
+    const azureEngine = { ...engine, supportsAzure: true };
+    const { svc, http, ra } = setup(azureEngine);
+    const done = svc.listen('b1');
+    await answerListen(http, [], [
+      { id: 'n', name: 'Narrator', type: 'PERSON', isNarrator: true, voiceId: 'azure:Jane' },
+      { id: 'ann', name: 'Ann', type: 'PERSON', voiceId: 'azure:Ann' },
+      { id: 'bob', name: 'Bob', type: 'PERSON' },
+      { id: 'old', name: 'Old', type: 'PERSON', voiceId: 'azure:Old', archived: true },
+    ]);
+    await done;
+    expect(ra.cast()).toEqual({ narratorVoiceId: 'azure:Jane', voices: { n: 'azure:Jane', ann: 'azure:Ann' } });
+  });
+
   it('resumes from the saved paragraph', async () => {
     const { engine } = fakeEngine();
     const { svc, http } = setup(engine);
@@ -110,8 +131,8 @@ describe('BookAudioService', () => {
     expect(engine.play.mock.calls[0]![0].startIndex).toBe(0);
 
     const again = svc.listen('b1', { fromStart: true });
-    http.expectOne('/api/books/b1').flush(BOOK);
     http.expectOne('/api/chapters/book/b1').flush(CHAPTERS);
+    await flushBook(http);
     await again;
     expect(engine.play.mock.calls.at(-1)![0].startIndex).toBe(0);
   });
@@ -135,7 +156,7 @@ describe('BookAudioService', () => {
   it('reports a book with nothing to read, or one that fails to load', async () => {
     const { svc, http, dialog } = setup();
     let done = svc.listen('b1');
-    http.expectOne('/api/books/b1').flush(BOOK);
+    await flushBook(http);
     http.expectOne('/api/chapters/book/b1').flush([]);
     http.expectOne('/api/listening').flush([]);
     await done;
@@ -235,6 +256,7 @@ describe('BookAudioService', () => {
 
     async function answerAdopt(http: HttpTestingController) {
       await vi.waitFor(() => http.expectOne('/api/books/b1').flush(BOOK));
+      await vi.waitFor(() => http.expectOne('/api/entities/series/s').flush([]));
       http.expectOne('/api/chapters/book/b1').flush(CHAPTERS);
       await vi.waitFor(() => expect(TestBed.inject(ReadAloudService).active()).toBe(true));
     }
@@ -260,6 +282,7 @@ describe('BookAudioService', () => {
       const { engine } = nativeEngine({ index: 3, state: 'paused', count: 9, bookId: 'b1' });
       const { svc, http, ra } = setup(engine);
       await vi.waitFor(() => http.expectOne('/api/books/b1').flush(BOOK));
+      await vi.waitFor(() => http.expectOne('/api/entities/series/s').flush([]));
       http.expectOne('/api/chapters/book/b1').flush(CHAPTERS);
       await new Promise(r => setTimeout(r));
       expect(ra.active()).toBe(false);
