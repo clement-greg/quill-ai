@@ -47,6 +47,7 @@ export function findQuoteSpans(text: string): DialogueSpan[] {
   let open = -1;
   for (let i = 0; i < text.length; i++) {
     const c = text[i];
+    if (c === '"' && isInchMark(text, i, open >= 0)) continue;
     if (c === '“' || (c === '"' && open < 0)) {
       if (open < 0) open = i;
     } else if ((c === '”' || c === '"') && open >= 0) {
@@ -56,6 +57,18 @@ export function findQuoteSpans(text: string): DialogueSpan[] {
   }
   if (open >= 0 && open < text.length - 1) spans.push({ start: open, end: text.length });
   return spans;
+}
+
+/**
+ * Whether the straight double quote at i is an inch mark rather than a quote:
+ * a feet-and-inches measurement (5'11") always is; a number followed by " (12")
+ * is when no quote is open — inside a quote it's more likely the closing mark
+ * ("I'm 30").
+ */
+function isInchMark(text: string, i: number, quoteOpen: boolean): boolean {
+  const before = text.slice(Math.max(0, i - 8), i);
+  if (/\d\s?['’′]\s?\d{1,2}(\.\d+)?$/.test(before)) return true;
+  return !quoteOpen && /\d$/.test(before);
 }
 
 /**

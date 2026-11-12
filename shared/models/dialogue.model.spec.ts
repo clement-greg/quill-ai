@@ -14,6 +14,18 @@ describe('findQuoteSpans', () => {
   it('ignores apostrophes and empty quotes', () => {
     expect(findQuoteSpans("It's Tom's \"\" thing")).toEqual([]);
   });
+
+  it('ignores inch marks in measurements', () => {
+    expect(findQuoteSpans('Alisha was a 5\'11" powerfully built woman.')).toEqual([]);
+    expect(findQuoteSpans('A 12" ruler and a 6\' 2" man.')).toEqual([]);
+    const text = '"He\'s 6\'2" and mean," she said.';
+    expect(findQuoteSpans(text).map(s => text.slice(s.start, s.end))).toEqual(['"He\'s 6\'2" and mean,"']);
+  });
+
+  it('still closes a quote that ends in a number', () => {
+    const text = '"I\'m 30" he said.';
+    expect(findQuoteSpans(text).map(s => text.slice(s.start, s.end))).toEqual(['"I\'m 30"']);
+  });
 });
 
 describe('dialogueSpans', () => {
