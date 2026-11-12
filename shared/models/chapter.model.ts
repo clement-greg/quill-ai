@@ -43,6 +43,7 @@ export function noteAnchorExcerpt(paragraph: string | undefined, max = 120): str
 }
 
 import { AuditedRecord } from './audited-record';
+import { ChapterDialogue } from './dialogue.model';
 
 export interface Chapter extends AuditedRecord {
     title: string;
@@ -67,6 +68,9 @@ export interface Chapter extends AuditedRecord {
     setting?: string;
     /** When the chapter takes place in story-time (free-form, e.g. "Three days later"). */
     inStoryTime?: string;
+    /** Who speaks each line of dialogue, for character voices in read-aloud.
+     *  Written by POST /:id/dialogue after a save; a PUT keeps the stored value. */
+    dialogue?: ChapterDialogue;
 }
 
 export interface ChapterVersion {

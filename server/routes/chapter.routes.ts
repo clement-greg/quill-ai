@@ -6,7 +6,11 @@ import { Chapter } from '../../shared/models/chapter.model';
 import { ContentFilterWarning } from '../../shared/models/chapter-chunk.model';
 import { Book } from '../../shared/models/book.model';
 import { Series } from '../../shared/models/series.model';
+import { Entity } from '../../shared/models/entity.model';
+import { ChapterDialogue } from '../../shared/models/dialogue.model';
 import { withOwnerFilter, readOwnedItem, readAccessibleItem } from '../middleware/owner-guard';
+import { attributeDialogue, pruneDialogue, readPending } from '../services/dialogue-speakers';
+import { modelFor } from '../services/ai-models';
 
 const router = Router();
 const container = getContainer('chapters');
@@ -148,6 +152,11 @@ router.put('/:id', async (req: Request, res: Response) => {
     // Embeddings now live in the chapter-chunks container; strip any legacy
     // whole-chapter vector so it doesn't linger on the document (lazy migration).
     delete (chapter as { contentVector?: unknown }).contentVector;
+    // Dialogue speakers are written by POST /:id/dialogue after a save; the
+    // client's copy may predate the last one, so keep what's stored.
+    const { resource: stored } = await container.item(id, id).read<Chapter>();
+    if (stored?.dialogue) chapter.dialogue = stored.dialogue;
+    else delete chapter.dialogue;
     const { resource } = await container.item(id, id).replace<Chapter>(chapter);
     let contentWarnings: ContentFilterWarning[] = [];
     if (resource) {
@@ -160,6 +169,69 @@ router.put('/:id', async (req: Request, res: Response) => {
   } catch (err) {
     console.error('Error updating chapter:', err);
     res.status(500).json({ error: 'Failed to update chapter' });
+  }
+});
+
+// POST attribute dialogue — { keys, pending } (see DialogueTagRequest). Drops
+// attributions for paragraphs no longer in the chapter (edited or deleted) and
+// asks the model about pending paragraphs that have none yet, so each line is
+// only ever attributed once. Answers with the chapter's dialogue map.
+router.post('/:id/dialogue', async (req: Request, res: Response) => {
+  try {
+    const id = req.params['id'] as string;
+    const { keys, pending } = (req.body ?? {}) as { keys?: unknown; pending?: unknown };
+    const paragraphs = readPending(pending);
+    if (!Array.isArray(keys) || !keys.every(k => typeof k === 'string') || !paragraphs) {
+      res.status(400).json({ error: 'keys and pending are required' });
+      return;
+    }
+    const { resource: chapter } = await container.item(id, id).read<Chapter>();
+    if (!chapter || !(await canAccessBook(chapter.bookId, req))) {
+      res.status(404).json({ error: 'Chapter not found' });
+      return;
+    }
+    const current = new Set(keys as string[]);
+    const known = pruneDialogue(chapter.dialogue, current);
+    const todo = paragraphs.filter(p => current.has(p.key) && !(p.key in known));
+
+    let added: ChapterDialogue = {};
+    if (todo.length) {
+      const { resource: book } = await booksContainer.item(chapter.bookId, chapter.bookId).read<Book>();
+      const { resources: characters } = await getContainer('entities').items
+        .query<Entity>({
+          query: 'SELECT * FROM c WHERE c.seriesId = @seriesId AND c.type = @type AND (NOT IS_DEFINED(c.archived) OR c.archived = false)',
+          parameters: [{ name: '@seriesId', value: book?.seriesId ?? '' }, { name: '@type', value: 'PERSON' }],
+        })
+        .fetchAll();
+      const live = characters.filter(c => !c.deleted);
+      added = live.length
+        ? await attributeDialogue(todo, {
+          model: await modelFor(req.user, 'dialogueSpeakers'),
+          characters: live,
+          povEntityId: chapter.povEntityId,
+        })
+        // No characters to choose from: every line is narration.
+        : Object.fromEntries(todo.map(p => [p.key, p.spans.map(() => null)]));
+    }
+
+    const unchanged = !Object.keys(added).length
+      && Object.keys(known).length === Object.keys(chapter.dialogue ?? {}).length;
+    if (unchanged) {
+      res.json({ dialogue: known });
+      return;
+    }
+    // Re-read so a save that landed meanwhile isn't overwritten.
+    const { resource: fresh } = await container.item(id, id).read<Chapter>();
+    if (!fresh) {
+      res.status(404).json({ error: 'Chapter not found' });
+      return;
+    }
+    const dialogue = { ...pruneDialogue(fresh.dialogue, current), ...added };
+    await container.item(id, id).replace<Chapter>({ ...fresh, dialogue });
+    res.json({ dialogue });
+  } catch (err) {
+    console.error('Error attributing dialogue:', err);
+    res.status(500).json({ error: 'Failed to attribute dialogue' });
   }
 });
 

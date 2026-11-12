@@ -4,7 +4,8 @@ import { computed, effect, inject, Injectable, signal, untracked } from '@angula
 import { MatDialog, MatDialogRef } from '@angular/material/dialog';
 import { firstValueFrom } from 'rxjs';
 import { ReadAloudService } from '@app/core/read-aloud/read-aloud.service';
-import { PLAYHEAD_TEXT_MAX, ReadAloudChapter } from '@app/core/read-aloud/read-aloud.model';
+import { PLAYHEAD_TEXT_MAX, ReadAloudCast, ReadAloudChapter } from '@app/core/read-aloud/read-aloud.model';
+import { EntityService } from '@app/features/entities/entity.service';
 import { BookService } from '@app/features/books/book.service';
 import { ChapterService } from '@app/features/chapters/chapter.service';
 import { ChapterDraftService } from '@app/features/chapters/chapter-edit/chapter-draft.service';
@@ -43,6 +44,7 @@ export class BookAudioService {
   private readonly ra = inject(ReadAloudService);
   private readonly books = inject(BookService);
   private readonly chapters = inject(ChapterService);
+  private readonly entities = inject(EntityService);
   private readonly drafts = inject(ChapterDraftService);
   private readonly doc = inject(DOCUMENT);
 
@@ -123,8 +125,8 @@ export class BookAudioService {
     this.loading.set(bookId);
     this.error.set(null);
     try {
-      const [book, { chapters, art }, saved] = await Promise.all([
-        firstValueFrom(this.books.getById(bookId)),
+      const [{ book, cast }, { chapters, art }, saved] = await Promise.all([
+        this.loadBook(bookId),
         this.loadChapters(bookId),
         this.loadPositions().then(() => this.positionFor(bookId)),
       ]);
@@ -141,6 +143,7 @@ export class BookAudioService {
         bookId,
         chapterId: resume?.chapterId,
         blockIndex: resume?.blockIndex ?? null,
+        cast,
       });
       if (this.ra.active()) this.open();
       else this.error.set({ bookId, message: 'This book has nothing to read yet.' });
@@ -161,12 +164,12 @@ export class BookAudioService {
       const status = await this.ra.engineStatus();
       if (!status?.bookId || status.state === 'idle' || this.ra.active()) return;
       const bookId = status.bookId;
-      const [book, { chapters, art }] = await Promise.all([
-        firstValueFrom(this.books.getById(bookId)),
+      const [{ book, cast }, { chapters, art }] = await Promise.all([
+        this.loadBook(bookId),
         this.loadChapters(bookId),
       ]);
       if (this.ra.active()) return; // something else started meanwhile
-      if (this.ra.attach(chapters, { bookTitle: book.title, bookId }, status)) this.showNowPlaying(bookId, book, art);
+      if (this.ra.attach(chapters, { bookTitle: book.title, bookId, cast }, status)) this.showNowPlaying(bookId, book, art);
     } catch {
       // Nothing to take over; listen() starts from the saved position.
     }
@@ -211,6 +214,31 @@ export class BookAudioService {
     this.ra.stop();
   }
 
+  /** The book and its series' character voices. */
+  private async loadBook(bookId: string): Promise<{ book: Book; cast: ReadAloudCast | null }> {
+    const book = await firstValueFrom(this.books.getById(bookId));
+    return { book, cast: await this.loadCast(book.seriesId) };
+  }
+
+  /** Voices assigned to the series' characters and narrator; null when none are
+   *  (or they can't be loaded — the book still plays, all in the reader's voice). */
+  private async loadCast(seriesId: string | undefined): Promise<ReadAloudCast | null> {
+    if (!seriesId) return null;
+    try {
+      const list = await firstValueFrom(this.entities.getBySeries(seriesId));
+      const voices: Record<string, string> = {};
+      let narratorVoiceId: string | null = null;
+      for (const e of list) {
+        if (!e.voiceId || e.type !== 'PERSON' || e.archived || e.deleted) continue;
+        voices[e.id] = e.voiceId;
+        if (e.isNarrator) narratorVoiceId = e.voiceId;
+      }
+      return Object.keys(voices).length ? { narratorVoiceId, voices } : null;
+    } catch {
+      return null;
+    }
+  }
+
   /** Every chapter in reading order, with unsaved drafts from this device,
    *  and each chapter's picture where it has one. */
   private async loadChapters(bookId: string): Promise<LoadedChapters> {
@@ -220,7 +248,7 @@ export class BookAudioService {
       .sort((a, b) => (a.sortOrder ?? Infinity) - (b.sortOrder ?? Infinity));
     const chapters = await Promise.all(sorted.map(async c => {
       const draft = await this.drafts.resolvePendingDraft(c).catch(() => null);
-      return { id: c.id, title: c.title, html: draft?.content ?? c.content ?? '' };
+      return { id: c.id, title: c.title, html: draft?.content ?? c.content ?? '', dialogue: c.dialogue };
     }));
     const art: Record<string, string> = {};
     for (const c of sorted) {

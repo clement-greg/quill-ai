@@ -41,6 +41,7 @@ export type AiOperation =
   | 'chapterAnalysis'
   | 'entityWriting'
   | 'quoteCapture'
+  | 'dialogueSpeakers'
   | 'placeSuggestions'
   | 'chapterSummary'
   | 'imagePrompts'
@@ -69,6 +70,7 @@ export const AI_OPERATIONS: readonly AiOperationOption[] = [
   { id: 'chapterSummary', label: 'Chapter summaries', description: 'Background summaries that give the AI context on earlier chapters.', defaultModel: 'luna' },
   { id: 'entityWriting', label: 'Character writing', description: 'Generated personalities, biographies and descriptions.', defaultModel: 'luna' },
   { id: 'quoteCapture', label: 'Quote capture', description: 'Attributes a captured quote to the character who said it.', defaultModel: 'luna' },
+  { id: 'dialogueSpeakers', label: 'Dialogue speakers', description: 'Works out who says each line of dialogue on save, so read-aloud can use character voices.', defaultModel: 'luna' },
   { id: 'placeSuggestions', label: 'Place suggestions', description: 'Location autocomplete for timeline events.', defaultModel: 'luna' },
   { id: 'imagePrompts', label: 'Image prompts', description: 'Turns chapter text into a prompt for picture generation.', defaultModel: 'luna' },
   { id: 'seriesPrompt', label: 'Series system prompt', description: 'Generates a series-wide instruction prompt.', defaultModel: 'luna' },

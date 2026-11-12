@@ -19,6 +19,9 @@ import { ImageGenDialogComponent, ImageGenResult } from './image-gen-dialog';
 import { PhotoPickerDialogComponent, PhotoPickerResult } from './photo-picker-dialog';
 import { UserSettingsService } from '@app/core/services/user-settings.service';
 import { EntityLocationPickerComponent } from './entity-location-picker';
+import { EntityVoiceDialogComponent } from './entity-voice-dialog';
+import { ReadAloudService } from '@app/core/read-aloud/read-aloud.service';
+import { displayName } from '@app/shared/voice-gallery/voice-filter';
 
 @Component({
   selector: 'app-entity-edit',
@@ -44,6 +47,7 @@ export class EntityEditComponent {
   private dialog = inject(MatDialog);
   private router = inject(Router);
   private settingsService = inject(UserSettingsService);
+  private readAloud = inject(ReadAloudService);
 
   readonly genderOptions = this.settingsService.genderOptions;
   readonly raceOptions = this.settingsService.raceOptions;
@@ -92,6 +96,15 @@ export class EntityEditComponent {
 
   isNarrator = computed(() => !!this.entity().isNarrator);
 
+  /** Character voices are Microsoft voices, offered when the server has them. */
+  readonly voicesAvailable = computed(() => this.readAloud.azureCatalog().length > 0);
+  readonly voiceName = computed(() => {
+    const id = this.draft()?.voiceId;
+    if (!id) return this.isNarrator() ? "The reader's own voice" : 'Narration voice';
+    const voice = this.readAloud.azureCatalog().find(v => v.id === id);
+    return voice ? `${displayName(voice)} · ${voice.localeName}` : id.replace(/^azure:/, '');
+  });
+
   // Add-quote form
   addingQuote = signal(false);
   newQuoteText = signal('');
@@ -101,6 +114,7 @@ export class EntityEditComponent {
   editingQuoteText = signal('');
 
   constructor() {
+    void this.readAloud.loadVoices();
     effect(() => {
       const e = this.entity();
       const draft = { ...e };
@@ -112,6 +126,18 @@ export class EntityEditComponent {
       this.draft.set(draft);
       this.thumbnailPreview.set(this.proxyUrl(e.thumbnailUrl));
       if (e.id) this.loadQuotes(e.id);
+    });
+  }
+
+  chooseVoice(): void {
+    const d = this.draft();
+    if (!d) return;
+    EntityVoiceDialogComponent.open(this.dialog, {
+      name: d.name || 'this character',
+      voiceId: d.voiceId ?? null,
+      isNarrator: this.isNarrator(),
+    }).subscribe(result => {
+      if (result) this.update('voiceId', result.voiceId ?? undefined);
     });
   }
 

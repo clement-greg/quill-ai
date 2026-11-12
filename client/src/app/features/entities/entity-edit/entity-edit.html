@@ -168,6 +168,27 @@
             }
             {{ generatingPersonality() ? 'Generating…' : 'Enhance with AI' }}
           </button>
+
+          @if (voicesAvailable()) {
+            <div class="voice-section" role="group" aria-labelledby="voice-label">
+              <span id="voice-label" class="aliases-label">Read-aloud voice</span>
+              <div class="voice-row">
+                <mat-icon aria-hidden="true">record_voice_over</mat-icon>
+                <span class="voice-name">{{ voiceName() }}</span>
+                <button mat-stroked-button type="button" (click)="chooseVoice()">Choose voice</button>
+                @if (draft()!.voiceId) {
+                  <button mat-button type="button" (click)="update('voiceId', undefined)">Use default</button>
+                }
+              </div>
+              <span class="voice-hint">
+                @if (isNarrator()) {
+                  Reads all narration. Without one, each reader's own voice is used.
+                } @else {
+                  Reads this character's dialogue and thoughts. Without one, the narration voice is used.
+                }
+              </span>
+            </div>
+          }
         }
 
         <mat-form-field appearance="outline" class="entity-edit-biography">

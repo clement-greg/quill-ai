@@ -2,6 +2,7 @@ import {
   buildSegments, chapterSpans, cumulativeSeconds, estimateSeconds, findSegmentIndex, formatClock, formatDuration, segmentAtTime, nextChapterStart, previousChapterStart, sortVoices, splitIntoChunks,
 } from './read-aloud-segments';
 import { ReadAloudVoice } from './read-aloud.model';
+import { dialogueBlocks } from './dialogue-paragraphs';
 
 const BOOK = [
   { id: 'a', title: 'Arrival', html: '<p>One.</p><p>Two.</p>' },
@@ -22,6 +23,29 @@ describe('buildSegments', () => {
 
   it('returns nothing for no chapters', () => {
     expect(buildSegments([])).toEqual([]);
+  });
+});
+
+describe('buildSegments with a cast', () => {
+  const html = '<p>Night.</p><p>"Hi," Ann said. "Yo," said Bob.</p>';
+  const key = dialogueBlocks(html)[1]!.key!;
+  const chapter = { id: 'a', title: 'One', html, dialogue: { [key]: ['ann', 'bob'] } };
+
+  it('voices dialogue of characters with a voice, leaving the rest to narration', () => {
+    const segs = buildSegments([chapter], { voices: { ann: 'azure:Ann' } });
+    expect(segs[1]!.parts).toBeUndefined();
+    expect(segs[2]!.text).toBe('"Hi," Ann said. "Yo," said Bob.');
+    expect(segs[2]!.parts).toEqual([
+      { text: '"Hi,"', voiceId: 'azure:Ann' },
+      { text: ' Ann said. "Yo," said Bob.', voiceId: null },
+    ]);
+  });
+
+  it('reads everything as narration without a cast, voices, or a matching attribution', () => {
+    expect(buildSegments([chapter]).some(s => s.parts)).toBe(false);
+    expect(buildSegments([chapter], { voices: {} }).some(s => s.parts)).toBe(false);
+    const edited = { ...chapter, html: html.replace('Hi', 'Hey') };
+    expect(buildSegments([edited], { voices: { ann: 'azure:Ann' } }).some(s => s.parts)).toBe(false);
   });
 });
 

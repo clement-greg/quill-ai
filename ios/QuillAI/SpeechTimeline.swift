@@ -9,6 +9,17 @@ struct SpeechSegment: Decodable, Equatable {
     /// so a note added through Siri lands here. Older web builds don't send them.
     var chapterId: String? = nil
     var blockIndex: Int? = nil
+    /// The paragraph split by voice when some dialogue has a character's own
+    /// Microsoft voice (`voiceId` nil = the narration voice); the parts' text
+    /// joins to `text`. Older web builds don't send it.
+    var parts: [VoicedPart]? = nil
+}
+
+/// A run of a paragraph read in one voice.
+struct VoicedPart: Decodable, Equatable {
+    let text: String
+    /// A web voice id ("azure:<short name>"), or nil for the narration voice.
+    var voiceId: String? = nil
 }
 
 /// What `window.quillNative.speech.play()` sends.

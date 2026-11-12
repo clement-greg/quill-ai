@@ -1,15 +1,31 @@
 import { parseContentBlocks } from '@app/features/chapters/chapter-edit/chapter-content-blocks';
-import { ReadAloudChapter, ReadAloudSegment, ReadAloudVoice, VoiceQuality } from './read-aloud.model';
+import { voicedParts } from '@shared/models/dialogue.model';
+import { dialogueBlocks } from './dialogue-paragraphs';
+import { ReadAloudCast, ReadAloudChapter, ReadAloudSegment, ReadAloudVoice, VoiceQuality } from './read-aloud.model';
 
-/** Turns chapters into a flat play queue: each chapter's title, then its paragraphs. */
-export function buildSegments(chapters: readonly ReadAloudChapter[]): ReadAloudSegment[] {
+/**
+ * Turns chapters into a flat play queue: each chapter's title, then its
+ * paragraphs. With a cast, dialogue attributed to a character who has a voice
+ * is split out into `parts` in that voice; everything else stays narration.
+ */
+export function buildSegments(chapters: readonly ReadAloudChapter[], cast?: ReadAloudCast | null): ReadAloudSegment[] {
   const out: ReadAloudSegment[] = [];
+  const voices = cast?.voices ?? {};
+  const hasVoices = Object.keys(voices).length > 0;
   chapters.forEach((ch, chapterIndex) => {
     const chapterTitle = ch.title.trim() || 'Untitled chapter';
     const base = { chapterId: ch.id, chapterIndex, chapterTitle };
     out.push({ ...base, blockIndex: -1, text: chapterTitle });
-    parseContentBlocks(ch.html).forEach((block, blockIndex) => {
-      out.push({ ...base, blockIndex, text: block.text });
+    const dialogue = hasVoices && ch.dialogue && Object.keys(ch.dialogue).length ? ch.dialogue : null;
+    if (!dialogue) {
+      parseContentBlocks(ch.html).forEach((block, blockIndex) => {
+        out.push({ ...base, blockIndex, text: block.text });
+      });
+      return;
+    }
+    dialogueBlocks(ch.html).forEach((block, blockIndex) => {
+      const parts = block.key ? voicedParts(block.text, block.spans, dialogue[block.key], id => voices[id]) : null;
+      out.push({ ...base, blockIndex, text: block.text, ...(parts ? { parts } : {}) });
     });
   });
   return out;

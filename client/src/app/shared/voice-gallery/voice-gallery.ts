@@ -1,6 +1,6 @@
 import { DOCUMENT } from '@angular/common';
 import {
-  ChangeDetectionStrategy, Component, computed, inject, InjectionToken, OnDestroy, OnInit, signal,
+  ChangeDetectionStrategy, Component, computed, inject, InjectionToken, input, OnDestroy, OnInit, output, signal,
 } from '@angular/core';
 import { MatButtonModule } from '@angular/material/button';
 import { MatButtonToggleModule } from '@angular/material/button-toggle';
@@ -31,7 +31,9 @@ const PAGE = 48;
 /** Tags shown on a card before "+n". */
 const CARD_TAGS = 3;
 
-/** Browse, filter, preview and pick Microsoft voices. */
+/** Browse, filter, preview and pick Microsoft voices. By default picking a card
+ *  sets the reader's voice; in "pick" mode it only emits `picked` (e.g. to give a
+ *  character a voice) and `selectedId` marks the current choice. */
 @Component({
   selector: 'app-voice-gallery',
   imports: [
@@ -46,6 +48,12 @@ export class VoiceGalleryComponent implements OnInit, OnDestroy {
   readonly ra = inject(ReadAloudService);
   private readonly azure = inject(AzureSpeechClient);
   private readonly audio = inject(PREVIEW_AUDIO)();
+
+  readonly mode = input<'reader' | 'pick'>('reader');
+  /** The voice shown as selected in "pick" mode. */
+  readonly selectedId = input<string | null>(null);
+  readonly picked = output<AzureVoice>();
+  readonly currentId = computed(() => this.mode() === 'pick' ? this.selectedId() : this.ra.voiceId());
 
   readonly displayName = displayName;
   readonly filter = signal<VoiceFilter>(DEFAULT_FILTER);
@@ -106,7 +114,8 @@ export class VoiceGalleryComponent implements OnInit, OnDestroy {
   }
 
   choose(voice: AzureVoice): void {
-    this.ra.setVoice(voice.id);
+    if (this.mode() === 'pick') this.picked.emit(voice);
+    else this.ra.setVoice(voice.id);
   }
 
   cardTags(voice: AzureVoice): { shown: string[]; more: number } {

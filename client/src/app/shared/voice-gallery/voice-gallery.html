@@ -59,7 +59,7 @@
 
 <ul class="vg-grid">
   @for (voice of shown(); track voice.id) {
-    @let selected = voice.id === ra.voiceId();
+    @let selected = voice.id === currentId();
     @let pinned = ra.pinnedVoices().includes(voice.id);
     @let tags = cardTags(voice);
     <li class="vg-card" [class.selected]="selected">

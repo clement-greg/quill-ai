@@ -27,6 +27,10 @@ export interface NativeSpeechSegment {
   /** With blockIndex, where in the book this is, so Siri can add a note at the play head. */
   chapterId: string;
   blockIndex: number;
+  /** The paragraph split by voice: a character's dialogue in their Microsoft
+   *  voice, null for the narration voice. Only sent when some part has a voice;
+   *  older app builds ignore it and read the whole paragraph in one voice. */
+  parts?: { text: string; voiceId: string | null }[];
 }
 
 /** Where the app's player is. `count` and `bookId` come from app builds that report them. */
