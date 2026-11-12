@@ -122,3 +122,48 @@ export async function listBlobs(): Promise<string[]> {
   }
   return names;
 }
+
+/**
+ * Streams a body into a blob without encrypting it — for files that should open
+ * as-is when downloaded straight from the storage account (database backups).
+ */
+export async function uploadStreamToBlobRaw(
+  stream: NodeJS.ReadableStream,
+  filename: string,
+  contentType: string,
+): Promise<void> {
+  const blockBlobClient = containerClient.getBlockBlobClient(filename);
+  await blockBlobClient.uploadStream(stream as any, 4 * 1024 * 1024, 4, {
+    blobHTTPHeaders: { blobContentType: contentType },
+  });
+}
+
+export interface BlobListing {
+  name: string;
+  createdOn: Date | undefined;
+  sizeBytes: number | undefined;
+}
+
+export async function listBlobsWithPrefix(prefix: string): Promise<BlobListing[]> {
+  const blobs: BlobListing[] = [];
+  for await (const blob of containerClient.listBlobsFlat({ prefix })) {
+    blobs.push({
+      name: blob.name,
+      createdOn: blob.properties.createdOn,
+      sizeBytes: blob.properties.contentLength,
+    });
+  }
+  return blobs;
+}
+
+/** Raw (unencrypted, uncached) download as a stream, for large files. */
+export async function downloadBlobStreamRaw(
+  filename: string,
+): Promise<{ stream: NodeJS.ReadableStream; contentType: string; sizeBytes?: number }> {
+  const response = await containerClient.getBlockBlobClient(filename).download();
+  return {
+    stream: response.readableStreamBody!,
+    contentType: response.contentType ?? 'application/octet-stream',
+    sizeBytes: response.contentLength,
+  };
+}

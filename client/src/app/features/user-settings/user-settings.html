@@ -450,6 +450,64 @@
             </div>
           </section>
 
+          <!-- Database Backups Section -->
+          <section class="settings-section">
+            <div class="section-header">
+              <h3>Database Backups</h3>
+              <p class="section-desc">
+                The whole database is zipped to blob storage once a week, one JSON-lines file per
+                container. Backups older than a month are deleted automatically. Download them from
+                the storage account's <code>backups/</code> folder.
+              </p>
+            </div>
+
+            @if (backupLoadError() && !backupStatus()) {
+              <p class="backup-meta">Couldn't load backup status.</p>
+            }
+            @if (backupStatus(); as status) {
+              <div class="backup-meta">
+                @if (status.running) {
+                  <span class="backup-state"><mat-icon>schedule</mat-icon> Backup in progress…</span>
+                } @else if (status.lastRun?.status === 'failed') {
+                  <span class="backup-state backup-failed">
+                    <mat-icon>error</mat-icon>
+                    Last backup failed {{ status.lastRun?.finishedAt | date: 'medium' }}: {{ status.lastRun?.error }}
+                  </span>
+                }
+                <div>
+                  Last successful backup:
+                  <strong>{{ status.lastSuccessAt ? (status.lastSuccessAt | date: 'medium') : 'never' }}</strong>
+                  @if (status.lastRun?.status === 'succeeded' && backupTotalDocuments() !== null) {
+                    ({{ backupTotalDocuments() | number }} documents)
+                  }
+                </div>
+                <div>
+                  Next automatic backup:
+                  <strong>{{ status.nextScheduledAt ? (status.nextScheduledAt | date: 'medium') : 'within the hour' }}</strong>
+                </div>
+              </div>
+
+              @if (status.backups.length) {
+                <ul class="backup-list">
+                  @for (backup of status.backups; track backup.name) {
+                    <li>
+                      <mat-icon>history</mat-icon>
+                      <span class="backup-name">{{ backupFileLabel(backup.name) }}</span>
+                      @if (backup.sizeBytes !== null) {
+                        <span class="backup-size">{{ backup.sizeBytes / 1048576 | number: '1.1-1' }} MB</span>
+                      }
+                    </li>
+                  }
+                </ul>
+              }
+            }
+
+            <button mat-flat-button [disabled]="startingBackup() || backupStatus()?.running" (click)="runBackupNow()">
+              <mat-icon>cloud_upload</mat-icon>
+              {{ backupStatus()?.running ? 'Backing up…' : 'Back up now' }}
+            </button>
+          </section>
+
           <!-- App Updates Section -->
           <section class="settings-section">
             <div class="section-header">
