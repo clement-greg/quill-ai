@@ -1,19 +1,23 @@
 import { DOCUMENT } from '@angular/common';
+import { signal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
+import { UserSettingsService } from '@app/core/services/user-settings.service';
 import { DialogueHighlightsService, NARRATION_HIGHLIGHT, speakerHighlight } from './dialogue-highlights';
 
 describe('DialogueHighlightsService', () => {
-  function setup(saved?: string) {
+  function setup() {
     const registry = new Map<string, { ranges: Range[]; priority: number }>();
-    const storage = new Map<string, string>(saved ? [['quill_dialogue_speakers', saved]] : []);
     class FakeHighlight { priority = 0; ranges: Range[]; constructor(...r: Range[]) { this.ranges = r; } }
     const win = {
       CSS: { highlights: { set: (n: string, v: FakeHighlight) => registry.set(n, v), delete: (n: string) => registry.delete(n) } },
       Highlight: FakeHighlight,
-      localStorage: { getItem: (k: string) => storage.get(k) ?? null, setItem: (k: string, v: string) => storage.set(k, v) },
     };
-    TestBed.configureTestingModule({ providers: [{ provide: DOCUMENT, useValue: { defaultView: win } }] });
-    return { svc: TestBed.inject(DialogueHighlightsService), registry, storage };
+    const enabled = signal(true);
+    const settings = { dialogueMarkupEnabled: enabled, setDialogueMarkupEnabled: vi.fn((v: boolean) => enabled.set(v)) };
+    TestBed.configureTestingModule({
+      providers: [{ provide: DOCUMENT, useValue: { defaultView: win } }, { provide: UserSettingsService, useValue: settings }],
+    });
+    return { svc: TestBed.inject(DialogueHighlightsService), registry, settings };
   }
 
   it('combines every editor\'s ranges per highlight and clears an editor\'s on remove', () => {
@@ -34,13 +38,11 @@ describe('DialogueHighlightsService', () => {
     expect(speakerHighlight(9)).toBe('dialogue-1');
   });
 
-  it('is on by default and remembers being turned off', () => {
-    const { svc, storage } = setup();
+  it('follows the "Color dialogue by speaker" setting', () => {
+    const { svc, settings } = setup();
     expect(svc.visible()).toBe(true);
     svc.setVisible(false);
+    expect(settings.setDialogueMarkupEnabled).toHaveBeenCalledWith(false);
     expect(svc.visible()).toBe(false);
-    expect(storage.get('quill_dialogue_speakers')).toBe('off');
-    TestBed.resetTestingModule();
-    expect(setup('off').svc.visible()).toBe(false);
   });
 });

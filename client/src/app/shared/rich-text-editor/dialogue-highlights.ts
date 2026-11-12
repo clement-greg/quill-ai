@@ -1,5 +1,6 @@
 import { DOCUMENT } from '@angular/common';
-import { inject, Injectable, signal } from '@angular/core';
+import { inject, Injectable } from '@angular/core';
+import { UserSettingsService } from '@app/core/services/user-settings.service';
 
 /**
  * Speaker colors, by slot. ::highlight(dialogue-N) in styles.css paints slot N
@@ -13,8 +14,6 @@ export const NARRATION_HIGHLIGHT = 'dialogue-none';
 export const PENDING_HIGHLIGHT = 'dialogue-pending';
 const NAMES = [...SPEAKER_COLORS.map((_, i) => speakerHighlight(i)), NARRATION_HIGHLIGHT, PENDING_HIGHLIGHT];
 
-const VISIBLE_KEY = 'quill_dialogue_speakers';
-
 interface HighlightRegistry { set(name: string, value: unknown): void; delete(name: string): void }
 type HighlightCtor = new (...ranges: Range[]) => { priority: number };
 
@@ -27,14 +26,14 @@ type HighlightCtor = new (...ranges: Range[]) => { priority: number };
 @Injectable({ providedIn: 'root' })
 export class DialogueHighlightsService {
   private readonly win = inject(DOCUMENT).defaultView;
+  private readonly settings = inject(UserSettingsService);
   private readonly owners = new Map<object, ReadonlyMap<string, readonly Range[]>>();
 
-  /** Speaker colors (and the hover card) are on; the author can turn them off. */
-  readonly visible = signal(this.read() !== 'off');
+  /** Speaker colors are on (a user setting, "Color dialogue by speaker"). */
+  readonly visible = this.settings.dialogueMarkupEnabled;
 
   setVisible(visible: boolean): void {
-    this.visible.set(visible);
-    try { this.win?.localStorage.setItem(VISIBLE_KEY, visible ? 'on' : 'off'); } catch { /* storage blocked */ }
+    this.settings.setDialogueMarkupEnabled(visible);
   }
 
   /** Replaces one editor's ranges, grouped by highlight name. */
@@ -59,9 +58,5 @@ export class DialogueHighlightsService {
       highlight.priority = -1;
       css.highlights.set(name, highlight);
     }
-  }
-
-  private read(): string | null {
-    try { return this.win?.localStorage.getItem(VISIBLE_KEY) ?? null; } catch { return null; }
   }
 }

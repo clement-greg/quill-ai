@@ -25,6 +25,8 @@ interface UserSettings {
   autoSaveEnabled?: boolean;
   /** Edit the whole book as one paginated document instead of one chapter at a time. */
   fullBookEditing?: boolean;
+  /** Color each line of dialogue in the chapter editor by who says it. */
+  dialogueMarkupEnabled?: boolean;
   /** Model picked per AI operation; unset operations use their default. */
   aiModels?: AiModelSettings;
   /** Thoughts shown per page in the thoughts list. */
@@ -60,6 +62,7 @@ const FIELD_VALIDATORS: Record<SettingsField, (v: unknown) => boolean> = {
   entityDetectionEnabled: isBoolean,
   autoSaveEnabled: isBoolean,
   fullBookEditing: isBoolean,
+  dialogueMarkupEnabled: isBoolean,
   aiModels: isAiModelSettings,
   thoughtsPageSize: (v: unknown) => (THOUGHT_PAGE_SIZE_OPTIONS as readonly unknown[]).includes(v),
   pinHash: isString,

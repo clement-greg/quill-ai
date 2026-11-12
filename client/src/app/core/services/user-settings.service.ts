@@ -42,6 +42,7 @@ export interface UserSettingsData {
   entityDetectionEnabled?: boolean;
   autoSaveEnabled?: boolean;
   fullBookEditing?: boolean;
+  dialogueMarkupEnabled?: boolean;
   aiModels?: AiModelSettings;
   genderOptions?: string[];
   raceOptions?: string[];
@@ -72,6 +73,7 @@ export class UserSettingsService {
   private _entityDetectionEnabled = signal<boolean>(true);
   private _autoSaveEnabled = signal<boolean>(false);
   private _fullBookEditing = signal<boolean>(false);
+  private _dialogueMarkupEnabled = signal<boolean>(true);
   private _aiModels = signal<AiModelSettings>({});
   private _genderOptions = signal<string[]>(DEFAULT_GENDER_OPTIONS);
   private _raceOptions = signal<string[]>(DEFAULT_RACE_OPTIONS);
@@ -96,6 +98,8 @@ export class UserSettingsService {
   readonly autoSaveEnabled = this._autoSaveEnabled.asReadonly();
   /** Whether chapter links open the full-book (paginated, all chapters) editor. */
   readonly fullBookEditing = this._fullBookEditing.asReadonly();
+  /** Whether the chapter editor colors each line of dialogue by who says it. */
+  readonly dialogueMarkupEnabled = this._dialogueMarkupEnabled.asReadonly();
   /** Model picked per AI operation; operations not listed use their default. */
   readonly aiModels = this._aiModels.asReadonly();
   /** Model the chat starts on (Luna unless the author picked another). */
@@ -129,6 +133,7 @@ export class UserSettingsService {
       this._entityDetectionEnabled.set(settings.entityDetectionEnabled ?? true);
       this._autoSaveEnabled.set(settings.autoSaveEnabled ?? false);
       this._fullBookEditing.set(settings.fullBookEditing ?? false);
+      this._dialogueMarkupEnabled.set(settings.dialogueMarkupEnabled ?? true);
       this._aiModels.set(isAiModelSettings(settings.aiModels) ? settings.aiModels : {});
       this._genderOptions.set(settings.genderOptions ?? DEFAULT_GENDER_OPTIONS);
       this._raceOptions.set(settings.raceOptions ?? DEFAULT_RACE_OPTIONS);
@@ -159,6 +164,7 @@ export class UserSettingsService {
         entityDetectionEnabled: this._entityDetectionEnabled(),
         autoSaveEnabled: this._autoSaveEnabled(),
         fullBookEditing: this._fullBookEditing(),
+        dialogueMarkupEnabled: this._dialogueMarkupEnabled(),
         aiModels: this._aiModels(),
         genderOptions: this._genderOptions(),
         raceOptions: this._raceOptions(),
@@ -246,6 +252,11 @@ export class UserSettingsService {
 
   setFullBookEditing(value: boolean): void {
     this._fullBookEditing.set(value);
+    this.saveToServer();
+  }
+
+  setDialogueMarkupEnabled(value: boolean): void {
+    this._dialogueMarkupEnabled.set(value);
     this.saveToServer();
   }
 

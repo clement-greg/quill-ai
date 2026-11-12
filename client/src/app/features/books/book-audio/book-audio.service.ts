@@ -12,6 +12,7 @@ import { ChapterDraftService } from '@app/features/chapters/chapter-edit/chapter
 import { Book } from '@shared/models/book.model';
 import { ListeningPosition, ListeningPositionUpdate } from '@shared/models/listening.model';
 import { BookPlayerComponent } from './book-player';
+import { proxyImageUrl } from '@app/core/utils/image-proxy';
 
 /** How often a position is sent to the server while playing. Pausing,
  *  stopping or leaving the page sends it straight away. */
@@ -311,8 +312,4 @@ export class BookAudioService {
   }
 }
 
-/** Book images are served through the app's image proxy. */
-export function proxyImageUrl(blobUrl: string | undefined): string | null {
-  const filename = blobUrl?.split('/').pop();
-  return filename ? `/api/image/${filename}` : null;
-}
+export { proxyImageUrl } from '@app/core/utils/image-proxy';
