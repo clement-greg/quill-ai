@@ -27,6 +27,7 @@ import yazl from 'yazl';
 import config from '../config';
 import { getContainer, listContainerDefinitions } from './cosmos';
 import { deleteBlob, listBlobsWithPrefix, uploadStreamToBlobRaw, BlobListing } from './storage';
+import { getRestoreRun } from './database-restore';
 import {
   DatabaseBackupFile,
   DatabaseBackupRun,
@@ -322,6 +323,7 @@ export async function getBackupStatus(): Promise<DatabaseBackupStatus> {
     nextScheduledAt: lastSuccessAt ? new Date(new Date(lastSuccessAt).getTime() + BACKUP_INTERVAL_MS).toISOString() : null,
     lastRun: doc?.lastRun ?? null,
     backups,
+    restore: getRestoreRun(),
   };
 }
 

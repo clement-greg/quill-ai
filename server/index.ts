@@ -41,6 +41,7 @@ import appSettingsRoutes from './routes/app-settings.routes';
 import diagnosticsRoutes from './routes/diagnostics.routes';
 import speechRoutes from './routes/speech.routes';
 import backupsRoutes from './routes/backups.routes';
+import saRoutes from './routes/sa.routes';
 import { startBackupScheduler } from './services/database-backup';
 import { clientRoutes, findClientDir } from './client-static';
 
@@ -117,6 +118,7 @@ app.use('/api/app-settings', appSettingsRoutes);
 app.use('/api/diagnostics', diagnosticsRoutes);
 app.use('/api/speech', speechRoutes);
 app.use('/api/backups', backupsRoutes);
+app.use('/api/sa', saRoutes);
 
 // Serve the Angular build, with index.html as the fallback for client-side routes
 app.use(clientRoutes(findClientDir(__dirname)));

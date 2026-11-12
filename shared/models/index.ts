@@ -19,3 +19,4 @@ export * from './generation-queue.model';
 export * from './ai-model.model';
 export * from './task.model';
 export * from './database-backup.model';
+export * from './sa-access.model';

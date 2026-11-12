@@ -5,6 +5,7 @@ import { UserSettingsService } from '@app/core/services/user-settings.service';
 import { HeaderService } from '@app/core/services/header.service';
 import { AppUpdateService } from '@app/core/services/app-update.service';
 import { ContentFilterService } from './content-filter.service';
+import { SaAccessService } from '@app/core/services/sa-access.service';
 import { UserSettingsComponent } from './user-settings';
 
 /** Any member read off it is a no-op function, which covers both signals and methods. */
@@ -25,6 +26,7 @@ describe('UserSettingsComponent app update', () => {
         { provide: ContentFilterService, useValue: stubService<ContentFilterService>() },
         { provide: MatSnackBar, useValue: stubService<MatSnackBar>() },
         { provide: AppUpdateService, useValue: { forceUpdate } },
+        { provide: SaAccessService, useValue: stubService<SaAccessService>() },
       ],
     });
   });
