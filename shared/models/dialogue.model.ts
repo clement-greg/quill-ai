@@ -115,6 +115,7 @@ export const VOICE_RATES: readonly { value: number; label: string }[] = [
   { value: 0.9, label: 'A little slower' },
   { value: 1, label: 'Normal' },
   { value: 1.1, label: 'A little faster' },
+  { value: 1.15, label: 'Somewhat faster' },
   { value: 1.25, label: 'Faster' },
 ];
 
