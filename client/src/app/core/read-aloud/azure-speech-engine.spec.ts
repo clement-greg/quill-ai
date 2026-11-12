@@ -191,6 +191,20 @@ describe('AzureSpeechEngine', () => {
   });
 });
 
+describe('AzureSpeechEngine speeds', () => {
+  it('asks for the reader\'s speed times the piece\'s, within what the server accepts', async () => {
+    const { engine, source } = setup();
+    const voiced: ReadAloudSegment = {
+      ...seg('"Hi," Ann said.'),
+      parts: [{ text: '"Hi,"', voiceId: 'azure:Ann', rate: 1.25 }, { text: ' Ann said.', voiceId: null }],
+    };
+    engine.play(request({ segments: [voiced], startIndex: 0, rate: 2.75, narrationRate: 0.8 }));
+    await flush();
+    expect(source).toHaveBeenNthCalledWith(1, '"Hi,"', 'azure:Ann', 3, expect.any(AbortSignal));
+    expect(source).toHaveBeenNthCalledWith(2, 'Ann said.', 'azure:en-US-JaneNeural', 2.2, expect.any(AbortSignal));
+  });
+});
+
 describe('segmentPieces', () => {
   it('splits each voiced part into chunks and drops punctuation-only leftovers', () => {
     const s: ReadAloudSegment = {
@@ -203,14 +217,27 @@ describe('segmentPieces', () => {
       ],
     };
     expect(segmentPieces(s, 'azure:Jane')).toEqual([
-      { text: '"Go."', voiceId: 'azure:Bob' },
-      { text: 'He sighed.', voiceId: 'azure:Jane' },
-      { text: 'Fine', voiceId: 'azure:Bob' },
+      { text: '"Go."', voiceId: 'azure:Bob', rate: 1 },
+      { text: 'He sighed.', voiceId: 'azure:Jane', rate: 1 },
+      { text: 'Fine', voiceId: 'azure:Bob', rate: 1 },
     ]);
   });
 
   it('reads a plain paragraph in the narration voice', () => {
-    expect(segmentPieces(seg('Just this.'), 'azure:Jane')).toEqual([{ text: 'Just this.', voiceId: 'azure:Jane' }]);
+    expect(segmentPieces(seg('Just this.'), 'azure:Jane')).toEqual([{ text: 'Just this.', voiceId: 'azure:Jane', rate: 1 }]);
+  });
+
+  it('gives characters their own speed and narration the narrator\'s', () => {
+    const s: ReadAloudSegment = {
+      ...seg('"Go." He sighed. "Fine."'),
+      parts: [
+        { text: '"Go."', voiceId: 'azure:Bob', rate: 1.25 },
+        { text: ' He sighed. ', voiceId: null },
+        { text: '"Fine."', voiceId: null, rate: 0.8 },
+      ],
+    };
+    expect(segmentPieces(s, 'azure:Jane', 0.9).map(p => p.rate)).toEqual([1.25, 0.9, 0.8]);
+    expect(segmentPieces(seg('Plain.'), 'azure:Jane', 1.1).map(p => p.rate)).toEqual([1.1]);
   });
 });
 

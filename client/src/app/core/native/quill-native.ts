@@ -30,7 +30,7 @@ export interface NativeSpeechSegment {
   /** The paragraph split by voice: a character's dialogue in their Microsoft
    *  voice, null for the narration voice. Only sent when some part has a voice;
    *  older app builds ignore it and read the whole paragraph in one voice. */
-  parts?: { text: string; voiceId: string | null }[];
+  parts?: { text: string; voiceId: string | null; rate?: number }[];
 }
 
 /** Where the app's player is. `count` and `bookId` come from app builds that report them. */
@@ -55,6 +55,8 @@ export interface QuillNativeSpeech {
     startIndex: number;
     voiceId: string | null;
     rate: number;
+    /** Narration's speed relative to `rate`; older app builds ignore it. */
+    narrationRate?: number;
     bookTitle: string;
     bookId: string | null;
   }): void;

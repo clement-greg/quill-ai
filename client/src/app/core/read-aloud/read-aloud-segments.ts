@@ -11,7 +11,9 @@ import { ReadAloudCast, ReadAloudChapter, ReadAloudSegment, ReadAloudVoice, Voic
 export function buildSegments(chapters: readonly ReadAloudChapter[], cast?: ReadAloudCast | null): ReadAloudSegment[] {
   const out: ReadAloudSegment[] = [];
   const voices = cast?.voices ?? {};
-  const hasVoices = Object.keys(voices).length > 0;
+  const rates = cast?.rates ?? {};
+  const hasVoices = Object.keys(voices).length > 0 || Object.keys(rates).length > 0;
+  const voiceFor = (id: string) => (voices[id] || rates[id] ? { voiceId: voices[id] ?? null, rate: rates[id] } : null);
   chapters.forEach((ch, chapterIndex) => {
     const chapterTitle = ch.title.trim() || 'Untitled chapter';
     const base = { chapterId: ch.id, chapterIndex, chapterTitle };
@@ -24,7 +26,7 @@ export function buildSegments(chapters: readonly ReadAloudChapter[], cast?: Read
       return;
     }
     dialogueBlocks(ch.html).forEach((block, blockIndex) => {
-      const parts = block.key ? voicedParts(block.text, block.spans, dialogue[block.key], id => voices[id]) : null;
+      const parts = block.key ? voicedParts(block.text, block.spans, dialogue[block.key], voiceFor) : null;
       out.push({ ...base, blockIndex, text: block.text, ...(parts ? { parts } : {}) });
     });
   });

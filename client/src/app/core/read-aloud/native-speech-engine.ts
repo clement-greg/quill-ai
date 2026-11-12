@@ -39,11 +39,12 @@ export class NativeSpeechEngine implements SpeechEngine {
     this.speech.play({
       segments: request.segments.map(s => ({
         text: s.text, chapterTitle: s.chapterTitle, chapterIndex: s.chapterIndex, chapterId: s.chapterId, blockIndex: s.blockIndex,
-        ...(s.parts ? { parts: s.parts.map(p => ({ text: p.text, voiceId: p.voiceId })) } : {}),
+        ...(s.parts ? { parts: s.parts.map(p => ({ text: p.text, voiceId: p.voiceId, ...(p.rate !== undefined ? { rate: p.rate } : {}) })) } : {}),
       })),
       startIndex: request.startIndex,
       voiceId: request.voiceId,
       rate: request.rate,
+      ...(request.narrationRate !== undefined ? { narrationRate: request.narrationRate } : {}),
       bookTitle: request.bookTitle,
       bookId: request.bookId ?? null,
     });

@@ -12,9 +12,7 @@ import { MatTabsModule } from '@angular/material/tabs';
 import { MatDialog } from '@angular/material/dialog';
 import { TextFieldModule } from '@angular/cdk/text-field';
 import { Entity, EntityReference } from '@shared/models/entity.model';
-import { EntityQuote } from '@shared/models/entity-quote.model';
 import { EntityService } from '../entity.service';
-import { EntityQuoteService } from '../entity-quote.service';
 import { ImageGenDialogComponent, ImageGenResult } from './image-gen-dialog';
 import { PhotoPickerDialogComponent, PhotoPickerResult } from './photo-picker-dialog';
 import { UserSettingsService } from '@app/core/services/user-settings.service';
@@ -22,6 +20,7 @@ import { EntityLocationPickerComponent } from './entity-location-picker';
 import { EntityVoiceDialogComponent } from './entity-voice-dialog';
 import { ReadAloudService } from '@app/core/read-aloud/read-aloud.service';
 import { displayName } from '@app/shared/voice-gallery/voice-filter';
+import { VOICE_RATES, voiceRateOf } from '@shared/models/dialogue.model';
 
 @Component({
   selector: 'app-entity-edit',
@@ -43,7 +42,6 @@ import { displayName } from '@app/shared/voice-gallery/voice-filter';
 })
 export class EntityEditComponent {
   private entityService = inject(EntityService);
-  private entityQuoteService = inject(EntityQuoteService);
   private dialog = inject(MatDialog);
   private router = inject(Router);
   private settingsService = inject(UserSettingsService);
@@ -90,11 +88,10 @@ export class EntityEditComponent {
   generatingPersonality = signal(false);
   generatingBiography = signal(false);
   refreshing = signal(false);
-  quotes = signal<EntityQuote[]>([]);
-  quotesLoading = signal(false);
-  quoteSaving = signal(false);
 
   isNarrator = computed(() => !!this.entity().isNarrator);
+  /** Only saved places have a second tab; otherwise the tab bar is hidden. */
+  hasLocationTab = computed(() => this.draft()?.type === 'PLACE' && !this.isNew());
 
   /** Character voices are Microsoft voices, offered when the server has them. */
   readonly voicesAvailable = computed(() => this.readAloud.azureCatalog().length > 0);
@@ -105,13 +102,6 @@ export class EntityEditComponent {
     return voice ? `${displayName(voice)} · ${voice.localeName}` : id.replace(/^azure:/, '');
   });
 
-  // Add-quote form
-  addingQuote = signal(false);
-  newQuoteText = signal('');
-
-  // Per-quote inline edit state: maps quote id → draft text (null = not editing)
-  editingQuoteId = signal<string | null>(null);
-  editingQuoteText = signal('');
 
   constructor() {
     void this.readAloud.loadVoices();
@@ -125,8 +115,14 @@ export class EntityEditComponent {
       }
       this.draft.set(draft);
       this.thumbnailPreview.set(this.proxyUrl(e.thumbnailUrl));
-      if (e.id) this.loadQuotes(e.id);
     });
+  }
+
+  readonly voiceRates = VOICE_RATES;
+
+  /** Normal speed is stored as no speed at all. */
+  setVoiceRate(value: number): void {
+    this.update('voiceRate', voiceRateOf(value));
   }
 
   chooseVoice(): void {
@@ -349,78 +345,6 @@ export class EntityEditComponent {
     if (d?.id) {
       this.unarchive.emit(d.id);
     }
-  }
-
-  loadQuotes(entityId: string): void {
-    this.quotesLoading.set(true);
-    this.entityQuoteService.getByEntity(entityId).subscribe({
-      next: quotes => { this.quotes.set(quotes); this.quotesLoading.set(false); },
-      error: () => this.quotesLoading.set(false),
-    });
-  }
-
-  toggleHighlight(quote: EntityQuote): void {
-    const next = !quote.isHighlighted;
-    this.entityQuoteService.setHighlight(quote.id, quote.entityId, next).subscribe(updated => {
-      this.quotes.update(qs => qs.map(q => q.id === updated.id ? updated : q));
-    });
-  }
-
-  startAddQuote(): void {
-    this.addingQuote.set(true);
-    this.newQuoteText.set('');
-  }
-
-  cancelAddQuote(): void {
-    this.addingQuote.set(false);
-    this.newQuoteText.set('');
-  }
-
-  saveNewQuote(): void {
-    const text = this.newQuoteText().trim();
-    const entityId = this.entity().id;
-    if (!text || !entityId || this.quoteSaving()) return;
-    this.quoteSaving.set(true);
-    this.entityQuoteService.create(entityId, text).subscribe({
-      next: created => {
-        this.quotes.update(qs => [...qs, created]);
-        this.addingQuote.set(false);
-        this.newQuoteText.set('');
-        this.quoteSaving.set(false);
-      },
-      error: () => this.quoteSaving.set(false),
-    });
-  }
-
-  startEditQuote(quote: EntityQuote): void {
-    this.editingQuoteId.set(quote.id);
-    this.editingQuoteText.set(quote.text);
-  }
-
-  cancelEditQuote(): void {
-    this.editingQuoteId.set(null);
-    this.editingQuoteText.set('');
-  }
-
-  saveEditQuote(quote: EntityQuote): void {
-    const text = this.editingQuoteText().trim();
-    if (!text || this.quoteSaving()) return;
-    this.quoteSaving.set(true);
-    this.entityQuoteService.updateText(quote.id, quote.entityId, text).subscribe({
-      next: updated => {
-        this.quotes.update(qs => qs.map(q => q.id === updated.id ? updated : q));
-        this.editingQuoteId.set(null);
-        this.editingQuoteText.set('');
-        this.quoteSaving.set(false);
-      },
-      error: () => this.quoteSaving.set(false),
-    });
-  }
-
-  deleteQuote(quote: EntityQuote): void {
-    this.entityQuoteService.delete(quote.id, quote.entityId).subscribe({
-      next: () => this.quotes.update(qs => qs.filter(q => q.id !== quote.id)),
-    });
   }
 
   openRelationshipDiagram(): void {

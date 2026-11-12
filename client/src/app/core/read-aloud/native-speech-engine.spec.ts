@@ -38,12 +38,13 @@ describe('NativeSpeechEngine', () => {
 
   it('sends each paragraph\'s voiced parts when dialogue has a character\'s voice', () => {
     const { speech, engine } = setup();
-    const parts = [{ text: '"Hi,"', voiceId: 'azure:Ann' }, { text: ' Ann said.', voiceId: null }];
+    const parts = [{ text: '"Hi,"', voiceId: 'azure:Ann', rate: 1.25 }, { text: ' Ann said.', voiceId: null }];
     const segments = [
       { chapterId: 'a', chapterIndex: 0, chapterTitle: 'T', blockIndex: 0, text: '"Hi," Ann said.', parts },
       { chapterId: 'a', chapterIndex: 0, chapterTitle: 'T', blockIndex: 1, text: 'Plain.' },
     ];
-    engine.play({ segments, startIndex: 0, voiceId: 'azure:Jane', rate: 1, bookTitle: 'Book' });
+    engine.play({ segments, startIndex: 0, voiceId: 'azure:Jane', rate: 1, narrationRate: 0.9, bookTitle: 'Book' });
+    expect(vi.mocked(speech.play).mock.calls[0]![0].narrationRate).toBe(0.9);
     const sent = vi.mocked(speech.play).mock.calls[0]![0].segments;
     expect(sent[0].parts).toEqual(parts);
     expect('parts' in sent[1]).toBe(false);

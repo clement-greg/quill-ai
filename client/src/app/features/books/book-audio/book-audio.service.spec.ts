@@ -104,13 +104,19 @@ describe('BookAudioService', () => {
     const { svc, http, ra } = setup(azureEngine);
     const done = svc.listen('b1');
     await answerListen(http, [], [
-      { id: 'n', name: 'Narrator', type: 'PERSON', isNarrator: true, voiceId: 'azure:Jane' },
-      { id: 'ann', name: 'Ann', type: 'PERSON', voiceId: 'azure:Ann' },
-      { id: 'bob', name: 'Bob', type: 'PERSON' },
+      { id: 'n', name: 'Narrator', type: 'PERSON', isNarrator: true, voiceId: 'azure:Jane', voiceRate: 0.9 },
+      { id: 'ann', name: 'Ann', type: 'PERSON', voiceId: 'azure:Ann', voiceRate: 1.25 },
+      { id: 'bob', name: 'Bob', type: 'PERSON', voiceRate: 7 },
+      { id: 'cy', name: 'Cy', type: 'PERSON', voiceRate: 0.8 },
       { id: 'old', name: 'Old', type: 'PERSON', voiceId: 'azure:Old', archived: true },
     ]);
     await done;
-    expect(ra.cast()).toEqual({ narratorVoiceId: 'azure:Jane', voices: { n: 'azure:Jane', ann: 'azure:Ann' } });
+    expect(ra.cast()).toEqual({
+      narratorVoiceId: 'azure:Jane',
+      voices: { n: 'azure:Jane', ann: 'azure:Ann' },
+      rates: { n: 0.9, ann: 1.25, cy: 0.8 },
+      narratorRate: 0.9,
+    });
   });
 
   it('resumes from the saved paragraph', async () => {

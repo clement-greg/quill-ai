@@ -1,6 +1,6 @@
 <div class="entity-edit-form">
 
-  <mat-tab-group animationDuration="150ms" class="entity-tabs">
+  <mat-tab-group animationDuration="150ms" class="entity-tabs" [class.single-tab]="!hasLocationTab()">
 
     <!-- ── Details tab ─────────────────────────────── -->
     <mat-tab label="Details">
@@ -180,11 +180,19 @@
                   <button mat-button type="button" (click)="update('voiceId', undefined)">Use default</button>
                 }
               </div>
+              <mat-form-field appearance="outline" class="voice-speed" subscriptSizing="dynamic" style="max-width: 220px;">
+                <mat-label>Speed</mat-label>
+                <mat-select [value]="draft()!.voiceRate ?? 1" (selectionChange)="setVoiceRate($event.value)">
+                  @for (r of voiceRates; track r.value) {
+                    <mat-option [value]="r.value">{{ r.label }}@if (r.value !== 1) { ({{ r.value }}×)}</mat-option>
+                  }
+                </mat-select>
+              </mat-form-field>
               <span class="voice-hint">
                 @if (isNarrator()) {
-                  Reads all narration. Without one, each reader's own voice is used.
+                  Reads all narration. Without one, each reader's own voice is used. Speed is relative to the reader's own speed setting.
                 } @else {
-                  Reads this character's dialogue and thoughts. Without one, the narration voice is used.
+                  Reads this character's dialogue and thoughts. Without one, the narration voice is used. Speed is relative to the reader's own speed setting.
                 }
               </span>
             </div>
@@ -212,7 +220,7 @@
     </mat-tab>
 
     <!-- ── Location tab (PLACE only) ────────────────── -->
-    @if (draft()!.type === 'PLACE' && !isNew()) {
+    @if (hasLocationTab()) {
       <mat-tab label="Location">
         <div class="tab-content">
           <app-entity-location-picker
@@ -220,86 +228,6 @@
             [seriesId]="draft()!.seriesId"
             [location]="draft()!.location"
             (locationChange)="update('location', $event)" />
-        </div>
-      </mat-tab>
-    }
-
-    <!-- ── Quotes tab ──────────────────────────────── -->
-    @if (entity().id && entity().type === 'PERSON') {
-      <mat-tab>
-        <ng-template mat-tab-label>
-          Quotes
-          @if (quotes().length > 0) {
-            <span class="tab-badge">{{ quotes().length }}</span>
-          }
-        </ng-template>
-
-        <div class="tab-content quotes-tab">
-          @if (quotesLoading()) {
-            <div class="quotes-loading"><mat-spinner diameter="24" /></div>
-          } @else {
-            <p class="quotes-hint">
-              <mat-icon>record_voice_over</mat-icon>
-              @if (isNarrator()) {
-                Passages saved here are used as voice samples when the AI generates narrative prose.
-              } @else {
-                Quotes captured here are used as voice samples when the AI generates dialogue for this character.
-              }
-            </p>
-
-            @if (quotes().length > 0) {
-              <ul class="quotes-list">
-                @for (quote of quotes(); track quote.id) {
-                  <li class="quote-item">
-                    @if (editingQuoteId() === quote.id) {
-                      <div class="quote-edit-row">
-                        <textarea class="quote-edit-input" rows="2"
-                          [value]="editingQuoteText()"
-                          (input)="editingQuoteText.set($any($event.target).value)"
-                          (keydown.enter)="$event.preventDefault(); saveEditQuote(quote)"
-                          (keydown.escape)="cancelEditQuote()"></textarea>
-                        <div class="quote-edit-actions">
-                          <button mat-flat-button (click)="saveEditQuote(quote)" [disabled]="quoteSaving() || !editingQuoteText().trim()">Save</button>
-                          <button mat-button (click)="cancelEditQuote()">Cancel</button>
-                        </div>
-                      </div>
-                    } @else {
-                      <span class="quote-text">"{{ quote.text }}"</span>
-
-                      <button mat-icon-button class="quote-action-btn" (click)="startEditQuote(quote)" matTooltip="Edit quote">
-                        <mat-icon>edit</mat-icon>
-                      </button>
-                      <button mat-icon-button class="quote-action-btn quote-delete-btn" (click)="deleteQuote(quote)" matTooltip="Delete quote">
-                        <mat-icon>delete</mat-icon>
-                      </button>
-                    }
-                  </li>
-                }
-              </ul>
-            } @else {
-              <p class="quotes-empty">
-                No quotes yet. Add one manually or save a chapter containing attributed dialogue.
-              </p>
-            }
-
-            @if (addingQuote()) {
-              <div class="add-quote-form">
-                <textarea class="quote-edit-input" rows="2" placeholder="Enter quote text…"
-                  [value]="newQuoteText()"
-                  (input)="newQuoteText.set($any($event.target).value)"
-                  (keydown.enter)="$event.preventDefault(); saveNewQuote()"
-                  (keydown.escape)="cancelAddQuote()"></textarea>
-                <div class="quote-edit-actions">
-                  <button mat-flat-button (click)="saveNewQuote()" [disabled]="quoteSaving() || !newQuoteText().trim()">Add</button>
-                  <button mat-button (click)="cancelAddQuote()">Cancel</button>
-                </div>
-              </div>
-            } @else {
-              <button mat-button class="add-quote-btn" (click)="startAddQuote()">
-                <mat-icon>add</mat-icon> Add quote
-              </button>
-            }
-          }
         </div>
       </mat-tab>
     }

@@ -6,6 +6,7 @@ import { firstValueFrom } from 'rxjs';
 import { ReadAloudService } from '@app/core/read-aloud/read-aloud.service';
 import { PLAYHEAD_TEXT_MAX, ReadAloudCast, ReadAloudChapter } from '@app/core/read-aloud/read-aloud.model';
 import { EntityService } from '@app/features/entities/entity.service';
+import { voiceRateOf } from '@shared/models/dialogue.model';
 import { BookService } from '@app/features/books/book.service';
 import { ChapterService } from '@app/features/chapters/chapter.service';
 import { ChapterDraftService } from '@app/features/chapters/chapter-edit/chapter-draft.service';
@@ -228,13 +229,26 @@ export class BookAudioService {
     try {
       const list = await firstValueFrom(this.entities.getBySeries(seriesId));
       const voices: Record<string, string> = {};
+      const rates: Record<string, number> = {};
       let narratorVoiceId: string | null = null;
+      let narratorRate: number | null = null;
       for (const e of list) {
-        if (!e.voiceId || e.type !== 'PERSON' || e.archived || e.deleted) continue;
-        voices[e.id] = e.voiceId;
-        if (e.isNarrator) narratorVoiceId = e.voiceId;
+        if (e.type !== 'PERSON' || e.archived || e.deleted) continue;
+        const rate = voiceRateOf(e.voiceRate);
+        if (e.voiceId) voices[e.id] = e.voiceId;
+        if (rate) rates[e.id] = rate;
+        if (e.isNarrator) {
+          narratorVoiceId = e.voiceId ?? null;
+          narratorRate = rate ?? null;
+        }
       }
-      return Object.keys(voices).length ? { narratorVoiceId, voices } : null;
+      if (!Object.keys(voices).length && !Object.keys(rates).length) return null;
+      return {
+        narratorVoiceId,
+        voices,
+        ...(Object.keys(rates).length ? { rates } : {}),
+        ...(narratorRate ? { narratorRate } : {}),
+      };
     } catch {
       return null;
     }
