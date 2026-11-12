@@ -40,6 +40,8 @@ import tasksRoutes from './routes/tasks.routes';
 import appSettingsRoutes from './routes/app-settings.routes';
 import diagnosticsRoutes from './routes/diagnostics.routes';
 import speechRoutes from './routes/speech.routes';
+import backupsRoutes from './routes/backups.routes';
+import { startBackupScheduler } from './services/database-backup';
 import { clientRoutes, findClientDir } from './client-static';
 
 const app = express();
@@ -114,6 +116,7 @@ app.use('/api/tasks', tasksRoutes);
 app.use('/api/app-settings', appSettingsRoutes);
 app.use('/api/diagnostics', diagnosticsRoutes);
 app.use('/api/speech', speechRoutes);
+app.use('/api/backups', backupsRoutes);
 
 // Serve the Angular build, with index.html as the fallback for client-side routes
 app.use(clientRoutes(findClientDir(__dirname)));
@@ -126,6 +129,8 @@ initDatabase()
     // Pulls finished generation jobs back onto their entities. Started after the
     // containers exist, since its work list is one of them.
     startGenerationCollector();
+    // Weekly whole-database backup to blob storage (see services/database-backup.ts).
+    startBackupScheduler();
   })
   .catch((err) => {
     console.error('Failed to initialize database:', err);

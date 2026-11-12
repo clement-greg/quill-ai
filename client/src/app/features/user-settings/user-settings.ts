@@ -1,4 +1,5 @@
-import { Component, inject, signal, effect, computed, ElementRef, ViewChild } from '@angular/core';
+import { Component, inject, signal, effect, computed, ElementRef, ViewChild, OnDestroy } from '@angular/core';
+import { DatePipe, DecimalPipe } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { MatButtonModule } from '@angular/material/button';
 import { MatIconModule } from '@angular/material/icon';
@@ -12,6 +13,7 @@ import { UserSettingsService, GhostCompleteItem, DEFAULT_GENDER_OPTIONS, DEFAULT
 import { HeaderService } from '@app/core/services/header.service';
 import { AppUpdateService } from '@app/core/services/app-update.service';
 import { ContentFilterService } from './content-filter.service';
+import { DatabaseBackupService } from './database-backup.service';
 import { VoicePickerComponent } from '@app/shared/voice-gallery/voice-picker';
 import { AI_MODELS, AI_OPERATIONS, AiModelKey, AiOperation } from '@shared/models/ai-model.model';
 
@@ -61,16 +63,19 @@ export const SETTINGS_TABS: { id: SettingsTabId; label: string; icon: string }[]
     MatButtonToggleModule,
     MatSlideToggleModule,
     VoicePickerComponent,
+    DatePipe,
+    DecimalPipe,
   ],
   templateUrl: './user-settings.html',
   styleUrl: './user-settings.scss',
 })
-export class UserSettingsComponent {
+export class UserSettingsComponent implements OnDestroy {
   private settingsService = inject(UserSettingsService);
   private snackBar = inject(MatSnackBar);
   private headerService = inject(HeaderService);
   private contentFilterService = inject(ContentFilterService);
   private appUpdateService = inject(AppUpdateService);
+  private backupService = inject(DatabaseBackupService);
   private router = inject(Router);
   private route = inject(ActivatedRoute);
 
@@ -121,6 +126,11 @@ export class UserSettingsComponent {
       }
     });
     this.contentFilterService.loadFromServer();
+    void this.backupService.load();
+  }
+
+  ngOnDestroy(): void {
+    this.backupService.stopPolling();
   }
 
   /** Keeps the tab in ?tab= so a refresh or shared link lands on the same section. */
@@ -415,4 +425,24 @@ export class UserSettingsComponent {
     void this.appUpdateService.forceUpdate();
   }
 
+  // Database backups
+  readonly backupStatus = this.backupService.status;
+  readonly backupLoadError = this.backupService.loadError;
+  readonly startingBackup = signal(false);
+  readonly backupTotalDocuments = computed(() => {
+    const counts = this.backupStatus()?.lastRun?.documentCounts;
+    return counts ? Object.values(counts).reduce((a, b) => a + b, 0) : null;
+  });
+
+  async runBackupNow(): Promise<void> {
+    if (this.startingBackup() || this.backupStatus()?.running) return;
+    this.startingBackup.set(true);
+    const error = await this.backupService.runNow();
+    this.startingBackup.set(false);
+    this.snackBar.open(error ?? 'Backup started', 'OK', { duration: 3000 });
+  }
+
+  backupFileLabel(name: string): string {
+    return name.replace(/^backups\//, '');
+  }
 }

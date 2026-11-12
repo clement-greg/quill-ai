@@ -1,4 +1,4 @@
-import { CosmosClient, Database, Container } from '@azure/cosmos';
+import { CosmosClient, Database, Container, ContainerDefinition } from '@azure/cosmos';
 import config from '../config';
 
 const client = new CosmosClient({
@@ -155,6 +155,15 @@ const thoughtsContainerDef = {
 
 export function getContainer(containerName: string): Container {
   return database.container(containerName);
+}
+
+/**
+ * Every container in the database with its full definition (partition key,
+ * indexing and vector policies) — what a backup needs to recreate it.
+ */
+export async function listContainerDefinitions(): Promise<ContainerDefinition[]> {
+  const { resources } = await database.containers.readAll().fetchAll();
+  return resources;
 }
 
 export async function initDatabase(): Promise<void> {
