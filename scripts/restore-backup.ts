@@ -6,9 +6,10 @@
  * Uses the Cosmos endpoint/key from the app's normal config (_private/config.json
  * or environment). --database is required so a restore never lands on the live
  * database by accident; name the live one explicitly if that is what you mean.
- * Containers are created from their manifest definitions if missing, and every
- * document is upserted, so re-running is safe. Documents already in the target
- * that aren't in the backup are left alone.
+ * Containers are created from their manifest definitions if missing. Restore is
+ * insert-only: a document whose id already exists in the target is skipped and
+ * never overwritten, so re-running is safe and live data is never replaced.
+ * Ids are kept as-is because documents reference each other by id.
  *
  * Get the zip from the storage account's backups/ folder.
  */
@@ -86,14 +87,22 @@ async function main() {
     if (!database) { console.log(`  ${c.definition.id}: ${c.documentCount} documents`); continue; }
 
     const { container } = await database.containers.createIfNotExists(c.definition as any);
-    let n = 0;
+    let created = 0;
+    let skipped = 0;
     const lines = readline.createInterface({ input: await streamOf(zip, entry), crlfDelay: Infinity });
     for await (const line of lines) {
       if (!line.trim()) continue;
-      await container.items.upsert(JSON.parse(line));
-      if (++n % 500 === 0) process.stdout.write(`\r  ${c.definition.id}: ${n}/${c.documentCount}`);
+      try {
+        await container.items.create(JSON.parse(line));
+        created++;
+      } catch (err: any) {
+        if (err.code !== 409) throw err; // 409: already exists — never overwrite
+        skipped++;
+      }
+      const n = created + skipped;
+      if (n % 500 === 0) process.stdout.write(`\r  ${c.definition.id}: ${n}/${c.documentCount}`);
     }
-    console.log(`\r  ${c.definition.id}: ${n}/${c.documentCount} documents restored`);
+    console.log(`\r  ${c.definition.id}: ${created} created, ${skipped} skipped (already existed) of ${c.documentCount}`);
   }
   zip.close();
 }
