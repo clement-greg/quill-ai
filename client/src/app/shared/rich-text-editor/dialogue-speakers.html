@@ -1,0 +1,68 @@
+@if (active()) {
+  <div #card class="dlg-card" role="dialog" aria-label="Who says this line"
+    [style.top.px]="cardTop()" [style.left.px]="cardLeft()"
+    (mouseenter)="cardEntered()" (mouseleave)="cardLeave()">
+    @switch (kind()) {
+      @case ('entity') {
+        @if (speakerEntity(); as entity) {
+          <div class="dlg-who">
+            <span class="dlg-avatar" [style.background]="speakerColor()" aria-hidden="true">{{ initial(entity) }}</span>
+            <span class="dlg-text">
+              <span class="dlg-name">{{ entity.name }}</span>
+              <span class="dlg-meta">
+                @if (voiceName(); as voice) { Read in {{ voice }} } @else { No voice yet: read in the narration voice }
+              </span>
+            </span>
+          </div>
+        }
+      }
+      @case ('none') {
+        <div class="dlg-who">
+          <span class="dlg-avatar dlg-avatar-none" aria-hidden="true"><mat-icon>menu_book</mat-icon></span>
+          <span class="dlg-text">
+            <span class="dlg-name">No speaker</span>
+            <span class="dlg-meta">Read in the narration voice</span>
+          </span>
+        </div>
+      }
+      @default {
+        <p class="dlg-pending">
+          @if (isTagging()) { Working out who says this… } @else { Who says this is worked out when the chapter is saved. }
+        </p>
+      }
+    }
+
+    @if (kind() !== 'pending') {
+      @if (!changing()) {
+        <button type="button" class="dlg-change" (click)="startChange()">
+          <mat-icon aria-hidden="true">record_voice_over</mat-icon> Change speaker
+        </button>
+      } @else {
+        @if (showFilter()) {
+          <input class="dlg-filter" type="search" placeholder="Find a character" aria-label="Find a character"
+            [value]="filter()" (input)="filter.set($any($event.target).value)" />
+        }
+        <div class="dlg-options" role="listbox" aria-label="Speaker">
+          @for (o of options(); track o.entity.id) {
+            @let selected = speakerEntity()?.id === o.entity.id;
+            <button type="button" role="option" class="dlg-option" [attr.aria-selected]="selected" [class.selected]="selected"
+              [disabled]="saving()" (click)="choose(o.entity.id)">
+              <span class="dlg-swatch" [style.background]="o.color" aria-hidden="true"></span>
+              <span class="dlg-option-name">{{ o.entity.name }}</span>
+              @if (selected) { <mat-icon class="dlg-check" aria-hidden="true">check</mat-icon> }
+            </button>
+          } @empty {
+            <p class="dlg-empty">No characters match.</p>
+          }
+          <button type="button" role="option" class="dlg-option" [attr.aria-selected]="kind() === 'none'"
+            [class.selected]="kind() === 'none'" [disabled]="saving()" (click)="choose(null)">
+            <span class="dlg-swatch dlg-swatch-none" aria-hidden="true"></span>
+            <span class="dlg-option-name">No speaker (narration voice)</span>
+            @if (kind() === 'none') { <mat-icon class="dlg-check" aria-hidden="true">check</mat-icon> }
+          </button>
+        </div>
+      }
+    }
+    @if (error(); as message) { <p class="dlg-error" role="alert">{{ message }}</p> }
+  </div>
+}

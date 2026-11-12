@@ -22,11 +22,12 @@ export class ChapterService {
   }
 
   getByBook(bookId: string): Observable<Chapter[]> {
-    return this.http.get<Chapter[]>(`${this.apiUrl}/book/${bookId}`);
+    return this.http.get<Chapter[]>(`${this.apiUrl}/book/${bookId}`)
+      .pipe(tap(list => list.forEach(c => this.dialogue.seed(c))));
   }
 
   getById(id: string): Observable<Chapter> {
-    return this.http.get<Chapter>(`${this.apiUrl}/${id}`);
+    return this.http.get<Chapter>(`${this.apiUrl}/${id}`).pipe(tap(c => this.dialogue.seed(c)));
   }
 
   create(chapter: Chapter): Observable<ChapterSaveResult> {

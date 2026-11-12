@@ -1,4 +1,4 @@
-import { dialogueBlocks } from './dialogue-paragraphs';
+import { dialogueBlocks, liveDialogue } from './dialogue-paragraphs';
 import { parseContentBlocks } from '@app/features/chapters/chapter-edit/chapter-content-blocks';
 
 describe('dialogueBlocks', () => {
@@ -33,5 +33,25 @@ describe('dialogueBlocks', () => {
     expect(plain[0]!.spans).toEqual([]);
     const styled = dialogueBlocks('<p><span style="font-style: italic">He looks tired,</span> she thought.</p>');
     expect(styled[0]!.spans.length).toBe(1);
+  });
+});
+
+describe('liveDialogue', () => {
+  it('covers each quote and thought in the live DOM, keyed like the saved HTML', () => {
+    const html = '<p>Night.</p><p>“Come <b>in</b>,” Ann said. <em>He looks tired,</em> she thought.</p>';
+    const root = document.createElement('div');
+    root.innerHTML = html;
+    const lines = liveDialogue(root);
+    expect(lines.map(l => [l.index, l.blockIndex, l.range.toString()])).toEqual([
+      [0, 1, '“Come in,”'],
+      [1, 1, 'He looks tired,'],
+    ]);
+    expect(lines[0]!.key).toBe(dialogueBlocks(html)[1]!.key);
+  });
+
+  it('maps collapsed whitespace back to the right characters', () => {
+    const root = document.createElement('div');
+    root.innerHTML = '<p>  He   said,\n  "Go   now."  </p>';
+    expect(liveDialogue(root).map(l => l.range.toString())).toEqual(['"Go   now."']);
   });
 });

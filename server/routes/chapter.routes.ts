@@ -235,6 +235,48 @@ router.post('/:id/dialogue', async (req: Request, res: Response) => {
   }
 });
 
+// PATCH change one line's speaker — { key, index, entityId } (entityId null =
+// narration voice). Used when the author corrects the model. The paragraph
+// must already be attributed, and the entity must be a character in the
+// chapter's series. Answers with the chapter's dialogue map.
+router.patch('/:id/dialogue', async (req: Request, res: Response) => {
+  try {
+    const id = req.params['id'] as string;
+    const { key, index, entityId } = (req.body ?? {}) as { key?: unknown; index?: unknown; entityId?: unknown };
+    if (typeof key !== 'string' || !Number.isInteger(index) || (index as number) < 0
+      || (entityId !== null && typeof entityId !== 'string')) {
+      res.status(400).json({ error: 'key, index and entityId are required' });
+      return;
+    }
+    const { resource: chapter } = await container.item(id, id).read<Chapter>();
+    if (!chapter || !(await canAccessBook(chapter.bookId, req))) {
+      res.status(404).json({ error: 'Chapter not found' });
+      return;
+    }
+    const speakers = chapter.dialogue?.[key];
+    if (!speakers || (index as number) >= speakers.length) {
+      res.status(409).json({ error: 'That line has changed since it was attributed. Save the chapter and try again.' });
+      return;
+    }
+    if (entityId !== null) {
+      const { resource: book } = await booksContainer.item(chapter.bookId, chapter.bookId).read<Book>();
+      const { resource: entity } = await getContainer('entities').item(entityId as string, entityId as string).read<Entity>();
+      if (!entity || entity.type !== 'PERSON' || entity.seriesId !== book?.seriesId) {
+        res.status(400).json({ error: 'Not a character in this series' });
+        return;
+      }
+    }
+    const next = [...speakers];
+    next[index as number] = entityId as string | null;
+    const dialogue: ChapterDialogue = { ...chapter.dialogue, [key]: next };
+    await container.item(id, id).replace<Chapter>({ ...chapter, dialogue });
+    res.json({ dialogue });
+  } catch (err) {
+    console.error('Error setting dialogue speaker:', err);
+    res.status(500).json({ error: 'Failed to set the speaker' });
+  }
+});
+
 // PATCH archive chapter
 router.patch('/:id/archive', async (req: Request, res: Response) => {
   try {

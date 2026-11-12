@@ -1,5 +1,5 @@
 import { HttpClient } from '@angular/common/http';
-import { inject, Injectable } from '@angular/core';
+import { inject, Injectable, signal } from '@angular/core';
 import { firstValueFrom } from 'rxjs';
 import { dialogueBlocks } from '@app/core/read-aloud/dialogue-paragraphs';
 import { Chapter } from '@shared/models/chapter.model';
@@ -40,8 +40,17 @@ export class DialogueTaggingService {
   private readonly http = inject(HttpClient);
   /** Chapters being tagged, with the newest save that arrived meanwhile. */
   private readonly running = new Map<string, Chapter | null>();
-  /** The latest attributions per chapter, which a save's response may not have yet. */
-  private readonly latest = new Map<string, ChapterDialogue>();
+
+  /** The latest known speakers per chapter id (from loads, tagging and corrections). */
+  readonly dialogue = signal<Readonly<Record<string, ChapterDialogue>>>({});
+  /** Chapters whose new dialogue is being attributed right now. */
+  readonly tagging = signal<ReadonlySet<string>>(new Set());
+
+  /** Records a chapter's stored speakers as loaded from the server. */
+  seed(chapter: Pick<Chapter, 'id' | 'dialogue'>): void {
+    if (!chapter?.id || this.running.has(chapter.id)) return;
+    this.setDialogue(chapter.id, chapter.dialogue ?? {});
+  }
 
   /** Tags the saved chapter's dialogue (call with the server's response). */
   tag(chapter: Chapter): void {
@@ -51,23 +60,58 @@ export class DialogueTaggingService {
       return;
     }
     this.running.set(chapter.id, null);
+    this.tagging.update(s => new Set(s).add(chapter.id));
     void this.run(chapter);
+  }
+
+  /**
+   * Corrects who speaks one line (span `index` of the paragraph with that key); null reads it
+   * in the narration voice. Updates right away and rolls back if the server
+   * refuses. Resolves to an error message, or null on success.
+   */
+  async setSpeaker(chapterId: string, key: string, index: number, entityId: string | null): Promise<string | null> {
+    const before = this.dialogue()[chapterId];
+    const speakers = before?.[key];
+    if (!before || !speakers || index >= speakers.length) return 'Save the chapter first, so this line has a speaker to change.';
+    const next = [...speakers];
+    next[index] = entityId;
+    this.setDialogue(chapterId, { ...before, [key]: next });
+    try {
+      const res = await firstValueFrom(this.http.patch<{ dialogue: ChapterDialogue }>(
+        `/api/chapters/${encodeURIComponent(chapterId)}/dialogue`, { key, index, entityId }));
+      this.setDialogue(chapterId, res.dialogue);
+      return null;
+    } catch (err) {
+      this.setDialogue(chapterId, before);
+      const message = (err as { error?: { error?: string } })?.error?.error;
+      return message ?? 'Couldn’t change the speaker. Try again.';
+    }
+  }
+
+  private setDialogue(chapterId: string, dialogue: ChapterDialogue): void {
+    this.dialogue.update(all => ({ ...all, [chapterId]: dialogue }));
   }
 
   private async run(chapter: Chapter): Promise<void> {
     try {
-      const dialogue = this.latest.get(chapter.id) ?? chapter.dialogue;
+      const dialogue = this.dialogue()[chapter.id] ?? chapter.dialogue;
       const request = dialogueTagRequest({ content: chapter.content, dialogue });
       if (request) {
         const res = await firstValueFrom(
           this.http.post<{ dialogue: ChapterDialogue }>(`/api/chapters/${encodeURIComponent(chapter.id)}/dialogue`, request));
-        this.latest.set(chapter.id, res.dialogue);
+        this.setDialogue(chapter.id, res.dialogue);
+      } else if (dialogue) {
+        this.setDialogue(chapter.id, dialogue);
       }
     } catch {
       // Best effort: untagged lines are read in the narration voice, and the next save tries again.
     }
     const next = this.running.get(chapter.id);
     this.running.delete(chapter.id);
-    if (next) this.tag(next);
+    if (next) {
+      this.tag(next);
+    } else {
+      this.tagging.update(s => { const out = new Set(s); out.delete(chapter.id); return out; });
+    }
   }
 }

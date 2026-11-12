@@ -133,6 +133,10 @@
               <mat-icon>fact_check</mat-icon>
               {{ factChecking() ? 'Fact-checking…' : 'Fact check chapter' }}
             </button>
+            <button mat-menu-item (click)="dialogueHighlights.setVisible(!dialogueHighlights.visible())">
+              <mat-icon>record_voice_over</mat-icon>
+              {{ dialogueHighlights.visible() ? 'Hide dialogue speakers' : 'Show dialogue speakers' }}
+            </button>
             <button mat-menu-item (click)="archiveChapter()">
               <mat-icon>archive</mat-icon> Archive chapter
             </button>
@@ -224,6 +228,7 @@
               [ctxMenuExtraItems]="ctxMenuExtraItems"
               [showNoteButton]="true"
               [showMoveButton]="true"
+              [dialogueChapterId]="chapter()?.id ?? null"
               placeholder="Start writing your chapter…"
               (contentChange)="onEditorContentChange($event)"
               (entityEditRequest)="onEntityEditRequest($event)"

@@ -24,6 +24,7 @@ import { disableSpellcheckOnEntityReferences } from '@app/shared/entity-referenc
 import { AI_BLOCK_SELECTOR, clearAiMarkOnEmptyBlocks } from './ai-authorship';
 import { entityReferenceBeforeCaret, placeCaret, restoreCursor, saveCursor, textCaretAfter, textCaretBefore } from './cursor-anchor';
 import { cleanEditorHtml } from './editor-html-clean';
+import { DialogueSpeakersComponent } from './dialogue-speakers';
 
 /** Minimal shape the editor needs to decorate/act on a Quill Editor suggestion.
  *  Structurally compatible with the review service's `ReviewSuggestion`. */
@@ -70,13 +71,14 @@ function editorBlocks(el: Element): Element[] {
 @Component({
   selector: 'app-rich-text-editor',
   host: { '[class.rte-embedded]': 'embedded()' },
-  imports: [MatButtonModule, MatIconModule, MatProgressSpinnerModule, MatTooltipModule, DecimalPipe, RouterLink],
+  imports: [MatButtonModule, MatIconModule, MatProgressSpinnerModule, MatTooltipModule, DecimalPipe, RouterLink, DialogueSpeakersComponent],
   templateUrl: './rich-text-editor.html',
   styleUrl: './rich-text-editor.scss',
 })
 export class RichTextEditorComponent implements OnInit, AfterViewInit, OnDestroy {
   @ViewChild('editorEl') editorRef!: ElementRef<HTMLDivElement>;
   @ViewChild('minimapCanvas') minimapCanvasRef?: ElementRef<HTMLCanvasElement>;
+  @ViewChild(DialogueSpeakersComponent) dialogueSpeakers?: DialogueSpeakersComponent;
   @ViewChild('entityTagInputEl') entityTagInputRef?: ElementRef<HTMLInputElement>;
   @ViewChild('photoPickerEntityInputEl') photoPickerEntityInputRef?: ElementRef<HTMLInputElement>;
   @ViewChild('photoPickerFileInputEl') photoPickerFileInputRef?: ElementRef<HTMLInputElement>;
@@ -100,6 +102,9 @@ export class RichTextEditorComponent implements OnInit, AfterViewInit, OnDestroy
   /** Embedded in the full-book editor: the page scrolls instead of the editor,
    *  and the per-editor chrome (border, minimap, word count) is hidden. */
   embedded = input<boolean>(false);
+  /** The chapter being edited: colors its dialogue by speaker and lets the
+   *  author correct who says a line. Unset in non-chapter editors. */
+  dialogueChapterId = input<string | null>(null);
 
   // ── Outputs ─────────────────────────────────────────────────────────────
   /** Debounced (800 ms) clean HTML whenever content changes. */
@@ -2634,6 +2639,9 @@ export class RichTextEditorComponent implements OnInit, AfterViewInit, OnDestroy
     const cursorRange = sel && sel.rangeCount > 0 ? sel.getRangeAt(0) : null;
     const surroundingText = cursorRange ? this.extractSurroundingText(cursorRange) : '';
 
+    // Correct who says the line of dialogue under the caret.
+    if (this.dialogueSpeakers?.lineAtSelection()) items.push({ id: 'change-speaker', label: 'Change speaker', icon: 'record_voice_over' });
+
     // Append host-provided extra items
     for (const extra of this.ctxMenuExtraItems()) {
       if (this.ctxMenuCaptureText && extra.id === 'capture-quote') items.push(extra);
@@ -2668,6 +2676,9 @@ export class RichTextEditorComponent implements OnInit, AfterViewInit, OnDestroy
     this.closeCtxMenu();
     if (item.id === 'ai-action') {
       this.requestAiAssist();
+    } else if (item.id === 'change-speaker') {
+      const line = this.dialogueSpeakers?.lineAtSelection();
+      if (line) this.dialogueSpeakers!.openChanger(line);
     } else {
       this.ctxMenuExtraItemSelected.emit({ id: item.id, captureText: this.ctxMenuCaptureText, narratorCaptureText: this.ctxMenuNarratorCaptureText, surroundingText: this._ctxMenuSurroundingText });
     }
