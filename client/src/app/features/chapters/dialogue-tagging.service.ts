@@ -5,6 +5,15 @@ import { dialogueBlocks } from '@app/core/read-aloud/dialogue-paragraphs';
 import { Chapter } from '@shared/models/chapter.model';
 import { ChapterDialogue, DialogueParagraph, DialogueTagRequest } from '@shared/models/dialogue.model';
 
+/** Untagged paragraphs sent per request, so colors appear as each batch finishes. */
+export const TAG_CHUNK = 20;
+
+/** How far along a chapter's tagging is, in paragraphs. */
+export interface TaggingProgress {
+  done: number;
+  total: number;
+}
+
 /** Paragraphs of lead-up sent with each untagged one, and how much of them. */
 const CONTEXT_PARAGRAPHS = 2;
 const CONTEXT_CHARS = 600;
@@ -45,6 +54,8 @@ export class DialogueTaggingService {
   readonly dialogue = signal<Readonly<Record<string, ChapterDialogue>>>({});
   /** Chapters whose new dialogue is being attributed right now. */
   readonly tagging = signal<ReadonlySet<string>>(new Set());
+  /** Progress of each chapter being attributed. */
+  readonly progress = signal<Readonly<Record<string, TaggingProgress>>>({});
 
   /** Records a chapter's stored speakers as loaded from the server. */
   seed(chapter: Pick<Chapter, 'id' | 'dialogue'>): void {
@@ -93,25 +104,51 @@ export class DialogueTaggingService {
   }
 
   private async run(chapter: Chapter): Promise<void> {
+    const id = chapter.id;
     try {
-      const dialogue = this.dialogue()[chapter.id] ?? chapter.dialogue;
+      const dialogue = this.dialogue()[id] ?? chapter.dialogue;
       const request = dialogueTagRequest({ content: chapter.content, dialogue });
-      if (request) {
-        const res = await firstValueFrom(
-          this.http.post<{ dialogue: ChapterDialogue }>(`/api/chapters/${encodeURIComponent(chapter.id)}/dialogue`, request));
-        this.setDialogue(chapter.id, res.dialogue);
-      } else if (dialogue) {
-        this.setDialogue(chapter.id, dialogue);
+      if (!request) {
+        if (dialogue) this.setDialogue(id, dialogue);
+      } else {
+        // One batch at a time (each request rewrites the chapter's map, so they
+        // mustn't overlap), showing each batch's speakers as it lands.
+        const chunks = request.pending.length
+          ? Array.from({ length: Math.ceil(request.pending.length / TAG_CHUNK) },
+            (_, i) => request.pending.slice(i * TAG_CHUNK, (i + 1) * TAG_CHUNK))
+          : [[]];
+        const total = request.pending.length;
+        this.setProgress(id, { done: 0, total });
+        let done = 0;
+        for (const pending of chunks) {
+          const res = await firstValueFrom(this.http.post<{ dialogue: ChapterDialogue }>(
+            `/api/chapters/${encodeURIComponent(id)}/dialogue`, { keys: request.keys, pending }));
+          this.setDialogue(id, res.dialogue);
+          done += pending.length;
+          this.setProgress(id, { done, total });
+          // A newer save is waiting: it starts over from the latest text.
+          if (this.running.get(id)) break;
+        }
       }
     } catch {
       // Best effort: untagged lines are read in the narration voice, and the next save tries again.
     }
-    const next = this.running.get(chapter.id);
-    this.running.delete(chapter.id);
+    const next = this.running.get(id);
+    this.running.delete(id);
     if (next) {
       this.tag(next);
     } else {
-      this.tagging.update(s => { const out = new Set(s); out.delete(chapter.id); return out; });
+      this.tagging.update(s => { const out = new Set(s); out.delete(id); return out; });
+      this.setProgress(id, null);
     }
+  }
+
+  private setProgress(chapterId: string, progress: TaggingProgress | null): void {
+    this.progress.update(all => {
+      const out = { ...all };
+      if (progress) out[chapterId] = progress;
+      else delete out[chapterId];
+      return out;
+    });
   }
 }

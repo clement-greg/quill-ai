@@ -3,7 +3,7 @@ import { provideHttpClient } from '@angular/common/http';
 import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
 import { dialogueBlocks } from '@app/core/read-aloud/dialogue-paragraphs';
 import { Chapter } from '@shared/models/chapter.model';
-import { DialogueTaggingService, dialogueTagRequest } from './dialogue-tagging.service';
+import { DialogueTaggingService, dialogueTagRequest, TAG_CHUNK } from './dialogue-tagging.service';
 
 const CONTENT = '<p>Night fell.</p><p>"Hi," Ann said.</p><p>"Hello," said Bob.</p>';
 const keys = () => dialogueBlocks(CONTENT).filter(b => b.key).map(b => b.key!);
@@ -126,6 +126,37 @@ describe('DialogueTaggingService', () => {
     service.seed({ id: 'ch-1', dialogue: {} });
     expect(await service.setSpeaker('ch-1', 'k', 0, 'bob')).toContain('Save the chapter first');
     http.expectNone('/api/chapters/ch-1/dialogue');
+  });
+
+  it('attributes a long chapter in batches, showing each batch\'s speakers as it lands', async () => {
+    const paras = Array.from({ length: TAG_CHUNK + 5 }, (_, i) => `<p>"Line ${i}," Ann said.</p>`).join('');
+    service.tag({ ...chapter, content: paras });
+    const first = http.expectOne('/api/chapters/ch-1/dialogue');
+    expect(first.request.body.pending.length).toBe(TAG_CHUNK);
+    expect(first.request.body.keys.length).toBe(TAG_CHUNK + 5);
+    expect(service.progress()['ch-1']).toEqual({ done: 0, total: TAG_CHUNK + 5 });
+    first.flush({ dialogue: { a: ['ann'] } });
+    await new Promise(r => setTimeout(r));
+    expect(service.dialogue()['ch-1']).toEqual({ a: ['ann'] });
+    expect(service.progress()['ch-1']).toEqual({ done: TAG_CHUNK, total: TAG_CHUNK + 5 });
+    const second = http.expectOne('/api/chapters/ch-1/dialogue');
+    expect(second.request.body.pending.length).toBe(5);
+    second.flush({ dialogue: { a: ['ann'], b: ['bob'] } });
+    await new Promise(r => setTimeout(r));
+    expect(service.dialogue()['ch-1']).toEqual({ a: ['ann'], b: ['bob'] });
+    expect(service.progress()['ch-1']).toBeUndefined();
+    expect(service.tagging().has('ch-1')).toBe(false);
+  });
+
+  it('stops between batches when a newer save arrives, and starts over from it', async () => {
+    const paras = Array.from({ length: TAG_CHUNK + 5 }, (_, i) => `<p>"Line ${i}," Ann said.</p>`).join('');
+    service.tag({ ...chapter, content: paras });
+    service.tag({ ...chapter, content: '<p>"Only this," Ann said.</p>' });
+    http.expectOne('/api/chapters/ch-1/dialogue').flush({ dialogue: {} });
+    await new Promise(r => setTimeout(r));
+    const restart = http.expectOne('/api/chapters/ch-1/dialogue');
+    expect(restart.request.body.pending.map((p: { text: string }) => p.text)).toEqual(['"Only this," Ann said.']);
+    restart.flush({ dialogue: {} });
   });
 });
 

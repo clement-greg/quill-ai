@@ -203,6 +203,12 @@ body.resizing-col, body.resizing-col * {
   text-decoration: underline dashed #b0abb5 1px;
 }
 
+/* Not attributed yet, and being worked out right now (after a save). */
+::highlight(dialogue-working) {
+  background-color: color-mix(in srgb, #79747e 10%, transparent);
+  text-decoration: underline dashed #6750a4 2px;
+}
+
 /* Full book player (book-player.ts): a centered card on wide screens, the
    whole screen on phones. */
 .book-player-dialog .mat-mdc-dialog-surface {

@@ -28,6 +28,10 @@ const SYSTEM_PROMPT =
   'Reply with JSON: {"paragraphs":[{"id":"P1","speakers":["C2",null]}]} — one entry per paragraph, ' +
   'one speaker per marked passage, in order.';
 
+function isContentFilterError(err: unknown): boolean {
+  return (err as { code?: string } | null)?.code === 'content_filter';
+}
+
 /** The paragraph's text with its spans wrapped in [[n]]…[[/n]] markers. */
 export function markSpans(text: string, spans: readonly DialogueSpan[]): string {
   let out = '';
@@ -88,7 +92,22 @@ export async function attributeDialogue(paragraphs: readonly DialogueParagraph[]
       try {
         Object.assign(result, await attributeBatch(batch, roster + pov, ids, options.model));
       } catch (err) {
-        console.error('Dialogue attribution batch failed:', err);
+        if (!isContentFilterError(err)) {
+          console.error('Dialogue attribution batch failed:', err);
+          continue;
+        }
+        // The content filter judges the batch as a whole: try each paragraph on
+        // its own, and read any it still refuses in the narration voice rather
+        // than sending it again on every save.
+        for (const paragraph of batch) {
+          try {
+            Object.assign(result, await attributeBatch([paragraph], roster + pov, ids, options.model));
+          } catch (inner) {
+            if (!isContentFilterError(inner)) { console.error('Dialogue attribution failed:', inner); continue; }
+            console.warn('Dialogue attribution: a paragraph trips the content filter; reading it as narration.');
+            result[paragraph.key] = paragraph.spans.map(() => null);
+          }
+        }
       }
     }
   };

@@ -9,7 +9,7 @@ import { displayName } from '@app/shared/voice-gallery/voice-filter';
 import { proxyImageUrl } from '@app/core/utils/image-proxy';
 import { Entity } from '@shared/models/entity.model';
 import {
-  DialogueHighlightsService, NARRATION_HIGHLIGHT, PENDING_HIGHLIGHT, SPEAKER_COLORS, speakerHighlight,
+  DialogueHighlightsService, NARRATION_HIGHLIGHT, PENDING_HIGHLIGHT, SPEAKER_COLORS, speakerHighlight, WORKING_HIGHLIGHT,
 } from './dialogue-highlights';
 
 /** Wait after the text changes before finding its dialogue again. */
@@ -145,9 +145,10 @@ export class DialogueSpeakersComponent implements OnDestroy {
       const lines = this.lines();
       if (!this.painted()) { this.highlights.remove(this); return; }
       const groups = new Map<string, Range[]>();
+      const working = this.isTagging();
       for (const line of lines) {
         const s = this.speakerOf(line);
-        const name = s.kind === 'pending' ? PENDING_HIGHLIGHT
+        const name = s.kind === 'pending' ? (working ? WORKING_HIGHLIGHT : PENDING_HIGHLIGHT)
           : s.kind === 'none' ? NARRATION_HIGHLIGHT
           : speakerHighlight(s.slot);
         groups.set(name, [...(groups.get(name) ?? []), line.range]);

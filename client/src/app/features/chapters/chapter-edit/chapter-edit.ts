@@ -55,6 +55,7 @@ import { FactCheckReportService } from '../fact-check-report.service';
 import { QuillReviewPanelComponent } from './quill-review-panel/quill-review-panel';
 import { MentionedEntitiesPanelComponent } from './mentioned-entities-panel';
 import { VersionHistoryPanelComponent } from './version-history-panel/version-history-panel';
+import { DialogueTaggingStatusComponent } from './dialogue-tagging-status';
 import { ConfirmDialogComponent } from '@app/shared/confirm-dialog/confirm-dialog';
 import { MoveTextDialogComponent, MoveTextDialogData, MoveTextDialogResult } from './move-text-dialog';
 import { insertHtmlAtAnchor } from './chapter-content-blocks';
@@ -82,7 +83,7 @@ import { adjacentChapters, ChapterNavItem } from './chapter-nav';
     MatButtonModule, MatIconModule, MatInputModule, MatFormFieldModule,
     MatProgressSpinnerModule, MatTabsModule, MatExpansionModule, MatDialogModule, MatMenuModule, MatSelectModule, MatTooltipModule,
     SlideOutPanelContainer, EntityEditComponent, RichTextEditorComponent, AiStatsComponent, ChapterOutlineComponent,
-    QuillReviewPanelComponent, VersionHistoryPanelComponent, MentionedEntitiesPanelComponent,
+    QuillReviewPanelComponent, VersionHistoryPanelComponent, MentionedEntitiesPanelComponent, DialogueTaggingStatusComponent,
     FactCheckPanelComponent, BookEditorComponent, MatButtonToggleModule,
   ],
   templateUrl: './chapter-edit.html',
