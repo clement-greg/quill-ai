@@ -30,6 +30,13 @@
   mat-icon { font-size: 18px; width: 18px; height: 18px; }
 }
 
+.dlg-photo {
+  object-fit: cover;
+  border: 2px solid;
+  box-sizing: border-box;
+  background: var(--mat-sys-surface-variant, #e7e0ec);
+}
+
 .dlg-avatar-none { background: var(--mat-sys-surface-variant, #e7e0ec); color: var(--mat-sys-on-surface-variant, #49454f); }
 
 .dlg-text { display: flex; flex-direction: column; min-width: 0; }
@@ -90,7 +97,9 @@
 }
 
 .dlg-option-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.dlg-swatch { flex: none; width: 14px; height: 14px; border-radius: 50%; }
+.dlg-swatch { flex: none; width: 24px; height: 24px; border-radius: 50%; box-sizing: border-box; }
+.dlg-swatch-photo { object-fit: cover; border: 2px solid; background: var(--mat-sys-surface-variant, #e7e0ec); }
+.dlg-swatch-initial { display: grid; place-items: center; color: #fff; font-size: 12px; font-weight: 600; }
 .dlg-swatch-none { border: 2px dotted var(--mat-sys-outline, #79747e); }
 .dlg-check { font-size: 18px; width: 18px; height: 18px; color: var(--mat-sys-primary, #6750a4); }
 .dlg-error { margin: 0; color: var(--mat-sys-error, #b3261e); font-size: 13px; }

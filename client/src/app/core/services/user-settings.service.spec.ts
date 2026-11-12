@@ -297,4 +297,20 @@ describe('UserSettingsService', () => {
       expect(freshService().toolbarHidden()).toBe(true);
     });
   });
+
+  // ── Dialogue colors ────────────────────────────────────────────────────────
+
+  it('colors dialogue by default, loads the saved choice and saves changes', async () => {
+    expect(service.dialogueMarkupEnabled()).toBe(true);
+    const load = service.loadFromServer();
+    http.expectOne('/api/user-settings').flush({ dialogueMarkupEnabled: false });
+    await load;
+    expect(service.dialogueMarkupEnabled()).toBe(false);
+    service.setDialogueMarkupEnabled(true);
+    const req = http.expectOne('/api/user-settings');
+    expect(req.request.body.dialogueMarkupEnabled).toBe(true);
+    req.flush({});
+    expect(service.dialogueMarkupEnabled()).toBe(true);
+  });
 });
+

@@ -172,6 +172,17 @@
                 (change)="setAutoSaveEnabled($event.checked)">
               </mat-slide-toggle>
             </div>
+            <div class="editor-pref-row">
+              <div class="editor-pref-label-group">
+                <span id="dialogue-markup-label" class="editor-pref-label">Color dialogue by speaker</span>
+                <span class="editor-pref-sublabel">Tints each quote in the chapter editor with the color of the character who says it. Hovering a quote still shows its speaker when this is off.</span>
+              </div>
+              <mat-slide-toggle
+                aria-labelledby="dialogue-markup-label"
+                [checked]="dialogueMarkupEnabled()"
+                (change)="setDialogueMarkupEnabled($event.checked)">
+              </mat-slide-toggle>
+            </div>
           </section>
 
           <!-- Ghost Complete Section -->

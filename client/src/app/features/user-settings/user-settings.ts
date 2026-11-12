@@ -91,6 +91,7 @@ export class UserSettingsComponent {
   readonly grammarCheckEnabled = this.settingsService.grammarCheckEnabled;
   readonly entityDetectionEnabled = this.settingsService.entityDetectionEnabled;
   readonly autoSaveEnabled = this.settingsService.autoSaveEnabled;
+  readonly dialogueMarkupEnabled = this.settingsService.dialogueMarkupEnabled;
   readonly isDesktopApp = this.settingsService.isDesktopApp;
   readonly hideDesktopToolbar = this.settingsService.hideDesktopToolbar;
 
@@ -290,6 +291,10 @@ export class UserSettingsComponent {
 
   setEntityDetectionEnabled(value: boolean): void {
     this.settingsService.setEntityDetectionEnabled(value);
+  }
+
+  setDialogueMarkupEnabled(value: boolean): void {
+    this.settingsService.setDialogueMarkupEnabled(value);
   }
 
   setAutoSaveEnabled(value: boolean): void {

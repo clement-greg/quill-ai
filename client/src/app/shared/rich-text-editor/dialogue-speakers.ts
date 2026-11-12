@@ -6,6 +6,7 @@ import { liveDialogue, LiveDialogue } from '@app/core/read-aloud/dialogue-paragr
 import { ReadAloudService } from '@app/core/read-aloud/read-aloud.service';
 import { DialogueTaggingService } from '@app/features/chapters/dialogue-tagging.service';
 import { displayName } from '@app/shared/voice-gallery/voice-filter';
+import { proxyImageUrl } from '@app/core/utils/image-proxy';
 import { Entity } from '@shared/models/entity.model';
 import {
   DialogueHighlightsService, NARRATION_HIGHLIGHT, PENDING_HIGHLIGHT, SPEAKER_COLORS, speakerHighlight,
@@ -63,7 +64,10 @@ export class DialogueSpeakersComponent implements OnDestroy {
     const id = this.chapterId();
     return id ? this.tagging.dialogue()[id] : undefined;
   });
-  readonly enabled = computed(() => !!this.chapterId() && this.highlights.visible());
+  /** Finds lines and shows the hover card whenever a chapter is open. */
+  readonly enabled = computed(() => !!this.chapterId());
+  /** Colors them only while the "Color dialogue by speaker" setting is on. */
+  private readonly painted = computed(() => this.enabled() && this.highlights.visible());
 
   /** The line the card is about, and where the card sits. */
   readonly active = signal<LiveDialogue | null>(null);
@@ -139,7 +143,7 @@ export class DialogueSpeakersComponent implements OnDestroy {
     // Repaint when the lines, their speakers or the characters change.
     effect(() => {
       const lines = this.lines();
-      if (!this.enabled()) { this.highlights.remove(this); return; }
+      if (!this.painted()) { this.highlights.remove(this); return; }
       const groups = new Map<string, Range[]>();
       for (const line of lines) {
         const s = this.speakerOf(line);
@@ -212,6 +216,11 @@ export class DialogueSpeakersComponent implements OnDestroy {
 
   cardLeave(): void {
     this.scheduleHide();
+  }
+
+  /** The entity's picture through the image proxy, or null to show its initial. */
+  avatar(entity: Entity): string | null {
+    return proxyImageUrl(entity.thumbnailUrl || entity.originalUrl);
   }
 
   initial(entity: Entity): string {

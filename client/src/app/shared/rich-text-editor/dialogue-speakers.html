@@ -6,7 +6,11 @@
       @case ('entity') {
         @if (speakerEntity(); as entity) {
           <div class="dlg-who">
-            <span class="dlg-avatar" [style.background]="speakerColor()" aria-hidden="true">{{ initial(entity) }}</span>
+            @if (avatar(entity); as src) {
+              <img class="dlg-avatar dlg-photo" [src]="src" alt="" [style.border-color]="speakerColor()" />
+            } @else {
+              <span class="dlg-avatar" [style.background]="speakerColor()" aria-hidden="true">{{ initial(entity) }}</span>
+            }
             <span class="dlg-text">
               <span class="dlg-name">{{ entity.name }}</span>
               <span class="dlg-meta">
@@ -47,7 +51,11 @@
             @let selected = speakerEntity()?.id === o.entity.id;
             <button type="button" role="option" class="dlg-option" [attr.aria-selected]="selected" [class.selected]="selected"
               [disabled]="saving()" (click)="choose(o.entity.id)">
-              <span class="dlg-swatch" [style.background]="o.color" aria-hidden="true"></span>
+              @if (avatar(o.entity); as src) {
+                <img class="dlg-swatch dlg-swatch-photo" [src]="src" alt="" [style.border-color]="o.color" />
+              } @else {
+                <span class="dlg-swatch dlg-swatch-initial" [style.background]="o.color" aria-hidden="true">{{ initial(o.entity) }}</span>
+              }
               <span class="dlg-option-name">{{ o.entity.name }}</span>
               @if (selected) { <mat-icon class="dlg-check" aria-hidden="true">check</mat-icon> }
             </button>

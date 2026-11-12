@@ -10,7 +10,7 @@ import { DialogueSpeakersComponent, speakingCharacters } from './dialogue-speake
 
 const person = (id: string, name: string, over: Partial<Entity> = {}) =>
   ({ id, name, type: 'PERSON', seriesId: 's', ...over }) as Entity;
-const ANN = person('ann', 'Ann', { sortOrder: 1, voiceId: 'azure:Ann' });
+const ANN = person('ann', 'Ann', { sortOrder: 1, voiceId: 'azure:Ann', thumbnailUrl: 'https://blob/x/ann_thumb.webp' });
 const BOB = person('bob', 'Bob', { sortOrder: 2 });
 const HTML = '<p>"Hi," Ann said. "Yo," said Bob.</p><p>"New line," someone said.</p>';
 
@@ -79,10 +79,24 @@ describe('DialogueSpeakersComponent', () => {
     expect(groups.get('dialogue-pending')!.map(r => r.toString())).toEqual(['"New line,"']);
   });
 
-  it('paints nothing when speaker colors are off', () => {
-    const { update, remove } = setup({ [key(0)]: ['ann', null] }, false);
+  it('paints nothing when dialogue colors are off, but still finds lines for the card', () => {
+    const { update, remove, cmp, caretIn } = setup({ [key(0)]: ['ann', null] }, false);
     expect(update).not.toHaveBeenCalled();
     expect(remove).toHaveBeenCalled();
+    caretIn('Hi');
+    expect(cmp.lineAtSelection()?.text).toBe('"Hi,"');
+  });
+
+  it('shows each character\'s picture, or their initial when they have none', () => {
+    const { fixture, cmp, el, caretIn } = setup({ [key(0)]: ['ann', null] });
+    caretIn('Hi');
+    cmp.openChanger(cmp.lineAtSelection()!);
+    fixture.detectChanges();
+    const header = el.querySelector<HTMLImageElement>('.dlg-who img.dlg-photo')!;
+    expect(header.getAttribute('src')).toBe('/api/image/ann_thumb.webp');
+    const options = [...el.querySelectorAll('.dlg-option')];
+    expect(options[0]!.querySelector('img')?.getAttribute('src')).toBe('/api/image/ann_thumb.webp');
+    expect(options[1]!.querySelector('.dlg-swatch-initial')?.textContent).toBe('B');
   });
 
   it('opens the speaker list from the caret and saves the choice', async () => {
@@ -94,7 +108,7 @@ describe('DialogueSpeakersComponent', () => {
     fixture.detectChanges();
     expect(el.textContent).toContain('No speaker');
     const options = [...el.querySelectorAll<HTMLButtonElement>('.dlg-option')];
-    expect(options.map(o => o.textContent!.trim())).toEqual(['Ann', 'Bob', 'No speaker (narration voice)check']);
+    expect(options.map(o => o.querySelector('.dlg-option-name')!.textContent)).toEqual(['Ann', 'Bob', 'No speaker (narration voice)']);
     options[1]!.click();
     await Promise.resolve();
     expect(setSpeaker).toHaveBeenCalledWith('ch', key(0), 1, 'bob');
