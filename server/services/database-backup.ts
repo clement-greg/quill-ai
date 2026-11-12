@@ -10,7 +10,8 @@
  *                               Cosmos's own system fields (_rid, _self, _etag,
  *                               _attachments)
  * Restoring is: create each container from its manifest definition, then
- * upsert every line of its .jsonl file. scripts/restore-backup.ts does that.
+ * insert every line of its .jsonl file, skipping ids that already exist.
+ * scripts/restore-backup.ts does that.
  *
  * The zip is stored unencrypted (unlike uploaded media) so it opens as-is when
  * downloaded from the storage account — a backup that needs this app's crypto
@@ -133,8 +134,8 @@ containers/<id>.jsonl   Every document in that container, one JSON object per li
                         as stored in Cosmos DB minus the system fields
                         _rid, _self, _etag and _attachments.
 
-To restore: create each container from its manifest definition, then upsert each
-line of its .jsonl file into it. scripts/restore-backup.ts in the Quill AI repo
+To restore: create each container from its manifest definition, then insert each
+line of its .jsonl file into it, skipping documents whose id already exists. scripts/restore-backup.ts in the Quill AI repo
 does exactly this.
 `;
 
