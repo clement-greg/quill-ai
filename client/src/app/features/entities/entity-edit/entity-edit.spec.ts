@@ -6,7 +6,6 @@ import { EMPTY, of, throwError } from 'rxjs';
 import { Entity } from '@shared/models/entity.model';
 import { EntityEditComponent } from './entity-edit';
 import { EntityService } from '../entity.service';
-import { EntityQuoteService } from '../entity-quote.service';
 import { UserSettingsService } from '@app/core/services/user-settings.service';
 import { ReadAloudService } from '@app/core/read-aloud/read-aloud.service';
 
@@ -27,7 +26,6 @@ describe('EntityEditComponent profile photo', () => {
     TestBed.configureTestingModule({
       providers: [
         { provide: EntityService, useValue: stubService<EntityService>({ setProfilePhoto }) },
-        { provide: EntityQuoteService, useValue: stubService<EntityQuoteService>() },
         {
           provide: UserSettingsService,
           useValue: stubService<UserSettingsService>({
@@ -113,7 +111,6 @@ describe('EntityEditComponent read-aloud voice', () => {
     TestBed.configureTestingModule({
       providers: [
         { provide: EntityService, useValue: stubService<EntityService>() },
-        { provide: EntityQuoteService, useValue: stubService<EntityQuoteService>() },
         {
           provide: UserSettingsService,
           useValue: stubService<UserSettingsService>({ genderOptions: signal([]), raceOptions: signal([]), orientationOptions: signal([]) }),
@@ -160,4 +157,20 @@ describe('EntityEditComponent read-aloud voice', () => {
     cmp.chooseVoice();
     expect(cmp.draft()!.voiceId).toBeUndefined();
   });
+
+  it('stores a speed, and normal speed as none', () => {
+    setup();
+    const cmp = create(ENTITY);
+    cmp.setVoiceRate(1.25);
+    expect(cmp.draft()!.voiceRate).toBe(1.25);
+    cmp.setVoiceRate(1);
+    expect(cmp.draft()!.voiceRate).toBeUndefined();
+  });
+
+  it('hides the tab bar for people, who only have Details', () => {
+    setup();
+    expect(create(ENTITY).hasLocationTab()).toBe(false);
+    expect(create({ ...ENTITY, type: 'PLACE' }).hasLocationTab()).toBe(true);
+  });
 });
+

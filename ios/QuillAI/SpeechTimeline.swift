@@ -20,6 +20,9 @@ struct VoicedPart: Decodable, Equatable {
     let text: String
     /// A web voice id ("azure:<short name>"), or nil for the narration voice.
     var voiceId: String? = nil
+    /// Speed relative to the reader's; nil = 1 for a character's voice, the
+    /// narration speed for the narration voice.
+    var rate: Double? = nil
 }
 
 /// What `window.quillNative.speech.play()` sends.
@@ -28,6 +31,8 @@ struct SpeechPlayRequest: Decodable {
     let startIndex: Int
     let voiceId: String?
     let rate: Double
+    /// Narration's speed relative to `rate` (the narrator's own speed). Older web builds don't send it.
+    var narrationRate: Double? = nil
     let bookTitle: String
     /// The book being read, when it's a whole book.
     var bookId: String? = nil

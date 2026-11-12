@@ -77,4 +77,21 @@ final class AzurePiecesTests: XCTestCase {
         XCTAssertEqual(segments[0].parts, [VoicedPart(text: "A", voiceId: "azure:X"), VoicedPart(text: " b", voiceId: nil)])
         XCTAssertNil(segments[1].parts)
     }
+
+    func testSpeedsApplyToCharactersAndNarration() {
+        let parts = [
+            VoicedPart(text: "\"Go.\"", voiceId: "azure:en-US-AdamNeural", rate: 1.25),
+            VoicedPart(text: " He sighed. ", voiceId: nil),
+            VoicedPart(text: "\"Fine.\"", voiceId: nil, rate: 0.8),
+        ]
+        let pieces = SpeechController.voicedPieces(of: segment("x", parts: parts), narration: "Jane", narrationRate: 0.9)
+        XCTAssertEqual(pieces.map(\.rate), [1.25, 0.9, 0.8])
+        XCTAssertEqual(SpeechController.voicedPieces(of: segment("Plain."), narration: "Jane", narrationRate: 1.1).map(\.rate), [1.1])
+    }
+
+    func testCombinedSpeedStaysWithinWhatTheServerAccepts() {
+        XCTAssertEqual(SpeechController.speed(1.5, 1.1), 1.65)
+        XCTAssertEqual(SpeechController.speed(2.75, 1.25), 3)
+        XCTAssertEqual(SpeechController.speed(0.5, 0.8), 0.5)
+    }
 }

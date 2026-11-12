@@ -1,4 +1,4 @@
-import { dialogueKey, dialogueSpans, findQuoteSpans, voicedParts } from './dialogue.model';
+import { dialogueKey, dialogueSpans, findQuoteSpans, voicedParts, voiceRateOf } from './dialogue.model';
 
 describe('findQuoteSpans', () => {
   it('finds straight and curly quotes, marks included', () => {
@@ -40,7 +40,7 @@ describe('dialogueKey', () => {
 describe('voicedParts', () => {
   const text = '"Hi," Ann said. "Bye," Bob said.';
   const spans = findQuoteSpans(text);
-  const voices: Record<string, string> = { ann: 'azure:Ann' };
+  const voices: Record<string, { voiceId: string | null; rate?: number }> = { ann: { voiceId: 'azure:Ann' } };
 
   it('voices attributed speakers that have a voice; everything else is narration', () => {
     expect(voicedParts(text, spans, ['ann', 'bob'], id => voices[id])).toEqual([
@@ -49,9 +49,28 @@ describe('voicedParts', () => {
     ]);
   });
 
+  it('gives a speaker their speed, with or without their own voice', () => {
+    const speeds = { ann: { voiceId: 'azure:Ann', rate: 1.25 }, bob: { voiceId: null, rate: 0.8 } };
+    expect(voicedParts(text, spans, ['ann', 'bob'], id => speeds[id as 'ann' | 'bob'])).toEqual([
+      { text: '"Hi,"', voiceId: 'azure:Ann', rate: 1.25 },
+      { text: ' Ann said. ', voiceId: null },
+      { text: '"Bye,"', voiceId: null, rate: 0.8 },
+      { text: ' Bob said.', voiceId: null },
+    ]);
+  });
+
   it('is null when nothing gets its own voice, or the speakers do not fit', () => {
     expect(voicedParts(text, spans, [null, 'bob'], id => voices[id])).toBeNull();
     expect(voicedParts(text, spans, ['ann'], id => voices[id])).toBeNull();
     expect(voicedParts(text, spans, undefined, id => voices[id])).toBeNull();
+  });
+});
+
+describe('voiceRateOf', () => {
+  it('keeps listed speeds other than normal', () => {
+    expect(voiceRateOf(1.25)).toBe(1.25);
+    expect(voiceRateOf(1)).toBeUndefined();
+    expect(voiceRateOf(3)).toBeUndefined();
+    expect(voiceRateOf('fast')).toBeUndefined();
   });
 });

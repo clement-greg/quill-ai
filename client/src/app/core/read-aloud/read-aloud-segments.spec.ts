@@ -41,6 +41,16 @@ describe('buildSegments with a cast', () => {
     ]);
   });
 
+  it('gives a character their speed, even without their own voice', () => {
+    const segs = buildSegments([chapter], { voices: { ann: 'azure:Ann' }, rates: { ann: 1.25, bob: 0.8 } });
+    expect(segs[2]!.parts).toEqual([
+      { text: '"Hi,"', voiceId: 'azure:Ann', rate: 1.25 },
+      { text: ' Ann said. ', voiceId: null },
+      { text: '"Yo,"', voiceId: null, rate: 0.8 },
+      { text: ' said Bob.', voiceId: null },
+    ]);
+  });
+
   it('reads everything as narration without a cast, voices, or a matching attribution', () => {
     expect(buildSegments([chapter]).some(s => s.parts)).toBe(false);
     expect(buildSegments([chapter], { voices: {} }).some(s => s.parts)).toBe(false);

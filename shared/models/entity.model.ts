@@ -67,6 +67,9 @@ export interface Entity extends AuditedRecord {
     /** Microsoft voice (player id, "azure:<short name>") read-aloud uses for this
      *  character's dialogue — or, on the narrator, for all narration. */
     voiceId?: string;
+    /** How fast read-aloud speaks this character's dialogue (or, on the
+     *  narrator, the narration), relative to the reader's speed: 1 = the same. */
+    voiceRate?: number;
     photos?: EntityPhoto[];
     location?: EntityLocation;
 }

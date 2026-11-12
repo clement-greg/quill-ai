@@ -98,36 +98,63 @@ export function dialogueKey(text: string, spans: readonly DialogueSpan[]): strin
 export interface VoicedPart {
   text: string;
   voiceId: string | null;
+  /** Speed relative to the reader's (1 when absent); null voice parts with no
+   *  rate use the narration speed. */
+  rate?: number;
+}
+
+/** A character's voice and speed, as voicedParts() needs them. */
+export interface SpeakerVoice {
+  voiceId: string | null;
+  rate?: number;
+}
+
+/** Speeds a character can speak at, relative to the reader's speed. */
+export const VOICE_RATES: readonly { value: number; label: string }[] = [
+  { value: 0.8, label: 'Slower' },
+  { value: 0.9, label: 'A little slower' },
+  { value: 1, label: 'Normal' },
+  { value: 1.1, label: 'A little faster' },
+  { value: 1.25, label: 'Faster' },
+];
+
+/** A stored speed if it's one of VOICE_RATES other than normal, else undefined. */
+export function voiceRateOf(value: unknown): number | undefined {
+  return typeof value === 'number' && value !== 1 && VOICE_RATES.some(r => r.value === value) ? value : undefined;
 }
 
 /**
- * Splits a paragraph into runs by voice: each span whose speaker has a voice
- * gets that voice; everything else (narration, unattributed quotes, characters
- * without a voice) gets null. Adjacent runs in the same voice are merged.
- * Returns null when the whole paragraph is narration.
+ * Splits a paragraph into runs by voice: each span whose speaker has their own
+ * voice or speed gets them; everything else (narration, unattributed quotes,
+ * characters with neither) gets the narration voice (null). Adjacent runs read
+ * the same way are merged. Returns null when the whole paragraph is narration.
  */
 export function voicedParts(
   text: string,
   spans: readonly DialogueSpan[],
   speakers: DialogueSpeakers | undefined,
-  voiceFor: (entityId: string) => string | null | undefined,
+  voiceFor: (entityId: string) => SpeakerVoice | null | undefined,
 ): VoicedPart[] | null {
   if (!speakers || speakers.length !== spans.length) return null;
   const parts: VoicedPart[] = [];
-  const push = (from: number, to: number, voiceId: string | null) => {
+  const push = (from: number, to: number, voice: SpeakerVoice | null) => {
     if (to <= from) return;
+    const voiceId = voice?.voiceId ?? null;
+    const rate = voice?.rate !== undefined && voice.rate !== 1 ? voice.rate : undefined;
     const last = parts.at(-1);
-    if (last && last.voiceId === voiceId) last.text += text.slice(from, to);
-    else parts.push({ text: text.slice(from, to), voiceId });
+    if (last && last.voiceId === voiceId && last.rate === rate) { last.text += text.slice(from, to); return; }
+    parts.push({ text: text.slice(from, to), voiceId, ...(rate !== undefined ? { rate } : {}) });
   };
   let at = 0;
   spans.forEach((span, i) => {
     const speaker = speakers[i];
     const voice = speaker ? voiceFor(speaker) ?? null : null;
+    // A speaker with only a speed still reads in the narration voice, at their speed.
+    const own = voice && (voice.voiceId || (voice.rate !== undefined && voice.rate !== 1)) ? voice : null;
     push(at, span.start, null);
-    push(span.start, span.end, voice);
+    push(span.start, span.end, own);
     at = span.end;
   });
   push(at, text.length, null);
-  return parts.some(p => p.voiceId) ? parts : null;
+  return parts.some(p => p.voiceId || p.rate !== undefined) ? parts : null;
 }

@@ -277,6 +277,10 @@ describe('ReadAloudService', () => {
       expect(engine.play).toHaveBeenLastCalledWith(expect.objectContaining({ voiceId: JANE }));
       svc.start(BOOK, { bookTitle: '', cast: { narratorVoiceId: null, voices: { ann: JANE } } });
       expect(engine.play).toHaveBeenLastCalledWith(expect.objectContaining({ voiceId: 'azure:en-US-AndrewNeural' }));
+      expect(engine.play.mock.calls.at(-1)![0].narrationRate).toBeUndefined();
+      svc.start(BOOK, { bookTitle: '', cast: { voices: {}, narratorRate: 0.9, rates: { ann: 1.25, bad: -1 } } });
+      expect(engine.play).toHaveBeenLastCalledWith(expect.objectContaining({ narrationRate: 0.9 }));
+      expect(svc.cast()).toEqual({ narratorVoiceId: null, voices: {}, rates: { ann: 1.25 }, narratorRate: 0.9 });
       svc.stop();
       expect(svc.cast()).toBeNull();
     });

@@ -29,19 +29,30 @@ interface CachedAudio {
 export interface AzurePiece {
   text: string;
   voiceId: string;
+  /** Speed relative to the reader's (1 = the reader's speed). */
+  rate: number;
 }
+
+/** The speeds the server accepts. */
+const MIN_RATE = 0.5;
+const MAX_RATE = 3;
 
 /**
  * A paragraph's pieces: its voiced parts (a character's dialogue in their
  * voice, the rest in `narrationVoice`), each split into sentence-sized chunks.
  */
-export function segmentPieces(segment: ReadAloudSegment, narrationVoice: string): AzurePiece[] {
+export function segmentPieces(segment: ReadAloudSegment, narrationVoice: string, narrationRate = 1): AzurePiece[] {
   const parts = segment.parts ?? [{ text: segment.text, voiceId: null }];
   return parts.flatMap(part =>
     splitIntoChunks(part.text, AZURE_PIECE_CHARS)
       // A part can be left with just punctuation (the full stop after a thought): nothing to say.
       .filter(text => !segment.parts || /[\p{L}\p{N}]/u.test(text))
-      .map(text => ({ text, voiceId: part.voiceId ?? narrationVoice })));
+      .map(text => ({
+        text,
+        voiceId: part.voiceId ?? narrationVoice,
+        // A character's own speed, else narration (and voiceless speakers) at the narrator's.
+        rate: part.rate ?? (part.voiceId ? 1 : narrationRate),
+      })));
 }
 
 /**
@@ -155,7 +166,7 @@ export class AzureSpeechEngine implements SpeechEngine {
     }
     this.generation++;
     this.index = index;
-    this.pieces = segmentPieces(segments[index]!, request.voiceId ?? '');
+    this.pieces = segmentPieces(segments[index]!, request.voiceId ?? '', request.narrationRate);
     this.piece = 0;
     this.loaded = false;
     this.listener.progress(index);
@@ -214,7 +225,7 @@ export class AzureSpeechEngine implements SpeechEngine {
   private upcoming(request: SpeechPlayRequest): AzurePiece[] {
     const out = this.pieces.slice(this.piece + 1, this.piece + 1 + LOOKAHEAD);
     for (let i = this.index + 1; out.length < LOOKAHEAD && i < request.segments.length; i++) {
-      out.push(...segmentPieces(request.segments[i]!, request.voiceId ?? '').slice(0, LOOKAHEAD - out.length));
+      out.push(...segmentPieces(request.segments[i]!, request.voiceId ?? '', request.narrationRate).slice(0, LOOKAHEAD - out.length));
     }
     return out;
   }
@@ -231,8 +242,9 @@ export class AzureSpeechEngine implements SpeechEngine {
   }
 
   /** Object URL of a piece's audio, fetched once per voice and speed. */
-  private fetch({ text, voiceId }: AzurePiece, request: SpeechPlayRequest): Promise<string> {
-    const key = `${voiceId}\n${text}`;
+  private fetch({ text, voiceId, rate: relative }: AzurePiece, request: SpeechPlayRequest): Promise<string> {
+    const rate = Math.min(MAX_RATE, Math.max(MIN_RATE, Math.round(request.rate * relative * 100) / 100));
+    const key = `${voiceId}\n${rate}\n${text}`;
     const hit = this.cache.get(key);
     if (hit) {
       this.cache.delete(key);
@@ -240,7 +252,7 @@ export class AzureSpeechEngine implements SpeechEngine {
       return hit.url;
     }
     const controller = new AbortController();
-    const url = this.source(text, voiceId, request.rate, controller.signal).then(blob => this.urls.createObjectURL(blob));
+    const url = this.source(text, voiceId, rate, controller.signal).then(blob => this.urls.createObjectURL(blob));
     // A failed fetch is retried next time rather than cached.
     url.catch(() => { if (this.cache.get(key)?.url === url) this.cache.delete(key); });
     this.cache.set(key, { url, controller });

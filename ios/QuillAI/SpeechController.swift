@@ -31,6 +31,8 @@ final class SpeechController: NSObject {
     private(set) var index = 0
     private(set) var state: State = .idle
     private var rate = 1.0
+    /// Narration's speed relative to `rate`.
+    private var narrationRate = 1.0
     private var voiceId: String?
     private var bookTitle = ""
     private var bookId: String?
@@ -176,6 +178,7 @@ final class SpeechController: NSObject {
         guard !request.segments.isEmpty else { stop(); return }
         segments = request.segments
         rate = request.rate
+        narrationRate = request.narrationRate ?? 1
         voiceId = request.voiceId
         bookTitle = request.bookTitle
         bookId = request.bookId
@@ -336,11 +339,13 @@ final class SpeechController: NSObject {
     private func speakAzure(at i: Int, voice: String) {
         let gen = generation
         let rate = self.rate
-        let pieces = Self.voicedPieces(of: segments[i], narration: voice)
+        let narrationRate = self.narrationRate
+        let pieces = Self.voicedPieces(of: segments[i], narration: voice, narrationRate: narrationRate)
         // Then the start of the next paragraphs, to fetch ahead into them.
         var following: [AzurePiece] = []
         for next in segments.indices where next > i && following.count < Self.azureLookahead {
-            following += Self.voicedPieces(of: segments[next], narration: voice).prefix(Self.azureLookahead - following.count)
+            following += Self.voicedPieces(of: segments[next], narration: voice, narrationRate: narrationRate)
+                .prefix(Self.azureLookahead - following.count)
         }
         // No utterance for this paragraph: a late didFinish from an earlier one mustn't end it.
         currentUtterance = nil
@@ -352,9 +357,9 @@ final class SpeechController: NSObject {
             do {
                 for (n, piece) in pieces.enumerated() {
                     guard let me = self, gen == me.generation else { return }
-                    let current = me.azureAudio(text: piece.text, voice: piece.voice, rate: rate)
+                    let current = me.azureAudio(text: piece.text, voice: piece.voice, rate: Self.speed(rate, piece.rate))
                     let ahead = Array((pieces.dropFirst(n + 1) + following).prefix(Self.azureLookahead))
-                    ahead.forEach { _ = me.azureAudio(text: $0.text, voice: $0.voice, rate: rate) }
+                    ahead.forEach { _ = me.azureAudio(text: $0.text, voice: $0.voice, rate: Self.speed(rate, $0.rate)) }
                     let data = try await current.value
                     let buffers = try await Task.detached { try Self.decode(mp3: data) }.value
                     guard let me = self, gen == me.generation else { return }
@@ -391,18 +396,27 @@ final class SpeechController: NSObject {
     /// A paragraph's pieces, each with the Azure voice (short name) that reads it:
     /// a character's dialogue in their voice, everything else in `narration`.
     /// (Same rule as the web player's segmentPieces.)
-    nonisolated static func voicedPieces(of segment: SpeechSegment, narration: String) -> [AzurePiece] {
+    /// The speed sent to the server for a piece: the reader's speed times the
+    /// piece's own, rounded and kept within what the server accepts (0.5–3).
+    nonisolated static func speed(_ reader: Double, _ relative: Double) -> Double {
+        min(3, max(0.5, (reader * relative * 100).rounded() / 100))
+    }
+
+    nonisolated static func voicedPieces(of segment: SpeechSegment, narration: String, narrationRate: Double = 1) -> [AzurePiece] {
         guard let parts = segment.parts, !parts.isEmpty else {
-            return pieces(of: segment.text).map { AzurePiece(text: $0, voice: narration) }
+            return pieces(of: segment.text).map { AzurePiece(text: $0, voice: narration, rate: narrationRate) }
         }
         return parts.flatMap { part -> [AzurePiece] in
-            let voice = part.voiceId.flatMap { id in
+            let own = part.voiceId.flatMap { id in
                 id.hasPrefix(azurePrefix) ? String(id.dropFirst(azurePrefix.count)) : nil
-            } ?? narration
+            }
+            let voice = own ?? narration
+            // A character's own speed, else narration (and voiceless speakers) at the narrator's.
+            let rate = part.rate ?? (own != nil ? 1 : narrationRate)
             return pieces(of: part.text)
                 // A part can be left with just punctuation (the full stop after a thought): nothing to say.
                 .filter { $0.contains(where: { $0.isLetter || $0.isNumber }) }
-                .map { AzurePiece(text: $0, voice: voice) }
+                .map { AzurePiece(text: $0, voice: voice, rate: rate) }
         }
     }
 
@@ -745,4 +759,6 @@ struct AzurePiece: Equatable {
     let text: String
     /// Azure short name, e.g. "en-US-JaneNeural".
     let voice: String
+    /// Speed relative to the reader's.
+    var rate: Double = 1
 }

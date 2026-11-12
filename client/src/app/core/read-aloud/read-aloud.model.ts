@@ -16,6 +16,10 @@ export interface ReadAloudCast {
   narratorVoiceId?: string | null;
   /** Entity id → Microsoft voice id, for characters that have one. */
   voices: Readonly<Record<string, string>>;
+  /** Entity id → speed relative to the reader's, for characters with their own speed. */
+  rates?: Readonly<Record<string, number>>;
+  /** The narrator's speed for narration, relative to the reader's. */
+  narratorRate?: number | null;
 }
 
 /** One spoken unit: a chapter title or one paragraph of a chapter. */
@@ -77,6 +81,8 @@ export interface SpeechPlayRequest {
   voiceId: string | null;
   /** 1 = normal speed. */
   rate: number;
+  /** Narration's speed relative to `rate` (the narrator's own speed); 1 when absent. */
+  narrationRate?: number;
   bookTitle: string;
   /** The book being read, when it's a whole book (lets Siri add a note at the play head). */
   bookId?: string | null;

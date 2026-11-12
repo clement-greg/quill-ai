@@ -312,6 +312,7 @@ export class ReadAloudService {
       startIndex: index,
       voiceId: this.narratorVoiceId() ?? this.voiceId(),
       rate: this.rate(),
+      ...(this.cast()?.narratorRate ? { narrationRate: this.cast()!.narratorRate! } : {}),
       bookTitle: this.bookTitle,
       bookId: this.bookId(),
     });
@@ -322,13 +323,21 @@ export class ReadAloudService {
     if (!cast || !this.engine?.supportsAzure) return null;
     const voices = Object.fromEntries(Object.entries(cast.voices).filter(([, id]) => isAzureVoice(id)));
     const narratorVoiceId = isAzureVoice(cast.narratorVoiceId) ? cast.narratorVoiceId : null;
-    return Object.keys(voices).length || narratorVoiceId ? { narratorVoiceId, voices } : null;
+    const rates = Object.fromEntries(Object.entries(cast.rates ?? {}).filter(([, r]) => validRate(r)));
+    const narratorRate = validRate(cast.narratorRate) ? cast.narratorRate : null;
+    const usable = Object.keys(voices).length || narratorVoiceId || Object.keys(rates).length || narratorRate;
+    return usable ? { narratorVoiceId, voices, ...(Object.keys(rates).length ? { rates } : {}), ...(narratorRate ? { narratorRate } : {}) } : null;
   }
 
   /** Voices differ between the iPhone app and browsers, so each remembers its own. */
   private voiceKey(): string {
     return `${VOICE_KEY}_${this.engineKind ?? 'none'}`;
   }
+}
+
+/** A speed multiplier worth applying (positive, not 1). */
+function validRate(rate: unknown): rate is number {
+  return typeof rate === 'number' && Number.isFinite(rate) && rate > 0 && rate !== 1;
 }
 
 /** The saved voice: null for the device default (picked, or never picked). */
