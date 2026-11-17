@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import {
-  computePageBreaks, estimatePageCount, indexAt, LineBox, pageContentBottom, pageContentTop,
+  blankClickTarget, computePageBreaks, estimatePageCount, indexAt, LineBox, pageContentBottom, pageContentTop,
   pageOffsets, sectionHeight, CONTENT_HEIGHT, PAGE_GAP, PAGE_HEIGHT, PAGE_MARGIN, PAGE_STRIDE,
 } from './book-layout';
 
@@ -129,5 +129,29 @@ describe('page bookkeeping helpers', () => {
     expect(indexAt(starts, 899)).toBe(2);
     expect(indexAt(starts, 5000)).toBe(3);
     expect(indexAt([], 10)).toBe(-1);
+  });
+});
+
+describe('blankClickTarget', () => {
+  const text = { left: 100, top: 50, right: 700, bottom: 900 };
+
+  it('goes to the end when clicking below the text', () => {
+    expect(blankClickTarget(400, 1000, text)).toEqual({ kind: 'end' });
+    expect(blankClickTarget(400, 900, text)).toEqual({ kind: 'end' });
+  });
+
+  it('keeps a point already inside the text area', () => {
+    expect(blankClickTarget(400, 300, text)).toEqual({ kind: 'point', x: 400, y: 300 });
+  });
+
+  it('snaps margin clicks to the nearest edge of the text area', () => {
+    expect(blankClickTarget(20, 300, text)).toEqual({ kind: 'point', x: 101, y: 300 });
+    expect(blankClickTarget(800, 300, text)).toEqual({ kind: 'point', x: 699, y: 300 });
+    expect(blankClickTarget(400, 10, text)).toEqual({ kind: 'point', x: 400, y: 51 });
+  });
+
+  it('copes with a text area narrower than its inset', () => {
+    const tiny = { left: 10, top: 10, right: 11, bottom: 11 };
+    expect(blankClickTarget(0, 0, tiny)).toEqual({ kind: 'point', x: 11, y: 11 });
   });
 });
