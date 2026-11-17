@@ -7,7 +7,7 @@ import { RichTextEditorComponent, SuggestedEntityCard } from '@app/shared/rich-t
 import { Entity } from '@shared/models/entity.model';
 import { UserSettingsService } from '@app/core/services/user-settings.service';
 import {
-  PAGE_GAP, PAGE_HEIGHT, PAGE_STRIDE, PAGE_WIDTH, estimatePageCount, indexAt, pageOffsets, sectionHeight,
+  PAGE_GAP, PAGE_HEIGHT, PAGE_STRIDE, PAGE_WIDTH, blankClickTarget, estimatePageCount, indexAt, pageOffsets, sectionHeight,
 } from './book-layout';
 import { measureChapterPages, paginateChapter, removePageSpacers } from './book-paginator';
 
@@ -265,6 +265,7 @@ export class BookEditorComponent implements AfterViewInit, OnDestroy {
     // keydown runs in the capture phase to act before the editor's own handler.
     scroller.addEventListener('keydown', this.onKeyDownCapture, true);
     scroller.addEventListener('focusin', this.onFocusInEvent);
+    scroller.addEventListener('mousedown', this.onBlankPageMouseDown);
     scroller.addEventListener('input', this.onInputEvent);
     scroller.addEventListener('compositionstart', this.onCompositionStartEvent);
     scroller.addEventListener('compositionend', this.onCompositionEndEvent);
@@ -286,6 +287,7 @@ export class BookEditorComponent implements AfterViewInit, OnDestroy {
     const scroller = this.scroller().nativeElement;
     scroller.removeEventListener('keydown', this.onKeyDownCapture, true);
     scroller.removeEventListener('focusin', this.onFocusInEvent);
+    scroller.removeEventListener('mousedown', this.onBlankPageMouseDown);
     scroller.removeEventListener('input', this.onInputEvent);
     scroller.removeEventListener('compositionstart', this.onCompositionStartEvent);
     scroller.removeEventListener('compositionend', this.onCompositionEndEvent);
@@ -388,6 +390,35 @@ export class BookEditorComponent implements AfterViewInit, OnDestroy {
     const id = chapterIdFromEvent(event);
     // Typing must always go to the chapter the sidebar shows: switch at once.
     if (id) this.emitActive(id, true);
+  };
+
+  /** A click on blank paper (margins, below the last line, between pages)
+   *  focuses that chapter's text at the nearest spot instead of doing nothing. */
+  private readonly onBlankPageMouseDown = (event: MouseEvent): void => {
+    if (event.button !== 0 || event.shiftKey) return;
+    const target = event.target as Element | null;
+    const section = target?.closest?.('.book-chapter');
+    if (!section || target!.closest('.chapter-flow')) return;
+    const id = section.getAttribute('data-chapter-id');
+    const el = id ? this.editorFor(id)?.getEditorElement() : null;
+    if (!el) return;
+    event.preventDefault();
+    const rect = el.getBoundingClientRect();
+    const spot = blankClickTarget(event.clientX, event.clientY, rect);
+    // Below the text: aim at the far end of the last line so the caret lands
+    // inside its paragraph rather than after the editor's last block.
+    const [px, py] = spot.kind === 'point' ? [spot.x, spot.y] : [rect.right - 1, rect.bottom - 1];
+    let range = caretRangeAt(px, py);
+    if (range && !el.contains(range.startContainer)) range = null;
+    if (!range) {
+      range = document.createRange();
+      range.selectNodeContents(el);
+      range.collapse(spot.kind === 'end' ? false : true);
+    }
+    el.focus({ preventScroll: true });
+    const sel = window.getSelection();
+    sel?.removeAllRanges();
+    sel?.addRange(range);
   };
 
   private readonly onInputEvent = (event: Event): void => {
@@ -1080,6 +1111,21 @@ export class BookEditorComponent implements AfterViewInit, OnDestroy {
     }
     return n;
   }
+}
+
+function caretRangeAt(x: number, y: number): Range | null {
+  const doc = document as Document & {
+    caretPositionFromPoint?: (x: number, y: number) => { offsetNode: Node; offset: number } | null;
+  };
+  if (doc.caretPositionFromPoint) {
+    const pos = doc.caretPositionFromPoint(x, y);
+    if (!pos) return null;
+    const range = document.createRange();
+    range.setStart(pos.offsetNode, pos.offset);
+    range.collapse(true);
+    return range;
+  }
+  return document.caretRangeFromPoint?.(x, y) ?? null;
 }
 
 function chapterIdFromEvent(event: Event): string | null {

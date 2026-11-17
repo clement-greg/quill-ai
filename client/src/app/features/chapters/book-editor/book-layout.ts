@@ -160,3 +160,20 @@ export function indexAt(starts: readonly number[], y: number): number {
   }
   return lo;
 }
+
+export interface RectLike { left: number; top: number; right: number; bottom: number; }
+
+/** Where a click on blank page space should put the caret: past the end of
+ *  the text when below it, otherwise the nearest point inside the text area
+ *  (margins and page gaps snap to the closest line). */
+export type BlankClickTarget = { kind: 'end' } | { kind: 'point'; x: number; y: number };
+
+export function blankClickTarget(x: number, y: number, text: RectLike): BlankClickTarget {
+  if (y >= text.bottom) return { kind: 'end' };
+  const clamp = (v: number, lo: number, hi: number) => Math.min(Math.max(v, lo), Math.max(lo, hi));
+  return {
+    kind: 'point',
+    x: clamp(x, text.left + 1, text.right - 1),
+    y: clamp(y, text.top + 1, text.bottom - 1),
+  };
+}
