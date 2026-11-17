@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import {
-  blankClickTarget, computePageBreaks, estimatePageCount, indexAt, LineBox, pageContentBottom, pageContentTop,
+  blankClickTarget, computePageBreaks, nearestChapterAt, estimatePageCount, indexAt, LineBox, pageContentBottom, pageContentTop,
   pageOffsets, sectionHeight, CONTENT_HEIGHT, PAGE_GAP, PAGE_HEIGHT, PAGE_MARGIN, PAGE_STRIDE,
 } from './book-layout';
 
@@ -153,5 +153,34 @@ describe('blankClickTarget', () => {
   it('copes with a text area narrower than its inset', () => {
     const tiny = { left: 10, top: 10, right: 11, bottom: 11 };
     expect(blankClickTarget(0, 0, tiny)).toEqual({ kind: 'point', x: 11, y: 11 });
+  });
+});
+
+describe('nearestChapterAt', () => {
+  const tops = [0, 1000, 3000];
+  const heights = [900, 1900, 500];
+
+  it('returns the chapter containing y', () => {
+    expect(nearestChapterAt(tops, heights, 400)).toBe(0);
+    expect(nearestChapterAt(tops, heights, 2000)).toBe(1);
+  });
+
+  it('picks the closer chapter in a gap between chapters', () => {
+    expect(nearestChapterAt(tops, heights, 920)).toBe(0);
+    expect(nearestChapterAt(tops, heights, 980)).toBe(1);
+    expect(nearestChapterAt(tops, heights, 2990)).toBe(2);
+  });
+
+  it('prefers the earlier chapter on a tie', () => {
+    expect(nearestChapterAt(tops, heights, 950)).toBe(0);
+  });
+
+  it('clamps to the first and last chapter', () => {
+    expect(nearestChapterAt(tops, heights, -50)).toBe(0);
+    expect(nearestChapterAt(tops, heights, 9999)).toBe(2);
+  });
+
+  it('returns -1 with no chapters', () => {
+    expect(nearestChapterAt([], [], 10)).toBe(-1);
   });
 });

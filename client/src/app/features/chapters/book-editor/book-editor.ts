@@ -7,7 +7,7 @@ import { RichTextEditorComponent, SuggestedEntityCard } from '@app/shared/rich-t
 import { Entity } from '@shared/models/entity.model';
 import { UserSettingsService } from '@app/core/services/user-settings.service';
 import {
-  PAGE_GAP, PAGE_HEIGHT, PAGE_STRIDE, PAGE_WIDTH, blankClickTarget, estimatePageCount, indexAt, pageOffsets, sectionHeight,
+  PAGE_GAP, PAGE_HEIGHT, PAGE_STRIDE, PAGE_WIDTH, blankClickTarget, estimatePageCount, indexAt, nearestChapterAt, pageOffsets, sectionHeight,
 } from './book-layout';
 import { measureChapterPages, paginateChapter, removePageSpacers } from './book-paginator';
 
@@ -392,14 +392,18 @@ export class BookEditorComponent implements AfterViewInit, OnDestroy {
     if (id) this.emitActive(id, true);
   };
 
-  /** A click on blank paper (margins, below the last line, between pages)
-   *  focuses that chapter's text at the nearest spot instead of doing nothing. */
+  /** A click on blank paper (margins, below the last line, the gap between
+   *  pages) focuses the nearest chapter's text instead of doing nothing. */
   private readonly onBlankPageMouseDown = (event: MouseEvent): void => {
     if (event.button !== 0 || event.shiftKey) return;
     const target = event.target as Element | null;
-    const section = target?.closest?.('.book-chapter');
-    if (!section || target!.closest('.chapter-flow')) return;
-    const id = section.getAttribute('data-chapter-id');
+    if (!target?.closest || target.closest('.chapter-flow')) return;
+    let id = target.closest('.book-chapter')?.getAttribute('data-chapter-id') ?? null;
+    if (!id && target.classList.contains('book-column')) {
+      // Gap between two chapters' pages: the column itself is under the pointer.
+      const y = event.clientY - target.getBoundingClientRect().top;
+      id = this.chapters()[nearestChapterAt(this.tops(), this.heights(), y)]?.id ?? null;
+    }
     const el = id ? this.editorFor(id)?.getEditorElement() : null;
     if (!el) return;
     event.preventDefault();

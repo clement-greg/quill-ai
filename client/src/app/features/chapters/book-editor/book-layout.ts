@@ -177,3 +177,15 @@ export function blankClickTarget(x: number, y: number, text: RectLike): BlankCli
     y: clamp(y, text.top + 1, text.bottom - 1),
   };
 }
+
+/** The chapter nearest to `y` (column coordinates): the one containing it, or
+ *  for a gap between chapters whichever edge is closer (ties go to the earlier). */
+export function nearestChapterAt(tops: readonly number[], heights: readonly number[], y: number): number {
+  const i = indexAt(tops, y);
+  if (i < 0) return -1;
+  const next = i + 1;
+  if (next >= tops.length) return i;
+  const pastEnd = y - (tops[i]! + (heights[i] ?? 0));
+  if (pastEnd <= 0) return i;
+  return tops[next]! - y < pastEnd ? next : i;
+}
