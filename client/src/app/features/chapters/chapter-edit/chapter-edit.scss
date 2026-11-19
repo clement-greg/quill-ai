@@ -279,7 +279,7 @@
   }
 }
 
-/* ── Meta accordion (Notes / Linked Chats / Outline / POV & Settings) ── */
+/* ── Meta accordion (Notes / Linked Chats / Outline) ── */
 .meta-accordion {
   display: block;
 }
@@ -352,24 +352,6 @@
     min-height: 0;
     display: flex;
     flex-direction: column;
-  }
-}
-
-/* POV & Settings panel body */
-.meta-details-body {
-  padding: 12px 16px 16px;
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-
-  .details-hint {
-    margin: 0 0 12px;
-    font-size: 0.85em;
-    opacity: 0.7;
-  }
-
-  .details-field {
-    width: 100%;
   }
 }
 
