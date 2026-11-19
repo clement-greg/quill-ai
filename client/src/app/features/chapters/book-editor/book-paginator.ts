@@ -152,13 +152,12 @@ function insertSpacerAt(editor: HTMLElement, line: MeasuredLine, height: number)
     const text = anchor as Text;
     const offset = lineStartOffset(text, line.fragTop);
     if (offset > 0 && offset < text.data.length) {
-      const parentEl = text.parentElement;
-      if (parentEl?.isContentEditable === false) {
-        // Never split inside non-editable content; break before it.
-        anchor = parentEl.closest('[contenteditable="false"]') ?? text;
-      } else {
-        anchor = text.splitText(offset);
-      }
+      // Never split inside non-editable content (an entity link); break
+      // before it. Judged by the markup, not isContentEditable, so a flow
+      // that isn't editable at all (the hidden copy used for page previews)
+      // still splits plain text at the line start.
+      const locked = text.parentElement?.closest('[contenteditable="false"]');
+      anchor = locked && editor.contains(locked) ? locked : text.splitText(offset);
     }
   }
   // Hoist out of inline wrappers whose content begins at the anchor.

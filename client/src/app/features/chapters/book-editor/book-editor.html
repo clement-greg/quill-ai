@@ -1,4 +1,51 @@
-<div class="book-shell">
+<div #shell class="book-shell">
+  <!-- Page previews (like Word's thumbnails): a scaled-down replica of the
+       book column, shown when the window has room for it beside the pages. -->
+  @if (thumbsRoom() && thumbsOpen()) {
+    <nav class="book-thumbs" aria-label="Page previews">
+      <div class="book-thumbs-header">
+        <span>Pages</span>
+        <button type="button" class="book-thumbs-toggle" (click)="setThumbsOpen(false)"
+          aria-label="Hide page previews" title="Hide page previews">&lsaquo;</button>
+      </div>
+      <div #thumbsScroller class="book-thumbs-scroller" (scroll)="onThumbsScroll()"
+        (mouseenter)="thumbsHover = true" (mouseleave)="thumbsHover = false">
+        <div class="book-thumbs-column"
+          [style.height.px]="totalHeight() * THUMB_SCALE + 16"
+          (click)="onThumbClick($event)">
+          @for (ch of chapters(); track ch.id; let i = $index) {
+            @if (thumbVisibleIds().has(ch.id)) {
+              <div class="book-thumb-chapter"
+                [style.top.px]="tops()[i] * THUMB_SCALE"
+                [style.height.px]="heights()[i] * THUMB_SCALE">
+                @for (p of pagesFor(i); track p) {
+                  <div class="book-thumb-label" [style.top.px]="p * PAGE_STRIDE * THUMB_SCALE">{{ offsets().starts[i]! + p + 1 }}</div>
+                }
+                <div class="book-thumb-scale" [style.height.px]="heights()[i]" [style.transform]="'scale(' + THUMB_SCALE + ')'">
+                  @for (p of pagesFor(i); track p) {
+                    <div class="sheet" [style.top.px]="p * PAGE_STRIDE"></div>
+                  }
+                  <div class="chapter-flow">
+                    <div class="chapter-title thumb-title">{{ ch.title }}</div>
+                    <div class="measure-flow thumb-flow" [attr.data-thumb-id]="ch.id"></div>
+                  </div>
+                </div>
+              </div>
+            }
+          }
+          @if (currentPosition(); as pos) {
+            <div class="book-thumb-current" aria-hidden="true"
+              [style.top.px]="currentPageTop() * THUMB_SCALE - 3"
+              [style.height.px]="PAGE_HEIGHT * THUMB_SCALE + 6"></div>
+          }
+        </div>
+      </div>
+    </nav>
+  } @else if (thumbsRoom()) {
+    <button type="button" class="book-thumbs-reopen" (click)="setThumbsOpen(true)"
+      aria-label="Show page previews" title="Show page previews">&rsaquo;</button>
+  }
+
   <div #scroller class="book-scroller" (scroll)="onScroll()" tabindex="-1">
     <div class="book-column" [style.height.px]="totalHeight()" [style.width.px]="PAGE_WIDTH">
 

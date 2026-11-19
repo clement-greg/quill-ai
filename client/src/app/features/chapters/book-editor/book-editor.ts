@@ -7,7 +7,8 @@ import { RichTextEditorComponent, SuggestedEntityCard } from '@app/shared/rich-t
 import { Entity } from '@shared/models/entity.model';
 import { UserSettingsService } from '@app/core/services/user-settings.service';
 import {
-  PAGE_GAP, PAGE_HEIGHT, PAGE_STRIDE, PAGE_WIDTH, blankClickTarget, estimatePageCount, indexAt, nearestChapterAt, pageOffsets, sectionHeight,
+  PAGE_GAP, PAGE_HEIGHT, PAGE_STRIDE, PAGE_WIDTH, THUMB_SCALE, blankClickTarget, chaptersInRange, estimatePageCount, indexAt,
+  nearestChapterAt, pageAtY, pageOffsets, scrollIntoViewTop, sectionHeight, thumbsFit,
 } from './book-layout';
 import { measureChapterPages, paginateChapter, removePageSpacers } from './book-paginator';
 
@@ -44,6 +45,11 @@ const END_SPACE = 120;
 const MOUNT_MARGIN = 1600;
 /** Default characters per page before anything has been measured. */
 const DEFAULT_CHARS_PER_PAGE = 2400;
+/** How far beyond the previews panel's view chapter thumbnails stay rendered (px, panel scale). */
+const THUMB_MARGIN = 600;
+/** Wait after an edit before refreshing that chapter's thumbnail (ms). */
+const THUMB_DEBOUNCE = 400;
+const THUMBS_OPEN_KEY = 'quill.bookThumbsOpen';
 
 /**
  * Full-book editor: every chapter of a book laid out as US Letter pages, one
@@ -108,6 +114,8 @@ export class BookEditorComponent implements AfterViewInit, OnDestroy {
 
   // ── View refs ─────────────────────────────────────────────────────────────
   private scroller = viewChild.required<ElementRef<HTMLDivElement>>('scroller');
+  private shell = viewChild.required<ElementRef<HTMLDivElement>>('shell');
+  private thumbsScroller = viewChild<ElementRef<HTMLDivElement>>('thumbsScroller');
   private minimapCanvas = viewChild<ElementRef<HTMLCanvasElement>>('minimapCanvas');
   private measureFlow = viewChild.required<ElementRef<HTMLDivElement>>('measureFlow');
   private measureSection = viewChild.required<ElementRef<HTMLDivElement>>('measureSection');
@@ -117,6 +125,7 @@ export class BookEditorComponent implements AfterViewInit, OnDestroy {
   readonly PAGE_HEIGHT = PAGE_HEIGHT;
   readonly PAGE_STRIDE = PAGE_STRIDE;
   readonly COLUMN_PAD = COLUMN_PAD;
+  readonly THUMB_SCALE = THUMB_SCALE;
   readonly Math = Math;
 
   // ── Layout state ──────────────────────────────────────────────────────────
@@ -191,6 +200,34 @@ export class BookEditorComponent implements AfterViewInit, OnDestroy {
     return total > 0 && h > 0 ? Math.min(0.25, h / total) : 0;
   });
 
+  // ── Page previews ─────────────────────────────────────────────────────────
+  /** Whether the window is wide enough for the previews panel. */
+  readonly thumbsRoom = signal(false);
+  /** The author's show/hide choice (remembered per browser). */
+  readonly thumbsOpen = signal(readThumbsOpen());
+  /** The previews panel's scroll window, in panel pixels. */
+  private thumbsView = signal({ top: 0, height: 0 });
+  /** Chapters near the panel's view, which render real page previews. */
+  readonly thumbVisibleIds = computed(() => {
+    if (!this.thumbsRoom() || !this.thumbsOpen()) return new Set<string>();
+    const v = this.thumbsView();
+    const from = (v.top - THUMB_MARGIN) / THUMB_SCALE;
+    const to = (v.top + (v.height || 1200) + THUMB_MARGIN) / THUMB_SCALE;
+    const chapters = this.chapters();
+    return new Set(chaptersInRange(this.tops(), this.heights(), from, to).map(i => chapters[i]!.id));
+  });
+  /** Top of the page under the reading line (column coordinates). */
+  readonly currentPageTop = computed(() => {
+    const v = this.viewport();
+    const hit = pageAtY(this.tops(), this.pageCounts(), v.top + v.clientHeight / 3);
+    return hit ? this.tops()[hit.chapter]! + hit.page * PAGE_STRIDE : 0;
+  });
+  /** Pointer is over the panel: don't auto-scroll it out from under the author. */
+  thumbsHover = false;
+  /** Paginated preview HTML per chapter, with the content signature it was built from. */
+  private thumbCache = new Map<string, { key: string; html: string }>();
+  private thumbTimer: ReturnType<typeof setTimeout> | null = null;
+
   // ── Internals ─────────────────────────────────────────────────────────────
   private intersection?: IntersectionObserver;
   private observedSections = new WeakSet<Element>();
@@ -248,6 +285,22 @@ export class BookEditorComponent implements AfterViewInit, OnDestroy {
       this.minimapScale();
       untracked(() => this.renderMinimap());
     });
+
+    // Previews: refresh thumbnails as chapters scroll into the panel or change.
+    effect(() => {
+      this.thumbVisibleIds();
+      this.chapters();
+      this.userSettings.editorFontSize();
+      this.userSettings.editorFontFamily();
+      untracked(() => afterNextRender({ write: () => this.scheduleThumbs() }, { injector: this.injector }));
+    });
+
+    // Keep the current page's preview in view as the author scrolls the book.
+    effect(() => {
+      const top = this.currentPageTop() * THUMB_SCALE;
+      if (!this.thumbsRoom() || !this.thumbsOpen()) return;
+      untracked(() => afterNextRender({ write: () => this.followCurrentThumb(top) }, { injector: this.injector }));
+    });
   }
 
   ngAfterViewInit(): void {
@@ -257,8 +310,14 @@ export class BookEditorComponent implements AfterViewInit, OnDestroy {
       rootMargin: `${MOUNT_MARGIN}px 0px`,
     });
     this.observeSections();
-    this.resizeObserver = new ResizeObserver(() => this.updateViewport());
+    this.resizeObserver = new ResizeObserver(() => {
+      this.updateViewport();
+      this.thumbsRoom.set(thumbsFit(this.shell().nativeElement.clientWidth));
+      this.updateThumbsView();
+    });
     this.resizeObserver.observe(scroller);
+    this.resizeObserver.observe(this.shell().nativeElement);
+    this.thumbsRoom.set(thumbsFit(this.shell().nativeElement.clientWidth));
     this.updateViewport();
     document.addEventListener('selectionchange', this.onSelectionChange);
     // Delegated from the scroller so one set of listeners covers every chapter;
@@ -283,6 +342,7 @@ export class BookEditorComponent implements AfterViewInit, OnDestroy {
     if (this.scrollFrame !== null) cancelAnimationFrame(this.scrollFrame);
     if (this.idleHandle !== null) cancelIdle(this.idleHandle);
     if (this.activeTimer) clearTimeout(this.activeTimer);
+    if (this.thumbTimer) clearTimeout(this.thumbTimer);
     document.removeEventListener('selectionchange', this.onSelectionChange);
     const scroller = this.scroller().nativeElement;
     scroller.removeEventListener('keydown', this.onKeyDownCapture, true);
@@ -638,6 +698,104 @@ export class BookEditorComponent implements AfterViewInit, OnDestroy {
     }
     this.colorProbe.style.color = `var(${variable}, ${fallback})`;
     return getComputedStyle(this.colorProbe).color || fallback;
+  }
+
+  // ── Page previews ─────────────────────────────────────────────────────────
+
+  setThumbsOpen(open: boolean): void {
+    this.thumbsOpen.set(open);
+    try { localStorage.setItem(THUMBS_OPEN_KEY, open ? '1' : '0'); } catch { /* storage unavailable */ }
+    if (open) afterNextRender({ write: () => { this.updateThumbsView(); this.followCurrentThumb(this.currentPageTop() * THUMB_SCALE, true); } }, { injector: this.injector });
+  }
+
+  onThumbsScroll(): void {
+    this.updateThumbsView();
+  }
+
+  /** A click on a preview takes the book to the top of that page. */
+  onThumbClick(event: MouseEvent): void {
+    const column = event.currentTarget as HTMLElement;
+    const y = (event.clientY - column.getBoundingClientRect().top) / THUMB_SCALE;
+    const hit = pageAtY(this.tops(), this.pageCounts(), y);
+    if (!hit) return;
+    const scroller = this.scroller().nativeElement;
+    scroller.scrollTop = Math.max(0, this.tops()[hit.chapter]! + hit.page * PAGE_STRIDE - 16);
+    this.captureAnchor();
+    this.updateViewport();
+  }
+
+  private updateThumbsView(): void {
+    const el = this.thumbsScroller()?.nativeElement;
+    if (!el) return;
+    const cur = this.thumbsView();
+    if (cur.top !== el.scrollTop || cur.height !== el.clientHeight) {
+      this.thumbsView.set({ top: el.scrollTop, height: el.clientHeight });
+    }
+  }
+
+  private followCurrentThumb(top: number, force = false): void {
+    const el = this.thumbsScroller()?.nativeElement;
+    if (!el || (this.thumbsHover && !force)) return;
+    const next = scrollIntoViewTop(el.scrollTop, el.clientHeight, top, PAGE_HEIGHT * THUMB_SCALE);
+    if (Math.abs(next - el.scrollTop) > 1) el.scrollTop = next;
+    this.updateThumbsView();
+  }
+
+  private scheduleThumbs(delay = 0): void {
+    if (this.thumbTimer || this.destroyed) return;
+    this.thumbTimer = setTimeout(() => {
+      this.thumbTimer = null;
+      this.renderThumbs();
+    }, delay);
+  }
+
+  /** Fills the rendered preview boxes with each chapter's paginated text.
+   *  Pagination runs on the hidden, unscaled measuring copy (a scaled copy
+   *  would report scaled line boxes), then the result is shown at preview
+   *  scale. Time-boxed per pass; edits wait THUMB_DEBOUNCE before re-rendering. */
+  private renderThumbs(): void {
+    const boxes = this.host.nativeElement.querySelectorAll<HTMLElement>('.thumb-flow[data-thumb-id]');
+    if (!boxes.length) return;
+    const byId = new Map(this.chapters().map(c => [c.id, c]));
+    const started = performance.now();
+    let pendingEdits = false;
+    let pendingWork = false;
+    for (const box of Array.from(boxes)) {
+      const ch = byId.get(box.dataset['thumbId'] ?? '');
+      if (!ch) continue;
+      const key = this.measureKey(ch);
+      if (box.dataset['thumbKey'] === key) continue;
+      let cached = this.thumbCache.get(ch.id);
+      if (cached?.key !== key) {
+        // A fresh edit to an already-shown preview waits for typing to pause.
+        if (box.dataset['thumbKey'] && box.dataset['thumbFresh'] !== key) {
+          box.dataset['thumbFresh'] = key;
+          pendingEdits = true;
+          continue;
+        }
+        if (performance.now() - started > 12) { pendingWork = true; continue; }
+        cached = { key, html: this.paginatedHtml(ch) };
+        this.thumbCache.set(ch.id, cached);
+      }
+      box.innerHTML = cached.html;
+      box.dataset['thumbKey'] = key;
+    }
+    // Forget previews of chapters that no longer exist.
+    for (const id of this.thumbCache.keys()) if (!byId.has(id)) this.thumbCache.delete(id);
+    if (pendingWork) this.scheduleThumbs(16);
+    else if (pendingEdits) this.scheduleThumbs(THUMB_DEBOUNCE);
+  }
+
+  /** A chapter's HTML with page spacers in place, laid out on the measuring copy. */
+  private paginatedHtml(ch: BookChapter): string {
+    const flow = this.measureFlow().nativeElement;
+    flow.innerHTML = ch.content || '';
+    paginateChapter(flow, this.measureSection().nativeElement);
+    flow.querySelectorAll('[contenteditable]').forEach(el => el.removeAttribute('contenteditable'));
+    flow.querySelectorAll('[id]').forEach(el => el.removeAttribute('id'));
+    const html = flow.innerHTML;
+    flow.innerHTML = '';
+    return html;
   }
 
   // ── Viewport / active chapter ─────────────────────────────────────────────
@@ -1115,6 +1273,10 @@ export class BookEditorComponent implements AfterViewInit, OnDestroy {
     }
     return n;
   }
+}
+
+function readThumbsOpen(): boolean {
+  try { return localStorage.getItem(THUMBS_OPEN_KEY) !== '0'; } catch { return true; }
 }
 
 function caretRangeAt(x: number, y: number): Range | null {

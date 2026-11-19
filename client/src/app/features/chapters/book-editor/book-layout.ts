@@ -189,3 +189,45 @@ export function nearestChapterAt(tops: readonly number[], heights: readonly numb
   if (pastEnd <= 0) return i;
   return tops[next]! - y < pastEnd ? next : i;
 }
+
+// ── Page previews (thumbnail panel) ─────────────────────────────────────────
+
+/** Width of the page-previews panel, and the thumbnails' scale (150px pages). */
+export const THUMBS_PANEL_WIDTH = 190;
+export const THUMB_SCALE = 150 / PAGE_WIDTH;
+/** Room the page column needs beside the panel: the page, side gutters and
+ *  the minimap on the right. */
+const BOOK_MIN_WIDTH = PAGE_WIDTH + 2 * 24 + 84;
+
+/** Whether the page-previews panel fits beside the pages at this shell width. */
+export function thumbsFit(shellWidth: number): boolean {
+  return shellWidth >= BOOK_MIN_WIDTH + THUMBS_PANEL_WIDTH;
+}
+
+/** The chapter and page under column y (pages past a chapter's end clamp to
+ *  its last page; the gap under a page counts toward that page). */
+export function pageAtY(tops: readonly number[], pageCounts: readonly number[], y: number): { chapter: number; page: number } | null {
+  const chapter = indexAt(tops, y);
+  if (chapter < 0) return null;
+  const pages = Math.max(1, pageCounts[chapter] ?? 1);
+  const page = Math.min(pages - 1, Math.max(0, Math.floor((y - tops[chapter]!) / PAGE_STRIDE)));
+  return { chapter, page };
+}
+
+/** Indices of chapters whose [top, top + height) overlaps [from, to). */
+export function chaptersInRange(tops: readonly number[], heights: readonly number[], from: number, to: number): number[] {
+  const out: number[] = [];
+  if (!tops.length || to <= from) return out;
+  for (let i = Math.max(0, indexAt(tops, from)); i < tops.length && tops[i]! < to; i++) {
+    if (tops[i]! + (heights[i] ?? 0) > from) out.push(i);
+  }
+  return out;
+}
+
+/** scrollTop that brings [top, top + height) into a view of `viewHeight`
+ *  currently at `scrollTop`, moving as little as possible (with `pad` slack). */
+export function scrollIntoViewTop(scrollTop: number, viewHeight: number, top: number, height: number, pad = 8): number {
+  if (top - pad < scrollTop) return Math.max(0, top - pad);
+  if (top + height + pad > scrollTop + viewHeight) return Math.max(0, top + height + pad - viewHeight);
+  return scrollTop;
+}

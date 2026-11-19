@@ -131,6 +131,9 @@
   line-height: 1.75;
   font-family: var(--editor-font-family, Georgia, 'Times New Roman', serif);
   white-space: pre-wrap;
+  /* What browsers apply to contenteditable, so wrapping matches the live editor. */
+  overflow-wrap: break-word;
+  -webkit-line-break: after-white-space;
   min-height: 1.75em;
 
   ::ng-deep .entity-reference,
@@ -208,6 +211,117 @@
   opacity: 0.9;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+/* ── Page previews ───────────────────────────────────── */
+.book-thumbs {
+  flex: none;
+  width: 190px;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  border-right: 1px solid var(--book-page-edge);
+}
+
+.book-thumbs-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 6px 6px 12px;
+  font: 600 0.78rem system-ui, sans-serif;
+  color: var(--mat-sys-on-surface-variant, #555);
+}
+
+.book-thumbs-toggle,
+.book-thumbs-reopen {
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--mat-sys-on-surface-variant, #555);
+  font-size: 1.2rem;
+  line-height: 1;
+  cursor: pointer;
+
+  &:hover { background: color-mix(in srgb, var(--mat-sys-on-surface, #000) 8%, transparent); }
+  &:focus-visible { outline: 2px solid var(--book-accent); outline-offset: 1px; }
+}
+
+.book-thumbs-reopen {
+  position: absolute;
+  top: 8px;
+  left: 6px;
+  z-index: 3;
+  background: color-mix(in srgb, var(--mat-sys-surface, #fff) 85%, transparent);
+  box-shadow: 0 1px 3px color-mix(in srgb, #000 15%, transparent);
+}
+
+.book-thumbs-scroller {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  scrollbar-width: thin;
+}
+
+.book-thumbs-column {
+  position: relative;
+  /* Page labels sit in the left 28px; pages start after them. */
+  margin-left: 28px;
+  cursor: pointer;
+}
+
+.book-thumb-chapter {
+  position: absolute;
+  left: 0;
+  width: 150px;
+  pointer-events: none;
+}
+
+.book-thumb-label {
+  position: absolute;
+  right: calc(100% + 6px);
+  font: 0.7rem system-ui, sans-serif;
+  color: var(--mat-sys-on-surface-variant, #777);
+}
+
+.book-thumb-scale {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 816px;
+  transform-origin: 0 0;
+  overflow: hidden;
+  contain: layout paint;
+
+  .page-number { display: none; }
+}
+
+.thumb-title {
+  line-height: 64px;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.thumb-flow {
+  color: var(--mat-sys-on-surface, inherit);
+
+  ::ng-deep .page-spacer { display: block; }
+  ::ng-deep a,
+  ::ng-deep .entity-reference { color: inherit; text-decoration: none; }
+}
+
+.book-thumb-current {
+  position: absolute;
+  left: -3px;
+  width: 156px;
+  border: 2px solid var(--book-accent);
+  border-radius: 3px;
+  box-sizing: border-box;
+  pointer-events: none;
 }
 
 .book-page-indicator {
