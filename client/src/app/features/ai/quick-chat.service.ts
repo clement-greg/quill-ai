@@ -1,7 +1,7 @@
 import { Injectable, inject, signal, effect } from '@angular/core';
 import { Router } from '@angular/router';
 import { Subject } from 'rxjs';
-import { ChapterCitation, ChapterEditProposal, ChatMessageHighlight, ChatSession, ChatSessionMessage, ChatSessionSummary, ChatImage, EntityLinkSession, EntityProposal, MapPreview } from '@shared/models';
+import { ChapterCitation, ChapterEditProposal, ChatAttachment, ChatMessageHighlight, ChatSession, ChatSessionMessage, ChatSessionSummary, ChatImage, EntityLinkSession, EntityProposal, MapPreview } from '@shared/models';
 import { EditorBridgeService } from '@app/features/chapters/editor-bridge.service';
 import { AiAssistantService } from './ai-assistant.service';
 import { ChapterSyncService, ChapterExternalUpdate } from '@app/features/chapters/chapter-sync.service';
@@ -117,24 +117,45 @@ export class QuickChatService {
     }
   }
 
-  async sendMessage(text: string): Promise<void> {
+  /** Uploads a pasted image so it can be attached to the next message. */
+  async uploadAttachment(file: Blob, filename = 'screenshot.png'): Promise<ChatAttachment> {
+    const form = new FormData();
+    form.append('file', file, filename);
+    const res = await this.authFetch('/api/upload', { method: 'POST', body: form });
+    if (!res.ok) {
+      const body = await res.json().catch(() => null) as { error?: string } | null;
+      throw new Error(body?.error ?? 'Upload failed');
+    }
+    const { url, thumbnailUrl } = await res.json() as ChatAttachment;
+    return { url, thumbnailUrl };
+  }
+
+  async sendMessage(text: string, attachments: ChatAttachment[] = []): Promise<void> {
     const trimmed = text.trim();
-    if (!trimmed || this.streaming()) return;
+    if ((!trimmed && attachments.length === 0) || this.streaming()) return;
 
     // Ensure a session exists before we start streaming so every exchange is saved.
     await this.createAutoSaveSession();
 
     const now = new Date().toISOString();
-    const userMsg: ChatSessionMessage = { role: 'user', text: trimmed, timestamp: now };
+    const userMsg: ChatSessionMessage = {
+      role: 'user', text: trimmed, timestamp: now,
+      ...(attachments.length ? { attachments } : {}),
+    };
     const assistantPlaceholder: ChatSessionMessage = { role: 'assistant', text: '', timestamp: now };
     this.messages.update(list => [...list, userMsg, assistantPlaceholder]);
     this.streaming.set(true);
 
     // Keep context lean: last 3 prior exchanges (6 messages) + current = 7 max.
+    // Pasted screenshots travel as their stored URLs; the server reads them for the model.
     const apiMessages = this.messages()
-      .filter(m => m.text)
+      .filter(m => m.text || m.attachments?.length)
       .slice(-7)
-      .map(m => ({ role: m.role, content: m.text }));
+      .map(m => ({
+        role: m.role,
+        content: m.text,
+        ...(m.attachments?.length ? { images: m.attachments.map(a => a.url) } : {}),
+      }));
 
     // When opened from a chapter editor, ground the answer in that chapter and
     // the text surrounding the cursor (so it's suitable to insert there).
@@ -382,9 +403,10 @@ export class QuickChatService {
 
   private async persistToSession(sessionId: string): Promise<void> {
     const messages = this.messages()
-      .filter(m => m.text || m.imageUrl)
-      .map(({ role, text, imageUrl, thumbnailUrl, imagePrompt, sources, kind, beats, lottieUrl, editProposal, linkSession, entityProposal, toolsUsed }) => ({
+      .filter(m => m.text || m.imageUrl || m.attachments?.length)
+      .map(({ role, text, attachments, imageUrl, thumbnailUrl, imagePrompt, sources, kind, beats, lottieUrl, editProposal, linkSession, entityProposal, toolsUsed }) => ({
         role, text,
+        ...(attachments?.length ? { attachments } : {}),
         ...(imageUrl ? { imageUrl } : {}),
         ...(thumbnailUrl ? { thumbnailUrl } : {}),
         ...(imagePrompt ? { imagePrompt } : {}),

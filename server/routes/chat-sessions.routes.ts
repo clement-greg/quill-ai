@@ -25,6 +25,7 @@ import { EntityRelationship } from '../../shared/models/entity-relationship.mode
 import sharp from 'sharp';
 import { generateImage } from '../services/image-generation';
 import { downloadBlob } from '../services/storage';
+import { IncomingChatMessage, ModelChatMessage, toModelMessages } from '../services/chat-image-input';
 import { sanitizeForModeration } from '../services/content-sanitize';
 import { buildChapterContextPrompt } from '../services/chapter-ai-context';
 import { buildChapterDraftingContext, generateChapterBeatSheet } from '../services/chapter-drafting-context';
@@ -425,7 +426,7 @@ interface ResponseOutputItem {
 async function streamChatResponse(
   res: ChatSink,
   systemPrompt: string,
-  messages: { role: 'user' | 'assistant'; content: string }[],
+  messages: ModelChatMessage[],
   citations: ChapterCitation[],
   tools: Record<string, ChatTool> | undefined,
   model: string,
@@ -3235,7 +3236,7 @@ router.post('/voice-note', async (req: Request, res: Response) => {
 });
 
 router.post('/quick-chat', async (req: Request, res: Response) => {
-  const messages: { role: 'user' | 'assistant'; content: string }[] = req.body.messages;
+  const messages: IncomingChatMessage[] = req.body.messages;
   const chapterContext = req.body.chapterContext as
     | { chapterId: string; surroundingText?: string; selectedText?: string; outline?: OutlineItem[]; notes?: ChapterNote[] }
     | undefined;
@@ -3250,6 +3251,8 @@ router.post('/quick-chat', async (req: Request, res: Response) => {
     res.status(400).json({ error: 'messages array required' });
     return;
   }
+  // Screenshots the author pasted go to the model as image inputs.
+  const modelMessages = await toModelMessages(messages);
 
   let systemPrompt: string;
   let citations: ChapterCitation[] = [];
@@ -3284,7 +3287,7 @@ router.post('/quick-chat', async (req: Request, res: Response) => {
       const prosePrompt = beats
         ? `${draftPrompt}\n\nFollow this beat sheet, expanding each beat into immersive prose:\n${beats}`
         : draftPrompt;
-      await streamChatResponse(res, prosePrompt, messages, [], undefined, await modelFor(req.user, 'chapterDraft'));
+      await streamChatResponse(res, prosePrompt, modelMessages, [], undefined, await modelFor(req.user, 'chapterDraft'));
       return;
     }
   }
@@ -3394,7 +3397,7 @@ router.post('/quick-chat', async (req: Request, res: Response) => {
     taskGuidance(req) + playheadGuidance(playhead) +
     ENTITY_CREATION_GUIDANCE + chatImagesGuidance(chatImages) +
     (chapterContext?.chapterId ? LINK_REFERENCES_GUIDANCE + SMART_EDIT_GUIDANCE : '');
-  await streamChatResponse(res, systemPrompt + guidance, messages, citations, tools, await chatModelFor(req.user, req.body.model));
+  await streamChatResponse(res, systemPrompt + guidance, modelMessages, citations, tools, await chatModelFor(req.user, req.body.model));
 });
 
 // POST /:id/name — ask the LLM to generate a session name, then persist it
