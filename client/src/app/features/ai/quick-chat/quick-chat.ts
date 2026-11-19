@@ -25,6 +25,7 @@ import { ChapterEditProposal, ChatAttachment, ChatMessageHighlight, ChatSessionM
 import { Entity } from '@shared/models/entity.model';
 import { AI_MODELS, AiModelKey } from '@shared/models/ai-model.model';
 import { QuickChatService } from '../quick-chat.service';
+import { dragHasFiles, partitionImageFiles } from './chat-attachment-files';
 import { SpeechRecognitionService } from '@app/core/services/speech-recognition.service';
 import { AiAssistantService } from '../ai-assistant.service';
 import { EntityService } from '@app/features/entities/entity.service';
@@ -1021,13 +1022,52 @@ export class QuickChatComponent {
 
   /** Pasting an image (e.g. a screenshot) attaches it instead of inserting text. */
   onPaste(event: ClipboardEvent): void {
-    const files = Array.from(event.clipboardData?.items ?? [])
-      .filter(item => item.kind === 'file' && item.type.startsWith('image/'))
+    const { images } = partitionImageFiles(Array.from(event.clipboardData?.items ?? [])
+      .filter(item => item.kind === 'file')
       .map(item => item.getAsFile())
-      .filter((f): f is File => !!f);
-    if (files.length === 0) return; // plain text paste: let the textarea handle it
+      .filter((f): f is File => !!f));
+    if (images.length === 0) return; // plain text paste: let the textarea handle it
     event.preventDefault();
-    for (const file of files) void this.attachImage(file);
+    for (const file of images) void this.attachImage(file);
+  }
+
+  /** True while files are dragged over the panel, to show the drop overlay. */
+  readonly dropActive = signal(false);
+  /** dragenter/dragleave fire for every child crossed; count them so the overlay doesn't flicker. */
+  private dragDepth = 0;
+
+  onDragEnter(event: DragEvent): void {
+    if (!dragHasFiles(event.dataTransfer)) return;
+    event.preventDefault();
+    this.dragDepth++;
+    this.dropActive.set(true);
+  }
+
+  onDragOver(event: DragEvent): void {
+    if (!dragHasFiles(event.dataTransfer)) return;
+    // Required for the drop event to fire; also stops the browser opening the file.
+    event.preventDefault();
+    if (event.dataTransfer) event.dataTransfer.dropEffect = 'copy';
+  }
+
+  onDragLeave(event: DragEvent): void {
+    if (!dragHasFiles(event.dataTransfer)) return;
+    this.dragDepth = Math.max(0, this.dragDepth - 1);
+    if (this.dragDepth === 0) this.dropActive.set(false);
+  }
+
+  /** Dropping image files onto the panel attaches them, like pasting. */
+  onDrop(event: DragEvent): void {
+    if (!dragHasFiles(event.dataTransfer)) return;
+    event.preventDefault();
+    this.dragDepth = 0;
+    this.dropActive.set(false);
+    const { images, skipped } = partitionImageFiles(Array.from(event.dataTransfer?.files ?? []));
+    if (skipped > 0) {
+      this.showImageToast(images.length ? 'Only images can be attached; other files were skipped' : 'Only images can be attached');
+    }
+    for (const file of images) void this.attachImage(file);
+    if (images.length) this.inputEl()?.nativeElement.focus();
   }
 
   private async attachImage(file: File): Promise<void> {

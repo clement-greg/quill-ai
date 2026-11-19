@@ -639,7 +639,31 @@
   background: var(--mat-sys-surface-container);
 }
 
-/* Pasted images waiting to be sent with the next message. */
+/* Shown over the whole panel while image files are dragged onto it. */
+.qc-drop-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 20;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  border: 2px dashed var(--mat-sys-primary);
+  border-radius: inherit;
+  background: color-mix(in srgb, var(--mat-sys-primary-container) 85%, transparent);
+  color: var(--mat-sys-on-primary-container);
+  font-weight: 500;
+  pointer-events: none; // keep drag events on the card so the drop still lands
+
+  mat-icon {
+    font-size: 36px;
+    width: 36px;
+    height: 36px;
+  }
+}
+
+/* Pasted or dropped images waiting to be sent with the next message. */
 .qc-pending-attachments {
   display: flex;
   flex-wrap: wrap;
