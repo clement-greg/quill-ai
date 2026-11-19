@@ -1,5 +1,5 @@
 import { DOCUMENT } from '@angular/common';
-import { inject, Injectable } from '@angular/core';
+import { inject, Injectable, signal } from '@angular/core';
 import { UserSettingsService } from '@app/core/services/user-settings.service';
 
 /**
@@ -33,6 +33,10 @@ export class DialogueHighlightsService {
 
   /** Speaker colors are on (a user setting, "Color dialogue by speaker"). */
   readonly visible = this.settings.dialogueMarkupEnabled;
+
+  /** A character whose every line is colored, as if each were hovered (set
+   *  while their avatar in the chapter's entity facepile is hovered). */
+  readonly focusedSpeaker = signal<string | null>(null);
 
   setVisible(visible: boolean): void {
     this.settings.setDialogueMarkupEnabled(visible);
