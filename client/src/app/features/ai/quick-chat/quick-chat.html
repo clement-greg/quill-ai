@@ -22,7 +22,17 @@
        [class.qc-dragging]="isDragging()"
        [style.left.px]="dragPos()?.left ?? null"
        [style.top.px]="dragPos()?.top ?? null"
-       [style.bottom]="dragPos() ? 'auto' : null">
+       [style.bottom]="dragPos() ? 'auto' : null"
+       (dragenter)="onDragEnter($event)"
+       (dragover)="onDragOver($event)"
+       (dragleave)="onDragLeave($event)"
+       (drop)="onDrop($event)">
+    @if (dropActive()) {
+      <div class="qc-drop-overlay" aria-hidden="true">
+        <mat-icon>add_photo_alternate</mat-icon>
+        <span>Drop images to attach</span>
+      </div>
+    }
     <header class="qc-header">
       <div class="qc-title-group" (mousedown)="onDragStart($event)">
         <mat-icon class="qc-title-icon">forum</mat-icon>
