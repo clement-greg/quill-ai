@@ -257,7 +257,7 @@
             <mat-tab-group [selectedIndex]="sidebarTabIndex()" (selectedIndexChange)="onSidebarTabChange($event)"
               headerPosition="below" class="sidebar-tab-group">
 
-              <!-- Tab 0: Meta (Notes / Linked Chats / Outline / POV & Settings) -->
+              <!-- Tab 0: Meta (Notes / Linked Chats / Outline) -->
               <mat-tab>
                 <ng-template mat-tab-label>
                   <span class="entity-suggestion-tab-label">
@@ -399,42 +399,6 @@
                           [entities]="entities()"
                           (itemsChange)="onOutlineChange($event)"
                         />
-                      </div>
-                    </mat-expansion-panel>
-
-                    <!-- POV & Settings -->
-                    <mat-expansion-panel>
-                      <mat-expansion-panel-header>
-                        <mat-panel-title>
-                          <mat-icon class="meta-panel-icon">tune</mat-icon>
-                          POV &amp; Settings
-                        </mat-panel-title>
-                      </mat-expansion-panel-header>
-                      <div class="meta-details-body">
-                        <p class="details-hint">These help Quill draft this chapter in the right voice and context.</p>
-                        <mat-form-field appearance="outline" class="details-field">
-                          <mat-label>Point of view</mat-label>
-                          <mat-select [ngModel]="chapter()!.povEntityId ?? ''" (ngModelChange)="updatePov($event)">
-                            <mat-option value="">— Narrator (default) —</mat-option>
-                            @for (e of personEntities(); track e.id) {
-                              <mat-option [value]="e.id">{{ e.name }}</mat-option>
-                            }
-                          </mat-select>
-                        </mat-form-field>
-                        <mat-form-field appearance="outline" class="details-field">
-                          <mat-label>Setting</mat-label>
-                          <input matInput placeholder="Where this chapter takes place"
-                                 [ngModel]="chapter()!.setting ?? ''"
-                                 (ngModelChange)="updateMetaField('setting', $event)"
-                                 (blur)="persistMeta()" />
-                        </mat-form-field>
-                        <mat-form-field appearance="outline" class="details-field">
-                          <mat-label>Story-time</mat-label>
-                          <input matInput placeholder="When in the story (e.g. 'Three days later')"
-                                 [ngModel]="chapter()!.inStoryTime ?? ''"
-                                 (ngModelChange)="updateMetaField('inStoryTime', $event)"
-                                 (blur)="persistMeta()" />
-                        </mat-form-field>
                       </div>
                     </mat-expansion-panel>
 

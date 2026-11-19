@@ -8,7 +8,6 @@ import { MatButtonModule } from '@angular/material/button';
 import { MatIconModule } from '@angular/material/icon';
 import { MatInputModule } from '@angular/material/input';
 import { MatFormFieldModule } from '@angular/material/form-field';
-import { MatSelectModule } from '@angular/material/select';
 import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
 import { MatTabsModule } from '@angular/material/tabs';
 import { MatExpansionModule } from '@angular/material/expansion';
@@ -82,7 +81,7 @@ import { adjacentChapters, ChapterNavItem } from './chapter-nav';
   imports: [
     FormsModule,
     MatButtonModule, MatIconModule, MatInputModule, MatFormFieldModule,
-    MatProgressSpinnerModule, MatTabsModule, MatExpansionModule, MatDialogModule, MatMenuModule, MatSelectModule, MatTooltipModule,
+    MatProgressSpinnerModule, MatTabsModule, MatExpansionModule, MatDialogModule, MatMenuModule, MatTooltipModule,
     SlideOutPanelContainer, EntityEditComponent, RichTextEditorComponent, AiStatsComponent, ChapterOutlineComponent,
     QuillReviewPanelComponent, VersionHistoryPanelComponent, MentionedEntitiesPanelComponent, DialogueTaggingStatusComponent,
     FactCheckPanelComponent, BookEditorComponent, MatButtonToggleModule,
@@ -180,7 +179,6 @@ export class ChapterEditComponent implements OnInit, OnDestroy {
   hasDraft = signal(false);
   entities = signal<Entity[]>([]);
   /** PERSON entities only, for the chapter point-of-view picker. */
-  personEntities = computed(() => this.entities().filter(e => e.type === 'PERSON'));
   seriesId = signal('');
   private bookTitle = signal('');
   private seriesTitle = signal('');
@@ -1388,33 +1386,6 @@ export class ChapterEditComponent implements OnInit, OnDestroy {
       this.markDirty(current.id);
       this.updateHeader();
     }
-  }
-
-  // ── Chapter details (POV / setting / story-time) ──────────────────────────
-
-  /** Updates a free-text detail field locally; persisted on blur via persistMeta. */
-  updateMetaField(field: 'setting' | 'inStoryTime', value: string): void {
-    const current = this.chapter();
-    if (current) this.chapter.set({ ...current, [field]: value });
-  }
-
-  /** Sets the POV character and persists immediately (selects don't blur predictably). */
-  updatePov(entityId: string): void {
-    const current = this.chapter();
-    if (!current) return;
-    this.chapter.set({ ...current, povEntityId: entityId || undefined });
-    this.persistMeta();
-  }
-
-  /** Persists detail fields without creating a version snapshot, preserving the
-   *  live editor content/notes/outline (mirrors save() minus the version). */
-  persistMeta(): void {
-    const current = this.chapter();
-    if (!current) return;
-    const content = this.editorRef?.getContent() ?? current.content ?? '';
-    this.chapterService.update({ ...current, content, notes: this.notes(), outline: this.outline() }).subscribe({
-      error: () => this.snackBar.open('Failed to save chapter details — click Save to retry', undefined, { duration: 4000 }),
-    });
   }
 
   async save(): Promise<void> {
