@@ -71,21 +71,48 @@ describe('DialogueSpeakersComponent', () => {
 
   afterEach(() => document.body.innerHTML = '');
 
-  it('colors each line by speaker, narration and not-yet-attributed', () => {
+  /** Points at the line holding `text`, as hovering it would. */
+  function hoverLine(cmp: DialogueSpeakersComponent, caretIn: (t: string) => void, text: string) {
+    caretIn(text);
+    (cmp as unknown as { hovered: { set(l: unknown): void } }).hovered.set(cmp.lineAtSelection());
+    TestBed.tick();
+  }
+  const lastGroups = (update: ReturnType<typeof vi.fn>) =>
+    update.mock.calls.at(-1)![1] as Map<string, Range[]>;
+  const painted = (groups: Map<string, Range[]>) =>
+    [...groups].map(([name, ranges]) => [name, ranges.map(r => r.toString())]);
+
+  it('paints no dialogue until a line is pointed at', () => {
     const { update } = setup({ [key(0)]: ['ann', null] });
-    const groups = update.mock.calls.at(-1)![1] as Map<string, Range[]>;
-    expect(groups.get('dialogue-0')!.map(r => r.toString())).toEqual(['"Hi,"']);
-    expect(groups.get('dialogue-none')!.map(r => r.toString())).toEqual(['"Yo,"']);
-    expect(groups.get('dialogue-pending')!.map(r => r.toString())).toEqual(['"New line,"']);
+    expect(painted(lastGroups(update))).toEqual([]);
   });
 
-  it('marks lines without a speaker as being worked out while tagging runs', () => {
-    const { update, tagging } = setup({ [key(0)]: ['ann', null] });
-    tagging.tagging.set(new Set(['ch']));
+  it('colors only the hovered line, by speaker, narration or not-yet-attributed', () => {
+    const { update, cmp, caretIn } = setup({ [key(0)]: ['ann', null] });
+    hoverLine(cmp, caretIn, 'Hi');
+    expect(painted(lastGroups(update))).toEqual([['dialogue-0', ['"Hi,"']]]);
+    hoverLine(cmp, caretIn, 'Yo');
+    expect(painted(lastGroups(update))).toEqual([['dialogue-none', ['"Yo,"']]]);
+    hoverLine(cmp, caretIn, 'New line');
+    expect(painted(lastGroups(update))).toEqual([['dialogue-pending', ['"New line,"']]]);
+    (cmp as unknown as { hovered: { set(l: unknown): void } }).hovered.set(null);
     TestBed.tick();
-    const groups = update.mock.calls.at(-1)![1] as Map<string, Range[]>;
-    expect(groups.get('dialogue-working')!.map(r => r.toString())).toEqual(['"New line,"']);
-    expect(groups.has('dialogue-pending')).toBe(false);
+    expect(painted(lastGroups(update))).toEqual([]);
+  });
+
+  it('keeps the line colored while its speaker card is open', () => {
+    const { update, cmp, caretIn } = setup({ [key(0)]: ['ann', null] });
+    caretIn('Hi');
+    cmp.openChanger(cmp.lineAtSelection()!);
+    TestBed.tick();
+    expect(painted(lastGroups(update))).toEqual([['dialogue-0', ['"Hi,"']]]);
+  });
+
+  it('marks a hovered line without a speaker as being worked out while tagging runs', () => {
+    const { update, tagging, cmp, caretIn } = setup({ [key(0)]: ['ann', null] });
+    tagging.tagging.set(new Set(['ch']));
+    hoverLine(cmp, caretIn, 'New line');
+    expect(painted(lastGroups(update))).toEqual([['dialogue-working', ['"New line,"']]]);
   });
 
   it('paints nothing when dialogue colors are off, but still finds lines for the card', () => {

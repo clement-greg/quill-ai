@@ -151,7 +151,8 @@ body.resizing-col, body.resizing-col * {
   background-color: color-mix(in srgb, var(--mat-sys-primary, #6750a4) 22%, transparent);
 }
 
-/* Who speaks each line of dialogue in the chapter editor (CSS Custom Highlight
+/* Who speaks a line of dialogue in the chapter editor, shown only on the line
+   under the pointer or with its speaker card open (CSS Custom Highlight
    API; see dialogue-highlights.ts, whose SPEAKER_COLORS must match). */
 ::highlight(dialogue-0) {
   background-color: color-mix(in srgb, #1e88e5 14%, transparent);
