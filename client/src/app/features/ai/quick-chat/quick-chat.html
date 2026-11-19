@@ -388,7 +388,19 @@
               </div>
             }
           } @else {
-            <p class="qc-user-text">{{ msg.text }}</p>
+            @if (msg.attachments?.length) {
+              <div class="qc-user-attachments">
+                @for (a of msg.attachments; track a.url; let n = $index) {
+                  <button type="button" class="qc-user-attachment" (click)="openLightbox(a.url)"
+                          [attr.aria-label]="'View attached image ' + (n + 1)">
+                    <img [src]="proxyUrl(a.thumbnailUrl || a.url)" alt="" loading="lazy" />
+                  </button>
+                }
+              </div>
+            }
+            @if (msg.text) {
+              <p class="qc-user-text">{{ msg.text }}</p>
+            }
           }
         </div>
       }
@@ -428,6 +440,29 @@
           }
         </ul>
       }
+      @if (pendingAttachments().length) {
+        <ul class="qc-pending-attachments" aria-label="Attached images">
+          @for (a of pendingAttachments(); track a.id; let n = $index) {
+            <li class="qc-pending-attachment" [class.is-error]="a.status === 'error'">
+              <img [src]="a.previewUrl" [alt]="'Attached image ' + (n + 1)" />
+              @if (a.status === 'uploading') {
+                <span class="qc-pending-attachment-overlay" role="status" aria-label="Uploading image">
+                  <mat-spinner diameter="18"></mat-spinner>
+                </span>
+              } @else if (a.status === 'error') {
+                <span class="qc-pending-attachment-overlay" role="status" aria-label="Upload failed">
+                  <mat-icon>error</mat-icon>
+                </span>
+              }
+              <button type="button" class="qc-pending-attachment-remove"
+                      [attr.aria-label]="'Remove attached image ' + (n + 1)"
+                      (click)="removePendingAttachment(a.id)">
+                <mat-icon>close</mat-icon>
+              </button>
+            </li>
+          }
+        </ul>
+      }
       <div class="qc-textarea-wrap">
         <textarea class="qc-textarea" #inputEl
                   placeholder="Type your message..."
@@ -436,6 +471,7 @@
                   [value]="input()"
                   (input)="onInput($any($event.target).value)"
                   (keydown)="onKeyDown($event)"
+                  (paste)="onPaste($event)"
                   (blur)="onBlur()"></textarea>
         @if (ghostSuffix()) {
           <div class="qc-ghost-overlay" aria-hidden="true"><span class="qc-ghost-typed">{{ input() }}</span><span class="qc-ghost-suffix">{{ ghostSuffix() }}</span></div>
@@ -483,7 +519,7 @@
           </button>
         }
         <button mat-icon-button class="qc-send" aria-label="Send"
-                [disabled]="quickChat.streaming() || !input().trim()"
+                [disabled]="!canSend()"
                 (click)="send()">
           <mat-icon>{{ quickChat.streaming() ? 'hourglass_top' : 'send' }}</mat-icon>
         </button>

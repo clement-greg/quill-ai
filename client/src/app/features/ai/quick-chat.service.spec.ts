@@ -398,4 +398,69 @@ describe('QuickChatService', () => {
       expect(await service.getEntityChats('ent-1')).toEqual([]);
     });
   });
+
+  describe('pasted screenshots', () => {
+    const bodyOf = (call: unknown[]) => JSON.parse((call[1] as RequestInit).body as string);
+    const shot = { url: 'https://blob/a.png', thumbnailUrl: 'https://blob/a_thumb.webp' };
+    const chatCall = () => fetchStub.mock.calls.find(c => c[0] === '/api/chat-sessions/quick-chat')!;
+
+    it('uploads a pasted image and returns its stored URLs', async () => {
+      fetchStub.mockResolvedValue(new Response(JSON.stringify(shot), { status: 200 }));
+      const result = await service.uploadAttachment(new Blob(['x'], { type: 'image/png' }));
+      const [url, init] = fetchStub.mock.calls[0] as [string, RequestInit];
+      expect(url).toBe('/api/upload');
+      expect(init.method).toBe('POST');
+      expect((init.body as FormData).get('file')).toBeInstanceOf(Blob);
+      expect(result).toEqual(shot);
+    });
+
+    it('reports the server error when an upload is rejected', async () => {
+      fetchStub.mockResolvedValue(new Response(JSON.stringify({ error: 'Too big' }), { status: 413 }));
+      await expect(service.uploadAttachment(new Blob(['x']))).rejects.toThrow('Too big');
+    });
+
+    it('sends attached images with the message and keeps them on it', async () => {
+      service.activeSessionId.set('sess-1');
+      fetchStub.mockResolvedValue(new Response('data: [DONE]\n\n', { status: 200 }));
+
+      await service.sendMessage('What is wrong here?', [shot]);
+
+      const last = bodyOf(chatCall()).messages.at(-1);
+      expect(last).toEqual({ role: 'user', content: 'What is wrong here?', images: [shot.url] });
+      expect(service.messages()[0].attachments).toEqual([shot]);
+    });
+
+    it('saves attached images with the session', async () => {
+      service.activeSessionId.set('sess-1');
+      fetchStub.mockImplementation(async () => new Response('data: [DONE]\n\n', { status: 200 }));
+
+      await service.sendMessage('', [shot]);
+
+      const put = fetchStub.mock.calls.find(c => c[0] === '/api/chat-sessions/sess-1' && (c[1] as RequestInit)?.method === 'PUT')!;
+      expect(bodyOf(put).messages[0]).toEqual({ role: 'user', text: '', attachments: [shot] });
+    });
+
+    it('sends an image with no text', async () => {
+      service.activeSessionId.set('sess-1');
+      fetchStub.mockResolvedValue(new Response('data: [DONE]\n\n', { status: 200 }));
+
+      await service.sendMessage('   ', [shot]);
+
+      expect(bodyOf(chatCall()).messages).toEqual([{ role: 'user', content: '', images: [shot.url] }]);
+    });
+
+    it('sends nothing when there is neither text nor an image', async () => {
+      await service.sendMessage('  ');
+      expect(chatCall()).toBeUndefined();
+    });
+
+    it('omits images from messages that have none', async () => {
+      service.activeSessionId.set('sess-1');
+      fetchStub.mockResolvedValue(new Response('data: [DONE]\n\n', { status: 200 }));
+
+      await service.sendMessage('Hello');
+
+      expect(bodyOf(chatCall()).messages.at(-1)).not.toHaveProperty('images');
+    });
+  });
 });

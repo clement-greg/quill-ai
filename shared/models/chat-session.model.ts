@@ -40,6 +40,12 @@ export interface ChatImage {
   prompt?: string;
 }
 
+/** A screenshot or other image the author pasted into a chat message. */
+export interface ChatAttachment {
+  url: string;
+  thumbnailUrl: string;
+}
+
 /** A story-bible entity the assistant drafted from the conversation. It is
  *  never saved by the assistant: the author reviews it in the entity form and
  *  saves it themselves, at which point `savedEntityId` is set.
@@ -90,6 +96,8 @@ export interface MapPreview {
 export interface ChatSessionMessage {
   role: 'user' | 'assistant';
   text: string;
+  /** Images the author pasted into this (user) message; sent to the model. */
+  attachments?: ChatAttachment[];
   imageUrl?: string;
   thumbnailUrl?: string;
   /** The prompt a generated image was made from, so the assistant can refer to it later. */

@@ -2,6 +2,7 @@ import {
   ChangeDetectionStrategy,
   Component,
   CUSTOM_ELEMENTS_SCHEMA,
+  DestroyRef,
   ElementRef,
   NgZone,
   computed,
@@ -20,7 +21,7 @@ import { MatDialog } from '@angular/material/dialog';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { DomSanitizer, SafeHtml } from '@angular/platform-browser';
 import { firstValueFrom, forkJoin } from 'rxjs';
-import { ChapterEditProposal, ChatMessageHighlight, ChatSessionMessage, EntityLinkGroup, EntityLinkSession, EntityProposal, MapPreview } from '@shared/models';
+import { ChapterEditProposal, ChatAttachment, ChatMessageHighlight, ChatSessionMessage, EntityLinkGroup, EntityLinkSession, EntityProposal, MapPreview } from '@shared/models';
 import { Entity } from '@shared/models/entity.model';
 import { AI_MODELS, AiModelKey } from '@shared/models/ai-model.model';
 import { QuickChatService } from '../quick-chat.service';
@@ -277,6 +278,18 @@ const SLASH_COMMANDS: readonly SlashCommand[] = [
  * modal for asking questions answered with cross-series vector search. Ephemeral
  * by default — the Save action persists the conversation into the Resource Manager.
  */
+/** A pasted image shown above the input while it uploads and until it is sent. */
+interface PendingAttachment {
+  id: number;
+  /** Local object URL for the preview thumbnail. */
+  previewUrl: string;
+  status: 'uploading' | 'ready' | 'error';
+  attachment?: ChatAttachment;
+}
+
+const MAX_PENDING_ATTACHMENTS = 6;
+const MAX_ATTACHMENT_BYTES = 20 * 1024 * 1024;
+
 @Component({
   selector: 'app-quick-chat',
   changeDetection: ChangeDetectionStrategy.OnPush,
@@ -366,6 +379,15 @@ export class QuickChatComponent {
   });
 
   readonly input = signal('');
+  /** Screenshots pasted into the input, waiting to go out with the next message. */
+  readonly pendingAttachments = signal<PendingAttachment[]>([]);
+  readonly attachmentsUploading = computed(() => this.pendingAttachments().some(a => a.status === 'uploading'));
+  /** True when there is something to send and nothing still uploading. */
+  readonly canSend = computed(() =>
+    !this.quickChat.streaming() &&
+    !this.attachmentsUploading() &&
+    (!!this.input().trim() || this.pendingAttachments().some(a => a.status === 'ready')));
+  private nextAttachmentId = 0;
   /** The map shown in the full-screen read-only viewer, if any. */
   readonly previewedMap = signal<MapPreview | null>(null);
 
@@ -458,6 +480,7 @@ export class QuickChatComponent {
 
 
   constructor() {
+    inject(DestroyRef).onDestroy(() => this.clearPendingAttachments());
     // When the assistant drafts a new entity, open the form for review right away.
     this.quickChat.entityProposalReady
       .pipe(takeUntilDestroyed())
@@ -983,11 +1006,66 @@ export class QuickChatComponent {
   }
 
   send(): void {
+    if (!this.canSend()) return;
     const text = this.input().trim();
-    if (!text || this.quickChat.streaming()) return;
+    const attachments = this.pendingAttachments()
+      .filter(a => a.status === 'ready' && a.attachment)
+      .map(a => a.attachment as ChatAttachment);
     this.closeAutocomplete();
     this.input.set('');
-    void this.quickChat.sendMessage(text);
+    this.clearPendingAttachments();
+    void this.quickChat.sendMessage(text, attachments);
+  }
+
+  // ── Pasted screenshots ────────────────────────────────────────────────────
+
+  /** Pasting an image (e.g. a screenshot) attaches it instead of inserting text. */
+  onPaste(event: ClipboardEvent): void {
+    const files = Array.from(event.clipboardData?.items ?? [])
+      .filter(item => item.kind === 'file' && item.type.startsWith('image/'))
+      .map(item => item.getAsFile())
+      .filter((f): f is File => !!f);
+    if (files.length === 0) return; // plain text paste: let the textarea handle it
+    event.preventDefault();
+    for (const file of files) void this.attachImage(file);
+  }
+
+  private async attachImage(file: File): Promise<void> {
+    if (file.size > MAX_ATTACHMENT_BYTES) {
+      this.showImageToast('That image is larger than the 20 MB limit');
+      return;
+    }
+    if (this.pendingAttachments().length >= MAX_PENDING_ATTACHMENTS) {
+      this.showImageToast(`You can attach up to ${MAX_PENDING_ATTACHMENTS} images per message`);
+      return;
+    }
+    const id = ++this.nextAttachmentId;
+    const previewUrl = URL.createObjectURL(file);
+    this.pendingAttachments.update(list => [...list, { id, previewUrl, status: 'uploading' }]);
+    const ext = file.type.split('/')[1]?.replace('jpeg', 'jpg') || 'png';
+    try {
+      const attachment = await this.quickChat.uploadAttachment(file, file.name || `screenshot.${ext}`);
+      this.updatePendingAttachment(id, { status: 'ready', attachment });
+    } catch {
+      this.updatePendingAttachment(id, { status: 'error' });
+      this.showImageToast('The image could not be attached');
+    }
+  }
+
+  private updatePendingAttachment(id: number, patch: Partial<PendingAttachment>): void {
+    this.pendingAttachments.update(list => list.map(a => (a.id === id ? { ...a, ...patch } : a)));
+  }
+
+  removePendingAttachment(id: number): void {
+    const target = this.pendingAttachments().find(a => a.id === id);
+    if (target) URL.revokeObjectURL(target.previewUrl);
+    this.pendingAttachments.update(list => list.filter(a => a.id !== id));
+    this.inputEl()?.nativeElement.focus();
+  }
+
+  private clearPendingAttachments(): void {
+    for (const a of this.pendingAttachments()) URL.revokeObjectURL(a.previewUrl);
+    this.pendingAttachments.set([]);
   }
 
   // ── Push-to-talk dictation ────────────────────────────────────────────────
