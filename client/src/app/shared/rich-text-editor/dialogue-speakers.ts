@@ -34,7 +34,8 @@ export function speakingCharacters(entities: readonly Entity[]): Entity[] {
 }
 
 /**
- * Colors each line of dialogue in a chapter editor by who speaks it, shows a
+ * Colors a line of dialogue in a chapter editor by who speaks it while it is
+ * hovered (dialogue reads as plain prose otherwise), shows a
  * card naming the speaker on hover, and lets the author correct the speaker
  * when the model got it wrong. Lines edited since the last save have no
  * speaker until it's saved again (their attribution is cleared on edit).
@@ -71,6 +72,9 @@ export class DialogueSpeakersComponent implements OnDestroy {
 
   /** The line the card is about, and where the card sits. */
   readonly active = signal<LiveDialogue | null>(null);
+  /** The line under the pointer right now. Only it (and the card's line) is
+   *  colored, so dialogue reads as plain prose until you point at it. */
+  private readonly hovered = signal<LiveDialogue | null>(null);
   readonly cardTop = signal(0);
   readonly cardLeft = signal(0);
   readonly changing = signal(false);
@@ -107,7 +111,7 @@ export class DialogueSpeakersComponent implements OnDestroy {
   private frame = 0;
   private lastPoint: { x: number; y: number } | null = null;
   private readonly onMove = (e: MouseEvent) => this.pointerMoved(e.clientX, e.clientY);
-  private readonly onLeave = () => { this.cancelShow(); this.scheduleHide(); };
+  private readonly onLeave = () => { this.hovered.set(null); this.cancelShow(); this.scheduleHide(); };
   private readonly onKey = (e: KeyboardEvent) => { if (e.key === 'Escape' && this.active()) this.close(); };
   private readonly onDocDown = (e: MouseEvent) => {
     const card = this.cardRef()?.nativeElement;
@@ -146,7 +150,9 @@ export class DialogueSpeakersComponent implements OnDestroy {
       if (!this.painted()) { this.highlights.remove(this); return; }
       const groups = new Map<string, Range[]>();
       const working = this.isTagging();
+      const shown = [this.hovered(), this.active()].filter((l): l is LiveDialogue => !!l);
       for (const line of lines) {
+        if (!shown.some(l => sameLine(l, line))) continue;
         const s = this.speakerOf(line);
         const name = s.kind === 'pending' ? (working ? WORKING_HIGHLIGHT : PENDING_HIGHLIGHT)
           : s.kind === 'none' ? NARRATION_HIGHLIGHT
@@ -250,6 +256,8 @@ export class DialogueSpeakersComponent implements OnDestroy {
     if (!editor || !this.enabled()) return;
     const lines = liveDialogue(editor);
     this.lines.set(lines);
+    const hovered = this.hovered();
+    if (hovered) this.hovered.set(lines.find(l => sameLine(l, hovered)) ?? null);
     // The open card's line may have been edited away.
     const active = this.active();
     if (active && !lines.some(l => l.key === active.key && l.index === active.index)) this.close();
@@ -268,6 +276,7 @@ export class DialogueSpeakersComponent implements OnDestroy {
 
   private hover(x: number, y: number): void {
     const hit = this.lineAtPoint(x, y);
+    this.hovered.set(hit?.line ?? null);
     const active = this.active();
     if (hit && active && hit.line === active) { this.cardEntered(); return; }
     if (this.changing()) return; // Don't swap the card out from under a choice.
@@ -320,6 +329,10 @@ export class DialogueSpeakersComponent implements OnDestroy {
     }
     return null;
   }
+}
+
+function sameLine(a: LiveDialogue, b: LiveDialogue): boolean {
+  return a.key === b.key && a.index === b.index;
 }
 
 function caretAt(x: number, y: number): { node: Node; offset: number } | null {
