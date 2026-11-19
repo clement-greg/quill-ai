@@ -1,14 +1,16 @@
-import { ChangeDetectionStrategy, Component, computed, input, output, signal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, computed, inject, input, OnDestroy, output, signal } from '@angular/core';
 import { MatIconModule } from '@angular/material/icon';
 import { Entity } from '@shared/models/entity.model';
 import { RichTextEditorComponent } from '@app/shared/rich-text-editor/rich-text-editor';
+import { DialogueHighlightsService } from '@app/shared/rich-text-editor/dialogue-highlights';
 
 /**
  * Facepile of the entities mentioned in the chapter. Collapsed it shows a
  * stack of overlapping avatars (plus a "+N" overflow badge); hovering or
  * focusing the panel fans the avatars out horizontally. Hovering an avatar
  * shows a seeker bar to step through that entity's mentions in the editor
- * (scroll + highlight) and lights up their lines on the editor minimap;
+ * (scroll + highlight), lights up their lines on the editor minimap and
+ * colors every line of dialogue they speak;
  * clicking an avatar emits entitySelected so the host can open its details.
  */
 @Component({
@@ -210,7 +212,8 @@ import { RichTextEditorComponent } from '@app/shared/rich-text-editor/rich-text-
     }
   `,
 })
-export class MentionedEntitiesPanelComponent {
+export class MentionedEntitiesPanelComponent implements OnDestroy {
+  private readonly dialogue = inject(DialogueHighlightsService);
   entities = input.required<Entity[]>();
   /** Editor instance used to count/scroll-to mentions (same pattern as the review panel). */
   editor = input<RichTextEditorComponent | null>(null);
@@ -266,6 +269,7 @@ export class MentionedEntitiesPanelComponent {
     if (this.activeEntity()?.id === entity.id) return;
     this.editor()?.clearEntitySeekHighlight();
     this.editor()?.setMinimapEntityHighlight(entity.id);
+    this.dialogue.focusedSpeaker.set(entity.id);
     this.activeEntity.set(entity);
     this.seekIndex.set(-1);
     this.seekCount.set(this.editor()?.countEntityReferences(entity.id) ?? 0);
@@ -277,6 +281,12 @@ export class MentionedEntitiesPanelComponent {
     this.seekIndex.set(-1);
     this.editor()?.clearEntitySeekHighlight();
     this.editor()?.setMinimapEntityHighlight(null);
+    this.dialogue.focusedSpeaker.set(null);
+  }
+
+  ngOnDestroy(): void {
+    this.cancelPendingActive();
+    if (this.activeEntity()) this.dialogue.focusedSpeaker.set(null);
   }
 
   seek(direction: 1 | -1): void {

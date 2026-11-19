@@ -37,6 +37,7 @@ describe('DialogueSpeakersComponent', () => {
     const update = vi.fn();
     const remove = vi.fn();
     const setSpeaker = vi.fn().mockResolvedValue(null);
+    const focusedSpeaker = signal<string | null>(null);
     const tagging = {
       dialogue: signal<Record<string, ChapterDialogue>>(dialogue ? { ch: dialogue } : {}),
       tagging: signal(new Set<string>()),
@@ -46,7 +47,7 @@ describe('DialogueSpeakersComponent', () => {
       imports: [DialogueSpeakersComponent],
       providers: [
         { provide: DialogueTaggingService, useValue: tagging },
-        { provide: DialogueHighlightsService, useValue: { visible: signal(visible), update, remove } },
+        { provide: DialogueHighlightsService, useValue: { visible: signal(visible), focusedSpeaker, update, remove } },
         { provide: ReadAloudService, useValue: { azureCatalog: signal([{ id: 'azure:Ann', name: 'Ann Neural' }]) } },
       ],
     });
@@ -64,7 +65,7 @@ describe('DialogueSpeakersComponent', () => {
       document.getSelection()!.removeAllRanges();
       document.getSelection()!.addRange(range);
     };
-    return { fixture, cmp: fixture.componentInstance, el, editor, update, remove, setSpeaker, tagging, caretIn };
+    return { fixture, cmp: fixture.componentInstance, el, editor, update, remove, setSpeaker, tagging, caretIn, focusedSpeaker };
   }
 
   const key = (i: number) => dialogueBlocks(HTML)[i]!.key!;
@@ -98,6 +99,26 @@ describe('DialogueSpeakersComponent', () => {
     (cmp as unknown as { hovered: { set(l: unknown): void } }).hovered.set(null);
     TestBed.tick();
     expect(painted(lastGroups(update))).toEqual([]);
+  });
+
+  it('colors every line of a focused speaker (their facepile avatar is hovered)', () => {
+    const { update, focusedSpeaker } = setup({ [key(0)]: ['ann', 'bob'], [key(1)]: ['ann'] });
+    focusedSpeaker.set('ann');
+    TestBed.tick();
+    expect(painted(lastGroups(update))).toEqual([['dialogue-0', ['"Hi,"', '"New line,"']]]);
+    focusedSpeaker.set('bob');
+    TestBed.tick();
+    expect(painted(lastGroups(update))).toEqual([['dialogue-1', ['"Yo,"']]]);
+    focusedSpeaker.set(null);
+    TestBed.tick();
+    expect(painted(lastGroups(update))).toEqual([]);
+  });
+
+  it('paints a focused speaker\'s lines alongside the hovered line', () => {
+    const { update, focusedSpeaker, cmp, caretIn } = setup({ [key(0)]: ['ann', 'bob'], [key(1)]: ['ann'] });
+    focusedSpeaker.set('ann');
+    hoverLine(cmp, caretIn, 'Yo');
+    expect(painted(lastGroups(update))).toEqual([['dialogue-0', ['"Hi,"', '"New line,"']], ['dialogue-1', ['"Yo,"']]]);
   });
 
   it('keeps the line colored while its speaker card is open', () => {

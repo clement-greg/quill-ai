@@ -151,9 +151,11 @@ export class DialogueSpeakersComponent implements OnDestroy {
       const groups = new Map<string, Range[]>();
       const working = this.isTagging();
       const shown = [this.hovered(), this.active()].filter((l): l is LiveDialogue => !!l);
+      const focused = this.highlights.focusedSpeaker();
       for (const line of lines) {
-        if (!shown.some(l => sameLine(l, line))) continue;
         const s = this.speakerOf(line);
+        const isFocused = !!focused && s.kind === 'entity' && s.entity.id === focused;
+        if (!isFocused && !shown.some(l => sameLine(l, line))) continue;
         const name = s.kind === 'pending' ? (working ? WORKING_HIGHLIGHT : PENDING_HIGHLIGHT)
           : s.kind === 'none' ? NARRATION_HIGHLIGHT
           : speakerHighlight(s.slot);
