@@ -33,6 +33,7 @@ import { ChapterAnalysisDialogComponent, ChapterAnalysisDialogData, ChapterAnaly
 import { FactCheckPanelComponent } from './fact-check-panel';
 import { FactCheckToastComponent, FactCheckToastData } from './fact-check-toast';
 import { DraftDiffDialogComponent, DraftDiffDialogData } from './draft-diff-dialog';
+import { BookSlot, makeSlot, slotsToSave } from './book-slot';
 import { EntityRelationshipService } from '@app/features/entities/entity-relationship.service';
 import { SeriesService } from '@app/features/series/series.service';
 import { SlideOutPanelContainer } from '@app/shared/slide-out-panel-container/slide-out-panel-container';
@@ -765,6 +766,10 @@ export class ChapterEditComponent implements OnInit, OnDestroy {
     const isActive = event.id === this.chapter()?.id;
     const previous = isActive ? (this.chapter()?.content ?? slot.content) : slot.content;
     slot.content = event.html;
+    // Edits that didn't come from typing (inserts, entity links, tools) only
+    // reach us here, often from the flush right before a save; mark them now
+    // so that save sees them instead of reporting nothing to save.
+    if (event.html !== slot.savedContent) this.markDirty(event.id);
     if (event.html !== previous) {
       this.bookChapters.update(list => list.map(c => (c.id === event.id ? { ...c, content: event.html } : c)));
     }
@@ -785,6 +790,7 @@ export class ChapterEditComponent implements OnInit, OnDestroy {
     if (slot.content === slot.savedContent && !this.dirtyChapterIds().has(slot.chapter.id)) return;
     slot.draftContent = slot.content;
     slot.hasDraft = true;
+    this.markDirty(slot.chapter.id);
     void this.draftService.saveDraft(slot.chapter.id, slot.content, slot.notes, slot.outline);
   }
 
@@ -937,9 +943,9 @@ export class ChapterEditComponent implements OnInit, OnDestroy {
     if (this.autoSaveTimer) { clearTimeout(this.autoSaveTimer); this.autoSaveTimer = null; }
     this.bookEditor()?.flushAll();
     this.stashActive();
-    const dirty = [...this.dirtyChapterIds()]
-      .map(id => this.bookSlots.get(id))
-      .filter((sl): sl is BookSlot => !!sl);
+    // A chapter showing "Unsaved draft" must save even if no keystroke marked
+    // it dirty (e.g. programmatic edits that only wrote the local draft).
+    const dirty = slotsToSave(this.dirtyChapterIds(), this.bookSlots.values());
     if (dirty.length === 0) {
       this.snackBar.open('No changes to save', undefined, { duration: 2500 });
       return;
@@ -1065,6 +1071,7 @@ export class ChapterEditComponent implements OnInit, OnDestroy {
       const content = html ?? this.editorRef?.getContent() ?? '';
       this.draftService.saveDraft(current.id, content, this.notes(), this.outline());
       this.hasDraft.set(true);
+      this.markDirty(current.id);
       this.autoSaveTimer = null;
     }, 800);
   }
@@ -2391,30 +2398,4 @@ export interface ContentWarningsDialogData {
 })
 export class ContentWarningsDialogComponent {
   data = inject<ContentWarningsDialogData>(MAT_DIALOG_DATA);
-}
-
-/** One chapter's state while the full book is open. */
-interface BookSlot {
-  chapter: Chapter;
-  /** Latest HTML (live editor content is read back on every switch/save). */
-  content: string;
-  notes: ChapterNote[];
-  outline: OutlineItem[];
-  /** Has an unsaved local draft. */
-  hasDraft: boolean;
-  /** Content as of the last server save. */
-  savedContent: string;
-  /** Content as of the last local draft write. */
-  draftContent: string;
-  taskCheckBaseline: string | null;
-}
-
-function makeSlot(
-  chapter: Chapter, content: string, notes: ChapterNote[], outline: OutlineItem[],
-  hasDraft: boolean, savedContent: string,
-): BookSlot {
-  return {
-    chapter: { ...chapter, content }, content, notes, outline, hasDraft, savedContent,
-    draftContent: hasDraft ? content : savedContent, taskCheckBaseline: savedContent,
-  };
 }
