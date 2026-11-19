@@ -1,7 +1,8 @@
 import { describe, it, expect } from 'vitest';
 import {
   blankClickTarget, computePageBreaks, nearestChapterAt, estimatePageCount, indexAt, LineBox, pageContentBottom, pageContentTop,
-  pageOffsets, sectionHeight, CONTENT_HEIGHT, PAGE_GAP, PAGE_HEIGHT, PAGE_MARGIN, PAGE_STRIDE,
+  pageOffsets, sectionHeight, CONTENT_HEIGHT, PAGE_GAP, PAGE_HEIGHT, PAGE_MARGIN, PAGE_STRIDE, PAGE_WIDTH,
+  THUMBS_PANEL_WIDTH, chaptersInRange, pageAtY, scrollIntoViewTop, thumbsFit,
 } from './book-layout';
 
 const LH = 28;
@@ -182,5 +183,63 @@ describe('nearestChapterAt', () => {
 
   it('returns -1 with no chapters', () => {
     expect(nearestChapterAt([], [], 10)).toBe(-1);
+  });
+});
+
+describe('thumbsFit', () => {
+  const need = PAGE_WIDTH + 48 + 84 + THUMBS_PANEL_WIDTH;
+  it('shows the previews panel only when it fits beside the pages', () => {
+    expect(thumbsFit(need)).toBe(true);
+    expect(thumbsFit(need - 1)).toBe(false);
+    expect(thumbsFit(0)).toBe(false);
+  });
+});
+
+describe('pageAtY', () => {
+  const tops = [32, 32 + sectionHeight(3) + PAGE_GAP];
+  const counts = [3, 2];
+  it('finds the chapter and page', () => {
+    expect(pageAtY(tops, counts, 40)).toEqual({ chapter: 0, page: 0 });
+    expect(pageAtY(tops, counts, 32 + PAGE_STRIDE + 5)).toEqual({ chapter: 0, page: 1 });
+    expect(pageAtY(tops, counts, tops[1]! + PAGE_STRIDE)).toEqual({ chapter: 1, page: 1 });
+  });
+  it('counts the gap under a page toward that page', () => {
+    expect(pageAtY(tops, counts, 32 + PAGE_HEIGHT + 2)).toEqual({ chapter: 0, page: 0 });
+  });
+  it('clamps above the first page and past the last', () => {
+    expect(pageAtY(tops, counts, -100)).toEqual({ chapter: 0, page: 0 });
+    expect(pageAtY(tops, counts, 1e7)).toEqual({ chapter: 1, page: 1 });
+  });
+  it('returns null with no chapters', () => {
+    expect(pageAtY([], [], 10)).toBeNull();
+  });
+});
+
+describe('chaptersInRange', () => {
+  const tops = [0, 100, 300];
+  const heights = [80, 150, 50];
+  it('lists chapters overlapping the window', () => {
+    expect(chaptersInRange(tops, heights, 90, 120)).toEqual([1]);
+    expect(chaptersInRange(tops, heights, 50, 310)).toEqual([0, 1, 2]);
+    expect(chaptersInRange(tops, heights, 82, 99)).toEqual([]);
+  });
+  it('handles empty and inverted windows', () => {
+    expect(chaptersInRange([], [], 0, 100)).toEqual([]);
+    expect(chaptersInRange(tops, heights, 100, 50)).toEqual([]);
+  });
+});
+
+describe('scrollIntoViewTop', () => {
+  it('leaves a visible item alone', () => {
+    expect(scrollIntoViewTop(100, 500, 200, 100)).toBe(100);
+  });
+  it('scrolls up to an item above the view', () => {
+    expect(scrollIntoViewTop(300, 500, 200, 100)).toBe(192);
+  });
+  it('scrolls down just enough for an item below the view', () => {
+    expect(scrollIntoViewTop(0, 500, 600, 100)).toBe(208);
+  });
+  it('never goes negative', () => {
+    expect(scrollIntoViewTop(50, 500, 2, 100)).toBe(0);
   });
 });
